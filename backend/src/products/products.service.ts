@@ -1,0 +1,42 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Product } from './product.entity.js';
+import { CreateProductDto } from './dto/create-product.dto.js';
+import { UpdateProductDto } from './dto/update-product.dto.js';
+import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
+
+@Injectable()
+export class ProductsService {
+  constructor(@InjectRepository(Product) private readonly repo: Repository<Product>) {}
+
+  async findAll(pageOptions: PageOptionsDto): Promise<PageDto<Product>> {
+    const [items, count] = await this.repo.findAndCount({
+      order: { createdAt: pageOptions.order },
+      skip: pageOptions.skip,
+      take: pageOptions.limit,
+    });
+    return new PageDto(items, new PageMetaDto(pageOptions, count));
+  }
+
+  async findOne(id: string): Promise<Product> {
+    const item = await this.repo.findOne({ where: { id } });
+    if (!item) throw new NotFoundException('Product not found');
+    return item;
+  }
+
+  async create(dto: CreateProductDto): Promise<Product> {
+    return this.repo.save(this.repo.create(dto));
+  }
+
+  async update(id: string, dto: UpdateProductDto): Promise<Product> {
+    const item = await this.findOne(id);
+    Object.assign(item, dto);
+    return this.repo.save(item);
+  }
+
+  async remove(id: string): Promise<void> {
+    const item = await this.findOne(id);
+    await this.repo.remove(item);
+  }
+}

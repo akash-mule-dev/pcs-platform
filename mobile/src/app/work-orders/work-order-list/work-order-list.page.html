@@ -1,0 +1,27 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-title>Work Orders</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <ion-refresher slot="fixed" (ionRefresh)="load($any($event))">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <ion-list>
+    <ion-item *ngFor="let wo of workOrders" (click)="openDetail(wo)" button detail>
+      <ion-label>
+        <h2>{{ wo.orderNumber }}</h2>
+        <p>{{ wo.product?.name || 'Unknown Product' }} — Qty: {{ wo.quantity }}</p>
+        <p *ngIf="wo.dueDate">Due: {{ wo.dueDate | date:'mediumDate' }}</p>
+      </ion-label>
+      <app-status-badge [status]="wo.status" slot="end"></app-status-badge>
+      <ion-badge [color]="priorityColor(wo.priority)" slot="end" style="margin-left:8px;">{{ wo.priority | uppercase }}</ion-badge>
+    </ion-item>
+  </ion-list>
+
+  <ion-text color="medium" class="ion-text-center ion-padding" *ngIf="workOrders.length === 0">
+    <p>No work orders found.</p>
+  </ion-text>
+</ion-content>

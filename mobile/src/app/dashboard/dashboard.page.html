@@ -1,0 +1,68 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-title>Dashboard</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <ion-refresher slot="fixed" (ionRefresh)="loadData($any($event))">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <div class="ion-padding">
+    <h2 class="greeting">{{ greeting }}, {{ user?.firstName || 'Operator' }}!</h2>
+
+    <!-- Active Timer Card -->
+    <ion-card *ngIf="activeEntry" color="primary" (click)="goToTimer()" button>
+      <ion-card-header>
+        <ion-card-subtitle>Currently Working</ion-card-subtitle>
+        <ion-card-title>{{ activeEntry.workOrderStage?.stage?.name || 'Active Stage' }}</ion-card-title>
+      </ion-card-header>
+      <ion-card-content>
+        <p>{{ activeEntry.workOrderStage?.workOrder?.orderNumber || '' }}</p>
+        <p>Started {{ activeEntry.startTime | date:'shortTime' }}</p>
+        <ion-button fill="outline" color="light" size="small">View Timer →</ion-button>
+      </ion-card-content>
+    </ion-card>
+
+    <ion-card *ngIf="!activeEntry" (click)="goToTimer()" button>
+      <ion-card-content>
+        <ion-icon name="timer-outline" color="medium" style="font-size:32px;"></ion-icon>
+        <p>No active timer. Tap to start working.</p>
+      </ion-card-content>
+    </ion-card>
+
+    <!-- Today's Stats -->
+    <ion-list-header>
+      <ion-label>Today's Stats</ion-label>
+    </ion-list-header>
+    <ion-grid>
+      <ion-row>
+        <ion-col size="4">
+          <ion-card class="stat-card">
+            <ion-card-content class="ion-text-center">
+              <div class="stat-value">{{ todayCompleted }}</div>
+              <div class="stat-label">Completed</div>
+            </ion-card-content>
+          </ion-card>
+        </ion-col>
+        <ion-col size="4">
+          <ion-card class="stat-card">
+            <ion-card-content class="ion-text-center">
+              <div class="stat-value">{{ todayTotalSeconds | duration }}</div>
+              <div class="stat-label">Total Time</div>
+            </ion-card-content>
+          </ion-card>
+        </ion-col>
+        <ion-col size="4">
+          <ion-card class="stat-card">
+            <ion-card-content class="ion-text-center">
+              <div class="stat-value">{{ workOrderCount }}</div>
+              <div class="stat-label">Orders</div>
+            </ion-card-content>
+          </ion-card>
+        </ion-col>
+      </ion-row>
+    </ion-grid>
+  </div>
+</ion-content>

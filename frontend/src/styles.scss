@@ -1,0 +1,106 @@
+@use '@angular/material' as mat;
+
+@include mat.core();
+
+$pcs-primary: mat.define-palette(mat.$indigo-palette);
+$pcs-accent: mat.define-palette(mat.$blue-palette);
+$pcs-warn: mat.define-palette(mat.$red-palette);
+
+$pcs-theme: mat.define-light-theme((
+  color: (
+    primary: $pcs-primary,
+    accent: $pcs-accent,
+    warn: $pcs-warn,
+  ),
+  typography: mat.define-typography-config(),
+  density: 0,
+));
+
+@include mat.all-component-themes($pcs-theme);
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: Roboto, "Helvetica Neue", sans-serif;
+  background: #f5f5f5;
+}
+
+.mat-mdc-snack-bar-container.error-snackbar {
+  --mdc-snackbar-container-color: #d32f2f;
+  --mdc-snackbar-supporting-text-color: white;
+}
+
+.mat-mdc-table {
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mat-mdc-row {
+  transition: background-color 0.15s ease;
+}
+.mat-mdc-row:hover {
+  background: #f0f4ff !important;
+}
+
+.mat-mdc-header-row {
+  background: #fafafa;
+}
+
+a {
+  text-decoration: none;
+}
+
+.mat-mdc-card {
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
+  transition: box-shadow 0.2s ease;
+}
+.mat-mdc-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12) !important;
+}
+
+/* Page headers */
+h2 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Button polish */
+.mat-mdc-raised-button {
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.02em;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a0a0a0;
+}
+
+/* Form field polish */
+.mat-mdc-form-field {
+  transition: all 0.2s ease;
+}
+
+/* Chip-like status labels */
+.status-chip, .priority-chip, .role-chip {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}

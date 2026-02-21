@@ -1,0 +1,26 @@
+.profile-header {
+  padding: 24px 0 16px;
+  h2 { font-weight: 700; margin: 0 0 8px; }
+}
+.avatar-placeholder {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--ion-color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--ion-color-primary);
+}
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--ion-color-medium);
+  margin-top: 4px;
+}

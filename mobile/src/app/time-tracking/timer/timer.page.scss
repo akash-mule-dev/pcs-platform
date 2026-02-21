@@ -1,0 +1,54 @@
+.timer-active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px;
+}
+
+.timer-display {
+  background: var(--ion-color-primary);
+  border-radius: 50%;
+  width: 220px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 32px rgba(21, 101, 192, 0.35);
+}
+
+.timer-digits {
+  font-size: 3.5rem;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+}
+
+.timer-info {
+  text-align: center;
+  margin-bottom: 24px;
+  h3 { font-size: 1.3rem; font-weight: 600; margin: 0 0 4px; }
+  p { color: var(--ion-color-medium); margin: 0; }
+}
+
+.notes-field {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 16px;
+}
+
+.clock-out-btn {
+  width: 100%;
+  max-width: 400px;
+  --border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  height: 56px;
+}
+
+.no-timer-header {
+  padding: 32px 0 16px;
+  h2 { color: var(--ion-color-dark); font-weight: 600; }
+  p { color: var(--ion-color-medium); }
+}

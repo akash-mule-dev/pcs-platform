@@ -1,0 +1,62 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-title>Timer</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="goToHistory()">
+        <ion-icon name="time-outline" slot="icon-only"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <!-- ACTIVE TIMER -->
+  <div *ngIf="activeEntry" class="timer-active">
+    <div class="timer-display">
+      <span class="timer-digits">{{ displayMinutes }}:{{ displaySeconds }}</span>
+    </div>
+    <div class="timer-info">
+      <h3>{{ activeEntry.workOrderStage?.stage?.name || 'Working...' }}</h3>
+      <p>{{ activeEntry.workOrderStage?.workOrder?.orderNumber || '' }}</p>
+    </div>
+
+    <ion-item class="notes-field">
+      <ion-textarea
+        label="Notes (optional)"
+        labelPlacement="floating"
+        [(ngModel)]="notes"
+        rows="2"
+        placeholder="Add notes before clocking out..."
+      ></ion-textarea>
+    </ion-item>
+
+    <ion-button expand="block" color="danger" size="large" class="clock-out-btn" (click)="clockOut()">
+      <ion-icon name="stop-circle-outline" slot="start"></ion-icon>
+      Clock Out
+    </ion-button>
+  </div>
+
+  <!-- NO ACTIVE TIMER -->
+  <div *ngIf="!activeEntry" class="ion-padding">
+    <div class="no-timer-header ion-text-center">
+      <ion-icon name="timer-outline" color="medium" style="font-size:64px;"></ion-icon>
+      <h2>Select a stage to start</h2>
+      <p>Tap a pending stage below to clock in</p>
+    </div>
+
+    <ion-list *ngIf="pendingStages.length > 0">
+      <ion-item *ngFor="let item of pendingStages" (click)="clockIn(item)" button detail>
+        <ion-icon name="play-circle-outline" color="primary" slot="start" style="font-size:28px;"></ion-icon>
+        <ion-label>
+          <h3>{{ item.stage.stage?.name || 'Stage' }}</h3>
+          <p>{{ item.workOrder.orderNumber }} — {{ item.workOrder.product?.name }}</p>
+          <p *ngIf="item.stage.stage?.targetTimeSeconds">Target: {{ item.stage.stage?.targetTimeSeconds | duration }}</p>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    <ion-text color="medium" class="ion-text-center" *ngIf="pendingStages.length === 0">
+      <p class="ion-padding">No pending stages assigned to you.</p>
+    </ion-text>
+  </div>
+</ion-content>

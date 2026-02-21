@@ -1,0 +1,33 @@
+<ion-content class="ion-padding login-content">
+  <div class="login-wrapper">
+    <div class="login-header">
+      <ion-icon name="construct-outline" color="primary" style="font-size: 64px;"></ion-icon>
+      <h1>PCS Mobile</h1>
+      <p>Production Control System</p>
+    </div>
+    <ion-card>
+      <ion-card-content>
+        <ion-item>
+          <ion-input
+            label="Email"
+            labelPlacement="floating"
+            type="email"
+            [(ngModel)]="email"
+            autocomplete="email"
+          ></ion-input>
+        </ion-item>
+        <ion-item>
+          <ion-input
+            label="Password"
+            labelPlacement="floating"
+            type="password"
+            [(ngModel)]="password"
+          ></ion-input>
+        </ion-item>
+        <ion-button expand="block" class="ion-margin-top" (click)="onLogin()" [disabled]="!email || !password">
+          Sign In
+        </ion-button>
+      </ion-card-content>
+    </ion-card>
+  </div>
+</ion-content>

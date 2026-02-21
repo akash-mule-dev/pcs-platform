@@ -1,0 +1,34 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/timer"></ion-back-button>
+    </ion-buttons>
+    <ion-title>History</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div *ngFor="let group of groups">
+    <ion-list-header>
+      <ion-label>{{ group.date | date:'mediumDate' }}</ion-label>
+    </ion-list-header>
+    <ion-list>
+      <ion-item *ngFor="let entry of group.entries">
+        <ion-label>
+          <h3>{{ entry.workOrderStage?.stage?.name || 'Stage' }}</h3>
+          <p>{{ entry.workOrderStage?.workOrder?.orderNumber || '' }} · {{ entry.startTime | date:'shortTime' }}</p>
+        </ion-label>
+        <ion-note slot="end">
+          <div>{{ entry.durationSeconds | duration }}</div>
+          <div *ngIf="variance(entry).label" [style.color]="'var(--ion-color-' + variance(entry).color + ')'">
+            {{ variance(entry).label }}
+          </div>
+        </ion-note>
+      </ion-item>
+    </ion-list>
+  </div>
+
+  <ion-text color="medium" class="ion-text-center ion-padding" *ngIf="groups.length === 0">
+    <p>No history yet.</p>
+  </ion-text>
+</ion-content>

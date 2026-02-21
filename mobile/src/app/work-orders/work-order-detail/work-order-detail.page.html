@@ -1,0 +1,53 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/work-orders"></ion-back-button>
+    </ion-buttons>
+    <ion-title>{{ workOrder?.orderNumber || 'Work Order' }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding" *ngIf="workOrder">
+  <ion-card>
+    <ion-card-header>
+      <ion-card-title>{{ workOrder.product?.name }}</ion-card-title>
+      <ion-card-subtitle>{{ workOrder.process?.name }}</ion-card-subtitle>
+    </ion-card-header>
+    <ion-card-content>
+      <ion-grid>
+        <ion-row>
+          <ion-col><strong>Status:</strong></ion-col>
+          <ion-col><app-status-badge [status]="workOrder.status"></app-status-badge></ion-col>
+        </ion-row>
+        <ion-row>
+          <ion-col><strong>Priority:</strong></ion-col>
+          <ion-col><app-status-badge [status]="workOrder.priority"></app-status-badge></ion-col>
+        </ion-row>
+        <ion-row>
+          <ion-col><strong>Quantity:</strong></ion-col>
+          <ion-col>{{ workOrder.completedQuantity }} / {{ workOrder.quantity }}</ion-col>
+        </ion-row>
+        <ion-row *ngIf="workOrder.dueDate">
+          <ion-col><strong>Due:</strong></ion-col>
+          <ion-col>{{ workOrder.dueDate | date:'mediumDate' }}</ion-col>
+        </ion-row>
+      </ion-grid>
+    </ion-card-content>
+  </ion-card>
+
+  <ion-list-header>
+    <ion-label>Stages</ion-label>
+  </ion-list-header>
+
+  <ion-list>
+    <ion-item *ngFor="let ws of workOrder.stages" [button]="ws.status === 'pending'" (click)="ws.status === 'pending' ? clockInToStage(ws) : null">
+      <ion-icon [name]="stageStatusIcon(ws.status)" [color]="stageStatusColor(ws.status)" slot="start"></ion-icon>
+      <ion-label>
+        <h3>{{ ws.stage?.name || 'Stage' }}</h3>
+        <p>Target: {{ ws.stage?.targetTimeSeconds | duration }}</p>
+        <p *ngIf="ws.actualTimeSeconds">Actual: {{ ws.actualTimeSeconds | duration }}</p>
+      </ion-label>
+      <app-status-badge [status]="ws.status" slot="end"></app-status-badge>
+    </ion-item>
+  </ion-list>
+</ion-content>
