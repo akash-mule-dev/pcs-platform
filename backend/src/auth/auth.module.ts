@@ -13,7 +13,7 @@ import { Role } from './entities/role.entity.js';
     TypeOrmModule.forFeature([User, Role]),
     PassportModule,
     JwtModule.register({
-      secret: 'pcs-jwt-secret-key-2026',
+      secret: process.env.JWT_SECRET || 'pcs-jwt-secret-key-2026',
       signOptions: { expiresIn: '24h' },
     }),
   ],

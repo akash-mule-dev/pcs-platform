@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: pcs-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-pcs_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-pcs_password}
+      POSTGRES_DB: ${DB_NAME:-pcs_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-pcs_user} -d ${DB_NAME:-pcs_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NestJS Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pcs-backend
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-pcs_user}
+      DB_PASSWORD: ${DB_PASSWORD:-pcs_password}
+      DB_NAME: ${DB_NAME:-pcs_db}
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      PORT: 3000
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Angular Frontend (Web)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pcs-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  # Ionic Mobile App (Web version)
+  mobile:
+    build:
+      context: ./mobile
+      dockerfile: Dockerfile
+    container_name: pcs-mobile
+    restart: unless-stopped
+    ports:
+      - "8100:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
