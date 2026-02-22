@@ -38,9 +38,7 @@ export class ProfilePage implements OnInit {
   }
 
   getRoleName(): string {
-    if (!this.user?.role) return '';
-    if (typeof this.user.role === 'string') return this.user.role;
-    return (this.user.role as any).name || '';
+    return this.user?.role?.name || '';
   }
 
   async logout(): Promise<void> {

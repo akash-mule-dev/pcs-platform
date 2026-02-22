@@ -9,8 +9,11 @@ import { SeedService } from './seed/seed.service.js';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  const corsOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
+    : ['http://localhost:4200', 'http://localhost:8100'];
   app.enableCors({
-    origin: ['http://localhost:4200', 'http://localhost:8100'],
+    origin: [...corsOrigins, 'http://localhost:4200', 'http://localhost:8100'],
     credentials: true,
   });
 
@@ -39,9 +42,10 @@ async function bootstrap() {
     await seeder.seed();
   }
 
-  await app.listen(3000);
-  console.log('PCS Backend running on http://localhost:3000');
-  console.log('Swagger docs at http://localhost:3000/api/docs');
+  const port = parseInt(process.env.PORT || '3000', 10);
+  await app.listen(port);
+  console.log(`PCS Backend running on http://localhost:${port}`);
+  console.log(`Swagger docs at http://localhost:${port}/api/docs`);
 }
 
 bootstrap();

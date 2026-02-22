@@ -11,7 +11,7 @@ export interface User {
   lastName: string;
   employeeId: string;
   badgeId: string | null;
-  role: { id: string; name: string } | string;
+  role: { id: string; name: string };
   isActive: boolean;
 }
 
