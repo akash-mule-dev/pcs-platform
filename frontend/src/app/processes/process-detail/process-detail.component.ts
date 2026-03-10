@@ -64,16 +64,16 @@ import { StageDialogComponent } from './stage-dialog.component';
   `,
   styles: [`
     .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    h2 { margin: 8px 0 4px; color: #1a237e; }
-    .subtitle { margin: 0; color: #666; font-size: 14px; }
-    .back-link { color: #1565c0; text-decoration: none; font-size: 13px; }
+    h2 { margin: 8px 0 4px; color: var(--clay-text); }
+    .subtitle { margin: 0; color: var(--clay-text-secondary); font-size: 14px; }
+    .back-link { color: var(--clay-primary); text-decoration: none; font-size: 13px; }
     .stages-list { display: flex; flex-direction: column; gap: 8px; }
     .stage-card {
       display: flex; align-items: center; padding: 16px; gap: 16px;
       cursor: move; transition: box-shadow 0.2s;
     }
     .stage-card:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
-    .stage-handle { color: #999; cursor: grab; }
+    .stage-handle { color: var(--clay-text-muted); cursor: grab; }
     .stage-sequence {
       width: 36px; height: 36px; border-radius: 50%;
       background: #1a237e; color: white; display: flex;
@@ -81,9 +81,9 @@ import { StageDialogComponent } from './stage-dialog.component';
     }
     .stage-info { flex: 1; }
     .stage-name { font-weight: 500; font-size: 16px; }
-    .stage-meta { font-size: 13px; color: #666; margin-top: 4px; }
+    .stage-meta { font-size: 13px; color: var(--clay-text-secondary); margin-top: 4px; }
     .stage-actions { display: flex; gap: 4px; }
-    .empty-card { text-align: center; padding: 40px; color: #999; }
+    .empty-card { text-align: center; padding: 40px; color: var(--clay-text-muted); }
     .cdk-drag-preview { box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
     .cdk-drag-placeholder { opacity: 0.3; }
   `]

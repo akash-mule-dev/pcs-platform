@@ -68,14 +68,14 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
   `,
   styles: [`
     .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    h2 { margin: 0; color: #1a237e; }
+    h2 { margin: 0; color: var(--clay-text); }
     .filter-field { margin-bottom: 16px; }
     .full-width { width: 100%; }
     .role-chip { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; }
-    .role-admin { background: #e8eaf6; color: #283593; }
-    .role-manager { background: #e3f2fd; color: #1565c0; }
-    .role-supervisor { background: #fff3e0; color: #e65100; }
-    .role-operator { background: #e8f5e9; color: #2e7d32; }
+    .role-admin { background: #dce0ed; color: var(--clay-primary); box-shadow: var(--clay-shadow-soft); }
+    .role-manager { background: #dce8f3; color: var(--clay-primary); box-shadow: var(--clay-shadow-soft); }
+    .role-supervisor { background: #f5e6d0; color: #c06820; box-shadow: var(--clay-shadow-soft); }
+    .role-operator { background: #d8edda; color: #3a7d3e; box-shadow: var(--clay-shadow-soft); }
   `]
 })
 export class UserListComponent implements OnInit {

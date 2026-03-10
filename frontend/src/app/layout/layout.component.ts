@@ -56,47 +56,73 @@ interface NavItem {
     .layout-container { height: 100vh; }
     .sidenav {
       width: 260px;
-      background: linear-gradient(180deg, #283593 0%, #3949ab 100%);
-      color: white;
+      background: var(--clay-sidebar);
+      color: var(--clay-text);
+      border-right: 1px solid var(--clay-border);
+      box-shadow: 4px 0 12px rgba(0,0,0,0.04);
     }
     .sidenav-header {
       display: flex;
       align-items: center;
-      padding: 24px 16px;
+      padding: 24px 20px;
       gap: 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.15);
-      background: rgba(0,0,0,0.1);
+      border-bottom: 1px solid var(--clay-border);
+      background: var(--clay-sidebar-active);
     }
-    .logo-icon { font-size: 32px; width: 32px; height: 32px; color: #ffa726; }
-    .logo-text { font-size: 20px; font-weight: 600; letter-spacing: 0.5px; }
+    .logo-icon {
+      font-size: 32px; width: 32px; height: 32px;
+      color: var(--clay-accent);
+      filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.1));
+    }
+    .logo-text {
+      font-size: 18px; font-weight: 700;
+      color: var(--clay-text);
+      letter-spacing: -0.01em;
+    }
     .sidenav ::ng-deep .mat-mdc-list-item {
-      color: rgba(255,255,255,0.9) !important;
-      border-radius: 0 24px 24px 0;
-      margin-right: 12px;
-      margin-bottom: 2px;
+      color: var(--clay-text-secondary) !important;
+      border-radius: 0 var(--clay-radius-sm) var(--clay-radius-sm) 0;
+      margin: 2px 12px 2px 0;
+      transition: all var(--clay-transition);
     }
     .sidenav ::ng-deep .mat-mdc-list-item:hover {
-      background: rgba(255,255,255,0.08) !important;
+      background: var(--clay-surface) !important;
+      color: var(--clay-text) !important;
+      box-shadow: var(--clay-shadow-soft);
     }
     .sidenav ::ng-deep .active-link {
-      background: rgba(255,255,255,0.18) !important;
-      color: #ffa726 !important;
+      background: var(--clay-surface) !important;
+      color: var(--clay-primary) !important;
+      box-shadow: var(--clay-shadow-raised);
+      font-weight: 600;
     }
     .sidenav ::ng-deep .mat-mdc-list-item .mat-icon {
-      color: rgba(255,255,255,0.75);
+      color: var(--clay-text-muted);
+      transition: color var(--clay-transition);
+    }
+    .sidenav ::ng-deep .mat-mdc-list-item:hover .mat-icon {
+      color: var(--clay-text);
     }
     .sidenav ::ng-deep .active-link .mat-icon {
-      color: #ffa726;
+      color: var(--clay-accent);
     }
     .top-toolbar {
       position: sticky;
       top: 0;
       z-index: 10;
+      background: var(--clay-surface) !important;
+      color: var(--clay-text) !important;
+      box-shadow: var(--clay-shadow-soft) !important;
+      border-bottom: 1px solid var(--clay-border);
     }
     .toolbar-spacer { flex: 1; }
-    .user-name { margin-right: 4px; font-size: 14px; }
-    .user-role { margin-right: 16px; font-size: 12px; opacity: 0.8; }
-    .page-content { padding: 24px; background: #f5f5f5; min-height: calc(100vh - 64px); }
+    .user-name { margin-right: 4px; font-size: 14px; font-weight: 500; color: var(--clay-text); }
+    .user-role { margin-right: 16px; font-size: 12px; color: var(--clay-text-muted); }
+    .page-content {
+      padding: 28px;
+      background: var(--clay-bg);
+      min-height: calc(100vh - 64px);
+    }
     .content-area { display: flex; flex-direction: column; }
   `]
 })

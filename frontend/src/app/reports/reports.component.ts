@@ -71,11 +71,11 @@ Chart.register(...registerables);
     </div>
   `,
   styles: [`
-    h2 { margin: 0 0 24px; color: #1a237e; }
+    h2 { margin: 0 0 24px; color: var(--clay-text); }
     .filters { display: flex; gap: 16px; margin-bottom: 24px; align-items: flex-start; }
     .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
     .chart-card { padding: 16px; }
-    .no-data { text-align: center; color: #999; padding: 40px; }
+    .no-data { text-align: center; color: var(--clay-text-muted); padding: 40px; }
     @media (max-width: 960px) { .charts-grid { grid-template-columns: 1fr; } }
   `]
 })

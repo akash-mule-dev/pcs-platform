@@ -60,7 +60,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
   `,
   styles: [`
     .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    h2 { margin: 0; color: #1a237e; }
+    h2 { margin: 0; color: var(--clay-text); }
     .search-field { width: 300px; margin-bottom: 8px; }
     .full-width { width: 100%; }
   `]

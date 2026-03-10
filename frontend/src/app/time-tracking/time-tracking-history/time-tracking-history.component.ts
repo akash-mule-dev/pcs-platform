@@ -96,7 +96,7 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
   `,
   styles: [`
     .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    h2 { margin: 0; color: #1a237e; }
+    h2 { margin: 0; color: var(--clay-text); }
     .filters { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
     .full-width { width: 100%; }
     .over-target { color: #c62828; font-weight: 500; }

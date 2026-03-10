@@ -100,17 +100,37 @@ Chart.register(...registerables);
     </div>
   `,
   styles: [`
-    h2 { margin: 0 0 24px; color: #1a237e; }
-    .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-    .kpi-card { display: flex; align-items: center; padding: 20px; gap: 16px; }
-    .kpi-icon { font-size: 40px; width: 40px; height: 40px; }
-    .kpi-value { font-size: 28px; font-weight: 600; color: #333; }
-    .kpi-label { font-size: 13px; color: #777; }
-    .charts-row { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; }
-    .chart-card { padding: 16px; }
+    h2 { margin: 0 0 24px; color: var(--clay-text); font-weight: 700; }
+    .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 28px; }
+    .kpi-card {
+      display: flex; align-items: center; padding: 22px; gap: 16px;
+      background: var(--clay-surface) !important;
+      border-radius: var(--clay-radius) !important;
+      box-shadow: var(--clay-shadow-raised) !important;
+      border: 1px solid var(--clay-border) !important;
+      transition: all var(--clay-transition);
+    }
+    .kpi-card:hover {
+      box-shadow: var(--clay-shadow-hover) !important;
+      transform: translateY(-2px);
+    }
+    .kpi-icon {
+      font-size: 40px; width: 40px; height: 40px;
+      color: var(--clay-accent);
+      filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.08));
+    }
+    .kpi-value { font-size: 28px; font-weight: 700; color: var(--clay-text); }
+    .kpi-label { font-size: 13px; color: var(--clay-text-muted); font-weight: 500; }
+    .charts-row { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
+    .chart-card {
+      padding: 20px;
+      background: var(--clay-surface) !important;
+      border-radius: var(--clay-radius) !important;
+      box-shadow: var(--clay-shadow-raised) !important;
+    }
     .live-table-card { overflow: auto; }
     .full-width { width: 100%; }
-    .no-data { text-align: center; color: #999; padding: 24px; }
+    .no-data { text-align: center; color: var(--clay-text-muted); padding: 24px; }
     @media (max-width: 960px) {
       .kpi-row { grid-template-columns: repeat(2, 1fr); }
       .charts-row { grid-template-columns: 1fr; }

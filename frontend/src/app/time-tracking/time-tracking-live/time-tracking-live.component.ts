@@ -108,16 +108,16 @@ import { RouterModule } from '@angular/router';
   `,
   styles: [`
     .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    h2 { margin: 0; color: #1a237e; }
+    h2 { margin: 0; color: var(--clay-text); }
     .header-actions { display: flex; gap: 8px; align-items: center; }
     .clock-in-card { padding: 20px; margin-bottom: 16px; }
-    .clock-in-card h3 { margin: 0 0 16px; color: #1a237e; }
+    .clock-in-card h3 { margin: 0 0 16px; color: var(--clay-text); }
     .clock-in-form { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
     .full-width { width: 100%; }
     .elapsed-cell { display: flex; align-items: center; gap: 4px; font-weight: 500; color: #2e7d32; }
     .pulse { font-size: 12px; width: 12px; height: 12px; color: #4caf50; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-    .empty-card { text-align: center; padding: 40px; color: #999; }
+    .empty-card { text-align: center; padding: 40px; color: var(--clay-text-muted); }
     .empty-card mat-icon { font-size: 48px; width: 48px; height: 48px; opacity: 0.3; }
   `]
 })

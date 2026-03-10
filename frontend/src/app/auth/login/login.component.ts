@@ -60,31 +60,79 @@ import { AuthService } from '../../core/services/auth.service';
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%);
+      background: var(--clay-bg);
+      position: relative;
+      overflow: hidden;
+    }
+    .login-container::before {
+      content: '';
+      position: absolute;
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(232,148,90,0.12), transparent);
+      top: -100px; right: -100px;
+      border-radius: 50%;
+    }
+    .login-container::after {
+      content: '';
+      position: absolute;
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(91,127,166,0.1), transparent);
+      bottom: -80px; left: -80px;
+      border-radius: 50%;
     }
     .login-card {
-      width: 400px;
-      padding: 32px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2) !important;
+      width: 420px;
+      padding: 40px 36px;
+      background: var(--clay-surface) !important;
+      border-radius: var(--clay-radius-lg) !important;
+      box-shadow:
+        10px 10px 20px rgba(0,0,0,0.08),
+        -8px -8px 18px rgba(255,255,255,0.6) !important;
+      border: 1px solid var(--clay-border) !important;
+      position: relative;
+      z-index: 1;
     }
     .login-header {
       text-align: center;
       width: 100%;
-      margin-bottom: 24px;
+      margin-bottom: 28px;
     }
-    .login-header h1 { margin: 8px 0 4px; font-size: 24px; color: #1a237e; }
-    .login-header p { margin: 0; color: #666; font-size: 14px; }
-    .login-logo { font-size: 48px; width: 48px; height: 48px; color: #1a237e; }
+    .login-header h1 {
+      margin: 12px 0 4px;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--clay-text);
+      letter-spacing: -0.02em;
+    }
+    .login-header p { margin: 0; color: var(--clay-text-muted); font-size: 14px; }
+    .login-logo {
+      font-size: 52px; width: 52px; height: 52px;
+      color: var(--clay-accent);
+      filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.1));
+    }
     .login-form { display: flex; flex-direction: column; gap: 8px; }
     .full-width { width: 100%; }
-    .login-btn { height: 48px; font-size: 16px; }
+    .login-btn {
+      height: 50px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: var(--clay-radius-sm) !important;
+      box-shadow: var(--clay-shadow-raised) !important;
+      margin-top: 8px;
+    }
+    .login-btn:hover {
+      box-shadow: var(--clay-shadow-hover) !important;
+      transform: translateY(-1px);
+    }
     .error-message {
-      background: #ffebee;
-      color: #c62828;
-      padding: 12px;
-      border-radius: 4px;
+      background: #fceae8;
+      color: #a0352a;
+      padding: 12px 16px;
+      border-radius: var(--clay-radius-xs);
       margin-bottom: 16px;
-      font-size: 14px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: var(--clay-shadow-inset);
     }
     ::ng-deep .login-card .mat-mdc-card-header { display: block; }
   `]

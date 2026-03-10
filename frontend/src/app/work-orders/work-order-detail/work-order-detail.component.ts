@@ -78,19 +78,19 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
     }
   `,
   styles: [`
-    .back-link { color: #1565c0; text-decoration: none; font-size: 13px; }
+    .back-link { color: var(--clay-primary); text-decoration: none; font-size: 13px; }
     .wo-header { display: flex; justify-content: space-between; align-items: flex-start; margin: 16px 0; }
-    h2 { margin: 0; color: #1a237e; }
-    .subtitle { margin: 4px 0 0; color: #666; }
+    h2 { margin: 0; color: var(--clay-text); }
+    .subtitle { margin: 4px 0 0; color: var(--clay-text-muted); }
     .header-actions { display: flex; gap: 8px; align-items: center; }
     .status-chip, .priority-chip { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; }
-    .status-draft { background: #e0e0e0; } .status-pending { background: #fff3e0; color: #e65100; }
-    .status-in_progress { background: #e3f2fd; color: #1565c0; } .status-completed { background: #e8f5e9; color: #2e7d32; }
-    .status-cancelled { background: #ffebee; color: #c62828; }
-    .priority-low { background: #e8f5e9; color: #2e7d32; } .priority-medium { background: #fff3e0; color: #e65100; }
-    .priority-high { background: #fce4ec; color: #c62828; } .priority-urgent { background: #f44336; color: white; }
-    .status-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 24px; padding: 12px; background: #fff; border-radius: 8px; }
-    h3 { color: #1a237e; margin: 24px 0 12px; }
+    .status-draft { background: #e8e2d6; color: #7a7062; box-shadow: var(--clay-shadow-soft); } .status-pending { background: #f5e6d0; color: #c06820; box-shadow: var(--clay-shadow-soft); }
+    .status-in_progress { background: #dce8f3; color: var(--clay-primary); box-shadow: var(--clay-shadow-soft); } .status-completed { background: #d8edda; color: #3a7d3e; box-shadow: var(--clay-shadow-soft); }
+    .status-cancelled { background: #f2dbd8; color: #a03528; box-shadow: var(--clay-shadow-soft); }
+    .priority-low { background: #d8edda; color: #3a7d3e; box-shadow: var(--clay-shadow-soft); } .priority-medium { background: #f5e6d0; color: #c06820; box-shadow: var(--clay-shadow-soft); }
+    .priority-high { background: #f2dbd8; color: #a03528; box-shadow: var(--clay-shadow-soft); } .priority-urgent { background: #f44336; color: white; }
+    .status-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 24px; padding: 12px; background: var(--clay-surface); border-radius: var(--clay-radius-xs); }
+    h3 { color: var(--clay-text); margin: 24px 0 12px; }
     .stages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
     .stage-progress-card { padding: 16px; }
     .stage-completed { border-left: 4px solid #4caf50; }
@@ -100,7 +100,7 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
     .stage-status { font-size: 11px; text-transform: uppercase; font-weight: 600; }
     .ss-pending { color: #ff9800; } .ss-in_progress { color: #2196f3; }
     .ss-completed { color: #4caf50; } .ss-skipped { color: #9e9e9e; }
-    .stage-times { display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-bottom: 8px; }
+    .stage-times { display: flex; justify-content: space-between; font-size: 12px; color: var(--clay-text-secondary); margin-bottom: 8px; }
     .assign-row { margin-top: 12px; }
     .assign-field { width: 100%; }
     ::ng-deep .assign-field .mat-mdc-form-field-subscript-wrapper { display: none; }

@@ -2,8 +2,22 @@
 
 @include mat.core();
 
-$pcs-primary: mat.define-palette(mat.$indigo-palette);
-$pcs-accent: mat.define-palette(mat.$blue-palette);
+// Clay theme palette — warm, muted tones
+$clay-primary-map: (
+  50: #e8eef5, 100: #c5d4e6, 200: #9fb7d5, 300: #7999c4, 400: #5c83b7,
+  500: #5b7fa6, 600: #4a6e94, 700: #3d5d80, 800: #314d6d, 900: #203553,
+  contrast: (50: rgba(0,0,0,.87), 100: rgba(0,0,0,.87), 200: rgba(0,0,0,.87),
+    300: white, 400: white, 500: white, 600: white, 700: white, 800: white, 900: white)
+);
+$clay-accent-map: (
+  50: #fdf0e6, 100: #f9d9bf, 200: #f5bf95, 300: #f0a56b, 400: #ec924b,
+  500: #e8945a, 600: #d4793e, 700: #b86430, 800: #9c5024, 900: #733614,
+  contrast: (50: rgba(0,0,0,.87), 100: rgba(0,0,0,.87), 200: rgba(0,0,0,.87),
+    300: rgba(0,0,0,.87), 400: white, 500: white, 600: white, 700: white, 800: white, 900: white)
+);
+
+$pcs-primary: mat.define-palette($clay-primary-map, 500);
+$pcs-accent: mat.define-palette($clay-accent-map, 500);
 $pcs-warn: mat.define-palette(mat.$red-palette);
 
 $pcs-theme: mat.define-light-theme((
@@ -12,69 +26,305 @@ $pcs-theme: mat.define-light-theme((
     accent: $pcs-accent,
     warn: $pcs-warn,
   ),
-  typography: mat.define-typography-config(),
+  typography: mat.define-typography-config(
+    $font-family: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
+  ),
   density: 0,
 ));
 
 @include mat.all-component-themes($pcs-theme);
 
+// ============================================
+// CLAY THEME — CSS Custom Properties
+// ============================================
+:root {
+  // Colors
+  --clay-bg: #f0ece2;
+  --clay-bg-warm: #ece6da;
+  --clay-surface: #f5f0e8;
+  --clay-surface-hover: #efe9df;
+  --clay-sidebar: #e4ddd0;
+  --clay-sidebar-active: #d9d0c1;
+  --clay-primary: #5b7fa6;
+  --clay-primary-light: #7a9bbd;
+  --clay-accent: #e8945a;
+  --clay-accent-light: #f0a96f;
+  --clay-text: #3d3529;
+  --clay-text-secondary: #7a7062;
+  --clay-text-muted: #a09888;
+  --clay-border: rgba(0, 0, 0, 0.06);
+  --clay-white: #faf7f2;
+
+  // Shadows — the clay magic
+  --clay-shadow-raised:
+    6px 6px 12px rgba(0, 0, 0, 0.08),
+    -4px -4px 10px rgba(255, 255, 255, 0.65);
+  --clay-shadow-hover:
+    8px 8px 18px rgba(0, 0, 0, 0.1),
+    -6px -6px 14px rgba(255, 255, 255, 0.7);
+  --clay-shadow-pressed:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.06),
+    inset -3px -3px 6px rgba(255, 255, 255, 0.5);
+  --clay-shadow-inset:
+    inset 2px 2px 5px rgba(0, 0, 0, 0.07),
+    inset -2px -2px 5px rgba(255, 255, 255, 0.5);
+  --clay-shadow-soft:
+    3px 3px 8px rgba(0, 0, 0, 0.06),
+    -2px -2px 6px rgba(255, 255, 255, 0.5);
+
+  // Radius
+  --clay-radius: 16px;
+  --clay-radius-lg: 24px;
+  --clay-radius-sm: 12px;
+  --clay-radius-xs: 8px;
+
+  // Transitions
+  --clay-transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+// ============================================
+// GLOBAL RESETS & BASE
+// ============================================
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: Roboto, "Helvetica Neue", sans-serif;
-  background: #f5f5f5;
-}
-
-.mat-mdc-snack-bar-container.error-snackbar {
-  --mdc-snackbar-container-color: #d32f2f;
-  --mdc-snackbar-supporting-text-color: white;
-}
-
-.mat-mdc-table {
-  background: white;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.mat-mdc-row {
-  transition: background-color 0.15s ease;
-}
-.mat-mdc-row:hover {
-  background: #f0f4ff !important;
-}
-
-.mat-mdc-header-row {
-  background: #fafafa;
+  font-family: 'Inter', 'Roboto', 'Helvetica Neue', sans-serif;
+  background: var(--clay-bg);
+  color: var(--clay-text);
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
   text-decoration: none;
+  color: var(--clay-primary);
 }
 
-.mat-mdc-card {
-  border-radius: 12px !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
-  transition: box-shadow 0.2s ease;
-}
-.mat-mdc-card:hover {
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12) !important;
-}
-
-/* Page headers */
-h2 {
+h1, h2, h3, h4, h5, h6 {
+  color: var(--clay-text);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-/* Button polish */
-.mat-mdc-raised-button {
-  border-radius: 8px !important;
-  font-weight: 500 !important;
-  letter-spacing: 0.02em;
+// ============================================
+// MATERIAL OVERRIDES — Clay Style
+// ============================================
+
+// Cards
+.mat-mdc-card {
+  background: var(--clay-surface) !important;
+  border-radius: var(--clay-radius) !important;
+  box-shadow: var(--clay-shadow-raised) !important;
+  border: 1px solid var(--clay-border) !important;
+  transition: all var(--clay-transition) !important;
+}
+.mat-mdc-card:hover {
+  box-shadow: var(--clay-shadow-hover) !important;
+  transform: translateY(-1px);
 }
 
-/* Scrollbar styling */
+// Tables
+.mat-mdc-table {
+  background: var(--clay-surface) !important;
+  border-radius: var(--clay-radius) !important;
+  overflow: hidden;
+  box-shadow: var(--clay-shadow-soft) !important;
+  border: 1px solid var(--clay-border);
+}
+
+.mat-mdc-header-row {
+  background: var(--clay-bg-warm) !important;
+}
+
+.mat-mdc-header-cell {
+  color: var(--clay-text-secondary) !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mat-mdc-row {
+  transition: background var(--clay-transition);
+  border-bottom-color: var(--clay-border) !important;
+}
+.mat-mdc-row:hover {
+  background: var(--clay-surface-hover) !important;
+}
+
+.mat-mdc-cell {
+  color: var(--clay-text) !important;
+}
+
+// Buttons
+.mat-mdc-raised-button,
+.mat-mdc-flat-button,
+.mat-mdc-unelevated-button {
+  border-radius: var(--clay-radius-sm) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em;
+  transition: all var(--clay-transition) !important;
+}
+
+.mat-mdc-raised-button {
+  box-shadow: var(--clay-shadow-soft) !important;
+}
+.mat-mdc-raised-button:hover {
+  box-shadow: var(--clay-shadow-raised) !important;
+  transform: translateY(-1px);
+}
+.mat-mdc-raised-button:active {
+  box-shadow: var(--clay-shadow-pressed) !important;
+  transform: translateY(0);
+}
+
+// Icon buttons
+.mat-mdc-icon-button {
+  transition: all var(--clay-transition) !important;
+}
+.mat-mdc-icon-button:hover {
+  background: var(--clay-surface-hover) !important;
+}
+
+// FAB
+.mat-mdc-fab,
+.mat-mdc-mini-fab {
+  box-shadow: var(--clay-shadow-raised) !important;
+  border-radius: var(--clay-radius) !important;
+}
+.mat-mdc-fab:hover,
+.mat-mdc-mini-fab:hover {
+  box-shadow: var(--clay-shadow-hover) !important;
+}
+
+// Form fields
+.mat-mdc-form-field {
+  transition: all var(--clay-transition);
+}
+
+.mdc-text-field--outlined {
+  border-radius: var(--clay-radius-sm) !important;
+}
+
+.mat-mdc-form-field-subscript-wrapper {
+  margin-bottom: 4px;
+}
+
+// Dialogs
+.mat-mdc-dialog-container .mdc-dialog__surface {
+  border-radius: var(--clay-radius-lg) !important;
+  background: var(--clay-surface) !important;
+  box-shadow:
+    12px 12px 24px rgba(0, 0, 0, 0.12),
+    -8px -8px 20px rgba(255, 255, 255, 0.6) !important;
+}
+
+// Chips
+.mat-mdc-chip {
+  border-radius: var(--clay-radius-sm) !important;
+  box-shadow: var(--clay-shadow-soft) !important;
+}
+
+// Select / Menu
+.mat-mdc-select-panel,
+.mat-mdc-menu-panel {
+  border-radius: var(--clay-radius-sm) !important;
+  background: var(--clay-surface) !important;
+  box-shadow: var(--clay-shadow-hover) !important;
+}
+
+// Toolbar override
+.mat-toolbar.mat-primary {
+  background: var(--clay-surface) !important;
+  color: var(--clay-text) !important;
+  box-shadow: var(--clay-shadow-soft) !important;
+  border-bottom: 1px solid var(--clay-border);
+}
+
+// Snackbar
+.mat-mdc-snack-bar-container.error-snackbar {
+  --mdc-snackbar-container-color: #c0392b;
+  --mdc-snackbar-supporting-text-color: white;
+}
+
+// Paginator
+.mat-mdc-paginator {
+  background: transparent !important;
+  color: var(--clay-text-secondary) !important;
+}
+
+// Tabs
+.mat-mdc-tab-group {
+  .mat-mdc-tab-header {
+    background: var(--clay-bg-warm);
+    border-radius: var(--clay-radius-sm) var(--clay-radius-sm) 0 0;
+  }
+}
+
+// ============================================
+// CLAY UTILITY CLASSES
+// ============================================
+.clay-card {
+  background: var(--clay-surface);
+  border-radius: var(--clay-radius);
+  box-shadow: var(--clay-shadow-raised);
+  border: 1px solid var(--clay-border);
+  padding: 20px;
+  transition: all var(--clay-transition);
+
+  &:hover {
+    box-shadow: var(--clay-shadow-hover);
+    transform: translateY(-1px);
+  }
+}
+
+.clay-inset {
+  background: var(--clay-bg-warm);
+  border-radius: var(--clay-radius-sm);
+  box-shadow: var(--clay-shadow-inset);
+  padding: 16px;
+}
+
+.clay-button {
+  background: var(--clay-surface);
+  border: none;
+  border-radius: var(--clay-radius-sm);
+  box-shadow: var(--clay-shadow-raised);
+  padding: 10px 24px;
+  font-weight: 600;
+  color: var(--clay-text);
+  cursor: pointer;
+  transition: all var(--clay-transition);
+
+  &:hover {
+    box-shadow: var(--clay-shadow-hover);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    box-shadow: var(--clay-shadow-pressed);
+    transform: translateY(0);
+  }
+}
+
+// ============================================
+// STATUS CHIPS — Clay Style
+// ============================================
+.status-chip, .priority-chip, .role-chip {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  box-shadow: var(--clay-shadow-soft);
+}
+
+// ============================================
+// SCROLLBAR — Soft Clay
+// ============================================
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -83,24 +333,17 @@ h2 {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
+  background: #c9c0b3;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #a0a0a0;
+  background: #b0a798;
 }
 
-/* Form field polish */
-.mat-mdc-form-field {
-  transition: all 0.2s ease;
-}
-
-/* Chip-like status labels */
-.status-chip, .priority-chip, .role-chip {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 16px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+// ============================================
+// SELECTION
+// ============================================
+::selection {
+  background: var(--clay-accent);
+  color: white;
 }
