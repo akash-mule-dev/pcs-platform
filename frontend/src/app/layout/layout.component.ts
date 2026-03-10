@@ -56,32 +56,37 @@ interface NavItem {
     .layout-container { height: 100vh; }
     .sidenav {
       width: 260px;
-      background: #1a237e;
+      background: linear-gradient(180deg, #283593 0%, #3949ab 100%);
       color: white;
     }
     .sidenav-header {
       display: flex;
       align-items: center;
-      padding: 20px 16px;
+      padding: 24px 16px;
       gap: 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.12);
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.1);
     }
-    .logo-icon { font-size: 32px; width: 32px; height: 32px; color: #90caf9; }
-    .logo-text { font-size: 20px; font-weight: 500; }
+    .logo-icon { font-size: 32px; width: 32px; height: 32px; color: #ffa726; }
+    .logo-text { font-size: 20px; font-weight: 600; letter-spacing: 0.5px; }
     .sidenav ::ng-deep .mat-mdc-list-item {
-      color: rgba(255,255,255,0.85) !important;
+      color: rgba(255,255,255,0.9) !important;
       border-radius: 0 24px 24px 0;
       margin-right: 12px;
+      margin-bottom: 2px;
+    }
+    .sidenav ::ng-deep .mat-mdc-list-item:hover {
+      background: rgba(255,255,255,0.08) !important;
     }
     .sidenav ::ng-deep .active-link {
-      background: rgba(255,255,255,0.12) !important;
-      color: #90caf9 !important;
+      background: rgba(255,255,255,0.18) !important;
+      color: #ffa726 !important;
     }
     .sidenav ::ng-deep .mat-mdc-list-item .mat-icon {
-      color: rgba(255,255,255,0.7);
+      color: rgba(255,255,255,0.75);
     }
     .sidenav ::ng-deep .active-link .mat-icon {
-      color: #90caf9;
+      color: #ffa726;
     }
     .top-toolbar {
       position: sticky;
