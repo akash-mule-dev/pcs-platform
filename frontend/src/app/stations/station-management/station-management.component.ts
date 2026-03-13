@@ -98,14 +98,22 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     .lines-panel, .stations-panel { padding: 16px; }
     .add-form { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 16px; }
     .flex-grow { flex: 1; }
-    .selected { background: #e8eaf6 !important; }
-    .station-item { display: flex; align-items: center; padding: 12px 16px; margin-bottom: 8px; gap: 12px; }
-    .station-icon { color: var(--clay-text-secondary); }
+    .selected {
+      background: var(--clay-surface) !important;
+      box-shadow: var(--clay-shadow-raised);
+      color: var(--clay-primary) !important;
+    }
+    .station-item {
+      display: flex; align-items: center; padding: 12px 16px; margin-bottom: 8px; gap: 12px;
+      box-shadow: var(--clay-shadow-soft);
+      border-radius: var(--clay-radius-sm);
+    }
+    .station-icon { color: var(--clay-accent); }
     .station-name { font-weight: 500; }
     .spacer { flex: 1; }
     .no-data { text-align: center; color: var(--clay-text-muted); padding: 24px; }
     .select-prompt { text-align: center; padding: 60px 24px; color: var(--clay-text-muted); }
-    .select-prompt mat-icon { font-size: 48px; width: 48px; height: 48px; opacity: 0.3; }
+    .select-prompt mat-icon { font-size: 48px; width: 48px; height: 48px; color: var(--clay-text-muted); opacity: 0.4; }
     @media (max-width: 768px) { .layout-grid { grid-template-columns: 1fr; } }
   `]
 })

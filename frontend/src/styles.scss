@@ -55,22 +55,22 @@ $pcs-theme: mat.define-light-theme((
   --clay-border: rgba(0, 0, 0, 0.06);
   --clay-white: #faf7f2;
 
-  // Shadows — the clay magic
+  // Shadows — the clay magic (stronger neumorphic depth)
   --clay-shadow-raised:
-    6px 6px 12px rgba(0, 0, 0, 0.08),
-    -4px -4px 10px rgba(255, 255, 255, 0.65);
+    6px 6px 14px rgba(0, 0, 0, 0.12),
+    -4px -4px 10px rgba(255, 255, 255, 0.8);
   --clay-shadow-hover:
-    8px 8px 18px rgba(0, 0, 0, 0.1),
-    -6px -6px 14px rgba(255, 255, 255, 0.7);
+    8px 8px 20px rgba(0, 0, 0, 0.15),
+    -6px -6px 16px rgba(255, 255, 255, 0.85);
   --clay-shadow-pressed:
-    inset 3px 3px 6px rgba(0, 0, 0, 0.06),
-    inset -3px -3px 6px rgba(255, 255, 255, 0.5);
+    inset 3px 3px 7px rgba(0, 0, 0, 0.1),
+    inset -3px -3px 7px rgba(255, 255, 255, 0.6);
   --clay-shadow-inset:
-    inset 2px 2px 5px rgba(0, 0, 0, 0.07),
-    inset -2px -2px 5px rgba(255, 255, 255, 0.5);
+    inset 2px 2px 6px rgba(0, 0, 0, 0.1),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.6);
   --clay-shadow-soft:
-    3px 3px 8px rgba(0, 0, 0, 0.06),
-    -2px -2px 6px rgba(255, 255, 255, 0.5);
+    3px 3px 8px rgba(0, 0, 0, 0.09),
+    -2px -2px 6px rgba(255, 255, 255, 0.6);
 
   // Radius
   --clay-radius: 16px;
@@ -135,11 +135,11 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .mat-mdc-header-row {
-  background: var(--clay-bg-warm) !important;
+  background: var(--clay-sidebar) !important;
 }
 
 .mat-mdc-header-cell {
-  color: var(--clay-text-secondary) !important;
+  color: var(--clay-text) !important;
   font-weight: 600 !important;
   font-size: 12px !important;
   text-transform: uppercase;
@@ -206,6 +206,20 @@ h1, h2, h3, h4, h5, h6 {
 
 .mdc-text-field--outlined {
   border-radius: var(--clay-radius-sm) !important;
+  background: var(--clay-bg-warm) !important;
+  box-shadow: var(--clay-shadow-inset);
+}
+
+.mdc-text-field--outlined .mdc-notched-outline .mdc-notched-outline__leading,
+.mdc-text-field--outlined .mdc-notched-outline .mdc-notched-outline__notch,
+.mdc-text-field--outlined .mdc-notched-outline .mdc-notched-outline__trailing {
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+.mdc-text-field--outlined:hover .mdc-notched-outline .mdc-notched-outline__leading,
+.mdc-text-field--outlined:hover .mdc-notched-outline .mdc-notched-outline__notch,
+.mdc-text-field--outlined:hover .mdc-notched-outline .mdc-notched-outline__trailing {
+  border-color: var(--clay-primary-light) !important;
 }
 
 .mat-mdc-form-field-subscript-wrapper {
@@ -239,8 +253,10 @@ h1, h2, h3, h4, h5, h6 {
 .mat-toolbar.mat-primary {
   background: var(--clay-surface) !important;
   color: var(--clay-text) !important;
-  box-shadow: var(--clay-shadow-soft) !important;
-  border-bottom: 1px solid var(--clay-border);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.06) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 // Snackbar
@@ -338,6 +354,29 @@ h1, h2, h3, h4, h5, h6 {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #b0a798;
+}
+
+// ============================================
+// EMPTY STATES — Clay Style
+// ============================================
+.no-data,
+.mat-mdc-no-data-row td,
+p:has(+ .mat-mdc-table):empty {
+  text-align: center;
+  color: var(--clay-text-muted);
+  padding: 32px 24px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+// Table empty row
+.mat-mdc-no-data-row {
+  td {
+    text-align: center;
+    padding: 40px 24px !important;
+    color: var(--clay-text-muted);
+    font-size: 14px;
+  }
 }
 
 // ============================================

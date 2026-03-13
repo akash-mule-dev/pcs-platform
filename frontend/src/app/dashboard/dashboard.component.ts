@@ -21,28 +21,36 @@ Chart.register(...registerables);
 
     <div class="kpi-row">
       <mat-card class="kpi-card">
-        <mat-icon class="kpi-icon" style="color:#1565c0">assignment</mat-icon>
+        <div class="kpi-icon-wrap blue">
+          <mat-icon class="kpi-icon">assignment</mat-icon>
+        </div>
         <div class="kpi-info">
           <div class="kpi-value">{{ summary?.totalWorkOrders ?? '—' }}</div>
           <div class="kpi-label">Total Work Orders</div>
         </div>
       </mat-card>
       <mat-card class="kpi-card">
-        <mat-icon class="kpi-icon" style="color:#2e7d32">people</mat-icon>
+        <div class="kpi-icon-wrap green">
+          <mat-icon class="kpi-icon">people</mat-icon>
+        </div>
         <div class="kpi-info">
           <div class="kpi-value">{{ summary?.activeOperators ?? '—' }}</div>
           <div class="kpi-label">Active Operators</div>
         </div>
       </mat-card>
       <mat-card class="kpi-card">
-        <mat-icon class="kpi-icon" style="color:#ef6c00">check_circle</mat-icon>
+        <div class="kpi-icon-wrap orange">
+          <mat-icon class="kpi-icon">check_circle</mat-icon>
+        </div>
         <div class="kpi-info">
           <div class="kpi-value">{{ summary?.todayCompletedStages ?? '—' }}</div>
           <div class="kpi-label">Completed Today</div>
         </div>
       </mat-card>
       <mat-card class="kpi-card">
-        <mat-icon class="kpi-icon" style="color:#6a1b9a">speed</mat-icon>
+        <div class="kpi-icon-wrap purple">
+          <mat-icon class="kpi-icon">speed</mat-icon>
+        </div>
         <div class="kpi-info">
           <div class="kpi-value">{{ summary?.avgEfficiency ? (summary.avgEfficiency | number:'1.0-0') + '%' : '—' }}</div>
           <div class="kpi-label">Avg Efficiency</div>
@@ -114,10 +122,22 @@ Chart.register(...registerables);
       box-shadow: var(--clay-shadow-hover) !important;
       transform: translateY(-2px);
     }
+    .kpi-icon-wrap {
+      width: 52px; height: 52px;
+      border-radius: var(--clay-radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: var(--clay-shadow-inset);
+    }
+    .kpi-icon-wrap.blue { background: #e0e8f0; }
+    .kpi-icon-wrap.green { background: #dde9dd; }
+    .kpi-icon-wrap.orange { background: #f3e4d4; }
+    .kpi-icon-wrap.purple { background: #e6dded; }
+    .kpi-icon-wrap.blue .kpi-icon { color: var(--clay-primary); }
+    .kpi-icon-wrap.green .kpi-icon { color: #5a8a5a; }
+    .kpi-icon-wrap.orange .kpi-icon { color: var(--clay-accent); }
+    .kpi-icon-wrap.purple .kpi-icon { color: #8a6a9e; }
     .kpi-icon {
-      font-size: 40px; width: 40px; height: 40px;
-      color: var(--clay-accent);
-      filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.08));
+      font-size: 28px; width: 28px; height: 28px;
     }
     .kpi-value { font-size: 28px; font-weight: 700; color: var(--clay-text); }
     .kpi-label { font-size: 13px; color: var(--clay-text-muted); font-weight: 500; }
@@ -171,8 +191,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.summary = { ...data, totalWorkOrders };
       if (statusArr.length > 0) {
         const statusColors: Record<string, string> = {
-          draft: '#9e9e9e', pending: '#ff9800', in_progress: '#2196f3',
-          completed: '#4caf50', cancelled: '#f44336'
+          draft: '#b0a798', pending: '#e8945a', in_progress: '#5b7fa6',
+          completed: '#5a8a5a', cancelled: '#c47a6a'
         };
         const labels = statusArr.map((item: any) => item.status);
         const values = statusArr.map((item: any) => parseInt(item.count, 10));
