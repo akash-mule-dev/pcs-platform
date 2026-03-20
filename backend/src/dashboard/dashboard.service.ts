@@ -4,6 +4,7 @@ import { Repository, IsNull } from 'typeorm';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage } from '../work-orders/work-order-stage.entity.js';
 import { TimeEntry } from '../time-tracking/time-entry.entity.js';
+import { QualityData } from '../quality-data/quality-data.entity.js';
 
 @Injectable()
 export class DashboardService {
@@ -11,6 +12,7 @@ export class DashboardService {
     @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(TimeEntry) private readonly teRepo: Repository<TimeEntry>,
+    @InjectRepository(QualityData) private readonly qdRepo: Repository<QualityData>,
   ) {}
 
   async getSummary() {
@@ -106,6 +108,87 @@ export class DashboardService {
       maxTime: parseInt(r.maxTime) || 0,
       entryCount: parseInt(r.entryCount) || 0,
       efficiency: r.targetTime && r.avgTime ? parseFloat(((r.targetTime / r.avgTime) * 100).toFixed(1)) : null,
+    }));
+  }
+
+  /** Phase 8: OEE = Availability × Performance × Quality */
+  async getOEE(startDate?: string, endDate?: string) {
+    // Use QueryBuilder so date filters actually work
+    const qb = this.teRepo.createQueryBuilder('te')
+      .leftJoinAndSelect('te.workOrderStage', 'wos')
+      .leftJoinAndSelect('wos.stage', 'stage')
+      .where('te.end_time IS NOT NULL');
+
+    if (startDate) qb.andWhere('te.start_time >= :startDate', { startDate });
+    if (endDate) qb.andWhere('te.start_time <= :endDate', { endDate });
+
+    const finished = await qb.getMany();
+
+    let totalActualTime = 0;
+    let totalPlannedTime = 0;
+    for (const e of finished) {
+      totalActualTime += e.durationSeconds || 0;
+      totalPlannedTime += e.workOrderStage?.stage?.targetTimeSeconds || 0;
+    }
+
+    const availability = totalPlannedTime > 0
+      ? Math.min(1, totalPlannedTime / Math.max(totalActualTime, 1))
+      : 0;
+
+    // Performance: target cycle time / actual cycle time
+    const performance = totalActualTime > 0 && totalPlannedTime > 0
+      ? Math.min(1, totalPlannedTime / totalActualTime)
+      : 0;
+
+    // Quality: pass rate from quality data
+    const totalQD = await this.qdRepo.count();
+    const passQD = await this.qdRepo.count({ where: { status: 'pass' } });
+    const quality = totalQD > 0 ? passQD / totalQD : 1;
+
+    const oee = availability * performance * quality;
+
+    return {
+      oee: parseFloat((oee * 100).toFixed(1)),
+      availability: parseFloat((availability * 100).toFixed(1)),
+      performance: parseFloat((performance * 100).toFixed(1)),
+      quality: parseFloat((quality * 100).toFixed(1)),
+      totalEntries: finished.length,
+      totalActualTime,
+      totalPlannedTime,
+    };
+  }
+
+  /** Phase 8: Exportable report data (CSV-friendly) */
+  async getExportData(startDate?: string, endDate?: string) {
+    const qb = this.teRepo.createQueryBuilder('te')
+      .leftJoinAndSelect('te.user', 'user')
+      .leftJoinAndSelect('te.workOrderStage', 'wos')
+      .leftJoinAndSelect('wos.stage', 'stage')
+      .leftJoinAndSelect('wos.workOrder', 'wo')
+      .leftJoinAndSelect('te.station', 'station')
+      .where('te.end_time IS NOT NULL')
+      .orderBy('te.start_time', 'DESC');
+
+    if (startDate) qb.andWhere('te.start_time >= :startDate', { startDate });
+    if (endDate) qb.andWhere('te.start_time <= :endDate', { endDate });
+
+    const entries = await qb.getMany();
+
+    return entries.map(e => ({
+      operator: `${e.user?.firstName || ''} ${e.user?.lastName || ''}`.trim(),
+      employeeId: e.user?.employeeId || '',
+      workOrder: e.workOrderStage?.workOrder?.orderNumber || '',
+      stage: e.workOrderStage?.stage?.name || '',
+      station: e.station?.name || '',
+      startTime: e.startTime,
+      endTime: e.endTime,
+      durationSeconds: e.durationSeconds,
+      targetTimeSeconds: e.workOrderStage?.stage?.targetTimeSeconds || null,
+      variance: e.durationSeconds && e.workOrderStage?.stage?.targetTimeSeconds
+        ? e.durationSeconds - e.workOrderStage.stage.targetTimeSeconds
+        : null,
+      inputMethod: e.inputMethod,
+      isRework: e.isRework,
     }));
   }
 }

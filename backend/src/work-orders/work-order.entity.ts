@@ -69,6 +69,14 @@ export class WorkOrder {
   @Column({ name: 'completed_at', type: 'timestamp', nullable: true })
   completedAt: Date | null;
 
+  // Phase 7: Dependencies
+  @Column({ name: 'depends_on_id', type: 'uuid', nullable: true })
+  dependsOnId: string | null;
+
+  @ManyToOne(() => WorkOrder, { nullable: true })
+  @JoinColumn({ name: 'depends_on_id' })
+  dependsOn: WorkOrder | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

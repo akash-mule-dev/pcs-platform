@@ -1,13 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { WorkOrder, WorkOrderStatus } from './work-order.entity.js';
-import { WorkOrderStage } from './work-order-stage.entity.js';
+import { WorkOrderStage, WorkOrderStageStatus } from './work-order-stage.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto.js';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto.js';
 import { AssignWorkOrderDto } from './dto/assign-work-order.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
+import { AuditService } from '../audit/audit.service.js';
 
 @Injectable()
 export class WorkOrdersService {
@@ -15,6 +16,7 @@ export class WorkOrdersService {
     @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
+    private readonly auditService: AuditService,
   ) {}
 
   async findAll(pageOptions: PageOptionsDto, status?: string, priority?: string): Promise<PageDto<WorkOrder>> {
@@ -90,11 +92,105 @@ export class WorkOrdersService {
     if (!validTransitions[wo.status]?.includes(newStatus)) {
       throw new BadRequestException(`Cannot transition from ${wo.status} to ${newStatus}`);
     }
+    // Phase 7: Check dependency is completed before starting
+    if (newStatus === WorkOrderStatus.IN_PROGRESS && wo.dependsOnId) {
+      const dep = await this.woRepo.findOne({ where: { id: wo.dependsOnId } });
+      if (dep && dep.status !== WorkOrderStatus.COMPLETED) {
+        throw new BadRequestException(`Cannot start: depends on ${dep.orderNumber} which is not completed`);
+      }
+    }
+
+    const oldStatus = wo.status;
     wo.status = newStatus;
-    if (newStatus === WorkOrderStatus.IN_PROGRESS) wo.startedAt = new Date();
-    if (newStatus === WorkOrderStatus.COMPLETED) wo.completedAt = new Date();
+    const now = new Date();
+    if (newStatus === WorkOrderStatus.IN_PROGRESS) wo.startedAt = now;
+    if (newStatus === WorkOrderStatus.COMPLETED) wo.completedAt = now;
     await this.woRepo.save(wo);
+
+    // Cascade status to stages
+    if (newStatus === WorkOrderStatus.COMPLETED) {
+      const stages = await this.wosRepo.find({ where: { workOrderId: id } });
+      for (const stage of stages) {
+        if (stage.status !== WorkOrderStageStatus.COMPLETED && stage.status !== WorkOrderStageStatus.SKIPPED) {
+          stage.status = WorkOrderStageStatus.COMPLETED;
+          stage.completedAt = stage.completedAt || now;
+          await this.wosRepo.save(stage);
+        }
+      }
+    } else if (newStatus === WorkOrderStatus.CANCELLED) {
+      const stages = await this.wosRepo.find({ where: { workOrderId: id } });
+      for (const stage of stages) {
+        if (stage.status === WorkOrderStageStatus.IN_PROGRESS) {
+          stage.status = WorkOrderStageStatus.PENDING;
+          await this.wosRepo.save(stage);
+        }
+      }
+    }
+
+    // Phase 12: Audit log
+    await this.auditService.log({
+      action: 'status_change',
+      entityType: 'work_order',
+      entityId: id,
+      oldValues: { status: oldStatus },
+      newValues: { status: newStatus },
+    });
+
     return this.findOne(id);
+  }
+
+  // Phase 7: Batch status update
+  async batchUpdateStatus(ids: string[], newStatus: WorkOrderStatus): Promise<{ updated: number; errors: string[] }> {
+    const errors: string[] = [];
+    let updated = 0;
+    for (const id of ids) {
+      try {
+        await this.updateStatus(id, newStatus);
+        updated++;
+      } catch (e: any) {
+        errors.push(`${id}: ${e.message}`);
+      }
+    }
+    return { updated, errors };
+  }
+
+  // Phase 7: Batch assign to line
+  async batchAssignLine(ids: string[], lineId: string): Promise<number> {
+    const result = await this.woRepo.update({ id: In(ids) }, { lineId });
+    return result.affected || 0;
+  }
+
+  async updateStageStatus(workOrderId: string, stageId: string, newStatus: WorkOrderStageStatus): Promise<WorkOrder> {
+    const wos = await this.wosRepo.findOne({ where: { id: stageId, workOrderId } });
+    if (!wos) throw new NotFoundException('Work order stage not found');
+
+    const now = new Date();
+    wos.status = newStatus;
+    if (newStatus === WorkOrderStageStatus.IN_PROGRESS && !wos.startedAt) {
+      wos.startedAt = now;
+    }
+    if (newStatus === WorkOrderStageStatus.COMPLETED) {
+      wos.completedAt = now;
+      if (wos.startedAt) {
+        wos.actualTimeSeconds = Math.round((now.getTime() - new Date(wos.startedAt).getTime()) / 1000);
+      }
+    }
+    if (newStatus === WorkOrderStageStatus.PENDING) {
+      wos.startedAt = null;
+      wos.completedAt = null;
+      wos.actualTimeSeconds = null;
+    }
+    await this.wosRepo.save(wos);
+
+    await this.auditService.log({
+      action: 'stage_status_change',
+      entityType: 'work_order_stage',
+      entityId: stageId,
+      oldValues: {},
+      newValues: { status: newStatus },
+    });
+
+    return this.findOne(workOrderId);
   }
 
   async assign(id: string, dto: AssignWorkOrderDto): Promise<WorkOrder> {

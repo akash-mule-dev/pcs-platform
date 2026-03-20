@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { Model3D } from '../models/model.entity.js';
 
 @Entity('products')
 export class Product {
@@ -16,6 +17,9 @@ export class Product {
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
+
+  @OneToMany(() => Model3D, (model) => model.product)
+  models: Model3D[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -15,6 +15,12 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @Post('badge-login')
+  @ApiOperation({ summary: 'Login with badge/NFC scan' })
+  async badgeLogin(@Body() body: { badgeId: string }) {
+    return this.authService.loginByBadge(body.badgeId);
+  }
+
   @Get('profile')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

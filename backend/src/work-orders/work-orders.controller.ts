@@ -25,17 +25,42 @@ export class WorkOrdersController {
     return this.service.findAll(pageOptions, status, priority);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Get work order with stages' })
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
-  }
+  // --- Static paths MUST come before :id param routes ---
 
   @Post()
   @Roles('admin', 'manager', 'supervisor')
   @ApiOperation({ summary: 'Create work order' })
   create(@Body() dto: CreateWorkOrderDto) {
     return this.service.create(dto);
+  }
+
+  @Post('batch/status')
+  @Roles('admin', 'manager')
+  @ApiOperation({ summary: 'Batch update work order statuses' })
+  batchUpdateStatus(@Body() body: { ids: string[]; status: string }) {
+    return this.service.batchUpdateStatus(body.ids, body.status as any);
+  }
+
+  @Post('batch/assign-line')
+  @Roles('admin', 'manager')
+  @ApiOperation({ summary: 'Batch assign work orders to a line' })
+  batchAssignLine(@Body() body: { ids: string[]; lineId: string }) {
+    return this.service.batchAssignLine(body.ids, body.lineId);
+  }
+
+  // --- :id param routes ---
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get work order with stages' })
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
+  }
+
+  @Patch(':id/status')
+  @Roles('admin', 'manager', 'supervisor')
+  @ApiOperation({ summary: 'Update work order status' })
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto) {
+    return this.service.updateStatus(id, dto.status);
   }
 
   @Patch(':id')
@@ -45,11 +70,15 @@ export class WorkOrdersController {
     return this.service.update(id, dto);
   }
 
-  @Patch(':id/status')
-  @Roles('admin', 'manager', 'supervisor')
-  @ApiOperation({ summary: 'Update work order status' })
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto) {
-    return this.service.updateStatus(id, dto.status);
+  @Patch(':id/stages/:stageId/status')
+  @Roles('admin', 'manager', 'supervisor', 'operator')
+  @ApiOperation({ summary: 'Update work order stage status' })
+  updateStageStatus(
+    @Param('id') id: string,
+    @Param('stageId') stageId: string,
+    @Body() body: { status: string },
+  ) {
+    return this.service.updateStageStatus(id, stageId, body.status as any);
   }
 
   @Post(':id/assign')

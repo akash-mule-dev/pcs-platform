@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -13,7 +14,7 @@ async function bootstrap() {
     ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
     : ['http://localhost:4200', 'http://localhost:8100'];
   app.enableCors({
-    origin: [...corsOrigins, 'http://localhost:4200', 'http://localhost:8100'],
+    origin: [...corsOrigins, 'http://localhost:4200', 'http://localhost:8100', 'http://localhost:54543', 'http://localhost'],
     credentials: true,
   });
 

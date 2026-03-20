@@ -47,4 +47,10 @@ export class ProductsController {
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }
+
+  @Get(':id/models')
+  @ApiOperation({ summary: 'Get 3D models for a product' })
+  findModels(@Param('id') id: string) {
+    return this.service.findModelsByProduct(id);
+  }
 }
