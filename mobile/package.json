@@ -29,11 +29,13 @@
     "@capacitor/status-bar": "^8.0.1",
     "@ionic/angular": "^8.0.0",
     "@ionic/storage-angular": "^4.0.0",
+    "@types/three": "^0.183.1",
     "chart.js": "^4.5.1",
     "ionicons": "^7.0.0",
     "ng2-charts": "^8.0.0",
     "rxjs": "~7.8.0",
     "socket.io-client": "^4.8.3",
+    "three": "^0.183.2",
     "tslib": "^2.3.0",
     "zone.js": "~0.15.0"
   },

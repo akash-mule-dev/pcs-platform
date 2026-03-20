@@ -20,6 +20,10 @@ const routes: Routes = [
         loadChildren: () => import('../time-tracking/time-tracking.module').then(m => m.TimeTrackingModule)
       },
       {
+        path: 'models',
+        loadChildren: () => import('../model-viewer/model-viewer.module').then(m => m.ModelViewerModule)
+      },
+      {
         path: 'profile',
         loadChildren: () => import('../profile/profile.module').then(m => m.ProfilePageModule)
       },

@@ -1,0 +1,155 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/models"></ion-back-button>
+    </ion-buttons>
+    <ion-title>{{ modelName }}</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="resetCamera()">
+        <ion-icon name="locate-outline" slot="icon-only"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true">
+  <!-- 3D Viewer -->
+  <div class="viewer-wrapper" #container>
+    <canvas #canvas></canvas>
+
+    <div class="loading-overlay" *ngIf="loading">
+      <ion-spinner name="crescent" color="primary"></ion-spinner>
+      <ion-text color="light">Loading 3D Model...</ion-text>
+    </div>
+
+    <div class="error-overlay" *ngIf="error">
+      <ion-icon name="alert-circle-outline" color="danger" style="font-size:48px;"></ion-icon>
+      <ion-text color="danger">{{ error }}</ion-text>
+    </div>
+  </div>
+
+  <!-- Summary Bar -->
+  <div class="summary-bar" *ngIf="summary && summary.total > 0">
+    <div class="summary-item">
+      <span class="count total">{{ summary.total }}</span>
+      <span class="label">Total</span>
+    </div>
+    <div class="summary-item">
+      <span class="count pass">{{ summary.pass }}</span>
+      <span class="label">Pass</span>
+    </div>
+    <div class="summary-item">
+      <span class="count fail">{{ summary.fail }}</span>
+      <span class="label">Fail</span>
+    </div>
+    <div class="summary-item">
+      <span class="count warning">{{ summary.warning }}</span>
+      <span class="label">Warning</span>
+    </div>
+  </div>
+
+  <!-- Inspection List -->
+  <ion-list *ngIf="entries.length > 0">
+    <ion-list-header>
+      <ion-label>Inspection Results</ion-label>
+    </ion-list-header>
+    <ion-item *ngFor="let entry of entries" (click)="selectEntry(entry)" button detail>
+      <ion-icon
+        [name]="entry.status === 'pass' ? 'checkmark-circle' : entry.status === 'fail' ? 'close-circle' : 'warning'"
+        [color]="statusColor(entry.status)"
+        slot="start">
+      </ion-icon>
+      <ion-label>
+        <h3>{{ entry.regionLabel || entry.meshName }}</h3>
+        <p>
+          <ion-text [color]="statusColor(entry.status)">{{ entry.status | uppercase }}</ion-text>
+          <span *ngIf="entry.defectType"> &middot; {{ entry.defectType }}</span>
+        </p>
+        <p *ngIf="entry.measurementValue !== null">
+          Measurement: {{ entry.measurementValue }} {{ entry.measurementUnit || '' }}
+        </p>
+      </ion-label>
+      <ion-badge [color]="statusColor(entry.severity || 'medium')" slot="end" *ngIf="entry.severity">
+        {{ entry.severity | uppercase }}
+      </ion-badge>
+    </ion-item>
+  </ion-list>
+
+  <ion-text color="medium" class="ion-text-center ion-padding" *ngIf="!loading && entries.length === 0">
+    <p>No inspection data available for this model.</p>
+  </ion-text>
+
+  <!-- Detail Bottom Sheet -->
+  <ion-modal [isOpen]="showDetailSheet" (didDismiss)="closeDetail()" [breakpoints]="[0, 0.4, 0.7]" [initialBreakpoint]="0.4">
+    <ng-template>
+      <ion-header>
+        <ion-toolbar>
+          <ion-title>Inspection Detail</ion-title>
+          <ion-buttons slot="end">
+            <ion-button (click)="closeDetail()">Close</ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content class="ion-padding" *ngIf="selectedEntry">
+        <div class="detail-status" [ngClass]="selectedEntry.status">
+          <ion-icon
+            [name]="selectedEntry.status === 'pass' ? 'checkmark-circle' : selectedEntry.status === 'fail' ? 'close-circle' : 'warning'"
+            style="font-size:32px;">
+          </ion-icon>
+          <span class="status-text">{{ selectedEntry.status | uppercase }}</span>
+        </div>
+
+        <ion-list lines="full">
+          <ion-item>
+            <ion-label>
+              <p>Region</p>
+              <h3>{{ selectedEntry.regionLabel || selectedEntry.meshName }}</h3>
+            </ion-label>
+          </ion-item>
+          <ion-item *ngIf="selectedEntry.inspector">
+            <ion-label>
+              <p>Inspector</p>
+              <h3>{{ selectedEntry.inspector }}</h3>
+            </ion-label>
+          </ion-item>
+          <ion-item *ngIf="selectedEntry.inspectionDate">
+            <ion-label>
+              <p>Date</p>
+              <h3>{{ selectedEntry.inspectionDate | date:'medium' }}</h3>
+            </ion-label>
+          </ion-item>
+          <ion-item *ngIf="selectedEntry.defectType">
+            <ion-label>
+              <p>Defect Type</p>
+              <h3>{{ selectedEntry.defectType }}</h3>
+            </ion-label>
+          </ion-item>
+          <ion-item *ngIf="selectedEntry.severity">
+            <ion-label>
+              <p>Severity</p>
+              <ion-badge [color]="statusColor(selectedEntry.severity)">{{ selectedEntry.severity | uppercase }}</ion-badge>
+            </ion-label>
+          </ion-item>
+          <ion-item *ngIf="selectedEntry.measurementValue !== null">
+            <ion-label>
+              <p>Measurement</p>
+              <h3>{{ selectedEntry.measurementValue }} {{ selectedEntry.measurementUnit || '' }}</h3>
+            </ion-label>
+          </ion-item>
+          <ion-item *ngIf="selectedEntry.toleranceMin !== null || selectedEntry.toleranceMax !== null">
+            <ion-label>
+              <p>Tolerance Range</p>
+              <h3>{{ selectedEntry.toleranceMin ?? '—' }} – {{ selectedEntry.toleranceMax ?? '—' }} {{ selectedEntry.measurementUnit || '' }}</h3>
+            </ion-label>
+          </ion-item>
+          <ion-item *ngIf="selectedEntry.notes">
+            <ion-label class="ion-text-wrap">
+              <p>Notes</p>
+              <h3>{{ selectedEntry.notes }}</h3>
+            </ion-label>
+          </ion-item>
+        </ion-list>
+      </ion-content>
+    </ng-template>
+  </ion-modal>
+</ion-content>

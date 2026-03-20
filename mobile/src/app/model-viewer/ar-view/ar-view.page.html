@@ -1,0 +1,77 @@
+<ion-header [translucent]="true">
+  <ion-toolbar color="dark">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tabs/models"></ion-back-button>
+    </ion-buttons>
+    <ion-title>{{ modelName }} - AR</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true">
+  <div class="ar-wrapper">
+    <canvas #arCanvas></canvas>
+
+    <!-- Loading -->
+    <div class="overlay" *ngIf="loading">
+      <ion-spinner name="crescent" color="primary"></ion-spinner>
+      <ion-text color="light">Loading model for AR...</ion-text>
+    </div>
+
+    <!-- Error -->
+    <div class="overlay" *ngIf="error">
+      <ion-icon name="alert-circle-outline" color="danger" style="font-size:48px;"></ion-icon>
+      <ion-text color="danger">{{ error }}</ion-text>
+    </div>
+
+    <!-- AR Not Started -->
+    <div class="ar-prompt" *ngIf="!loading && !error && !arActive">
+      <ion-card>
+        <ion-card-header>
+          <ion-card-title>Augmented Reality</ion-card-title>
+          <ion-card-subtitle>View this model in your real environment</ion-card-subtitle>
+        </ion-card-header>
+        <ion-card-content>
+          <p *ngIf="arSupported">
+            Tap the button below to start the AR camera. Point your device at a flat surface,
+            then tap to place the 3D model.
+          </p>
+          <p *ngIf="!arSupported" class="warning-text">
+            WebXR AR is not available on this device or browser.
+            For the best experience, use Chrome on an ARCore-compatible Android device
+            or Safari on iOS 15+.
+          </p>
+
+          <ion-button expand="block" (click)="startAR()" [disabled]="!arSupported" class="ar-button">
+            <ion-icon name="scan-outline" slot="start"></ion-icon>
+            {{ arSupported ? 'Launch AR View' : 'AR Not Available' }}
+          </ion-button>
+        </ion-card-content>
+      </ion-card>
+    </div>
+
+    <!-- AR Active Controls -->
+    <div class="ar-controls" *ngIf="arActive">
+      <div class="ar-top-row">
+        <ion-chip color="success" outline>
+          <ion-icon name="radio-button-on"></ion-icon>
+          <ion-label>AR Active</ion-label>
+        </ion-chip>
+        <ion-chip color="light" outline class="gesture-hint">
+          <ion-icon name="hand-left-outline"></ion-icon>
+          <ion-label>Pinch: Scale | Twist: Rotate</ion-label>
+        </ion-chip>
+      </div>
+
+      <div class="ar-buttons">
+        <ion-button fill="solid" color="warning" (click)="resetPlacement()">
+          <ion-icon name="refresh-outline" slot="start"></ion-icon>
+          Reset
+        </ion-button>
+        <ion-button fill="solid" color="danger" (click)="endAR()">
+          <ion-icon name="close-outline" slot="start"></ion-icon>
+          Exit AR
+        </ion-button>
+      </div>
+    </div>
+  </div>
+</ion-content>

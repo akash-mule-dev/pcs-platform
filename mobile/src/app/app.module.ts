@@ -1,4 +1,4 @@
-import { NgModule } from '@angular/core';
+import { APP_INITIALIZER, NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { RouteReuseStrategy } from '@angular/router';
 import { HttpClientModule } from '@angular/common/http';
@@ -9,6 +9,11 @@ import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
 import { authInterceptorProvider } from './core/interceptors/auth.interceptor';
 import { responseInterceptorProvider } from './core/interceptors/response.interceptor';
+import { AuthService } from './core/services/auth.service';
+
+function initializeAuth(authService: AuthService) {
+  return () => authService.init();
+}
 
 @NgModule({
   declarations: [AppComponent],
@@ -21,6 +26,12 @@ import { responseInterceptorProvider } from './core/interceptors/response.interc
   ],
   providers: [
     { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
+    {
+      provide: APP_INITIALIZER,
+      useFactory: initializeAuth,
+      deps: [AuthService],
+      multi: true,
+    },
     authInterceptorProvider,
     responseInterceptorProvider
   ],

@@ -20,9 +20,19 @@ export class ProfilePage implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.authService.currentUser$.subscribe(u => this.user = u);
+    this.authService.currentUser$.subscribe(u => {
+      this.user = u;
+      // If user is loaded from storage but profile data may be stale,
+      // fetch fresh data from the API
+      if (u && !this._profileFetched) {
+        this._profileFetched = true;
+        this.authService.getProfile().subscribe();
+      }
+    });
     this.loadStats();
   }
+
+  private _profileFetched = false;
 
   loadStats(): void {
     this.timeService.getHistory().subscribe(entries => {

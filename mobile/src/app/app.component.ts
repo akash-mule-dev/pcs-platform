@@ -11,10 +11,11 @@ import { AuthService } from './core/services/auth.service';
 export class AppComponent implements OnInit {
   constructor(private authService: AuthService, private router: Router) {}
 
-  async ngOnInit(): Promise<void> {
-    await this.authService.init();
+  ngOnInit(): void {
+    // Auth is initialized via APP_INITIALIZER before routing starts.
+    // Just redirect to login if not authenticated.
     if (!this.authService.isAuthenticated$.value) {
-      await this.router.navigate(['/login']);
+      this.router.navigate(['/login']);
     }
   }
 }

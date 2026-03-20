@@ -42,4 +42,12 @@ export class WorkOrderService {
   getById(id: string): Observable<WorkOrder> {
     return this.api.get<WorkOrder>(`/work-orders/${id}`);
   }
+
+  updateStatus(id: string, status: string): Observable<WorkOrder> {
+    return this.api.patch<WorkOrder>(`/work-orders/${id}/status`, { status });
+  }
+
+  updateStageStatus(workOrderId: string, stageId: string, status: string): Observable<WorkOrder> {
+    return this.api.patch<WorkOrder>(`/work-orders/${workOrderId}/stages/${stageId}/status`, { status });
+  }
 }
