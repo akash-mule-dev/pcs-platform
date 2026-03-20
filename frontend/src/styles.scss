@@ -235,6 +235,18 @@ h1, h2, h3, h4, h5, h6 {
     -8px -8px 20px rgba(255, 255, 255, 0.6) !important;
 }
 
+// Product 3D Viewer dialog — full-height content
+.product-viewer-dialog .mat-mdc-dialog-container .mdc-dialog__surface {
+  display: flex;
+  flex-direction: column;
+}
+.product-viewer-dialog .mat-mdc-dialog-content {
+  flex: 1;
+  max-height: none !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
 // Chips
 .mat-mdc-chip {
   border-radius: var(--clay-radius-sm) !important;

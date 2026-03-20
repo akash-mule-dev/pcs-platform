@@ -34,6 +34,10 @@ export const routes: Routes = [
         loadComponent: () => import('./work-orders/work-order-list/work-order-list.component').then(m => m.WorkOrderListComponent)
       },
       {
+        path: 'work-orders/kanban',
+        loadComponent: () => import('./work-orders/work-order-kanban/work-order-kanban.component').then(m => m.WorkOrderKanbanComponent)
+      },
+      {
         path: 'work-orders/:id',
         loadComponent: () => import('./work-orders/work-order-detail/work-order-detail.component').then(m => m.WorkOrderDetailComponent)
       },
@@ -56,8 +60,29 @@ export const routes: Routes = [
         loadComponent: () => import('./stations/station-management/station-management.component').then(m => m.StationManagementComponent)
       },
       {
+        path: 'quality-analysis',
+        loadComponent: () => import('./quality-analysis/quality-analysis.component').then(m => m.QualityAnalysisComponent)
+      },
+      {
+        path: 'notifications',
+        loadComponent: () => import('./notifications/notifications.component').then(m => m.NotificationsComponent)
+      },
+      {
+        path: 'audit',
+        canActivate: [roleGuard('admin', 'manager')],
+        loadComponent: () => import('./audit/audit.component').then(m => m.AuditComponent)
+      },
+      {
         path: 'reports',
         loadComponent: () => import('./reports/reports.component').then(m => m.ReportsComponent)
+      },
+      {
+        path: 'coordination',
+        loadComponent: () => import('./coordination/coordination-list.component').then(m => m.CoordinationListComponent)
+      },
+      {
+        path: 'coordination/:id',
+        loadComponent: () => import('./coordination/coordination-view.component').then(m => m.CoordinationViewComponent)
       }
     ]
   },
