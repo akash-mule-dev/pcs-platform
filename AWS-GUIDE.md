@@ -920,4 +920,4 @@ pm2 monit            # PM2's built-in monitor
 
 *Document created: February 22, 2026*
 *Last updated: February 22, 2026*
-*Author: OpenClaw AI Assistant for Prime Terminal*
+*Author: OpenClaw AI Assistant for Spade Bloom*

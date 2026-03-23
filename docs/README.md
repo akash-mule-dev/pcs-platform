@@ -62,4 +62,4 @@
 
 ---
 
-*Prime Terminal © 2026*
+*Spade Bloom © 2026*

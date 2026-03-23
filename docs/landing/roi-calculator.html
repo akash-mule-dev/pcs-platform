@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROI Calculator — PCS Platform</title>
+  <meta name="description" content="Calculate how much time and money PCS Platform saves your factory compared to paper-based production tracking.">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --primary: #1a56db; --primary-dark: #1340a8; --green: #059669; --red: #dc2626; --text: #1e293b; --text-light: #64748b; --bg: #f8fafc; --border: #e2e8f0; --radius: 12px; }
+    body { font-family: 'Inter', system-ui, sans-serif; color: var(--text); background: var(--bg); }
+
+    nav { background: #fff; border-bottom: 1px solid var(--border); padding: 0 2rem; }
+    nav .container { display: flex; align-items: center; justify-content: space-between; max-width: 1100px; margin: 0 auto; height: 56px; }
+    nav .logo { font-weight: 800; font-size: 1.15rem; color: var(--primary); text-decoration: none; }
+    nav .logo span { color: var(--text); }
+    nav a.back { font-size: 0.85rem; color: var(--text-light); text-decoration: none; }
+    nav a.back:hover { color: var(--primary); }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+    header { text-align: center; padding: 3rem 2rem 2rem; }
+    header h1 { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; }
+    header p { color: var(--text-light); font-size: 1.05rem; }
+
+    .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; padding-bottom: 4rem; }
+    @media (max-width: 768px) { .calc-grid { grid-template-columns: 1fr; } }
+
+    .card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; }
+    .card h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    .card h2 .material-icons-outlined { font-size: 1.3rem; color: var(--primary); }
+
+    .field { margin-bottom: 1.25rem; }
+    .field label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; color: var(--text); }
+    .field .hint { font-size: 0.75rem; color: var(--text-light); margin-bottom: 0.4rem; }
+    .field input[type="number"] {
+      width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 1rem; font-family: inherit; transition: border-color 0.2s;
+    }
+    .field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,86,219,0.1); }
+    .field .unit { font-size: 0.8rem; color: var(--text-light); margin-top: 0.25rem; }
+
+    .results { position: sticky; top: 1rem; }
+    .result-row { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
+    .result-row:last-child { border-bottom: none; }
+    .result-row .label { font-size: 0.9rem; color: var(--text-light); }
+    .result-row .value { font-size: 1rem; font-weight: 700; }
+    .result-row .value.green { color: var(--green); }
+    .result-row .value.red { color: var(--red); }
+
+    .big-result {
+      background: linear-gradient(135deg, #1e3a5f, #1a56db); color: #fff;
+      border-radius: var(--radius); padding: 2rem; text-align: center; margin-top: 1.5rem;
+    }
+    .big-result .label { font-size: 0.85rem; opacity: 0.8; margin-bottom: 0.5rem; }
+    .big-result .amount { font-size: 2.75rem; font-weight: 800; }
+    .big-result .sub { font-size: 0.85rem; opacity: 0.7; margin-top: 0.5rem; }
+
+    .payback { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius); padding: 1.25rem; margin-top: 1rem; text-align: center; }
+    .payback .label { font-size: 0.85rem; color: var(--green); font-weight: 600; }
+    .payback .value { font-size: 1.5rem; font-weight: 800; color: var(--green); margin-top: 0.25rem; }
+
+    .cta-bar { text-align: center; margin-top: 1.5rem; }
+    .cta-bar a {
+      display: inline-flex; align-items: center; gap: 0.5rem; background: var(--primary); color: #fff;
+      padding: 0.75rem 2rem; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.95rem;
+    }
+    .cta-bar a:hover { background: var(--primary-dark); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="container">
+    <a href="index.html" class="logo">PCS<span>Platform</span></a>
+    <a href="index.html" class="back">&larr; Back to Home</a>
+  </div>
+</nav>
+
+<header>
+  <h1>ROI Calculator</h1>
+  <p>See how much PCS Platform saves your factory every month</p>
+</header>
+
+<div class="container">
+  <div class="calc-grid">
+
+    <!-- INPUTS -->
+    <div>
+      <div class="card" style="margin-bottom: 2rem;">
+        <h2><span class="material-icons-outlined">factory</span> Your Factory</h2>
+        <div class="field">
+          <label>Number of operators</label>
+          <input type="number" id="operators" value="30" min="1" max="500" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Production lines</label>
+          <input type="number" id="lines" value="3" min="1" max="20" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Working days per month</label>
+          <input type="number" id="days" value="26" min="20" max="31" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Average operator salary</label>
+          <div class="hint">Monthly gross CTC in INR</div>
+          <input type="number" id="salary" value="18000" min="5000" max="100000" step="1000" oninput="calc()">
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="material-icons-outlined">timer_off</span> Current Pain Points</h2>
+        <div class="field">
+          <label>Minutes lost per operator per day to paper tracking</label>
+          <div class="hint">Filling job cards, waiting for supervisor sign-off, searching for forms</div>
+          <input type="number" id="paperMinutes" value="25" min="5" max="120" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Supervisor hours per day on data entry / Excel</label>
+          <div class="hint">Compiling shift reports, updating spreadsheets, calculating OEE manually</div>
+          <input type="number" id="supHours" value="2" min="0.5" max="8" step="0.5" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Quality rework rate (%)</label>
+          <div class="hint">Percentage of units needing rework due to late defect detection</div>
+          <input type="number" id="reworkRate" value="5" min="0" max="30" step="0.5" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Rework cost per unit (INR)</label>
+          <input type="number" id="reworkCost" value="150" min="10" max="5000" step="10" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Units produced per month</label>
+          <input type="number" id="units" value="5000" min="100" max="100000" step="100" oninput="calc()">
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div class="results">
+      <div class="card">
+        <h2><span class="material-icons-outlined">savings</span> Monthly Savings with PCS</h2>
+
+        <div class="result-row">
+          <span class="label">Operator time recovered</span>
+          <span class="value green" id="r_opHours">—</span>
+        </div>
+        <div class="result-row">
+          <span class="label">Operator time savings (INR)</span>
+          <span class="value green" id="r_opSavings">—</span>
+        </div>
+        <div class="result-row">
+          <span class="label">Supervisor time recovered</span>
+          <span class="value green" id="r_supHours">—</span>
+        </div>
+        <div class="result-row">
+          <span class="label">Supervisor time savings (INR)</span>
+          <span class="value green" id="r_supSavings">—</span>
+        </div>
+        <div class="result-row">
+          <span class="label">Quality rework reduction (60%)</span>
+          <span class="value green" id="r_reworkSavings">—</span>
+        </div>
+        <div class="result-row">
+          <span class="label">Units saved from rework</span>
+          <span class="value green" id="r_unitsSaved">—</span>
+        </div>
+
+        <div style="border-top: 2px solid var(--border); margin-top: 0.75rem; padding-top: 0.75rem;">
+          <div class="result-row">
+            <span class="label" style="font-weight:600; color: var(--text);">PCS Platform cost (Professional)</span>
+            <span class="value red" id="r_pcsCost">—</span>
+          </div>
+        </div>
+
+        <div class="big-result">
+          <div class="label">Net Monthly Savings</div>
+          <div class="amount" id="r_netSavings">—</div>
+          <div class="sub" id="r_annualSavings">—</div>
+        </div>
+
+        <div class="payback">
+          <div class="label">ROI Payback Period</div>
+          <div class="value" id="r_payback">—</div>
+        </div>
+
+        <div class="cta-bar">
+          <a href="mailto:sales@spadebloom.com?subject=PCS%20ROI%20Discussion">
+            <span class="material-icons-outlined">mail</span> Discuss These Numbers
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function fmt(n) {
+  return new Intl.NumberFormat('en-IN').format(Math.round(n));
+}
+
+function calc() {
+  const operators = +document.getElementById('operators').value || 30;
+  const lines = +document.getElementById('lines').value || 3;
+  const days = +document.getElementById('days').value || 26;
+  const salary = +document.getElementById('salary').value || 18000;
+  const paperMin = +document.getElementById('paperMinutes').value || 25;
+  const supHours = +document.getElementById('supHours').value || 2;
+  const reworkRate = +document.getElementById('reworkRate').value || 5;
+  const reworkCost = +document.getElementById('reworkCost').value || 150;
+  const units = +document.getElementById('units').value || 5000;
+
+  // Operator time savings (80% of paper time recovered)
+  const opHoursMonth = (operators * paperMin * 0.8 * days) / 60;
+  const hourlyRate = salary / (days * 8);
+  const opSavings = opHoursMonth * hourlyRate;
+
+  // Supervisor time savings (70% of manual reporting time recovered)
+  const supCount = Math.max(1, Math.ceil(lines * 1.5));
+  const supHoursMonth = supCount * supHours * 0.7 * days;
+  const supSalary = salary * 2.5; // supervisors earn ~2.5x operator
+  const supHourlyRate = supSalary / (days * 8);
+  const supSavings = supHoursMonth * supHourlyRate;
+
+  // Quality rework reduction (60% of rework eliminated by early detection)
+  const currentReworkUnits = units * (reworkRate / 100);
+  const savedUnits = currentReworkUnits * 0.6;
+  const reworkSavings = savedUnits * reworkCost;
+
+  // PCS cost (Professional tier estimate)
+  let pcsCost;
+  if (operators <= 20) pcsCost = 15000;
+  else if (operators <= 100) pcsCost = 45000;
+  else pcsCost = 45000 + Math.ceil((operators - 100) / 50) * 15000;
+
+  const totalSavings = opSavings + supSavings + reworkSavings;
+  const netSavings = totalSavings - pcsCost;
+  const annualNet = netSavings * 12;
+  const paybackMonths = totalSavings > 0 ? pcsCost / totalSavings : 99;
+
+  document.getElementById('r_opHours').textContent = fmt(opHoursMonth) + ' hrs';
+  document.getElementById('r_opSavings').textContent = '₹' + fmt(opSavings);
+  document.getElementById('r_supHours').textContent = fmt(supHoursMonth) + ' hrs';
+  document.getElementById('r_supSavings').textContent = '₹' + fmt(supSavings);
+  document.getElementById('r_reworkSavings').textContent = '₹' + fmt(reworkSavings);
+  document.getElementById('r_unitsSaved').textContent = fmt(savedUnits) + ' units';
+  document.getElementById('r_pcsCost').textContent = '-₹' + fmt(pcsCost);
+  document.getElementById('r_netSavings').textContent = '₹' + fmt(netSavings);
+  document.getElementById('r_annualSavings').textContent = '₹' + fmt(annualNet) + ' per year';
+  document.getElementById('r_payback').textContent = paybackMonths < 1 ? 'Instant' : paybackMonths.toFixed(1) + ' months';
+}
+
+calc();
+</script>
+</body>
+</html>
