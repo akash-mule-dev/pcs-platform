@@ -37,26 +37,30 @@ export class SeedService {
       return;
     }
 
-    this.logger.log('Seeding database...');
+    this.logger.log('Seeding database with demo data...');
     const hash = await bcrypt.hash('password123', 10);
+    const now = new Date();
 
-    // Roles
+    // ─── ROLES ──────────────────────────────────────────────────────────
     const roles: Record<string, Role> = {};
     for (const r of ['admin', 'manager', 'supervisor', 'operator']) {
       roles[r] = await this.roleRepo.save(this.roleRepo.create({ name: r, description: `${r} role` }));
     }
 
-    // Users
+    // ─── USERS ──────────────────────────────────────────────────────────
     const usersData = [
-      { employeeId: 'EMP-001', email: 'admin@pcs.local', firstName: 'System', lastName: 'Admin', role: 'admin' },
-      { employeeId: 'EMP-002', email: 'manager@pcs.local', firstName: 'Production', lastName: 'Manager', role: 'manager' },
-      { employeeId: 'EMP-003', email: 'supervisor1@pcs.local', firstName: 'Line 1', lastName: 'Supervisor', role: 'supervisor' },
-      { employeeId: 'EMP-004', email: 'supervisor2@pcs.local', firstName: 'Line 2', lastName: 'Supervisor', role: 'supervisor' },
-      { employeeId: 'EMP-005', email: 'operator1@pcs.local', firstName: 'John', lastName: 'Smith', role: 'operator', badgeId: 'B-001' },
-      { employeeId: 'EMP-006', email: 'operator2@pcs.local', firstName: 'Maria', lastName: 'Chen', role: 'operator', badgeId: 'B-002' },
-      { employeeId: 'EMP-007', email: 'operator3@pcs.local', firstName: 'Ahmed', lastName: 'Kumar', role: 'operator', badgeId: 'B-003' },
-      { employeeId: 'EMP-008', email: 'operator4@pcs.local', firstName: 'Lisa', lastName: 'Johnson', role: 'operator', badgeId: 'B-004' },
-      { employeeId: 'EMP-009', email: 'operator5@pcs.local', firstName: 'Carlos', lastName: 'Rodriguez', role: 'operator', badgeId: 'B-005' },
+      { employeeId: 'EMP-001', email: 'admin@pcs.local', firstName: 'Rajesh', lastName: 'Patil', role: 'admin' },
+      { employeeId: 'EMP-002', email: 'manager@pcs.local', firstName: 'Priya', lastName: 'Sharma', role: 'manager' },
+      { employeeId: 'EMP-003', email: 'supervisor1@pcs.local', firstName: 'Vikram', lastName: 'Deshmukh', role: 'supervisor' },
+      { employeeId: 'EMP-004', email: 'supervisor2@pcs.local', firstName: 'Sneha', lastName: 'Kulkarni', role: 'supervisor' },
+      { employeeId: 'EMP-005', email: 'operator1@pcs.local', firstName: 'Amit', lastName: 'Jadhav', role: 'operator', badgeId: 'B-001' },
+      { employeeId: 'EMP-006', email: 'operator2@pcs.local', firstName: 'Pooja', lastName: 'Shinde', role: 'operator', badgeId: 'B-002' },
+      { employeeId: 'EMP-007', email: 'operator3@pcs.local', firstName: 'Rahul', lastName: 'More', role: 'operator', badgeId: 'B-003' },
+      { employeeId: 'EMP-008', email: 'operator4@pcs.local', firstName: 'Anita', lastName: 'Pawar', role: 'operator', badgeId: 'B-004' },
+      { employeeId: 'EMP-009', email: 'operator5@pcs.local', firstName: 'Suresh', lastName: 'Kale', role: 'operator', badgeId: 'B-005' },
+      { employeeId: 'EMP-010', email: 'operator6@pcs.local', firstName: 'Meena', lastName: 'Gaikwad', role: 'operator', badgeId: 'B-006' },
+      { employeeId: 'EMP-011', email: 'operator7@pcs.local', firstName: 'Deepak', lastName: 'Bhosale', role: 'operator', badgeId: 'B-007' },
+      { employeeId: 'EMP-012', email: 'operator8@pcs.local', firstName: 'Kavita', lastName: 'Mane', role: 'operator', badgeId: 'B-008' },
     ];
 
     const users: Record<string, User> = {};
@@ -72,53 +76,99 @@ export class SeedService {
       }));
     }
 
-    // Products
+    // ─── PRODUCTS ───────────────────────────────────────────────────────
     const products: Record<string, Product> = {};
     const productsData = [
-      { name: 'Circuit Board Assembly', sku: 'PCB-X100', description: 'Standard PCB assembly unit' },
-      { name: 'Electric Motor Unit', sku: 'MOT-200', description: 'Industrial electric motor' },
-      { name: 'Temperature Sensor Module', sku: 'SEN-50', description: 'Precision temperature sensor' },
+      { name: 'Hydraulic Pump Assembly', sku: 'HPA-3200', description: 'High-pressure hydraulic pump for automotive braking systems' },
+      { name: 'EV Motor Controller', sku: 'EMC-500', description: 'Brushless DC motor controller for electric vehicles' },
+      { name: 'Precision Gear Box', sku: 'PGB-150', description: 'Multi-stage precision gearbox for CNC machines' },
+      { name: 'Temperature Sensor Module', sku: 'TSM-80', description: 'Industrial-grade temperature sensor with digital output' },
+      { name: 'LED Driver Circuit Board', sku: 'LDR-420', description: 'Constant-current LED driver PCB for industrial lighting' },
+      { name: 'Pneumatic Valve Block', sku: 'PVB-600', description: '5/2 directional control pneumatic valve assembly' },
     ];
     for (const p of productsData) {
       products[p.sku] = await this.productRepo.save(this.productRepo.create(p));
     }
 
-    // Processes & Stages
-    const processesData: { name: string; sku: string; stages: { name: string; target: number }[] }[] = [
+    // ─── PROCESSES & STAGES ─────────────────────────────────────────────
+    const processesData = [
       {
-        name: 'PCB Assembly', sku: 'PCB-X100',
+        name: 'Hydraulic Pump Assembly', sku: 'HPA-3200',
         stages: [
-          { name: 'Component Preparation', target: 600 },
-          { name: 'SMT Placement', target: 900 },
+          { name: 'Housing Machining', target: 1800 },
+          { name: 'Piston Fitting', target: 1200 },
+          { name: 'Seal Installation', target: 600 },
+          { name: 'Valve Assembly', target: 900 },
+          { name: 'Pressure Testing', target: 1500 },
+          { name: 'Surface Treatment', target: 1200 },
+          { name: 'Final Inspection', target: 600 },
+          { name: 'Packaging & Labeling', target: 300 },
+        ],
+      },
+      {
+        name: 'EV Motor Controller Build', sku: 'EMC-500',
+        stages: [
+          { name: 'PCB Preparation', target: 600 },
+          { name: 'SMT Component Placement', target: 900 },
           { name: 'Reflow Soldering', target: 1200 },
-          { name: 'Inspection', target: 600 },
-          { name: 'Through-Hole Assembly', target: 900 },
-          { name: 'Wave Soldering', target: 800 },
-          { name: 'Quality Control', target: 600 },
-          { name: 'Packaging', target: 300 },
-        ],
-      },
-      {
-        name: 'Motor Assembly', sku: 'MOT-200',
-        stages: [
-          { name: 'Stator Winding', target: 1800 },
-          { name: 'Rotor Assembly', target: 1200 },
-          { name: 'Housing Preparation', target: 600 },
-          { name: 'Final Assembly', target: 1500 },
+          { name: 'Power Module Assembly', target: 1500 },
+          { name: 'Firmware Flashing', target: 300 },
           { name: 'Electrical Testing', target: 900 },
-          { name: 'Quality Inspection', target: 600 },
+          { name: 'Thermal Cycling Test', target: 1800 },
+          { name: 'Conformal Coating', target: 600 },
+          { name: 'Quality Verification', target: 600 },
           { name: 'Packaging', target: 300 },
         ],
       },
       {
-        name: 'Sensor Module', sku: 'SEN-50',
+        name: 'Gearbox Assembly', sku: 'PGB-150',
+        stages: [
+          { name: 'Gear Cutting & Grinding', target: 2400 },
+          { name: 'Shaft Preparation', target: 1200 },
+          { name: 'Bearing Installation', target: 600 },
+          { name: 'Gear Train Assembly', target: 1800 },
+          { name: 'Lubrication & Sealing', target: 450 },
+          { name: 'Run-in Testing', target: 1800 },
+          { name: 'Noise & Vibration Check', target: 900 },
+          { name: 'Final Inspection', target: 600 },
+          { name: 'Packaging', target: 300 },
+        ],
+      },
+      {
+        name: 'Sensor Module Assembly', sku: 'TSM-80',
         stages: [
           { name: 'PCB Prep', target: 300 },
-          { name: 'Sensor Mounting', target: 600 },
+          { name: 'Sensor Element Mounting', target: 600 },
+          { name: 'Wire Bonding', target: 450 },
           { name: 'Calibration', target: 900 },
           { name: 'Enclosure Assembly', target: 450 },
           { name: 'Final Test', target: 600 },
           { name: 'Packaging', target: 200 },
+        ],
+      },
+      {
+        name: 'LED Driver PCB Process', sku: 'LDR-420',
+        stages: [
+          { name: 'Solder Paste Application', target: 300 },
+          { name: 'Component Placement', target: 600 },
+          { name: 'Reflow Oven', target: 900 },
+          { name: 'AOI Inspection', target: 300 },
+          { name: 'Through-Hole Assembly', target: 600 },
+          { name: 'Wave Soldering', target: 600 },
+          { name: 'Burn-in Testing', target: 1200 },
+          { name: 'Packaging', target: 200 },
+        ],
+      },
+      {
+        name: 'Pneumatic Valve Assembly', sku: 'PVB-600',
+        stages: [
+          { name: 'Body Machining QC', target: 600 },
+          { name: 'Spool Fitting', target: 900 },
+          { name: 'Spring & Seal Assembly', target: 600 },
+          { name: 'Solenoid Mounting', target: 450 },
+          { name: 'Leak Testing', target: 900 },
+          { name: 'Function Verification', target: 600 },
+          { name: 'Final QC & Packaging', target: 300 },
         ],
       },
     ];
@@ -139,11 +189,12 @@ export class SeedService {
       }
     }
 
-    // Lines & Stations
+    // ─── LINES & STATIONS ───────────────────────────────────────────────
     const linesData = [
-      { name: 'Line 1', description: 'PCB Assembly Line', stations: ['ST-1A', 'ST-1B', 'ST-1C', 'ST-1D', 'ST-1E', 'ST-1F'] },
-      { name: 'Line 2', description: 'Motor Assembly Line', stations: ['ST-2A', 'ST-2B', 'ST-2C', 'ST-2D', 'ST-2E'] },
-      { name: 'Line 3', description: 'Sensor Module Line', stations: ['ST-3A', 'ST-3B', 'ST-3C', 'ST-3D'] },
+      { name: 'Line A — Hydraulics', description: 'Hydraulic pump and valve assembly', stations: ['A1-CNC', 'A2-FIT', 'A3-SEAL', 'A4-TEST', 'A5-COAT', 'A6-QC'] },
+      { name: 'Line B — Electronics', description: 'PCB assembly and motor controllers', stations: ['B1-SMT', 'B2-REFLOW', 'B3-THT', 'B4-TEST', 'B5-COAT', 'B6-PACK'] },
+      { name: 'Line C — Precision', description: 'Gearbox and precision components', stations: ['C1-GRIND', 'C2-TURN', 'C3-ASSEM', 'C4-TEST', 'C5-QC'] },
+      { name: 'Line D — Sensors', description: 'Sensor and small module assembly', stations: ['D1-PREP', 'D2-MOUNT', 'D3-CAL', 'D4-TEST'] },
     ];
 
     const lines: Record<string, Line> = {};
@@ -156,17 +207,46 @@ export class SeedService {
       }
     }
 
-    // Work Orders
+    // ─── WORK ORDERS ────────────────────────────────────────────────────
+    const lineA = 'Line A — Hydraulics';
+    const lineB = 'Line B — Electronics';
+    const lineC = 'Line C — Precision';
+    const lineD = 'Line D — Sensors';
+
     const woData = [
-      { num: 'WO-2026-0001', sku: 'PCB-X100', proc: 'PCB Assembly', line: 'Line 1', qty: 100, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.HIGH },
-      { num: 'WO-2026-0002', sku: 'MOT-200', proc: 'Motor Assembly', line: 'Line 2', qty: 50, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.MEDIUM },
-      { num: 'WO-2026-0003', sku: 'SEN-50', proc: 'Sensor Module', line: 'Line 3', qty: 200, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.URGENT },
-      { num: 'WO-2026-0004', sku: 'PCB-X100', proc: 'PCB Assembly', line: null, qty: 75, status: WorkOrderStatus.DRAFT, priority: WorkOrderPriority.LOW },
-      { num: 'WO-2026-0005', sku: 'MOT-200', proc: 'Motor Assembly', line: 'Line 2', qty: 30, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.MEDIUM },
+      // Active production — visible on Kanban and dashboard
+      { num: 'WO-2026-0101', sku: 'HPA-3200', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 120, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.HIGH },
+      { num: 'WO-2026-0102', sku: 'EMC-500', proc: 'EV Motor Controller Build', line: lineB, qty: 80, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.URGENT },
+      { num: 'WO-2026-0103', sku: 'PGB-150', proc: 'Gearbox Assembly', line: lineC, qty: 45, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.HIGH },
+      { num: 'WO-2026-0104', sku: 'TSM-80', proc: 'Sensor Module Assembly', line: lineD, qty: 500, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0105', sku: 'LDR-420', proc: 'LED Driver PCB Process', line: lineB, qty: 300, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.MEDIUM },
+
+      // Pending — queued up
+      { num: 'WO-2026-0106', sku: 'PVB-600', proc: 'Pneumatic Valve Assembly', line: lineA, qty: 200, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0107', sku: 'HPA-3200', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 60, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.LOW },
+      { num: 'WO-2026-0108', sku: 'EMC-500', proc: 'EV Motor Controller Build', line: lineB, qty: 150, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.HIGH },
+
+      // Draft — planning stage
+      { num: 'WO-2026-0109', sku: 'PGB-150', proc: 'Gearbox Assembly', line: null, qty: 30, status: WorkOrderStatus.DRAFT, priority: WorkOrderPriority.LOW },
+      { num: 'WO-2026-0110', sku: 'TSM-80', proc: 'Sensor Module Assembly', line: null, qty: 1000, status: WorkOrderStatus.DRAFT, priority: WorkOrderPriority.MEDIUM },
+
+      // Completed — for reporting
+      { num: 'WO-2026-0051', sku: 'HPA-3200', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 100, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.HIGH },
+      { num: 'WO-2026-0052', sku: 'EMC-500', proc: 'EV Motor Controller Build', line: lineB, qty: 60, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0053', sku: 'LDR-420', proc: 'LED Driver PCB Process', line: lineB, qty: 250, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0054', sku: 'PVB-600', proc: 'Pneumatic Valve Assembly', line: lineA, qty: 150, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.LOW },
     ];
 
     const workOrders: Record<string, WorkOrder> = {};
+    const operators = Object.values(users).filter(u => usersData.find(ud => ud.email === Object.keys(users).find(k => users[k].id === u.id))?.role === 'operator');
+    const opList = [
+      users['operator1@pcs.local'], users['operator2@pcs.local'], users['operator3@pcs.local'],
+      users['operator4@pcs.local'], users['operator5@pcs.local'], users['operator6@pcs.local'],
+      users['operator7@pcs.local'], users['operator8@pcs.local'],
+    ];
+
     for (const w of woData) {
+      const daysAgo = w.status === WorkOrderStatus.COMPLETED ? 14 : w.status === WorkOrderStatus.IN_PROGRESS ? 3 : 0;
       const wo = await this.woRepo.save(this.woRepo.create({
         orderNumber: w.num,
         productId: products[w.sku].id,
@@ -175,139 +255,117 @@ export class SeedService {
         quantity: w.qty,
         status: w.status,
         priority: w.priority,
-        startedAt: w.status === WorkOrderStatus.IN_PROGRESS || w.status === WorkOrderStatus.COMPLETED ? new Date('2026-02-18T08:00:00Z') : null,
-        completedAt: w.status === WorkOrderStatus.COMPLETED ? new Date('2026-02-19T16:00:00Z') : null,
+        startedAt: daysAgo > 0 ? new Date(now.getTime() - daysAgo * 86400000) : null,
+        completedAt: w.status === WorkOrderStatus.COMPLETED ? new Date(now.getTime() - 7 * 86400000) : null,
       }));
       workOrders[w.num] = wo;
 
-      // Create work order stages
+      // Create work order stages with realistic progression
       const procStages = allStages[w.proc];
-      for (const stage of procStages) {
-        const woStageStatus = w.status === WorkOrderStatus.COMPLETED ? WorkOrderStageStatus.COMPLETED : WorkOrderStageStatus.PENDING;
+      for (let i = 0; i < procStages.length; i++) {
+        let stageStatus = WorkOrderStageStatus.PENDING;
+        let completedAt: Date | null = null;
+        let startedAt: Date | null = null;
+        let actualTime: number | null = null;
+        let assignedUserId: string | null = null;
+        let stationId: string | null = null;
+
+        if (w.status === WorkOrderStatus.COMPLETED) {
+          stageStatus = WorkOrderStageStatus.COMPLETED;
+          const target = procStages[i].targetTimeSeconds || 600;
+          actualTime = Math.round(target * (0.85 + Math.random() * 0.3));
+          startedAt = new Date(now.getTime() - (14 - i * 0.5) * 86400000);
+          completedAt = new Date(startedAt.getTime() + actualTime * 1000);
+          assignedUserId = opList[i % opList.length].id;
+        } else if (w.status === WorkOrderStatus.IN_PROGRESS) {
+          const completedCount = Math.floor(procStages.length * (0.3 + Math.random() * 0.4));
+          if (i < completedCount) {
+            stageStatus = WorkOrderStageStatus.COMPLETED;
+            const target = procStages[i].targetTimeSeconds || 600;
+            actualTime = Math.round(target * (0.85 + Math.random() * 0.3));
+            startedAt = new Date(now.getTime() - (3 - i * 0.3) * 86400000);
+            completedAt = new Date(startedAt.getTime() + actualTime * 1000);
+            assignedUserId = opList[i % opList.length].id;
+          } else if (i === completedCount) {
+            stageStatus = WorkOrderStageStatus.IN_PROGRESS;
+            startedAt = new Date(now.getTime() - (20 + Math.random() * 40) * 60000);
+            assignedUserId = opList[i % opList.length].id;
+          }
+        }
+
+        // Assign station from the work order's line
+        if (w.line && assignedUserId) {
+          const lineStations = linesData.find(l => l.name === w.line)?.stations || [];
+          if (lineStations.length > 0) {
+            stationId = stations[lineStations[i % lineStations.length]]?.id || null;
+          }
+        }
+
         await this.wosRepo.save(this.wosRepo.create({
           workOrderId: wo.id,
-          stageId: stage.id,
-          status: woStageStatus,
+          stageId: procStages[i].id,
+          status: stageStatus,
+          startedAt,
+          completedAt,
+          actualTimeSeconds: actualTime,
+          assignedUserId,
+          stationId,
         }));
       }
     }
 
-    // Assign some operators to WO-2026-0001 and WO-2026-0003
-    const wo1Stages = await this.wosRepo.find({ where: { workOrderId: workOrders['WO-2026-0001'].id }, relations: ['stage'] });
-    const wo3Stages = await this.wosRepo.find({ where: { workOrderId: workOrders['WO-2026-0003'].id }, relations: ['stage'] });
-    const operators = [users['operator1@pcs.local'], users['operator2@pcs.local'], users['operator3@pcs.local'], users['operator4@pcs.local'], users['operator5@pcs.local']];
-
-    for (let i = 0; i < wo1Stages.length; i++) {
-      wo1Stages[i].assignedUserId = operators[i % operators.length].id;
-      wo1Stages[i].stationId = stations[`ST-1${String.fromCharCode(65 + (i % 6))}`].id;
-      await this.wosRepo.save(wo1Stages[i]);
-    }
-    for (let i = 0; i < wo3Stages.length; i++) {
-      wo3Stages[i].assignedUserId = operators[(i + 2) % operators.length].id;
-      wo3Stages[i].stationId = stations[`ST-3${String.fromCharCode(65 + (i % 4))}`].id;
-      await this.wosRepo.save(wo3Stages[i]);
-    }
-
-    // Seed ~50 time entries
-    const now = new Date();
+    // ─── TIME ENTRIES ───────────────────────────────────────────────────
     const methods = [InputMethod.WEB, InputMethod.MOBILE, InputMethod.BADGE];
+    const notes = [
+      'Standard run, no issues', 'Minor adjustment needed mid-cycle', null,
+      'Material delay — 5 min wait', null, 'Rework on 2 units', null,
+      'Smooth run', null, 'Tool change required', null, null,
+    ];
     let entryCount = 0;
 
-    // Completed entries for WO-2026-0001
-    for (let i = 0; i < wo1Stages.length && i < 6; i++) {
-      for (let j = 0; j < 3; j++) {
-        const op = operators[(i + j) % operators.length];
-        const stage = wo1Stages[i];
-        const targetTime = stage.stage?.targetTimeSeconds || 600;
-        const variance = (Math.random() * 0.4 - 0.2) * targetTime; // ±20%
-        const duration = Math.round(targetTime + variance);
-        const startTime = new Date(now.getTime() - (48 - entryCount) * 3600000);
-        const endTime = new Date(startTime.getTime() + duration * 1000);
+    // Generate time entries for all IN_PROGRESS and COMPLETED work orders
+    for (const w of woData.filter(w => w.status === WorkOrderStatus.IN_PROGRESS || w.status === WorkOrderStatus.COMPLETED)) {
+      const wo = workOrders[w.num];
+      const woStages = await this.wosRepo.find({ where: { workOrderId: wo.id }, relations: ['stage'] });
 
-        await this.teRepo.save(this.teRepo.create({
-          userId: op.id,
-          workOrderStageId: stage.id,
-          stationId: stage.stationId,
-          startTime,
-          endTime,
-          durationSeconds: duration,
-          inputMethod: methods[j % 3],
-          notes: j === 0 ? 'Normal run' : null,
-        }));
-        entryCount++;
+      for (const woStage of woStages) {
+        if (woStage.status === WorkOrderStageStatus.COMPLETED && woStage.assignedUserId) {
+          // 2-3 completed time entries per completed stage (shift work)
+          const shifts = 2 + Math.floor(Math.random() * 2);
+          for (let s = 0; s < shifts; s++) {
+            const target = woStage.stage?.targetTimeSeconds || 600;
+            const duration = Math.round((target / shifts) * (0.8 + Math.random() * 0.4));
+            const startTime = new Date((woStage.startedAt || now).getTime() + s * duration * 1000);
+            const endTime = new Date(startTime.getTime() + duration * 1000);
+
+            await this.teRepo.save(this.teRepo.create({
+              userId: woStage.assignedUserId,
+              workOrderStageId: woStage.id,
+              stationId: woStage.stationId,
+              startTime,
+              endTime,
+              durationSeconds: duration,
+              inputMethod: methods[entryCount % 3],
+              notes: notes[entryCount % notes.length],
+            }));
+            entryCount++;
+          }
+        } else if (woStage.status === WorkOrderStageStatus.IN_PROGRESS && woStage.assignedUserId) {
+          // Active entry — no end time (shows as live on dashboard)
+          await this.teRepo.save(this.teRepo.create({
+            userId: woStage.assignedUserId,
+            workOrderStageId: woStage.id,
+            stationId: woStage.stationId,
+            startTime: woStage.startedAt || new Date(now.getTime() - 20 * 60000),
+            endTime: null,
+            inputMethod: methods[entryCount % 3],
+            notes: 'Currently working',
+          }));
+          entryCount++;
+        }
       }
     }
 
-    // Completed entries for WO-2026-0003
-    for (let i = 0; i < wo3Stages.length && i < 4; i++) {
-      for (let j = 0; j < 3; j++) {
-        const op = operators[(i + j + 2) % operators.length];
-        const stage = wo3Stages[i];
-        const targetTime = stage.stage?.targetTimeSeconds || 500;
-        const variance = (Math.random() * 0.4 - 0.2) * targetTime;
-        const duration = Math.round(targetTime + variance);
-        const startTime = new Date(now.getTime() - (24 - entryCount) * 3600000);
-        const endTime = new Date(startTime.getTime() + duration * 1000);
-
-        await this.teRepo.save(this.teRepo.create({
-          userId: op.id,
-          workOrderStageId: stage.id,
-          stationId: stage.stationId,
-          startTime,
-          endTime,
-          durationSeconds: duration,
-          inputMethod: methods[j % 3],
-        }));
-        entryCount++;
-      }
-    }
-
-    // Completed entries for WO-2026-0005
-    const wo5Stages = await this.wosRepo.find({ where: { workOrderId: workOrders['WO-2026-0005'].id } });
-    for (let i = 0; i < wo5Stages.length; i++) {
-      const op = operators[i % operators.length];
-      const startTime = new Date(now.getTime() - (72 + i * 2) * 3600000);
-      const duration = 600 + Math.round(Math.random() * 300);
-      const endTime = new Date(startTime.getTime() + duration * 1000);
-      await this.teRepo.save(this.teRepo.create({
-        userId: op.id,
-        workOrderStageId: wo5Stages[i].id,
-        startTime,
-        endTime,
-        durationSeconds: duration,
-        inputMethod: InputMethod.WEB,
-      }));
-      entryCount++;
-
-      wo5Stages[i].status = WorkOrderStageStatus.COMPLETED;
-      wo5Stages[i].actualTimeSeconds = duration;
-      wo5Stages[i].completedAt = endTime;
-      wo5Stages[i].assignedUserId = op.id;
-      await this.wosRepo.save(wo5Stages[i]);
-    }
-
-    // 3 active entries (no end_time) for live dashboard
-    for (let i = 0; i < 3; i++) {
-      const op = operators[i];
-      const stage = i < 2 ? wo1Stages[6 + i] || wo1Stages[i] : wo3Stages[4] || wo3Stages[0];
-      const startTime = new Date(now.getTime() - (15 + i * 10) * 60000); // 15-35 min ago
-
-      await this.teRepo.save(this.teRepo.create({
-        userId: op.id,
-        workOrderStageId: stage.id,
-        stationId: stage.stationId,
-        startTime,
-        endTime: null,
-        inputMethod: methods[i],
-      }));
-      entryCount++;
-
-      stage.status = WorkOrderStageStatus.IN_PROGRESS;
-      stage.startedAt = startTime;
-      stage.assignedUserId = op.id;
-      await this.wosRepo.save(stage);
-    }
-
-    this.logger.log(`Seeded ${entryCount} time entries and all reference data`);
+    this.logger.log(`Seeded: 6 products, 6 processes, 4 lines, 21 stations, 14 work orders, ${entryCount} time entries`);
   }
 }

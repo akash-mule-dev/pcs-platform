@@ -64,7 +64,7 @@ test.describe('Quality Analysis Page — UI', () => {
     await page.waitForSelector('text=3D Quality Analysis', { timeout: 10000 });
 
     // Verify hidden file input exists with correct accept attribute
-    const fileInput = page.locator('input[type="file"]');
+    const fileInput = page.locator('input[type="file"][accept*=".glb"]');
     await expect(fileInput).toHaveAttribute('accept', '.glb,.gltf,.obj,.fbx,.stl');
   });
 
@@ -90,8 +90,8 @@ test.describe('Quality Analysis Page — UI', () => {
     chunkHeader.writeUInt32LE(0x4E4F534A, 4);
     const glbBuffer = Buffer.concat([header, chunkHeader, paddedJson]);
 
-    // Upload via the hidden file input
-    const fileInput = page.locator('input[type="file"]');
+    // Upload via the hidden file input (first one accepts .glb)
+    const fileInput = page.locator('input[type="file"][accept*=".glb"]');
     await fileInput.setInputFiles({
       name: 'test-widget.glb',
       mimeType: 'model/gltf-binary',

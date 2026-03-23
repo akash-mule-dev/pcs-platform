@@ -20,13 +20,19 @@
 
 ## 🔗 Quick Links
 
-### Live URLs
+### Live URLs (spadebloom.com)
 | Environment | Frontend | Backend API | Swagger Docs |
 |------------|----------|-------------|-------------|
-| **Production** | https://app.primeterminaltech.com | http://api.primeterminaltech.com | http://api.primeterminaltech.com/api/docs |
-| **Development** | http://dev.primeterminaltech.com | http://43.204.37.17:3001 | http://43.204.37.17:3001/api/docs |
-| **Staging** | http://stage.primeterminaltech.com | http://43.204.37.17:3002 | http://43.204.37.17:3002/api/docs |
-| **Landing Page** | https://www.primeterminaltech.com | — | — |
+| **Production** | https://app.spadebloom.com | https://api.spadebloom.com | https://api.spadebloom.com/api/docs |
+| **Demo/Staging** | https://demo.spadebloom.com | https://demo-api.spadebloom.com | https://demo-api.spadebloom.com/api/docs |
+| **Landing Page** | https://www.spadebloom.com | — | — |
+
+### Legacy URLs (primeterminaltech.com — still active)
+| Environment | Frontend | Backend API |
+|------------|----------|-------------|
+| **Production** | https://app.primeterminaltech.com | http://api.primeterminaltech.com |
+| **Development** | http://dev.primeterminaltech.com | http://43.204.37.17:3001 |
+| **Staging** | http://stage.primeterminaltech.com | http://43.204.37.17:3002 |
 
 ### Repositories
 | Repo | URL |
@@ -46,12 +52,13 @@
 
 ## 🔑 Login Credentials
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@pcs.local | password123 |
-| Manager | manager@pcs.local | password123 |
-| Supervisor | supervisor1@pcs.local | password123 |
-| Operators | operator1-5@pcs.local | password123 |
+| Role | Email | Password | Name |
+|------|-------|----------|------|
+| Admin | admin@pcs.local | password123 | Rajesh Patil |
+| Manager | manager@pcs.local | password123 | Priya Sharma |
+| Supervisor | supervisor1@pcs.local | password123 | Vikram Deshmukh |
+| Supervisor | supervisor2@pcs.local | password123 | Sneha Kulkarni |
+| Operators | operator1-8@pcs.local | password123 | Amit, Pooja, Rahul, Anita, Suresh, Meena, Deepak, Kavita |
 
 ---
 

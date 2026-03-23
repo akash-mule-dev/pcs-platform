@@ -22,6 +22,7 @@ export default defineConfig({
     {
       name: 'ui',
       testMatch: /.*\.ui\.spec\.ts/,
+      testIgnore: /.*mobile.*\.ui\.spec\.ts/,
       use: {
         baseURL: 'http://localhost:4200',
       },

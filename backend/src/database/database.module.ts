@@ -1,7 +1,9 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+const logger = new Logger('DatabaseModule');
 const databaseUrl = process.env.DATABASE_URL;
+const isProduction = process.env.NODE_ENV === 'production';
 
 const connectionConfig = databaseUrl
   ? {
@@ -18,12 +20,18 @@ const connectionConfig = databaseUrl
       database: process.env.DB_NAME || 'pcs_db',
     };
 
+if (!isProduction) {
+  logger.warn('TypeORM synchronize is ON — never use this in production. Use migrations instead.');
+}
+
 @Module({
   imports: [
     TypeOrmModule.forRoot({
       ...connectionConfig,
       autoLoadEntities: true,
-      synchronize: process.env.NODE_ENV !== 'production',
+      synchronize: !isProduction,
+      migrationsRun: isProduction,
+      migrations: isProduction ? ['dist/database/migrations/*.js'] : [],
     }),
   ],
 })

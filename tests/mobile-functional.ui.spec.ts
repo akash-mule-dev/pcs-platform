@@ -1,7 +1,7 @@
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
 
 const MOBILE  = 'http://localhost:8100';
-const WEB     = 'http://localhost';
+const WEB     = process.env.WEB_URL || 'http://localhost:4200';
 const API     = 'http://localhost:3000';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

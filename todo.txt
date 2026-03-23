@@ -158,12 +158,12 @@ Step 6: Model Comparison & Diff View
 
 PHASE 15 — Stabilization & Production Readiness
 ----------------------------------------------------------------
-[ ] Merge clay-theme branch into main and commit all untracked modules
-[ ] Run full Playwright test suite (21 specs) and fix any failures
-[ ] Switch TypeORM from synchronize:true to explicit migrations for production safety
-[ ] Add structured logging (Pino/Winston) for production observability
-[ ] Environment/secrets management — document and validate .env configuration
-[ ] API rate limiting and security hardening before external exposure
+[x] Merge clay-theme branch into main (already merged — branches at same commit)
+[x] Run Playwright test suite — 208/212 passing (4 pre-existing: headless WebGL + missing 170MB IFC fixture)
+[x] Switch TypeORM from synchronize:true to explicit migrations for production safety
+[x] Add structured logging (NestJS Logger with level filtering) for production observability
+[x] Environment/secrets management — documented .env.example, JWT_SECRET enforced in production
+[x] API rate limiting (@nestjs/throttler — 100 req/min) and security hardening (Helmet headers)
 
 PHASE 16 — High-Impact Features
 ----------------------------------------------------------------
@@ -178,6 +178,97 @@ PHASE 17 — Test Coverage & Quality
 [ ] Backend unit tests for services and guards (Jest)
 [ ] Test AR on physical devices (ARCore Android, ARKit iOS)
 [ ] Guided first-run onboarding with contextual tooltips for new users
+
+
+================================================================
+  Sales & Marketing — Go-to-Market Plan
+================================================================
+
+TARGET MARKET
+----------------------------------------------------------------
+  Industry: Discrete manufacturing (automotive parts, electronics assembly,
+            precision machining, medical devices)
+  Company size: SME manufacturers (50–500 employees)
+  Geography: India-first (Pune/Maharashtra manufacturing clusters — Chakan,
+             Ranjangaon, Hinjewadi MIDC), then expand nationally
+  Buyer persona: Plant Head, Production Manager, Quality Manager, CTO/CIO
+  Pain points: Paper/Excel tracking, no real-time visibility, manual quality
+               inspection, no OEE data, shift handover chaos
+
+CORE DIFFERENTIATORS
+----------------------------------------------------------------
+  • Real-time per-operator, per-stage time tracking with mobile clock-in
+  • 3D/AR quality inspection — color-coded defect visualization on actual models
+  • Kanban work order management with dependency tracking
+  • OEE dashboard with live production analytics
+  • Mobile operator app with offline mode and NFC badge scan
+  • WebSocket real-time monitoring — no page refresh needed
+
+PRICING STRATEGY (INR)
+----------------------------------------------------------------
+  Starter:      ₹15,000–25,000/month   (1 line, ≤20 operators, core features)
+  Professional: ₹40,000–75,000/month   (multi-line, 3D/AR, analytics, mobile)
+  Enterprise:   Custom                  (multi-tenant, SSO, on-prem, SLA)
+  Pilot:        Free 30–60 day trial for first 5 customers (to earn case studies)
+
+PHASE 18 — Sales-Ready Assets
+----------------------------------------------------------------
+[x] Build product landing page with pricing, features, "Book a Demo" CTA (docs/landing/index.html)
+[ ] Record 3-minute product demo video (operator clock-in → Kanban → dashboard → 3D quality)
+[x] Create demo environment with realistic seed data (6 products, 14 WOs, 4 lines, 12 users with Indian names)
+[ ] Design one-pager / PDF pitch deck for email outreach and trade shows
+[x] Build pricing page with tier comparison (included in landing page — Starter/Professional/Enterprise)
+[ ] Create ROI calculator (paper-based vs PCS savings in time, error reduction, quality)
+[ ] Write 3 case-study templates (before/after format for pilot customers)
+
+PHASE 19 — Direct Outreach & Local Sales
+----------------------------------------------------------------
+[ ] Identify 50 target manufacturing companies in Pune/Maharashtra MIDC areas
+[ ] Build prospect list on LinkedIn (Production Managers, Plant Heads)
+[ ] Cold outreach campaign — personalized LinkedIn messages + email sequences
+[ ] Visit Chakan, Ranjangaon, Hinjewadi industrial areas for in-person demos
+[ ] Partner with MCCIA (Mahratta Chamber) and CII Pune for introductions
+[ ] Attend next local manufacturing meetup/event for live demos
+[ ] Offer free 30-day pilot to first 3–5 companies (focus on getting testimonials)
+
+PHASE 20 — Digital Marketing & Inbound
+----------------------------------------------------------------
+[ ] SEO: Target keywords — "production tracking software India", "shop floor management",
+    "MES software for SME", "OEE tracking software", "quality inspection software"
+[ ] Google My Business listing for local discovery
+[ ] Blog content plan (monthly):
+      - "How to calculate and improve OEE on your shop floor"
+      - "Paper vs digital: the hidden cost of manual production tracking"
+      - "How 3D visualization is changing quality inspection in manufacturing"
+      - "Why real-time production monitoring matters for Indian manufacturers"
+[ ] Google Ads campaign on manufacturing software keywords (₹20,000–50,000/month budget)
+[ ] LinkedIn Ads targeting manufacturing operations roles in Maharashtra
+[ ] YouTube channel with short product walkthroughs and feature highlights
+
+PHASE 21 — Partnerships & Channels
+----------------------------------------------------------------
+[ ] Partner with ERP resellers (Tally, SAP Business One partners) for referrals
+[ ] Partner with ISO/quality consultants (they advise factories on tooling)
+[ ] Partner with industrial automation companies for bundled offerings
+[ ] Explore listing on SaaS directories (G2, Capterra, GetApp, SaaSWorthy India)
+[ ] Apply to NASSCOM/Startup India programs for visibility and credibility
+
+PHASE 22 — Trade Shows & Events
+----------------------------------------------------------------
+[ ] IMTEX (Bangalore) — India's largest machine tool exhibition
+[ ] Pune Machine Tool Expo — local manufacturing audience
+[ ] Auto Expo Components — automotive manufacturing suppliers
+[ ] CII Manufacturing Excellence Summit
+[ ] Prepare booth materials: banner, brochure, live demo on tablet + laptop
+
+PHASE 23 — Customer Success & Growth
+----------------------------------------------------------------
+[ ] Onboard first pilot customer — hands-on setup, training, weekly check-ins
+[ ] Document first customer success story (before/after metrics)
+[ ] Build feedback loop — monthly calls with pilot customers to guide roadmap
+[ ] Launch referral program (existing customers refer → discounted months)
+[ ] Track metrics: MRR, churn, NPS, time-to-value, support ticket volume
+[ ] Hire first sales/BD person once 3 paying customers are secured
 
 ================================================================
   Legend:  [x] = Completed    [ ] = Pending

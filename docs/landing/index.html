@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PCS Platform — Production Control System for Modern Manufacturing</title>
+  <meta name="description" content="Real-time production tracking, 3D quality inspection, and shop floor management for Indian manufacturers. Replace paper and Excel with PCS.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #1a56db;
+      --primary-dark: #1340a8;
+      --accent: #f59e0b;
+      --text: #1e293b;
+      --text-light: #64748b;
+      --bg: #ffffff;
+      --bg-alt: #f8fafc;
+      --border: #e2e8f0;
+      --radius: 12px;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; color: var(--text); line-height: 1.6; }
+
+    /* ─── NAV ─────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; width: 100%; background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+      z-index: 100; padding: 0 2rem;
+    }
+    nav .container { display: flex; align-items: center; justify-content: space-between; max-width: 1200px; margin: 0 auto; height: 64px; }
+    nav .logo { font-weight: 800; font-size: 1.25rem; color: var(--primary); text-decoration: none; }
+    nav .logo span { color: var(--text); }
+    nav ul { display: flex; list-style: none; gap: 2rem; align-items: center; }
+    nav ul a { text-decoration: none; color: var(--text-light); font-weight: 500; font-size: 0.9rem; transition: color 0.2s; }
+    nav ul a:hover { color: var(--primary); }
+
+    /* ─── BUTTONS ──────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1.75rem; border-radius: 8px; font-weight: 600;
+      font-size: 0.95rem; text-decoration: none; transition: all 0.2s; border: none; cursor: pointer;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,86,219,0.3); }
+    .btn-outline { background: transparent; color: var(--primary); border: 2px solid var(--primary); }
+    .btn-outline:hover { background: var(--primary); color: #fff; }
+    .btn-large { padding: 1rem 2.5rem; font-size: 1.1rem; border-radius: 10px; }
+
+    /* ─── HERO ─────────────────────────────────────────── */
+    .hero {
+      padding: 8rem 2rem 5rem; text-align: center;
+      background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 50%, #fff 100%);
+    }
+    .hero h1 { font-size: 3.5rem; font-weight: 800; line-height: 1.15; max-width: 800px; margin: 0 auto 1.5rem; }
+    .hero h1 .highlight { color: var(--primary); }
+    .hero p { font-size: 1.25rem; color: var(--text-light); max-width: 600px; margin: 0 auto 2.5rem; }
+    .hero .cta-row { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .hero .stats { display: flex; gap: 3rem; justify-content: center; margin-top: 4rem; padding-top: 3rem; border-top: 1px solid var(--border); }
+    .hero .stat h3 { font-size: 2rem; font-weight: 800; color: var(--primary); }
+    .hero .stat p { font-size: 0.85rem; color: var(--text-light); }
+
+    /* ─── SECTIONS ─────────────────────────────────────── */
+    section { padding: 5rem 2rem; }
+    section.alt { background: var(--bg-alt); }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .section-header { text-align: center; margin-bottom: 3rem; }
+    .section-header h2 { font-size: 2.25rem; font-weight: 800; margin-bottom: 0.75rem; }
+    .section-header p { font-size: 1.1rem; color: var(--text-light); max-width: 600px; margin: 0 auto; }
+    .badge { display: inline-block; background: #dbeafe; color: var(--primary); padding: 0.35rem 1rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; margin-bottom: 1rem; letter-spacing: 0.05em; text-transform: uppercase; }
+
+    /* ─── FEATURES GRID ────────────────────────────────── */
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; }
+    .feature-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 2rem; transition: all 0.2s;
+    }
+    .feature-card:hover { border-color: var(--primary); box-shadow: 0 8px 24px rgba(0,0,0,0.06); transform: translateY(-2px); }
+    .feature-card .icon {
+      width: 48px; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; margin-bottom: 1rem;
+    }
+    .feature-card .icon.blue { background: #dbeafe; color: var(--primary); }
+    .feature-card .icon.amber { background: #fef3c7; color: #d97706; }
+    .feature-card .icon.green { background: #d1fae5; color: #059669; }
+    .feature-card .icon.purple { background: #ede9fe; color: #7c3aed; }
+    .feature-card .icon.red { background: #fee2e2; color: #dc2626; }
+    .feature-card .icon.teal { background: #ccfbf1; color: #0d9488; }
+    .feature-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .feature-card p { font-size: 0.9rem; color: var(--text-light); line-height: 1.6; }
+
+    /* ─── DIFFERENTIATOR ───────────────────────────────── */
+    .diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: center; }
+    .diff-content h2 { font-size: 2rem; font-weight: 800; margin-bottom: 1rem; }
+    .diff-content p { color: var(--text-light); margin-bottom: 1.5rem; }
+    .diff-list { list-style: none; }
+    .diff-list li { padding: 0.6rem 0; display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.95rem; }
+    .diff-list .material-icons-outlined { color: #059669; font-size: 1.25rem; flex-shrink: 0; margin-top: 2px; }
+    .diff-visual {
+      background: linear-gradient(135deg, #1e3a5f 0%, #1a56db 100%);
+      border-radius: var(--radius); padding: 2.5rem; color: #fff; min-height: 400px;
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    .diff-visual h3 { font-size: 1.4rem; font-weight: 700; margin-bottom: 1.5rem; opacity: 0.95; }
+    .metric-row { display: flex; justify-content: space-between; margin-bottom: 1rem; }
+    .metric { text-align: center; }
+    .metric .value { font-size: 2rem; font-weight: 800; }
+    .metric .label { font-size: 0.75rem; opacity: 0.7; margin-top: 0.25rem; }
+    .bar-chart { margin-top: 1.5rem; }
+    .bar-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+    .bar-label { font-size: 0.8rem; opacity: 0.8; width: 100px; text-align: right; }
+    .bar-track { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; }
+    .bar-fill.green { background: #34d399; }
+    .bar-fill.amber { background: #fbbf24; }
+    .bar-fill.blue { background: #60a5fa; }
+
+    /* ─── PRICING ──────────────────────────────────────── */
+    .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; }
+    .price-card {
+      background: var(--bg); border: 2px solid var(--border); border-radius: var(--radius);
+      padding: 2.5rem 2rem; text-align: center; position: relative;
+    }
+    .price-card.featured { border-color: var(--primary); box-shadow: 0 8px 30px rgba(26,86,219,0.12); }
+    .price-card.featured .popular-badge {
+      position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+      background: var(--primary); color: #fff; padding: 0.3rem 1.25rem;
+      border-radius: 20px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+    }
+    .price-card h3 { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .price-card .price { font-size: 2.5rem; font-weight: 800; margin: 1rem 0 0.25rem; }
+    .price-card .price span { font-size: 1rem; font-weight: 500; color: var(--text-light); }
+    .price-card .price-note { font-size: 0.8rem; color: var(--text-light); margin-bottom: 1.5rem; }
+    .price-card ul { list-style: none; text-align: left; margin-bottom: 2rem; }
+    .price-card ul li { padding: 0.5rem 0; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
+    .price-card ul li .material-icons-outlined { font-size: 1.1rem; color: #059669; }
+
+    /* ─── PAIN POINTS ──────────────────────────────────── */
+    .pain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+    .pain-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 1.75rem; display: flex; gap: 1rem; align-items: flex-start;
+    }
+    .pain-card .icon-wrap {
+      width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 1.25rem;
+    }
+    .pain-card .before { background: #fee2e2; color: #dc2626; }
+    .pain-card .after { background: #d1fae5; color: #059669; }
+    .pain-card h4 { font-weight: 700; margin-bottom: 0.35rem; }
+    .pain-card p { font-size: 0.85rem; color: var(--text-light); }
+
+    /* ─── CTA ──────────────────────────────────────────── */
+    .cta-section {
+      background: linear-gradient(135deg, #1e3a5f 0%, #1a56db 100%);
+      color: #fff; text-align: center; padding: 5rem 2rem; border-radius: 0;
+    }
+    .cta-section h2 { font-size: 2.5rem; font-weight: 800; margin-bottom: 1rem; }
+    .cta-section p { font-size: 1.15rem; opacity: 0.85; max-width: 550px; margin: 0 auto 2rem; }
+    .cta-section .btn-primary { background: #fff; color: var(--primary); }
+    .cta-section .btn-primary:hover { background: #f0f0f0; }
+
+    /* ─── FOOTER ───────────────────────────────────────── */
+    footer { background: #0f172a; color: #94a3b8; padding: 3rem 2rem; text-align: center; }
+    footer p { font-size: 0.85rem; }
+    footer a { color: #60a5fa; text-decoration: none; }
+
+    /* ─── RESPONSIVE ───────────────────────────────────── */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2.25rem; }
+      .features-grid, .pricing-grid { grid-template-columns: 1fr; }
+      .diff-grid, .pain-grid { grid-template-columns: 1fr; }
+      .hero .stats { flex-direction: column; gap: 1.5rem; }
+      nav ul { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container">
+    <a href="#" class="logo">PCS<span>Platform</span></a>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#why">Why PCS</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="https://app.spadebloom.com/login" class="btn btn-outline" style="padding: 0.5rem 1.25rem; font-size: 0.85rem;">Login</a></li>
+      <li><a href="#demo" class="btn btn-primary" style="padding: 0.5rem 1.25rem; font-size: 0.85rem;">Book a Demo</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <span class="badge">Built for Indian Manufacturers</span>
+  <h1>Stop losing production hours to <span class="highlight">paper and Excel</span></h1>
+  <p>Real-time operator tracking, 3D quality inspection, and live OEE dashboards &mdash; purpose-built for your shop floor.</p>
+  <div class="cta-row">
+    <a href="#demo" class="btn btn-primary btn-large">Book a Free Demo</a>
+    <a href="#features" class="btn btn-outline btn-large">See Features</a>
+  </div>
+  <div class="stats">
+    <div class="stat"><h3>40%</h3><p>Reduction in idle time</p></div>
+    <div class="stat"><h3>3x</h3><p>Faster quality reporting</p></div>
+    <div class="stat"><h3>15 min</h3><p>Shift handover (was 45 min)</p></div>
+    <div class="stat"><h3>98%</h3><p>Data capture accuracy</p></div>
+  </div>
+</section>
+
+<!-- PAIN POINTS -->
+<section class="alt">
+  <div class="container">
+    <div class="section-header">
+      <span class="badge">Before vs After</span>
+      <h2>What changes when you switch to PCS</h2>
+    </div>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <div class="icon-wrap before"><span class="material-icons-outlined">description</span></div>
+        <div>
+          <h4>Paper job cards get lost</h4>
+          <p>Operators fill paper forms that pile up. Data reaches managers hours — or days — later.</p>
+        </div>
+      </div>
+      <div class="pain-card">
+        <div class="icon-wrap after"><span class="material-icons-outlined">phone_android</span></div>
+        <div>
+          <h4>Instant digital clock-in</h4>
+          <p>Operators tap their badge or phone. Time entries appear on the dashboard in real time.</p>
+        </div>
+      </div>
+      <div class="pain-card">
+        <div class="icon-wrap before"><span class="material-icons-outlined">grid_on</span></div>
+        <div>
+          <h4>Excel reports take hours</h4>
+          <p>Supervisors compile shift data into spreadsheets manually. OEE is a guessing game.</p>
+        </div>
+      </div>
+      <div class="pain-card">
+        <div class="icon-wrap after"><span class="material-icons-outlined">dashboard</span></div>
+        <div>
+          <h4>Live OEE dashboard</h4>
+          <p>OEE, operator efficiency, and quality metrics update in real time. No manual work.</p>
+        </div>
+      </div>
+      <div class="pain-card">
+        <div class="icon-wrap before"><span class="material-icons-outlined">search_off</span></div>
+        <div>
+          <h4>Quality issues found too late</h4>
+          <p>Defects discovered at final inspection. Entire batches get rejected or reworked.</p>
+        </div>
+      </div>
+      <div class="pain-card">
+        <div class="icon-wrap after"><span class="material-icons-outlined">view_in_ar</span></div>
+        <div>
+          <h4>3D visual quality inspection</h4>
+          <p>Inspect quality data overlaid on 3D models. Catch defect patterns early with AR on the shop floor.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="section-header">
+      <span class="badge">Platform Features</span>
+      <h2>Everything your shop floor needs</h2>
+      <p>One platform for production tracking, quality control, and workforce management.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="icon blue"><span class="material-icons-outlined">timer</span></div>
+        <h3>Real-Time Time Tracking</h3>
+        <p>Per-operator, per-stage clock in/out via web, mobile, or NFC badge. See who's working on what, right now.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon amber"><span class="material-icons-outlined">view_kanban</span></div>
+        <h3>Kanban Work Orders</h3>
+        <p>Drag-and-drop work order management with stage dependencies. Track progress from draft to completed.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon green"><span class="material-icons-outlined">3d_rotation</span></div>
+        <h3>3D Quality Inspection</h3>
+        <p>Overlay pass/fail/warning data on actual 3D models. Identify defect patterns before they become expensive.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon purple"><span class="material-icons-outlined">phone_android</span></div>
+        <h3>Mobile Operator App</h3>
+        <p>Ionic app with offline mode. Operators clock in, view work orders, and inspect quality data from the floor.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon red"><span class="material-icons-outlined">speed</span></div>
+        <h3>OEE Dashboard</h3>
+        <p>Live Overall Equipment Effectiveness with availability, performance, and quality breakdowns. Export to CSV.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon teal"><span class="material-icons-outlined">notifications_active</span></div>
+        <h3>Smart Alerts</h3>
+        <p>Get notified on efficiency drops, overdue orders, quality failures, and idle stations. Shift handover reports auto-generated.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DIFFERENTIATOR -->
+<section id="why" class="alt">
+  <div class="container">
+    <div class="diff-grid">
+      <div class="diff-content">
+        <span class="badge">Why PCS Platform</span>
+        <h2>Built for Indian manufacturing SMEs</h2>
+        <p>Most MES software is designed for large enterprises with SAP budgets. PCS is built from the ground up for 50-500 employee factories.</p>
+        <ul class="diff-list">
+          <li><span class="material-icons-outlined">check_circle</span> Setup in days, not months &mdash; no consultants needed</li>
+          <li><span class="material-icons-outlined">check_circle</span> Works on any device &mdash; existing phones and tablets</li>
+          <li><span class="material-icons-outlined">check_circle</span> 3D/AR quality inspection &mdash; no other SME tool has this</li>
+          <li><span class="material-icons-outlined">check_circle</span> WebSocket real-time updates &mdash; no page refreshing</li>
+          <li><span class="material-icons-outlined">check_circle</span> Offline-first mobile app &mdash; works even with spotty wifi</li>
+          <li><span class="material-icons-outlined">check_circle</span> Data hosted in Mumbai (ap-south-1) &mdash; fast and compliant</li>
+        </ul>
+      </div>
+      <div class="diff-visual">
+        <h3>Live Production Dashboard</h3>
+        <div class="metric-row">
+          <div class="metric"><div class="value">87.4%</div><div class="label">OEE Score</div></div>
+          <div class="metric"><div class="value">12</div><div class="label">Active Operators</div></div>
+          <div class="metric"><div class="value">5</div><div class="label">Orders In Progress</div></div>
+          <div class="metric"><div class="value">94%</div><div class="label">Quality Rate</div></div>
+        </div>
+        <div class="bar-chart">
+          <div class="bar-row">
+            <div class="bar-label">Line A</div>
+            <div class="bar-track"><div class="bar-fill green" style="width: 92%"></div></div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Line B</div>
+            <div class="bar-track"><div class="bar-fill green" style="width: 85%"></div></div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Line C</div>
+            <div class="bar-track"><div class="bar-fill amber" style="width: 67%"></div></div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Line D</div>
+            <div class="bar-track"><div class="bar-fill blue" style="width: 78%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing">
+  <div class="container">
+    <div class="section-header">
+      <span class="badge">Simple Pricing</span>
+      <h2>Start small, scale as you grow</h2>
+      <p>No setup fees. Free 30-day pilot for your first line.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <h3>Starter</h3>
+        <p style="color: var(--text-light); font-size: 0.9rem;">Perfect for one production line</p>
+        <div class="price">&pound;15,000<span>/mo</span></div>
+        <div class="price-note">Up to 20 operators</div>
+        <ul>
+          <li><span class="material-icons-outlined">check_circle</span> 1 production line</li>
+          <li><span class="material-icons-outlined">check_circle</span> Real-time time tracking</li>
+          <li><span class="material-icons-outlined">check_circle</span> Work order management</li>
+          <li><span class="material-icons-outlined">check_circle</span> Basic dashboard & reports</li>
+          <li><span class="material-icons-outlined">check_circle</span> Mobile operator app</li>
+          <li><span class="material-icons-outlined">check_circle</span> Email support</li>
+        </ul>
+        <a href="#demo" class="btn btn-outline" style="width: 100%; justify-content: center;">Start Free Trial</a>
+      </div>
+      <div class="price-card featured">
+        <div class="popular-badge">Most Popular</div>
+        <h3>Professional</h3>
+        <p style="color: var(--text-light); font-size: 0.9rem;">For growing factories</p>
+        <div class="price">&pound;45,000<span>/mo</span></div>
+        <div class="price-note">Up to 100 operators</div>
+        <ul>
+          <li><span class="material-icons-outlined">check_circle</span> Unlimited production lines</li>
+          <li><span class="material-icons-outlined">check_circle</span> Everything in Starter</li>
+          <li><span class="material-icons-outlined">check_circle</span> 3D quality inspection + AR</li>
+          <li><span class="material-icons-outlined">check_circle</span> OEE analytics & CSV export</li>
+          <li><span class="material-icons-outlined">check_circle</span> Smart alerts & notifications</li>
+          <li><span class="material-icons-outlined">check_circle</span> Kanban board</li>
+          <li><span class="material-icons-outlined">check_circle</span> Priority support</li>
+        </ul>
+        <a href="#demo" class="btn btn-primary" style="width: 100%; justify-content: center;">Start Free Trial</a>
+      </div>
+      <div class="price-card">
+        <h3>Enterprise</h3>
+        <p style="color: var(--text-light); font-size: 0.9rem;">Multi-site operations</p>
+        <div class="price">Custom</div>
+        <div class="price-note">Unlimited operators</div>
+        <ul>
+          <li><span class="material-icons-outlined">check_circle</span> Everything in Professional</li>
+          <li><span class="material-icons-outlined">check_circle</span> Multi-tenant / multi-site</li>
+          <li><span class="material-icons-outlined">check_circle</span> SSO integration</li>
+          <li><span class="material-icons-outlined">check_circle</span> On-premise deployment</li>
+          <li><span class="material-icons-outlined">check_circle</span> Custom integrations (ERP/SAP)</li>
+          <li><span class="material-icons-outlined">check_circle</span> Dedicated account manager</li>
+          <li><span class="material-icons-outlined">check_circle</span> SLA guarantee</li>
+        </ul>
+        <a href="#demo" class="btn btn-outline" style="width: 100%; justify-content: center;">Contact Sales</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="demo" class="cta-section">
+  <h2>See PCS on your shop floor</h2>
+  <p>30-minute live demo with your data. Free 30-day pilot on one production line. No commitments.</p>
+  <a href="mailto:sales@spadebloom.com?subject=PCS%20Platform%20Demo%20Request" class="btn btn-primary btn-large">
+    <span class="material-icons-outlined">calendar_today</span> Book a Demo
+  </a>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>&copy; 2026 Spadebloom Technologies &mdash; Pune, Maharashtra, India</p>
+  <p style="margin-top: 0.5rem;"><a href="mailto:sales@spadebloom.com">sales@spadebloom.com</a> &middot; <a href="https://demo.spadebloom.com">Try Live Demo</a></p>
+</footer>
+
+</body>
+</html>

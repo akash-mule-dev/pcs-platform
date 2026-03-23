@@ -34,7 +34,7 @@ test.describe('Mobile App - operator2@pcs.local full test', () => {
     await passwordInput.fill(CREDS.password);
 
     // Click login button
-    const loginBtn = page.locator('ion-button[type="submit"], button[type="submit"]').first();
+    const loginBtn = page.locator('ion-button:has-text("Sign In"), ion-button[type="submit"], button[type="submit"]').first();
     await loginBtn.click();
 
     // Should navigate to dashboard
@@ -200,7 +200,7 @@ async function loginViaUI(page: Page) {
   await emailInput.fill(CREDS.email);
   await passwordInput.fill(CREDS.password);
 
-  const loginBtn = page.locator('ion-button[type="submit"], button[type="submit"]').first();
+  const loginBtn = page.locator('ion-button:has-text("Sign In"), ion-button[type="submit"], button[type="submit"]').first();
   await loginBtn.click();
 
   await page.waitForURL(/tabs/, { timeout: 15000 });

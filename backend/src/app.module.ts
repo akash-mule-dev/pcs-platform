@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { DatabaseModule } from './database/database.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -28,6 +30,10 @@ import { OrganizationModule } from './organization/organization.module.js';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([{
+      ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),
+      limit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
+    }]),
     DatabaseModule,
     StorageModule,
     WebsocketModule,
@@ -52,6 +58,12 @@ import { OrganizationModule } from './organization/organization.module.js';
     SearchModule,
     HealthModule,
     OrganizationModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}
