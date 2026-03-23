@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PCS Platform — Product One-Pager</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4; margin: 0; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none; } }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, sans-serif; color: #1e293b; background: #fff; width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 14mm; font-size: 9.5pt; line-height: 1.5; }
+
+    .no-print { text-align: center; padding: 0.75rem; background: #dbeafe; color: #1a56db; font-size: 0.85rem; font-weight: 600; margin: -12mm -14mm 12mm; }
+
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6mm; padding-bottom: 4mm; border-bottom: 3px solid #1a56db; }
+    .header .logo { font-weight: 800; font-size: 18pt; color: #1a56db; }
+    .header .logo span { color: #1e293b; }
+    .header .tagline { font-size: 8pt; color: #64748b; text-align: right; }
+
+    .hero-bar { background: linear-gradient(135deg, #1e3a5f, #1a56db); color: #fff; border-radius: 8px; padding: 5mm 6mm; margin-bottom: 5mm; }
+    .hero-bar h1 { font-size: 14pt; font-weight: 800; margin-bottom: 1mm; }
+    .hero-bar p { font-size: 9pt; opacity: 0.85; }
+
+    h2 { font-size: 11pt; font-weight: 800; color: #1a56db; margin: 4mm 0 2mm; text-transform: uppercase; letter-spacing: 0.05em; font-size: 8pt; }
+    h3 { font-size: 9.5pt; font-weight: 700; margin-bottom: 1mm; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+    .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; }
+
+    .feature-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3mm; }
+    .feature-card h3 { font-size: 8.5pt; color: #1a56db; }
+    .feature-card p { font-size: 8pt; color: #64748b; line-height: 1.4; }
+
+    .stat-card { text-align: center; background: #f0fdf4; border-radius: 6px; padding: 3mm; }
+    .stat-card .num { font-size: 16pt; font-weight: 800; color: #059669; }
+    .stat-card .label { font-size: 7.5pt; color: #64748b; }
+
+    .pain-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 3mm; }
+    .pain-table th { background: #f1f5f9; padding: 2mm 3mm; text-align: left; font-weight: 700; font-size: 8pt; }
+    .pain-table td { padding: 2mm 3mm; border-bottom: 1px solid #e2e8f0; }
+    .pain-table .before { color: #dc2626; }
+    .pain-table .after { color: #059669; font-weight: 600; }
+
+    .pricing-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; margin-bottom: 3mm; }
+    .price-box { border: 1px solid #e2e8f0; border-radius: 6px; padding: 3mm; text-align: center; }
+    .price-box.featured { border-color: #1a56db; background: #eff6ff; }
+    .price-box .tier { font-weight: 700; font-size: 9pt; }
+    .price-box .price { font-weight: 800; font-size: 12pt; color: #1a56db; margin: 1mm 0; }
+    .price-box .price span { font-size: 8pt; font-weight: 500; color: #64748b; }
+    .price-box .note { font-size: 7pt; color: #64748b; }
+
+    .cta-bar { background: #1e3a5f; color: #fff; border-radius: 8px; padding: 4mm 6mm; display: flex; justify-content: space-between; align-items: center; margin-top: 4mm; }
+    .cta-bar .left h3 { color: #fff; font-size: 10pt; }
+    .cta-bar .left p { font-size: 8pt; opacity: 0.8; }
+    .cta-bar .right { text-align: right; font-size: 8pt; }
+    .cta-bar .right a { color: #93c5fd; }
+
+    .footer { margin-top: 4mm; text-align: center; font-size: 7.5pt; color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+<div class="no-print">Press Ctrl+P to save as PDF / print</div>
+
+<div class="header">
+  <div class="logo">PCS<span>Platform</span></div>
+  <div class="tagline">Production Control System<br>www.spadebloom.com</div>
+</div>
+
+<div class="hero-bar">
+  <h1>Real-time production tracking for Indian manufacturers</h1>
+  <p>Replace paper job cards and Excel with live dashboards, mobile operator apps, and 3D quality inspection.</p>
+</div>
+
+<!-- STATS -->
+<div class="three-col" style="margin-bottom: 4mm;">
+  <div class="stat-card"><div class="num">40%</div><div class="label">Reduction in idle time</div></div>
+  <div class="stat-card"><div class="num">3x</div><div class="label">Faster quality reporting</div></div>
+  <div class="stat-card"><div class="num">98%</div><div class="label">Data capture accuracy</div></div>
+</div>
+
+<!-- BEFORE / AFTER -->
+<h2>The Problem We Solve</h2>
+<table class="pain-table">
+  <tr><th width="50%">Without PCS (Paper/Excel)</th><th>With PCS Platform</th></tr>
+  <tr><td class="before">Operators fill paper forms — data reaches managers hours later</td><td class="after">Instant digital clock-in via phone or NFC badge</td></tr>
+  <tr><td class="before">Supervisors spend 2+ hrs/day compiling Excel shift reports</td><td class="after">Live OEE dashboard updates automatically in real time</td></tr>
+  <tr><td class="before">Quality defects found at final inspection — entire batches reworked</td><td class="after">3D quality overlay catches defect patterns early</td></tr>
+  <tr><td class="before">No visibility into who's working on what, right now</td><td class="after">Live operator tracking per stage, per station</td></tr>
+</table>
+
+<!-- FEATURES -->
+<h2>Platform Features</h2>
+<div class="three-col" style="margin-bottom: 3mm;">
+  <div class="feature-card"><h3>Real-Time Tracking</h3><p>Per-operator, per-stage clock in/out via web, mobile, or NFC badge</p></div>
+  <div class="feature-card"><h3>Kanban Work Orders</h3><p>Drag-and-drop work order management with stage dependencies</p></div>
+  <div class="feature-card"><h3>3D Quality Inspection</h3><p>Overlay pass/fail data on 3D models with AR on the shop floor</p></div>
+  <div class="feature-card"><h3>Mobile Operator App</h3><p>Offline-first app for operators — clock in, view orders, inspect quality</p></div>
+  <div class="feature-card"><h3>OEE Dashboard</h3><p>Live Overall Equipment Effectiveness with CSV export</p></div>
+  <div class="feature-card"><h3>Smart Alerts</h3><p>Notifications for efficiency drops, overdue orders, quality failures</p></div>
+</div>
+
+<!-- PRICING -->
+<h2>Simple, Transparent Pricing</h2>
+<div class="pricing-row">
+  <div class="price-box"><div class="tier">Starter</div><div class="price">&#8377;15K<span>/mo</span></div><div class="note">1 line, up to 20 operators</div></div>
+  <div class="price-box featured"><div class="tier">Professional</div><div class="price">&#8377;45K<span>/mo</span></div><div class="note">Unlimited lines, 3D/AR, analytics</div></div>
+  <div class="price-box"><div class="tier">Enterprise</div><div class="price">Custom</div><div class="note">Multi-site, SSO, on-prem</div></div>
+</div>
+
+<!-- CTA -->
+<div class="cta-bar">
+  <div class="left">
+    <h3>Free 30-day pilot on one production line</h3>
+    <p>Setup in days, not months. No consultants needed. Works on existing phones and tablets.</p>
+  </div>
+  <div class="right">
+    <strong>Book a Demo</strong><br>
+    <a href="mailto:sales@spadebloom.com">sales@spadebloom.com</a><br>
+    <a href="https://www.spadebloom.com">www.spadebloom.com</a>
+  </div>
+</div>
+
+<div class="footer">
+  Spadebloom Technologies &middot; Pune, Maharashtra, India &middot; &copy; 2026
+</div>
+
+</body>
+</html>
