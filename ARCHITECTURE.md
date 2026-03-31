@@ -16,7 +16,7 @@ A single-product production control platform with three clients (web, mobile-ope
 | Layer | Technology |
 |-------|-----------|
 | Frontend (Web) | Angular 17+ with Angular Material |
-| Mobile App | Ionic 7 + Angular 17+ |
+| Mobile App | React Native + Expo (SDK 52) |
 | Backend | NestJS 10+ (TypeScript) |
 | Database | PostgreSQL 16 |
 | ORM | TypeORM |
@@ -62,16 +62,22 @@ pcs-platform/
 │   │   ├── stations/          # Stations & lines management
 │   │   └── reports/           # Analytics & reports
 │   └── ...
-├── mobile/                    # Ionic + Angular app
-│   ├── src/app/
-│   │   ├── core/              # Auth, services, guards
-│   │   ├── shared/            # Shared components
-│   │   ├── auth/              # Login page
-│   │   ├── dashboard/         # Operator dashboard
-│   │   ├── work-orders/       # View assigned work orders
-│   │   ├── time-tracking/     # Clock in/out UI ⭐
-│   │   ├── stages/            # Stage execution view
-│   │   └── profile/           # Operator profile & stats
+├── mobile-rn/                 # React Native + Expo app
+│   ├── src/
+│   │   ├── components/        # Shared UI components
+│   │   ├── config/            # Environment configuration
+│   │   ├── context/           # React context (Auth, etc.)
+│   │   ├── navigation/        # React Navigation (tabs, stacks)
+│   │   ├── screens/           # App screens
+│   │   │   ├── auth/          # Login screen
+│   │   │   ├── dashboard/     # Operator dashboard
+│   │   │   ├── work-orders/   # View assigned work orders
+│   │   │   ├── time-tracking/ # Clock in/out UI ⭐
+│   │   │   ├── model-viewer/  # 3D/AR model viewer
+│   │   │   └── profile/       # Operator profile & stats
+│   │   ├── services/          # API, auth, offline, caching
+│   │   ├── theme/             # Colors and styling
+│   │   └── utils/             # Utility functions
 │   └── ...
 └── ARCHITECTURE.md
 ```
@@ -424,17 +430,17 @@ Seed ~50 time entries across operators, various stages, with realistic duration 
 | Stations | /stations | Lines & stations management |
 | Reports | /reports | Operator performance, stage analytics charts |
 
-### Mobile App (Ionic + Angular)
+### Mobile App (React Native + Expo)
 
-| Page | Route | Description |
-|------|-------|-------------|
-| Login | /login | Email + password |
-| Dashboard | /dashboard | Assigned work, current status |
-| My Work Orders | /work-orders | Operator's assigned work orders |
-| Stage Execution | /stage/:id | Clock in/out button, timer, notes |
-| Active Timer | /active | Current active time entry with live timer |
-| History | /history | Own time entry history |
-| Profile | /profile | Own stats and performance |
+| Screen | Stack/Tab | Description |
+|--------|-----------|-------------|
+| Login | Auth Stack | Email + password |
+| Dashboard | Home Tab | Assigned work, current status |
+| Work Orders | Work Orders Tab | Operator's assigned work orders |
+| Work Order Detail | Work Orders Stack | Stage progress, clock in/out, timer |
+| Time Tracking | Time Tracking Tab | Active timer, clock in/out ⭐ |
+| Model Viewer | Model Viewer Tab | 3D/AR model viewer |
+| Profile | Profile Tab | Own stats and performance |
 
 ---
 
@@ -443,7 +449,7 @@ Seed ~50 time entries across operators, various stages, with realistic duration 
 1. **TypeORM with migrations** — use `synchronize: false` in prod, migrations for schema
 2. **Validation** — class-validator + class-transformer on all DTOs
 3. **Swagger** — auto-generated at `/api/docs`
-4. **CORS** — configured for frontend (4200) and mobile (8100)
+4. **CORS** — configured for frontend (4200); mobile app connects directly via device network
 5. **Pagination** — all list endpoints support `?page=1&limit=20`
 6. **Filtering** — work orders by status, priority; time entries by date range, user
 7. **Error handling** — global exception filter with consistent error format

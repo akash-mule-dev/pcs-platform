@@ -1,0 +1,41 @@
+appId: com.primeterminal.pcs
+name: "Login Flow"
+---
+
+# Launch the app
+- launchApp
+
+# If already logged in, logout first
+- runFlow:
+    when:
+      visible: "Profile"
+    commands:
+      - tapOn: "Profile"
+      - tapOn: "Logout"
+      - tapOn: "LOGOUT"
+      - extendedWaitUntil:
+          visible: "Sign In"
+          timeout: 5000
+
+# Verify login screen is visible
+- assertVisible: "PCS"
+- assertVisible: "Production Control System"
+- assertVisible: "Sign In"
+
+# Test empty submission shows error
+- tapOn: "Sign In"
+- assertVisible: "Please enter email and password"
+- tapOn: "OK"
+
+# Enter valid credentials
+- tapOn: "Enter your email"
+- inputText: "admin@pcs.local"
+- tapOn: "Enter your password"
+- inputText: "password123"
+- tapOn: "Sign In"
+
+# Verify we land on the dashboard
+- extendedWaitUntil:
+    visible: "Today's Stats"
+    timeout: 10000
+- assertVisible: "Quick Actions"

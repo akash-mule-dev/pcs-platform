@@ -1,0 +1,98 @@
+appId: com.primeterminal.pcs
+name: "Full End-to-End Flow"
+---
+
+# ── 1. Launch App ──
+- launchApp
+
+# If already logged in, logout first
+- runFlow:
+    when:
+      visible: "Profile"
+    commands:
+      - tapOn: "Profile"
+      - tapOn: "Logout"
+      - tapOn: "Logout"
+      - extendedWaitUntil:
+          visible: "Sign In"
+          timeout: 5000
+
+# ── 2. Login ──
+- assertVisible: "PCS"
+- assertVisible: "Sign In"
+
+- tapOn: "Enter your email"
+- inputText: "admin@pcs.local"
+- tapOn: "Enter your password"
+- inputText: "password123"
+- tapOn: "Sign In"
+
+# ── 3. Dashboard Loaded ──
+- extendedWaitUntil:
+    visible: "Today's Stats"
+    timeout: 10000
+- assertVisible: "Stages Done"
+- assertVisible: "Total Time"
+- assertVisible: "Work Orders"
+- assertVisible: "Quick Actions"
+
+# ── 4. Navigate All Tabs ──
+# Work Orders
+- tapOn: "Orders"
+- extendedWaitUntil:
+    visible: "Work Orders"
+    timeout: 5000
+
+# Timer
+- tapOn: "Timer"
+- extendedWaitUntil:
+    visible: "Timer"
+    timeout: 5000
+
+# 3D Models
+- tapOn: "3D/AR"
+- extendedWaitUntil:
+    visible: "3D Models"
+    timeout: 5000
+
+# Profile
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "admin@pcs.local"
+    timeout: 5000
+- assertVisible: "This Week"
+
+# ── 5. Work Order Detail ──
+- tapOn: "Orders"
+- extendedWaitUntil:
+    visible: "Work Orders"
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "WO-2026-0001"
+    timeout: 15000
+- tapOn: "WO-2026-0001"
+- extendedWaitUntil:
+    visible: "Stages"
+    timeout: 5000
+- assertVisible: "Product"
+- assertVisible: "Quantity"
+- back
+
+# ── 6. Timer History ──
+- tapOn: "Timer"
+- tapOn: "View History"
+- assertVisible: "History"
+- back
+
+# ── 7. Logout ──
+- tapOn: "Profile"
+- assertVisible: "Logout"
+- tapOn: "Logout"
+- assertVisible: "Are you sure you want to log out?"
+- tapOn: "LOGOUT"
+
+# Verify we're back at login
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 5000
+- assertVisible: "PCS"

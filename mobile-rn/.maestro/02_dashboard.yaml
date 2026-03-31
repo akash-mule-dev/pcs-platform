@@ -1,0 +1,37 @@
+appId: com.primeterminal.pcs
+name: "Dashboard Screen"
+---
+
+# Ensure app is launched and logged in
+- launchApp
+
+- runFlow:
+    when:
+      visible: "Sign In"
+    commands:
+      - tapOn: "Enter your email"
+      - inputText: "admin@pcs.local"
+      - tapOn: "Enter your password"
+      - inputText: "password123"
+      - tapOn: "Sign In"
+
+# Verify dashboard elements
+- extendedWaitUntil:
+    visible: "Today's Stats"
+    timeout: 10000
+- assertVisible: "Stages Done"
+- assertVisible: "Total Time"
+- assertVisible: "Work Orders"
+
+# Verify quick actions
+- assertVisible: "Quick Actions"
+
+# Test navigation to Work Orders via tab
+- tapOn: "Orders"
+- extendedWaitUntil:
+    visible: "Work Orders"
+    timeout: 5000
+
+# Go back to dashboard
+- tapOn: "Home"
+- assertVisible: "Today's Stats"

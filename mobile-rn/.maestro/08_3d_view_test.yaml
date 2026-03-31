@@ -1,0 +1,79 @@
+appId: com.primeterminal.pcs
+name: "3D Model Viewer Test"
+---
+
+# Launch the app
+- launchApp
+
+# Login if needed
+- runFlow:
+    when:
+      visible: "Sign In"
+    commands:
+      - tapOn: "Enter your email"
+      - inputText: "admin@pcs.local"
+      - tapOn: "Enter your password"
+      - inputText: "password123"
+      - tapOn: "Sign In"
+      - extendedWaitUntil:
+          visible: "Today's Stats"
+          timeout: 10000
+
+# ── Navigate to 3D Models tab ──
+- tapOn: "3D/AR"
+- extendedWaitUntil:
+    visible: "3D Models"
+    timeout: 5000
+
+# Verify filter chips
+- assertVisible: "All"
+- assertVisible: "Assembly"
+- assertVisible: "Quality"
+
+# Wait for models to load
+- extendedWaitUntil:
+    visible: "test-widget"
+    timeout: 10000
+
+# ── Test filters ──
+- tapOn: "Assembly"
+- tapOn: "Quality"
+- tapOn: "All"
+
+# ── Open Hydraulic Pump → View 3D ──
+- tapOn: "Hydraulic Pump 3D Model"
+- tapOn: "View 3D"
+- extendedWaitUntil:
+    visible: "3D Viewer"
+    timeout: 5000
+- waitForAnimationToEnd
+- back
+
+# ── Open Hydraulic Pump → Quality Inspection ──
+- extendedWaitUntil:
+    visible: "3D Models"
+    timeout: 5000
+- tapOn: "Hydraulic Pump 3D Model"
+- tapOn: "Quality Inspection"
+- extendedWaitUntil:
+    visible: "Quality Inspection"
+    timeout: 5000
+- assertVisible: "Pass"
+- assertVisible: "Fail"
+- assertVisible: "Warning"
+- back
+
+# ── Open Hydraulic Pump → AR View ──
+- extendedWaitUntil:
+    visible: "3D Models"
+    timeout: 5000
+- tapOn: "Hydraulic Pump 3D Model"
+- tapOn: "AR View"
+- extendedWaitUntil:
+    visible: "AR Viewer"
+    timeout: 5000
+- assertVisible: "Start AR Session"
+- tapOn: "Start AR Session"
+- assertVisible: "Tap to place"
+- assertVisible: "Pinch to scale"
+- back

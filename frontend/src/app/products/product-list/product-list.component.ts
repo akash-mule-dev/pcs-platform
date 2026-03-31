@@ -14,7 +14,9 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
 import { ProductFormComponent } from '../product-form/product-form.component';
 import { ProductViewerComponent } from '../product-viewer/product-viewer.component';
+import { ArViewerDialogComponent } from '../ar-viewer-dialog/ar-viewer-dialog.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-product-list',
@@ -55,13 +57,19 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         <th mat-header-cell *matHeaderCellDef>3D Model</th>
         <td mat-cell *matCellDef="let p">
           @if (p.models?.length > 0) {
-            <button mat-flat-button class="view-3d-btn" (click)="view3D(p)" matTooltip="View 3D model">
-              <mat-icon>view_in_ar</mat-icon>
-              <span>View 3D</span>
-              @if (p.models.length > 1) {
-                <span class="model-count-badge">{{ p.models.length }}</span>
-              }
-            </button>
+            <div class="model-actions">
+              <button mat-flat-button class="view-3d-btn" (click)="view3D(p)" matTooltip="View 3D model">
+                <mat-icon>view_in_ar</mat-icon>
+                <span>View 3D</span>
+                @if (p.models.length > 1) {
+                  <span class="model-count-badge">{{ p.models.length }}</span>
+                }
+              </button>
+              <button mat-flat-button class="view-ar-btn" (click)="viewAR(p)" matTooltip="View with camera (AR)">
+                <mat-icon>photo_camera</mat-icon>
+                <span>Camera</span>
+              </button>
+            </div>
           } @else {
             <span class="no-model" matTooltip="No 3D model — click edit to add one">—</span>
           }
@@ -113,6 +121,23 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     }
 
     .no-model { color: var(--clay-text-muted, #9e8e7e); }
+
+    .model-actions { display: flex; gap: 6px; align-items: center; }
+
+    .view-ar-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(39, 174, 96, 0.1);
+      color: #27ae60;
+      font-size: 12px; font-weight: 600;
+      border-radius: 20px; padding: 0 14px;
+      height: 32px; line-height: 32px;
+      transition: all 0.2s;
+    }
+    .view-ar-btn:hover {
+      background: rgba(39, 174, 96, 0.2);
+      box-shadow: 0 2px 8px rgba(39, 174, 96, 0.25);
+    }
+    .view-ar-btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
   `]
 })
 export class ProductListComponent implements OnInit {
@@ -153,6 +178,21 @@ export class ProductListComponent implements OnInit {
       maxWidth: '1400px',
       data: { product },
       panelClass: 'product-viewer-dialog',
+    });
+  }
+
+  viewAR(product: any): void {
+    const models = product.models || [];
+    if (models.length === 0) return;
+    const model = models[0];
+    const modelUrl = `${environment.apiUrl}/models/${model.id}/file`;
+
+    this.dialog.open(ArViewerDialogComponent, {
+      width: '90vw',
+      height: '85vh',
+      maxWidth: '1400px',
+      data: { modelUrl, modelName: model.originalName, productName: product.name },
+      panelClass: 'ar-viewer-dialog',
     });
   }
 

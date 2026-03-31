@@ -8,6 +8,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { FormsModule } from '@angular/forms';
 import { ThreeViewerComponent } from '../../shared/components/three-viewer/three-viewer.component';
+import { ArViewerComponent } from '../../shared/components/ar-viewer/ar-viewer.component';
 import { environment } from '../../../environments/environment';
 
 @Component({
@@ -16,7 +17,7 @@ import { environment } from '../../../environments/environment';
   imports: [
     CommonModule, FormsModule, MatDialogModule, MatButtonModule,
     MatIconModule, MatSelectModule, MatFormFieldModule, MatTooltipModule,
-    ThreeViewerComponent,
+    ThreeViewerComponent, ArViewerComponent,
   ],
   template: `
     <div class="dialog-header" mat-dialog-title>
@@ -40,8 +41,15 @@ import { environment } from '../../../environments/environment';
             </mat-select>
           </mat-form-field>
         }
-        <button mat-icon-button (click)="viewer?.resetCamera()" matTooltip="Reset camera">
+        <button mat-icon-button (click)="viewMode === '3d' ? viewer?.resetCamera() : null"
+                matTooltip="Reset camera" [disabled]="viewMode !== '3d'">
           <mat-icon>center_focus_strong</mat-icon>
+        </button>
+        <button mat-flat-button class="camera-toggle-btn"
+                (click)="toggleViewMode()"
+                [matTooltip]="viewMode === '3d' ? 'Open camera / AR view' : 'Back to 3D viewer'">
+          <mat-icon>{{ viewMode === '3d' ? 'photo_camera' : 'view_in_ar' }}</mat-icon>
+          {{ viewMode === '3d' ? 'Open Camera' : '3D View' }}
         </button>
         <button mat-icon-button (click)="dialogRef.close()" matTooltip="Close">
           <mat-icon>close</mat-icon>
@@ -51,11 +59,18 @@ import { environment } from '../../../environments/environment';
 
     <mat-dialog-content class="viewer-body">
       @if (selectedModelUrl) {
-        <app-three-viewer #viewer
-          [modelUrl]="selectedModelUrl"
-          (modelLoaded)="onModelLoaded()"
-          (meshClicked)="onMeshClicked($event)"
-        ></app-three-viewer>
+        @if (viewMode === '3d') {
+          <app-three-viewer #viewer
+            [modelUrl]="selectedModelUrl"
+            (modelLoaded)="onModelLoaded()"
+            (meshClicked)="onMeshClicked($event)"
+          ></app-three-viewer>
+        } @else {
+          <app-ar-viewer
+            [modelUrl]="selectedModelUrl"
+            [modelName]="selectedModel?.originalName"
+          ></app-ar-viewer>
+        }
       } @else {
         <div class="no-model">
           <mat-icon>cloud_off</mat-icon>
@@ -134,6 +149,25 @@ import { environment } from '../../../environments/environment';
     }
     .footer-right { display: flex; align-items: center; gap: 12px; }
     .model-count { font-size: 12px; color: var(--clay-text-muted, #9e8e7e); }
+
+    .camera-toggle-btn {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 6px;
+      background: rgba(107, 92, 231, 0.1) !important;
+      color: var(--clay-primary, #6b5ce7) !important;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px !important;
+      padding: 0 16px;
+      height: 36px;
+      transition: all 0.2s;
+    }
+    .camera-toggle-btn:hover {
+      background: rgba(107, 92, 231, 0.2) !important;
+      box-shadow: 0 2px 8px rgba(107, 92, 231, 0.25);
+    }
+    .camera-toggle-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
   `]
 })
 export class ProductViewerComponent {
@@ -144,6 +178,7 @@ export class ProductViewerComponent {
   selectedModelUrl: string | null = null;
   selectedModel: any = null;
   clickedMesh: string | null = null;
+  viewMode: '3d' | 'ar' = '3d';
 
   constructor(
     public dialogRef: MatDialogRef<ProductViewerComponent>,
@@ -168,5 +203,10 @@ export class ProductViewerComponent {
 
   onMeshClicked(meshName: string): void {
     this.clickedMesh = meshName;
+  }
+
+  toggleViewMode(): void {
+    this.viewMode = this.viewMode === '3d' ? 'ar' : '3d';
+    this.clickedMesh = null;
   }
 }

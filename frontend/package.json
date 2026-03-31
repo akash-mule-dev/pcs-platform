@@ -20,6 +20,7 @@
     "@angular/platform-browser": "^17.3.0",
     "@angular/platform-browser-dynamic": "^17.3.0",
     "@angular/router": "^17.3.0",
+    "@google/model-viewer": "^4.2.0",
     "@types/three": "^0.183.1",
     "chart.js": "^4.5.1",
     "ng2-charts": "^5.0.4",

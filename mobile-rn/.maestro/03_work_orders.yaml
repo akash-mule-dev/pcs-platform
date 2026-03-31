@@ -1,0 +1,45 @@
+appId: com.primeterminal.pcs
+name: "Work Orders Flow"
+---
+
+# Ensure app is launched and logged in
+- launchApp
+
+- runFlow:
+    when:
+      visible: "Sign In"
+    commands:
+      - tapOn: "Enter your email"
+      - inputText: "admin@pcs.local"
+      - tapOn: "Enter your password"
+      - inputText: "password123"
+      - tapOn: "Sign In"
+
+# Navigate to Work Orders tab
+- tapOn: "Orders"
+
+# Verify work order list is shown
+- extendedWaitUntil:
+    visible: "Work Orders"
+    timeout: 5000
+
+# Wait for data to load
+- extendedWaitUntil:
+    visible: "WO-2026-0001"
+    timeout: 15000
+
+# Tap on first work order to see detail
+- tapOn: "WO-2026-0001"
+
+# Verify work order detail screen
+- extendedWaitUntil:
+    visible: "Stages"
+    timeout: 5000
+- assertVisible: "Product"
+- assertVisible: "Quantity"
+
+# Scroll down to see more stages
+- scroll
+
+# Go back to list
+- back

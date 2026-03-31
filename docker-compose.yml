@@ -69,17 +69,5 @@ services:
     depends_on:
       - backend
 
-  # Ionic Mobile App (Web version)
-  mobile:
-    build:
-      context: ./mobile
-      dockerfile: Dockerfile
-    container_name: pcs-mobile
-    restart: unless-stopped
-    ports:
-      - "8100:80"
-    depends_on:
-      - backend
-
 volumes:
   postgres_data:

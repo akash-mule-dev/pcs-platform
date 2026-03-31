@@ -1,0 +1,34 @@
+appId: com.primeterminal.pcs
+name: "3D Models Screen"
+---
+
+# Ensure app is launched and logged in
+- launchApp
+
+- runFlow:
+    when:
+      visible: "Sign In"
+    commands:
+      - tapOn: "Enter your email"
+      - inputText: "admin@pcs.local"
+      - tapOn: "Enter your password"
+      - inputText: "password123"
+      - tapOn: "Sign In"
+
+# Navigate to Models tab
+- tapOn: "3D/AR"
+
+# Verify model list screen
+- extendedWaitUntil:
+    visible: "3D Models"
+    timeout: 5000
+
+# Verify filter chips are visible
+- assertVisible: "All"
+- assertVisible: "Assembly"
+- assertVisible: "Quality"
+
+# Test filter switching
+- tapOn: "Assembly"
+- tapOn: "Quality"
+- tapOn: "All"

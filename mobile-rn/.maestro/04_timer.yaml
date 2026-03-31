@@ -1,0 +1,34 @@
+appId: com.primeterminal.pcs
+name: "Timer Screen"
+---
+
+# Ensure app is launched and logged in
+- launchApp
+
+- runFlow:
+    when:
+      visible: "Sign In"
+    commands:
+      - tapOn: "Enter your email"
+      - inputText: "admin@pcs.local"
+      - tapOn: "Enter your password"
+      - inputText: "password123"
+      - tapOn: "Sign In"
+
+# Navigate to Timer tab
+- tapOn: "Timer"
+
+# Verify timer screen is shown
+- extendedWaitUntil:
+    visible: "Timer"
+    timeout: 5000
+
+# Test navigation to history
+- tapOn: "View History"
+- assertVisible: "History"
+
+# Go back to timer
+- back
+
+# Verify timer screen again
+- assertVisible: "Timer"

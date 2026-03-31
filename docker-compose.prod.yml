@@ -53,19 +53,6 @@ services:
     networks:
       - pcs-network
 
-  mobile:
-    build:
-      context: ./mobile
-      dockerfile: Dockerfile
-    container_name: pcs-mobile
-    restart: always
-    ports:
-      - "8100:80"
-    depends_on:
-      - backend
-    networks:
-      - pcs-network
-
 volumes:
   postgres_data:
 

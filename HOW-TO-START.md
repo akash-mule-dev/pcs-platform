@@ -5,13 +5,13 @@
 PCS Platform is a full-stack application for production coordination:
 
 ```
-┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│  Frontend   │   │  Mobile App │   │   Swagger    │
-│  Angular 17 │   │ Ionic/Angular│   │  API Docs   │
-│  :4200/:80  │   │  :8100/:80  │   │  :3000/api  │
-└──────┬──────┘   └──────┬──────┘   └──────┬──────┘
-       │                 │                  │
-       └────────────┬────┘──────────────────┘
+┌─────────────┐   ┌──────────────┐   ┌─────────────┐
+│  Frontend   │   │  Mobile App  │   │   Swagger    │
+│  Angular 17 │   │ React Native │   │  API Docs   │
+│  :4200/:80  │   │  (Expo SDK)  │   │  :3000/api  │
+└──────┬──────┘   └──────┬───────┘   └──────┬──────┘
+       │                 │                   │
+       └────────────┬────┘───────────────────┘
                     │
             ┌───────▼───────┐
             │    Backend    │
@@ -41,7 +41,7 @@ PCS Platform is a full-stack application for production coordination:
 
 ## Quick Start with Docker (Recommended)
 
-Start all services (database, backend, frontend, mobile) in one command:
+Start all services (database, backend, frontend) in one command:
 
 ```bash
 docker-compose up --build
@@ -52,8 +52,9 @@ docker-compose up --build
 | Frontend      | http://localhost             |
 | Backend API   | http://localhost:3000        |
 | API Docs      | http://localhost:3000/api/docs |
-| Mobile Web    | http://localhost:8100        |
 | PostgreSQL    | localhost:5433               |
+
+> **Note:** The mobile app (React Native) runs separately via Expo — see step 4 below.
 
 The database is automatically seeded with sample data on first start.
 
@@ -143,13 +144,20 @@ The frontend proxies API requests to the backend automatically (configured in `f
 - `/api/*` → http://localhost:3000
 - `/socket.io/*` → http://localhost:3000 (WebSocket)
 
-### 4. Start the Mobile App (Ionic/Angular)
+### 4. Start the Mobile App (React Native + Expo)
 
 ```bash
-cd mobile
+cd mobile-rn
 npm install
-npm start             # starts on http://localhost:8100
+npm start             # starts Expo dev server
 ```
+
+This opens the Expo CLI. From there you can:
+- Press **`a`** to open on an Android emulator
+- Press **`i`** to open on an iOS simulator (Mac only)
+- Scan the QR code with the **Expo Go** app on your phone
+
+> **Prerequisites:** Install [Expo Go](https://expo.dev/go) on your phone for the fastest setup. For native builds, you'll need Android Studio (Android) or Xcode (iOS/Mac only).
 
 ---
 
@@ -216,6 +224,7 @@ npx playwright test
 | Port 5433 already in use | Stop any existing PostgreSQL instances or change the port in `docker-compose.yml` |
 | Backend can't connect to DB | Ensure `DB_HOST=localhost` and `DB_PORT=5433` in `.env` when running outside Docker |
 | Frontend shows CORS errors | Verify backend is running and `CORS_ORIGINS` includes the frontend URL |
-| `npm install` fails in mobile | Run `npm install --legacy-peer-deps` |
+| `npm install` fails in mobile-rn | Run `npm install --legacy-peer-deps` or delete `node_modules` and retry |
+| Expo Go can't connect to backend | Ensure your phone and dev machine are on the same network; update `mobile-rn/src/config/environment.ts` with your machine's local IP |
 | Docker build is slow | Use `docker-compose up` (without `--build`) after the first build |
 | File uploads fail | Max upload size is 500MB; check the `uploads/` directory has write permissions |

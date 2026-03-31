@@ -12,7 +12,7 @@
 │                                                                  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
 │  │ Web Browser  │  │ Android App  │  │  iOS App     │          │
-│  │ (Angular 17) │  │ (Ionic 8)    │  │ (Ionic 8)    │          │
+│  │ (Angular 17) │  │(React Native)│  │(React Native)│          │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
 │         │                  │                  │                   │
 │         └──────────────────┼──────────────────┘                  │
@@ -121,32 +121,35 @@ Swagger UI available at `/api/docs` on each environment.
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| **Ionic** | 8.x | Mobile UI framework (native look) |
-| **Angular** | 17 | App logic (shared with web) |
-| **Capacitor** | 8.x | Native bridge (web → Android/iOS) |
-| **Ionic Storage** | 4.x | Local storage (auth tokens) |
+| **React Native** | 0.76 | Cross-platform native mobile framework |
+| **Expo** | SDK 52 | Development toolchain, build service, OTA updates |
+| **React Navigation** | 7.x | Navigation (tabs, stacks) |
+| **AsyncStorage** | 2.x | Local storage (auth tokens) |
+| **React Viro** | 2.x | AR features |
+| **Expo Camera** | 16.x | Camera access for AR |
 
-### Mobile Pages (4 Tabs)
+### Mobile Screens (5 Tabs)
 | Tab | Features |
 |-----|----------|
 | **Dashboard** | Greeting, active timer, order count, today's stats |
-| **Orders** | Work order list with status badges, search |
-| **Timer** | Live clock-in/out, station selection, duration counter |
+| **Work Orders** | Work order list with status badges, search |
+| **Time Tracking** | Live clock-in/out, station selection, duration counter |
+| **Model Viewer** | 3D/AR model viewer |
 | **Profile** | User info, employee ID, weekly stats, logout |
 
 ### Platform Support
 | Platform | Status | Build Tool |
 |----------|--------|------------|
-| Android | ✅ APK built | Gradle (Java 21) |
-| iOS | ✅ Configured | Xcode (requires Mac) |
-| Web (PWA) | ✅ Works | `ionic serve` |
+| Android | ✅ Supported | Expo / EAS Build |
+| iOS | ✅ Supported | Expo / EAS Build (requires Mac for local) |
+| Web | ✅ Expo Web | `expo start --web` |
 
 ### App Configuration
 - **Bundle ID:** `com.primeterminal.pcs`
 - **App Name:** PCS
-- **Icons:** Generated for all densities (mdpi → xxxhdpi, 20px → 1024px)
-- **Splash Screen:** Dark theme (#0a0e17) with PCS branding
-- **Network:** HTTP cleartext allowed for API server
+- **Icons:** Configured in `assets/` directory
+- **Splash Screen:** Blue theme (#1565c0) with PCS branding
+- **Expo Config:** `app.json`
 
 ---
 
@@ -192,7 +195,8 @@ Swagger UI available at `/api/docs` on each environment.
 | **npm** | Package management |
 | **Angular CLI** | Frontend scaffolding & builds |
 | **Nest CLI** | Backend scaffolding & builds |
-| **Ionic CLI** | Mobile development |
+| **Expo CLI** | Mobile development |
+| **EAS CLI** | Mobile builds & app store submission |
 | **AWS CLI** | AWS resource management |
 | **GitHub CLI** (`gh`) | Repo management, Pages deployment |
 | **psql** | Database CLI client |
@@ -242,20 +246,19 @@ pcs-platform/
 │   │   │   └── layout/
 │   │   └── environments/  # dev, stage, prod configs
 │   └── package.json
-├── mobile/               # Ionic 8 + Capacitor
+├── mobile-rn/            # React Native + Expo (SDK 52)
 │   ├── src/
-│   │   ├── app/
-│   │   │   ├── auth/
-│   │   │   ├── dashboard/
-│   │   │   ├── work-orders/
-│   │   │   ├── time-tracking/
-│   │   │   ├── profile/
-│   │   │   └── tabs/
-│   │   └── environments/
-│   ├── resources/         # Icons & splash screens
-│   ├── android/           # Generated Android project
-│   ├── ios/               # Generated iOS project
-│   └── capacitor.config.ts
+│   │   ├── components/   # Shared UI components
+│   │   ├── config/       # Environment configuration
+│   │   ├── context/      # React context (Auth)
+│   │   ├── navigation/   # React Navigation setup
+│   │   ├── screens/      # App screens
+│   │   ├── services/     # API, auth, offline, caching
+│   │   └── theme/        # Colors and styling
+│   ├── assets/           # Icons & splash screens
+│   ├── android/          # Native Android project (after prebuild)
+│   ├── ios/              # Native iOS project (after prebuild)
+│   └── app.json          # Expo configuration
 ├── docs/                 # Documentation (this folder)
 ├── docker-compose.yml    # Local dev with Docker
 └── .gitignore

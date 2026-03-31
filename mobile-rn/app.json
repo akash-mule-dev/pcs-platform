@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "PCS",
+    "slug": "pcs-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1565c0"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.primeterminal.pcs",
+      "infoPlist": {
+        "NSCameraUsageDescription": "PCS needs camera access for AR features"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1565c0"
+      },
+      "package": "com.primeterminal.pcs"
+    },
+    "plugins": [
+      ["@reactvision/react-viro", { "android": { "xrMode": "AR" } }]
+    ]
+  }
+}

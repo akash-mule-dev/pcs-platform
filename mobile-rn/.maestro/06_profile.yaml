@@ -1,0 +1,41 @@
+appId: com.primeterminal.pcs
+name: "Profile Screen"
+---
+
+# Ensure app is launched and logged in
+- launchApp
+
+- runFlow:
+    when:
+      visible: "Sign In"
+    commands:
+      - tapOn: "Enter your email"
+      - inputText: "admin@pcs.local"
+      - tapOn: "Enter your password"
+      - inputText: "password123"
+      - tapOn: "Sign In"
+
+# Navigate to Profile tab
+- tapOn: "Profile"
+
+# Verify user profile info is displayed
+- assertVisible: "Employee ID"
+- assertVisible: "Email"
+- assertVisible: "admin@pcs.local"
+
+# Verify weekly stats section
+- assertVisible: "This Week"
+- assertVisible: "Stages Done"
+- assertVisible: "Avg / Stage"
+- assertVisible: "Efficiency"
+
+# Verify logout button exists
+- assertVisible: "Logout"
+
+# Test logout flow
+- tapOn: "Logout"
+- assertVisible: "Are you sure you want to log out?"
+- tapOn: "Cancel"
+
+# Verify we're still on profile
+- assertVisible: "Logout"
