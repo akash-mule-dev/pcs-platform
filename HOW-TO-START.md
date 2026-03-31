@@ -147,7 +147,7 @@ The frontend proxies API requests to the backend automatically (configured in `f
 ### 4. Start the Mobile App (React Native + Expo)
 
 ```bash
-cd mobile-rn
+cd mobile
 npm install
 npm start             # starts Expo dev server
 ```
@@ -224,7 +224,7 @@ npx playwright test
 | Port 5433 already in use | Stop any existing PostgreSQL instances or change the port in `docker-compose.yml` |
 | Backend can't connect to DB | Ensure `DB_HOST=localhost` and `DB_PORT=5433` in `.env` when running outside Docker |
 | Frontend shows CORS errors | Verify backend is running and `CORS_ORIGINS` includes the frontend URL |
-| `npm install` fails in mobile-rn | Run `npm install --legacy-peer-deps` or delete `node_modules` and retry |
-| Expo Go can't connect to backend | Ensure your phone and dev machine are on the same network; update `mobile-rn/src/config/environment.ts` with your machine's local IP |
+| `npm install` fails in mobile | Run `npm install --legacy-peer-deps` or delete `node_modules` and retry |
+| Expo Go can't connect to backend | Ensure your phone and dev machine are on the same network; update `mobile/src/config/environment.ts` with your machine's local IP |
 | Docker build is slow | Use `docker-compose up` (without `--build`) after the first build |
 | File uploads fail | Max upload size is 500MB; check the `uploads/` directory has write permissions |

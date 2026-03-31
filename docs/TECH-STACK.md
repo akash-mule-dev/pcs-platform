@@ -246,7 +246,7 @@ pcs-platform/
 │   │   │   └── layout/
 │   │   └── environments/  # dev, stage, prod configs
 │   └── package.json
-├── mobile-rn/            # React Native + Expo (SDK 52)
+├── mobile/               # React Native + Expo (SDK 52)
 │   ├── src/
 │   │   ├── components/   # Shared UI components
 │   │   ├── config/       # Environment configuration

@@ -62,7 +62,7 @@ pcs-platform/
 │   │   ├── stations/          # Stations & lines management
 │   │   └── reports/           # Analytics & reports
 │   └── ...
-├── mobile-rn/                 # React Native + Expo app
+├── mobile/                    # React Native + Expo app
 │   ├── src/
 │   │   ├── components/        # Shared UI components
 │   │   ├── config/            # Environment configuration

@@ -50,15 +50,15 @@ backend/uploads/
 playwright-report/
 test-results/
 
-# React Native (mobile-rn)
-mobile-rn/.expo/
-mobile-rn/android/
-mobile-rn/ios/
-mobile-rn/node_modules/
-mobile-rn/test-screenshots/
-mobile-rn/*.png
-mobile-rn/.bundle/
-mobile-rn/.metro-health-check*
+# React Native (mobile)
+mobile/.expo/
+mobile/android/
+mobile/ios/
+mobile/node_modules/
+mobile/test-screenshots/
+mobile/*.png
+mobile/.bundle/
+mobile/.metro-health-check*
 
 # TypeScript build info
 *.tsbuildinfo

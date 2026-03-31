@@ -21,7 +21,7 @@
 ## Development Setup
 
 ```bash
-cd mobile-rn
+cd mobile
 npm install
 npm start
 ```
@@ -50,7 +50,7 @@ const DEV_API_URL = 'http://localhost:3000/api';
 ### Debug APK (for testing)
 
 ```bash
-cd mobile-rn
+cd mobile
 
 # 1. Generate the native Android project
 npx expo prebuild --platform android
@@ -84,7 +84,7 @@ eas build --platform android --profile production
 ### Local Production Build
 
 ```bash
-cd mobile-rn
+cd mobile
 
 # Build APK locally
 eas build --platform android --profile production --local
@@ -106,7 +106,7 @@ eas build --platform android --profile production --local
 ### Debug Build (simulator or device)
 
 ```bash
-cd mobile-rn
+cd mobile
 
 # Generate the native iOS project
 npx expo prebuild --platform ios
@@ -163,7 +163,7 @@ Then rebuild with the appropriate command above.
 ## Project Structure
 
 ```
-mobile-rn/
+mobile/
 ├── src/                        # Application source code
 │   ├── components/             # Shared UI components
 │   ├── config/                 # Environment configuration
