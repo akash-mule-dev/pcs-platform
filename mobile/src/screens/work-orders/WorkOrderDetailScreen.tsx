@@ -8,8 +8,7 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import { NativeStackRouteProp } from '@react-navigation/native-stack';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, StatusColors } from '../../theme/colors';
 import { WorkOrder, WorkOrderStage } from '../../types';
@@ -19,7 +18,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { formatDate, formatDuration } from '../../utils/duration';
 import { WorkOrdersStackParamList } from '../../navigation/types';
 
-type Route = NativeStackRouteProp<WorkOrdersStackParamList, 'WorkOrderDetail'>;
+type Route = RouteProp<WorkOrdersStackParamList, 'WorkOrderDetail'>;
 
 const stageIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
   pending: 'ellipse-outline',

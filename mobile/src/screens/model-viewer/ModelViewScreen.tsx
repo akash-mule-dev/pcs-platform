@@ -4,14 +4,13 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import { NativeStackRouteProp } from '@react-navigation/native-stack';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { Colors } from '../../theme/colors';
 import { ModelsStackParamList } from '../../navigation/types';
 
-type Route = NativeStackRouteProp<ModelsStackParamList, 'ModelView'>;
+type Route = RouteProp<ModelsStackParamList, 'ModelView'>;
 
 const VIEWER_HTML = `<!DOCTYPE html>
 <html>

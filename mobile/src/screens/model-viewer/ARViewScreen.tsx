@@ -5,15 +5,24 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import { NativeStackRouteProp } from '@react-navigation/native-stack';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { ViroARSceneNavigator } from '@reactvision/react-viro';
-import ARModelScene from './ARModelScene';
 import { Colors } from '../../theme/colors';
 import { ModelsStackParamList } from '../../navigation/types';
 
-type Route = NativeStackRouteProp<ModelsStackParamList, 'ARView'>;
+// Lazy-load Viro AR — it crashes in Expo Go where native modules aren't available
+let ViroARSceneNavigator: any = null;
+let ARModelScene: any = null;
+let viroAvailable = false;
+try {
+  ViroARSceneNavigator = require('@reactvision/react-viro').ViroARSceneNavigator;
+  ARModelScene = require('./ARModelScene').default;
+  viroAvailable = true;
+} catch {
+  viroAvailable = false;
+}
+
+type Route = RouteProp<ModelsStackParamList, 'ARView'>;
 type Vec3 = [number, number, number];
 
 // ── State ──
@@ -115,6 +124,22 @@ export function ARViewScreen() {
     baseScaleRef.current = newScale;
     dispatch({ type: 'SET_SCALE', scale: newScale });
   };
+
+  if (!viroAvailable) {
+    return (
+      <View style={styles.container}>
+        <Ionicons name="warning-outline" size={64} color={Colors.warning} />
+        <Text style={styles.titleText}>AR Not Available</Text>
+        <Text style={styles.descText}>
+          AR features require a development build.{'\n'}
+          They are not supported in Expo Go.
+        </Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (!sessionActive) {
     return (

@@ -7,8 +7,7 @@ import {
   ScrollView,
   Modal,
 } from 'react-native';
-import { useRoute } from '@react-navigation/native';
-import { NativeStackRouteProp } from '@react-navigation/native-stack';
+import { useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import { Colors } from '../../theme/colors';
@@ -16,7 +15,7 @@ import { api } from '../../services/api.service';
 import { QualityEntry } from '../../types';
 import { ModelsStackParamList } from '../../navigation/types';
 
-type Route = NativeStackRouteProp<ModelsStackParamList, 'QualityView'>;
+type Route = RouteProp<ModelsStackParamList, 'QualityView'>;
 
 function buildQualityViewerHtml(fileUrl: string, qualityJson: string): string {
   return `<!DOCTYPE html>

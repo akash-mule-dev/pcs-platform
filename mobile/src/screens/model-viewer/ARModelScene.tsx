@@ -1,13 +1,27 @@
 import React, { useState, useCallback } from 'react';
-import {
-  ViroARScene,
-  ViroAmbientLight,
-  ViroDirectionalLight,
-  Viro3DObject,
-  ViroNode,
-  ViroARPlane,
-  ViroTrackingStateConstants,
-} from '@reactvision/react-viro';
+import { View, Text } from 'react-native';
+
+// Lazy-load Viro components — they crash in Expo Go
+let ViroARScene: any = null;
+let ViroAmbientLight: any = null;
+let ViroDirectionalLight: any = null;
+let Viro3DObject: any = null;
+let ViroNode: any = null;
+let ViroARPlane: any = null;
+let ViroTrackingStateConstants: any = null;
+
+try {
+  const viro = require('@reactvision/react-viro');
+  ViroARScene = viro.ViroARScene;
+  ViroAmbientLight = viro.ViroAmbientLight;
+  ViroDirectionalLight = viro.ViroDirectionalLight;
+  Viro3DObject = viro.Viro3DObject;
+  ViroNode = viro.ViroNode;
+  ViroARPlane = viro.ViroARPlane;
+  ViroTrackingStateConstants = viro.ViroTrackingStateConstants;
+} catch {
+  // Viro not available
+}
 
 type Vec3 = [number, number, number];
 
@@ -29,6 +43,10 @@ interface SceneProps {
 }
 
 function ARModelScene(props: SceneProps) {
+  if (!ViroARScene) {
+    return <View><Text>AR not available</Text></View>;
+  }
+
   const {
     modelUri,
     position,
@@ -112,11 +130,6 @@ function ARModelScene(props: SceneProps) {
         intensity={100}
       />
 
-      {/*
-        Anchor model to detected plane for much better tracking stability.
-        When ARCore detects a surface, the model snaps to it and stays
-        rock-solid because it's bound to a real-world anchor point.
-      */}
       <ViroARPlane
         minHeight={0.1}
         minWidth={0.1}
