@@ -271,6 +271,11 @@ h1, h2, h3, h4, h5, h6 {
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
+// Datepicker panel — ensure it renders above dialogs
+.mat-datepicker-content {
+  z-index: 1100 !important;
+}
+
 // Snackbar
 .mat-mdc-snack-bar-container.error-snackbar {
   --mdc-snackbar-container-color: #c0392b;

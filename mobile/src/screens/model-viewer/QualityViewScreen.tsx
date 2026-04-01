@@ -24,10 +24,10 @@ function buildQualityViewerHtml(fileUrl: string, qualityJson: string): string {
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <style>
   * { margin: 0; padding: 0; }
-  body { background: #1a1a2e; overflow: hidden; }
+  body { background: #0d1117; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   #loading { position: fixed; inset: 0; display: flex; justify-content: center;
-    align-items: center; background: rgba(26,26,46,0.95); color: #fff; font-family: sans-serif; }
+    align-items: center; background: rgba(13,17,23,0.95); color: #fff; font-family: sans-serif; }
 </style>
 </head>
 <body>
@@ -39,44 +39,139 @@ function buildQualityViewerHtml(fileUrl: string, qualityJson: string): string {
 (function(){
   var qualityData = ${qualityJson};
   var statusColors = { pass: 0x2e7d32, fail: 0xc62828, warning: 0xf9a825 };
+  var edgeColors = { pass: 0x4caf50, fail: 0xef5350, warning: 0xffca28 };
+  var defaultEdgeColor = 0x64b5f6;
+  var defaultFaceColor = 0x1e88e5;
 
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1a1a2e);
+  scene.background = new THREE.Color(0x0d1117);
   var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
   camera.position.set(0, 1.5, 3);
-  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
   document.body.appendChild(renderer.domElement);
   var controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  var dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  var dir = new THREE.DirectionalLight(0xffffff, 0.6);
   dir.position.set(5, 10, 7);
   scene.add(dir);
-  scene.add(new THREE.GridHelper(10, 10, 0x444444, 0x333333));
+  var dir2 = new THREE.DirectionalLight(0xffffff, 0.3);
+  dir2.position.set(-5, 5, -5);
+  scene.add(dir2);
+  scene.add(new THREE.GridHelper(10, 10, 0x222233, 0x1a1a2e));
+
+  var currentMode = 'xray';
+  var loadedModel = null;
+  var meshDataMap = [];
+
+  function applyXrayMode() {
+    meshDataMap.forEach(function(item) {
+      var child = item.mesh;
+      var q = item.quality;
+      var faceColor = q ? (statusColors[q.status] || defaultFaceColor) : defaultFaceColor;
+      var lineColor = q ? (edgeColors[q.status] || defaultEdgeColor) : defaultEdgeColor;
+
+      child.material = new THREE.MeshStandardMaterial({
+        color: faceColor,
+        transparent: true,
+        opacity: 0.12,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        roughness: 0.8,
+        metalness: 0.1
+      });
+      child.renderOrder = 0;
+
+      item.edgeLines.forEach(function(line) { line.visible = true; });
+      item.edgeLines.forEach(function(line) {
+        line.material.color.setHex(lineColor);
+        line.material.opacity = 1.0;
+        line.renderOrder = 1;
+      });
+    });
+  }
+
+  function applySolidMode() {
+    meshDataMap.forEach(function(item) {
+      var child = item.mesh;
+      var q = item.quality;
+      var faceColor = q ? (statusColors[q.status] || 0x757575) : 0x757575;
+
+      child.material = new THREE.MeshStandardMaterial({
+        color: faceColor,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.FrontSide,
+        depthWrite: true,
+        roughness: 0.5,
+        metalness: 0.2
+      });
+      child.renderOrder = 0;
+
+      item.edgeLines.forEach(function(line) { line.visible = false; });
+    });
+  }
+
+  window.setViewMode = function(mode) {
+    currentMode = mode;
+    if (mode === 'xray') applyXrayMode();
+    else applySolidMode();
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'modeChanged', mode: mode }));
+  };
 
   new THREE.GLTFLoader().load('${fileUrl}', function(gltf) {
-    var model = gltf.scene;
-    var box = new THREE.Box3().setFromObject(model);
+    loadedModel = gltf.scene;
+    var box = new THREE.Box3().setFromObject(loadedModel);
     var center = box.getCenter(new THREE.Vector3());
     var size = box.getSize(new THREE.Vector3());
     var s = 2 / Math.max(size.x, size.y, size.z);
-    model.scale.setScalar(s);
-    model.position.sub(center.multiplyScalar(s));
-    model.traverse(function(child) {
-      if (child.isMesh && child.name) {
-        var q = qualityData.find(function(e) { return e.meshName === child.name; });
-        if (q) {
-          child.material = new THREE.MeshStandardMaterial({
-            color: statusColors[q.status] || 0x757575,
-            transparent: true, opacity: 0.85
-          });
+    loadedModel.scale.setScalar(s);
+    loadedModel.position.sub(center.multiplyScalar(s));
+
+    loadedModel.traverse(function(child) {
+      if (child.isMesh) {
+        var q = null;
+        if (child.name) {
+          q = qualityData.find(function(e) { return e.meshName === child.name; });
         }
+
+        var edges = new THREE.EdgesGeometry(child.geometry, 25);
+        var lineColor = q ? (edgeColors[q.status] || defaultEdgeColor) : defaultEdgeColor;
+        var lineMat = new THREE.LineBasicMaterial({
+          color: lineColor,
+          transparent: true,
+          opacity: 1.0
+        });
+        var lineSegments = new THREE.LineSegments(edges, lineMat);
+        lineSegments.renderOrder = 1;
+        child.add(lineSegments);
+
+        meshDataMap.push({
+          mesh: child,
+          quality: q,
+          edgeLines: [lineSegments],
+          originalMaterial: child.material
+        });
       }
     });
-    scene.add(model);
+
+    scene.add(loadedModel);
+    applyXrayMode();
     document.getElementById('loading').style.display = 'none';
+
+    var meshNames = meshDataMap.map(function(item) {
+      return { name: item.mesh.name, hasQuality: !!item.quality, status: item.quality ? item.quality.status : null };
+    });
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'modelLoaded', meshes: meshNames }));
+  });
+
+  window.addEventListener('resize', function() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
   function animate() {
@@ -97,6 +192,8 @@ export function QualityViewScreen() {
   const [qualityData, setQualityData] = useState<QualityEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<QualityEntry | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [viewMode, setViewMode] = useState<'xray' | 'solid'>('xray');
+  const webviewRef = React.useRef<WebView>(null);
 
   const passCount = qualityData.filter((q) => q.status === 'pass').length;
   const failCount = qualityData.filter((q) => q.status === 'fail').length;
@@ -109,6 +206,12 @@ export function QualityViewScreen() {
       .catch(() => {});
   }, [modelId]);
 
+  const toggleViewMode = () => {
+    const newMode = viewMode === 'xray' ? 'solid' : 'xray';
+    setViewMode(newMode);
+    webviewRef.current?.injectJavaScript(`window.setViewMode('${newMode}'); true;`);
+  };
+
   const openDetail = (entry: QualityEntry) => {
     setSelectedEntry(entry);
     setShowDetail(true);
@@ -119,6 +222,7 @@ export function QualityViewScreen() {
       {/* 3D Viewer */}
       <View style={styles.viewerWrap}>
         <WebView
+          ref={webviewRef}
           style={{ flex: 1 }}
           originWhitelist={['*']}
           source={{
@@ -131,6 +235,55 @@ export function QualityViewScreen() {
           domStorageEnabled
           mixedContentMode="always"
         />
+        {/* View mode toggle */}
+        <View style={styles.viewModeToggle}>
+          <TouchableOpacity
+            style={[
+              styles.modeButton,
+              viewMode === 'xray' && styles.modeButtonActive,
+            ]}
+            onPress={() => {
+              if (viewMode !== 'xray') toggleViewMode();
+            }}
+          >
+            <Ionicons
+              name="scan-outline"
+              size={18}
+              color={viewMode === 'xray' ? Colors.white : Colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.modeButtonText,
+                viewMode === 'xray' && styles.modeButtonTextActive,
+              ]}
+            >
+              X-Ray
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.modeButton,
+              viewMode === 'solid' && styles.modeButtonActive,
+            ]}
+            onPress={() => {
+              if (viewMode !== 'solid') toggleViewMode();
+            }}
+          >
+            <Ionicons
+              name="cube-outline"
+              size={18}
+              color={viewMode === 'solid' ? Colors.white : Colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.modeButtonText,
+                viewMode === 'solid' && styles.modeButtonTextActive,
+              ]}
+            >
+              Solid
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Summary bar */}
@@ -245,6 +398,34 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   viewerWrap: { height: '40%' },
+  viewModeToggle: {
+    position: 'absolute',
+    bottom: 12,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    backgroundColor: 'rgba(13,17,23,0.85)',
+    borderRadius: 20,
+    padding: 3,
+  },
+  modeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 17,
+    gap: 5,
+  },
+  modeButtonActive: {
+    backgroundColor: Colors.primary,
+  },
+  modeButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  modeButtonTextActive: {
+    color: Colors.white,
+  },
   summaryBar: { flexDirection: 'row', padding: 12, gap: 8 },
   summaryItem: { flex: 1, borderRadius: 8, padding: 10, alignItems: 'center' },
   summaryCount: { fontSize: 20, fontWeight: '700' },

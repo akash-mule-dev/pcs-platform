@@ -388,10 +388,12 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
 
   assignUser(wos: any, userId: string): void {
     this.api.post(`/work-orders/${this.wo.id}/assign`, {
-      workOrderStageId: wos.id,
-      userId
+      assignments: [{ stageId: wos.stageId || wos.stage?.id, userId }]
     }).subscribe({
-      next: () => this.snackBar.open('Operator assigned', 'Close', { duration: 3000 }),
+      next: () => {
+        this.snackBar.open('Operator assigned', 'Close', { duration: 3000 });
+        this.load();
+      },
       error: () => {}
     });
   }

@@ -66,6 +66,13 @@ const COLUMNS = [
       </div>
     </div>
 
+    @if (workOrders.length === 0) {
+      <div class="empty-state">
+        <mat-icon class="empty-icon">assignment</mat-icon>
+        <p>No work orders yet. Create products, processes, and work orders from the web portal to see them here.</p>
+      </div>
+    }
+
     @if (selectedWo) {
       <div class="wo-info-bar">
         <span class="wo-badge priority-{{ selectedWo.priority }}">{{ selectedWo.priority | uppercase }}</span>
@@ -218,6 +225,14 @@ const COLUMNS = [
       text-align: center; padding: 24px; color: var(--clay-text-muted);
       font-size: 13px; font-style: italic;
     }
+
+    .empty-state {
+      text-align: center; padding: 60px 20px; color: var(--clay-text-muted);
+      background: var(--clay-surface); border-radius: var(--clay-radius);
+      box-shadow: var(--clay-shadow-soft); margin-bottom: 20px;
+    }
+    .empty-icon { font-size: 48px; width: 48px; height: 48px; color: var(--clay-text-muted); margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; max-width: 400px; margin: 0 auto; }
 
     @media (max-width: 960px) {
       .kanban-board { grid-template-columns: repeat(2, 1fr); }

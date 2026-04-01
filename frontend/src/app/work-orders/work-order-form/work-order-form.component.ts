@@ -50,9 +50,18 @@ import { MatSnackBar } from '@angular/material/snack-bar';
         </mat-select>
       </mat-form-field>
       <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Production Line</mat-label>
+        <mat-select [(ngModel)]="form.lineId">
+          <mat-option [value]="''">— None —</mat-option>
+          @for (l of lines; track l.id) {
+            <mat-option [value]="l.id">{{ l.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="outline" class="full-width">
         <mat-label>Due Date</mat-label>
         <input matInput [matDatepicker]="picker" [(ngModel)]="form.dueDate">
-        <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+        <mat-datepicker-toggle matIconSuffix [for]="picker"></mat-datepicker-toggle>
         <mat-datepicker #picker></mat-datepicker>
       </mat-form-field>
     </mat-dialog-content>
@@ -66,7 +75,8 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 export class WorkOrderFormComponent implements OnInit {
   products: any[] = [];
   processes: any[] = [];
-  form: any = { productId: '', processId: '', quantity: 1, priority: 'medium', dueDate: null };
+  lines: any[] = [];
+  form: any = { productId: '', processId: '', lineId: '', quantity: 1, priority: 'medium', dueDate: null };
 
   constructor(
     public dialogRef: MatDialogRef<WorkOrderFormComponent>,
@@ -77,6 +87,9 @@ export class WorkOrderFormComponent implements OnInit {
   ngOnInit(): void {
     this.api.get<any>('/products').subscribe(data => {
       this.products = Array.isArray(data) ? data : data.data || [];
+    });
+    this.api.get<any>('/lines').subscribe(data => {
+      this.lines = Array.isArray(data) ? data : data.data || [];
     });
   }
 
@@ -92,6 +105,7 @@ export class WorkOrderFormComponent implements OnInit {
   save(): void {
     const body = { ...this.form };
     if (body.dueDate) body.dueDate = new Date(body.dueDate).toISOString();
+    if (!body.lineId) delete body.lineId;
     this.api.post('/work-orders', body).subscribe({
       next: () => {
         this.snackBar.open('Work order created', 'Close', { duration: 3000 });
