@@ -107,7 +107,10 @@ curl -s http://api.primeterminaltech.com/api/auth/login \
 ```bash
 cd /home/vboxuser/pcs-platform/frontend
 
-# DEV build (apiUrl → 43.204.37.17:3001)
+# Stamp build info (commit hash + timestamp shown in sidebar)
+node stamp-build.js
+
+# DEV build (apiUrl → demo-api.spadebloom.com)
 npx ng build --configuration=dev
 
 # STAGE build (apiUrl → 43.204.37.17:3002)

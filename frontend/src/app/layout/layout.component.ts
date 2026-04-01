@@ -15,6 +15,7 @@ import { Subscription, Subject, debounceTime, switchMap, of } from 'rxjs';
 import { AuthService, User } from '../core/services/auth.service';
 import { NotificationService } from '../core/services/notification.service';
 import { SearchService, SearchResults } from '../core/services/search.service';
+import { BUILD_INFO } from '../../build-info';
 
 interface NavItem {
   label: string;
@@ -55,6 +56,12 @@ interface NavItem {
             </a>
           }
         </mat-nav-list>
+        @if (!sidenavCollapsed) {
+          <div class="build-info" [matTooltip]="buildInfo.message" matTooltipPosition="right">
+            <span class="build-commit">{{ buildInfo.branch }}&#64;{{ buildInfo.commit }}</span>
+            <span class="build-time">{{ buildInfo.buildTime | date:'short' }}</span>
+          </div>
+        }
       </aside>
       <div class="main-content" [class.collapsed]="sidenavCollapsed">
         <mat-toolbar color="primary" class="top-toolbar">
@@ -148,6 +155,8 @@ interface NavItem {
       transition: width 0.25s ease, min-width 0.25s ease;
       overflow-x: hidden;
       overflow-y: auto;
+      display: flex;
+      flex-direction: column;
     }
     .sidenav.collapsed {
       width: 64px;
@@ -299,6 +308,21 @@ interface NavItem {
       overflow: visible !important;
     }
 
+    /* Build info */
+    .build-info {
+      padding: 12px 20px;
+      border-top: 1px solid var(--clay-border);
+      font-size: 11px;
+      color: var(--clay-text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-top: auto;
+      cursor: default;
+    }
+    .build-commit { font-family: monospace; font-weight: 600; }
+    .build-time { opacity: 0.7; }
+
     /* Mobile overlay for sidebar */
     .sidenav-overlay {
       display: none;
@@ -346,6 +370,7 @@ interface NavItem {
   `]
 })
 export class LayoutComponent implements OnInit, OnDestroy {
+  buildInfo = BUILD_INFO;
   currentUser: User | null = null;
   unreadCount = 0;
   searchQuery = '';

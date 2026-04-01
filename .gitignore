@@ -21,6 +21,9 @@ mobile/ios/
 *.swp
 *.swo
 
+# Auto-generated build info
+frontend/src/build-info.ts
+
 # Cache
 .angular/
 
