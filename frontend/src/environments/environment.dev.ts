@@ -1,4 +1,4 @@
 export const environment = {
   production: false,
-  apiUrl: 'https://dev-api.spadebloom.com/api'
+  apiUrl: 'https://demo-api.spadebloom.com/api'
 };
