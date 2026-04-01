@@ -14,6 +14,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { HttpEventType } from '@angular/common/http';
 import { CoordinationApiService, CoordinationPackage } from '../core/services/coordination.service';
 import { io, Socket } from 'socket.io-client';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-coordination-list',
@@ -236,8 +237,8 @@ export class CoordinationListComponent implements OnInit {
   loadPackages(): void {
     this.loading = true;
     this.api.getAll().subscribe({
-      next: (data) => { this.packages = data; this.loading = false; },
-      error: () => { this.loading = false; },
+      next: (data) => { this.packages = data || []; this.loading = false; },
+      error: () => { this.packages = []; this.loading = false; },
     });
   }
 
@@ -304,7 +305,8 @@ export class CoordinationListComponent implements OnInit {
   // ── WebSocket for processing updates ────────────────────────────────────
 
   private connectWebSocket(): void {
-    this.socket = io(window.location.origin, { transports: ['websocket'] });
+    const wsUrl = environment.apiUrl.replace('/api', '');
+    this.socket = io(wsUrl, { transports: ['websocket', 'polling'] });
     this.socket.on('coordination:progress', (data: { packageId: string; status: string; message: string }) => {
       this.processingMessages[data.packageId] = data.message;
       if (data.status === 'ready' || data.status === 'error') {

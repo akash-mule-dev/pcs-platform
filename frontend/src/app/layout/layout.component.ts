@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -34,7 +34,8 @@ interface NavItem {
   ],
   template: `
     <div class="layout-container">
-      <aside class="sidenav" [class.collapsed]="sidenavCollapsed">
+      <div class="sidenav-overlay" [class.visible]="mobileMenuOpen" (click)="closeMobileMenu()"></div>
+      <aside class="sidenav" [class.collapsed]="sidenavCollapsed" [class.mobile-open]="mobileMenuOpen">
         <div class="sidenav-header">
           <mat-icon class="logo-icon">precision_manufacturing</mat-icon>
           @if (!sidenavCollapsed) {
@@ -44,7 +45,9 @@ interface NavItem {
         <mat-nav-list>
           @for (item of visibleNavItems; track item.route) {
             <a mat-list-item [routerLink]="item.route" routerLinkActive="active-link"
-               [matTooltip]="sidenavCollapsed ? item.label : ''" matTooltipPosition="right">
+               [routerLinkActiveOptions]="{ exact: item.route === '/' }"
+               [matTooltip]="sidenavCollapsed ? item.label : ''" matTooltipPosition="right"
+               (click)="closeMobileMenu()">
               <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
               @if (!sidenavCollapsed) {
                 <span matListItemTitle>{{ item.label }}</span>
@@ -98,8 +101,10 @@ interface NavItem {
                     }
                   </div>
                 }
-                @if (searchResults.workOrders.length === 0 && searchResults.products.length === 0 && searchResults.users.length === 0) {
-                  <div class="search-empty">No results found</div>
+                @if (searchLoading) {
+                  <div class="search-empty">Searching...</div>
+                } @else if (searchResults.workOrders.length === 0 && searchResults.products.length === 0 && searchResults.users.length === 0) {
+                  <div class="search-empty">No results found for "{{ searchQuery }}"</div>
                 }
               </div>
             }
@@ -109,7 +114,7 @@ interface NavItem {
 
           <!-- Notification Bell -->
           <button mat-icon-button (click)="navigateTo('/notifications')" matTooltip="Notifications"
-                  [matBadge]="unreadCount > 0 ? unreadCount : null" matBadgeColor="accent" matBadgeSize="small">
+                  [matBadge]="unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : null" matBadgeColor="accent" matBadgeSize="small">
             <mat-icon>notifications</mat-icon>
           </button>
 
@@ -290,6 +295,54 @@ interface NavItem {
     .sidenav.collapsed ::ng-deep .mdc-list-item__start {
       margin-inline-end: 0 !important;
     }
+    .sidenav.collapsed ::ng-deep .mat-mdc-list-item {
+      overflow: visible !important;
+    }
+
+    /* Mobile overlay for sidebar */
+    .sidenav-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 99;
+    }
+
+    @media (max-width: 768px) {
+      .sidenav {
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        z-index: 100;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+      }
+      .sidenav.mobile-open {
+        transform: translateX(0);
+      }
+      .sidenav.collapsed {
+        transform: translateX(-100%);
+      }
+      .sidenav.collapsed.mobile-open {
+        transform: translateX(0);
+        width: 260px;
+        min-width: 260px;
+      }
+      .main-content {
+        margin-left: 0 !important;
+      }
+      .sidenav-overlay.visible {
+        display: block;
+      }
+      .search-container {
+        max-width: 160px;
+      }
+      .user-name, .user-role {
+        display: none;
+      }
+      .page-content {
+        padding: 16px;
+      }
+    }
   `]
 })
 export class LayoutComponent implements OnInit, OnDestroy {
@@ -297,7 +350,10 @@ export class LayoutComponent implements OnInit, OnDestroy {
   unreadCount = 0;
   searchQuery = '';
   searchResults: SearchResults | null = null;
+  searchLoading = false;
   sidenavCollapsed = false;
+  mobileMenuOpen = false;
+  private isMobile = false;
   private searchSubject = new Subject<string>();
   private subs: Subscription[] = [];
 
@@ -335,8 +391,14 @@ export class LayoutComponent implements OnInit, OnDestroy {
       this.notificationService.unreadCount$.subscribe(c => this.unreadCount = c),
       this.searchSubject.pipe(
         debounceTime(300),
-        switchMap(q => q.length >= 2 ? this.searchService.search(q) : of(null)),
-      ).subscribe(results => this.searchResults = results),
+        switchMap(q => {
+          if (q.length >= 2) {
+            this.searchLoading = true;
+            return this.searchService.search(q);
+          }
+          return of(null);
+        }),
+      ).subscribe(results => { this.searchResults = results; this.searchLoading = false; }),
     );
   }
 
@@ -356,7 +418,24 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   toggleSidenav(): void {
-    this.sidenavCollapsed = !this.sidenavCollapsed;
+    this.isMobile = window.innerWidth <= 768;
+    if (this.isMobile) {
+      this.mobileMenuOpen = !this.mobileMenuOpen;
+    } else {
+      this.sidenavCollapsed = !this.sidenavCollapsed;
+    }
+  }
+
+  closeMobileMenu(): void {
+    this.mobileMenuOpen = false;
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: Event): void {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.search-container')) {
+      this.searchResults = null;
+    }
   }
 
   logout(): void {

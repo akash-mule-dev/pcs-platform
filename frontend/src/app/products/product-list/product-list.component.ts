@@ -67,7 +67,9 @@ import { environment } from '../../../environments/environment';
               </button>
             </div>
           } @else {
-            <span class="no-model" matTooltip="No 3D model — click edit to add one">—</span>
+            <span class="no-model" matTooltip="No 3D model — click edit to add one">
+              <mat-icon class="no-model-icon">view_in_ar</mat-icon> No model
+            </span>
           }
         </td>
       </ng-container>
@@ -116,7 +118,8 @@ import { environment } from '../../../environments/environment';
       border-radius: 50%; text-align: center;
     }
 
-    .no-model { color: var(--clay-text-muted, #9e8e7e); }
+    .no-model { color: var(--clay-text-muted, #9e8e7e); display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+    .no-model-icon { font-size: 16px; width: 16px; height: 16px; opacity: 0.4; }
 
     .model-actions { display: flex; gap: 6px; align-items: center; }
 

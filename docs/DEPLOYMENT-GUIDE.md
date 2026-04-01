@@ -117,7 +117,20 @@ npx ng build --configuration=stage
 npx ng build --configuration=production
 ```
 
-### Step 2: Upload to S3
+### Step 2: Verify S3 Static Website Hosting
+Before the first deploy, confirm each bucket has **Error document** set to `index.html`:
+```bash
+# Verify via AWS CLI (check WebsiteConfiguration has ErrorDocument → index.html)
+aws s3api get-bucket-website --bucket pcs-frontend-dev-primeterminal
+aws s3api get-bucket-website --bucket pcs-frontend-stage-primeterminal
+aws s3api get-bucket-website --bucket pcs-frontend-prod-primeterminal
+
+# If missing, set it:
+aws s3 website s3://pcs-frontend-dev-primeterminal/ --index-document index.html --error-document index.html
+```
+> **Why:** Angular is an SPA — all routes like `/dashboard` and `/products` must serve `index.html`. Without the error document, direct URL navigation returns a 404.
+
+### Step 3: Upload to S3
 ```bash
 # DEV
 aws s3 sync dist/frontend/browser/ s3://pcs-frontend-dev-primeterminal/ --delete

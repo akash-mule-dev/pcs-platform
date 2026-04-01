@@ -48,6 +48,7 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
       </mat-form-field>
     </div>
 
+    <div class="table-container">
     <table mat-table [dataSource]="entries" class="full-width mat-elevation-z2">
       <ng-container matColumnDef="operator">
         <th mat-header-cell *matHeaderCellDef>Operator</th>
@@ -87,9 +88,10 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
         <th mat-header-cell *matHeaderCellDef>Method</th>
         <td mat-cell *matCellDef="let e">{{ e.inputMethod || '—' }}</td>
       </ng-container>
-      <tr mat-header-row *matHeaderRowDef="columns"></tr>
+      <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
       <tr mat-row *matRowDef="let row; columns: columns;"></tr>
     </table>
+    </div>
 
     <mat-paginator [length]="totalEntries" [pageSize]="20" [pageSizeOptions]="[10, 20, 50]"
       (page)="onPage($event)"></mat-paginator>
@@ -99,8 +101,10 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
     h2 { margin: 0; color: var(--clay-text); }
     .filters { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
     .full-width { width: 100%; }
+    .table-container { max-height: 70vh; overflow: auto; }
     .over-target { color: #c62828; font-weight: 500; }
     .under-target { color: #2e7d32; font-weight: 500; }
+    ::ng-deep .mat-mdc-header-row { background: var(--clay-surface, #f5f0e8) !important; }
   `]
 })
 export class TimeTrackingHistoryComponent implements OnInit {

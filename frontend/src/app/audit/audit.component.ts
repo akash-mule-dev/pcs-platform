@@ -63,6 +63,12 @@ import { ApiService } from '../core/services/api.service';
         <tr mat-header-row *matHeaderRowDef="columns"></tr>
         <tr mat-row *matRowDef="let row; columns: columns"></tr>
       </table>
+      @if (logs.length === 0) {
+        <div class="empty-state">
+          <mat-icon>history</mat-icon>
+          <p>No audit records found</p>
+        </div>
+      }
       <mat-paginator [length]="totalItems" [pageSize]="20" [pageSizeOptions]="[10, 20, 50]"
                      (page)="onPage($event)"></mat-paginator>
     </mat-card>
@@ -80,6 +86,9 @@ import { ApiService } from '../core/services/api.service';
     .action-chip.delete { background: #fce4ec; color: #d32f2f; }
     .action-chip.status_change { background: #fff3e0; color: #f57c00; }
     .details-cell { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--clay-text-secondary); }
+    .empty-state { text-align: center; padding: 40px; color: var(--clay-text-muted); }
+    .empty-state mat-icon { font-size: 48px; width: 48px; height: 48px; opacity: 0.3; }
+    .empty-state p { margin-top: 8px; }
   `]
 })
 export class AuditComponent implements OnInit {

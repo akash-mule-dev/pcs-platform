@@ -78,7 +78,10 @@ export class NotificationService implements OnDestroy {
 
   loadUnreadCount(): void {
     this.api.get<{ count: number }>('/notifications/unread-count').subscribe({
-      next: (data) => this.unreadCountSubject.next(data.count),
+      next: (data) => {
+        const count = parseInt(String(data?.count ?? 0), 10);
+        this.unreadCountSubject.next(isNaN(count) ? 0 : count);
+      },
     });
   }
 

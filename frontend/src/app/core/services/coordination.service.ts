@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpEvent, HttpRequest } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface CoordinationPackage {
   id: string;
@@ -36,7 +37,7 @@ export interface Drawing {
 
 @Injectable({ providedIn: 'root' })
 export class CoordinationApiService {
-  private readonly base = '/api/coordination';
+  private readonly base = `${environment.apiUrl}/coordination`;
 
   constructor(private http: HttpClient) {}
 

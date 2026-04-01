@@ -52,7 +52,7 @@ Chart.register(...registerables);
           <mat-icon class="kpi-icon">speed</mat-icon>
         </div>
         <div class="kpi-info">
-          <div class="kpi-value">{{ summary?.avgEfficiency ? (summary.avgEfficiency | number:'1.0-0') + '%' : '—' }}</div>
+          <div class="kpi-value">{{ summary?.avgEfficiency ? (min(summary.avgEfficiency, 100) | number:'1.0-0') + '%' : '—' }}</div>
           <div class="kpi-label">Avg Efficiency</div>
         </div>
       </mat-card>
@@ -208,6 +208,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.api.get<any[]>('/dashboard/live-status').subscribe(entries => {
       this.liveEntries = entries || [];
     });
+  }
+
+  min(a: number, b: number): number {
+    return Math.min(a, b);
   }
 
   getElapsed(startTime: string): number {

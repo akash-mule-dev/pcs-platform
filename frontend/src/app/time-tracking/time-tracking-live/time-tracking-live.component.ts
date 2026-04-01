@@ -78,9 +78,11 @@ import { RouterModule } from '@angular/router';
       </ng-container>
       <ng-container matColumnDef="elapsed">
         <th mat-header-cell *matHeaderCellDef>Elapsed</th>
-        <td mat-cell *matCellDef="let e" class="elapsed-cell">
-          <mat-icon class="pulse">fiber_manual_record</mat-icon>
-          {{ getElapsed(e.startTime) | duration }}
+        <td mat-cell *matCellDef="let e">
+          <span class="elapsed-cell">
+            <mat-icon class="pulse">fiber_manual_record</mat-icon>
+            {{ getElapsed(e.startTime) | duration }}
+          </span>
         </td>
       </ng-container>
       <ng-container matColumnDef="station">
@@ -114,7 +116,7 @@ import { RouterModule } from '@angular/router';
     .clock-in-card h3 { margin: 0 0 16px; color: var(--clay-text); }
     .clock-in-form { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
     .full-width { width: 100%; }
-    .elapsed-cell { display: flex; align-items: center; gap: 4px; font-weight: 500; color: #2e7d32; }
+    .elapsed-cell { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; color: #2e7d32; }
     .pulse { font-size: 12px; width: 12px; height: 12px; color: #4caf50; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     .empty-card { text-align: center; padding: 40px; color: var(--clay-text-muted); }

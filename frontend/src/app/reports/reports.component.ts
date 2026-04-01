@@ -55,6 +55,9 @@ Chart.register(...registerables);
       <mat-card class="oee-card">
         <mat-card-header><mat-card-title>OEE — Overall Equipment Effectiveness</mat-card-title></mat-card-header>
         <mat-card-content>
+          @if (oee.oee === 0 && oee.availability === 0 && oee.performance === 0) {
+            <p class="no-data">No OEE data available for the selected period. OEE requires completed work order stages with time entries.</p>
+          } @else {
           <div class="oee-grid">
             <div class="oee-main">
               <div class="oee-score" [class.good]="oee.oee >= 80" [class.warning]="oee.oee >= 60 && oee.oee < 80" [class.poor]="oee.oee < 60">
@@ -78,6 +81,7 @@ Chart.register(...registerables);
               <span class="factor-value">{{ oee.quality }}%</span>
             </div>
           </div>
+          }
         </mat-card-content>
       </mat-card>
     }

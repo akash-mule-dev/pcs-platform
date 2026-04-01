@@ -123,7 +123,7 @@ const COLUMNS = [
               </mat-card>
             }
             @if (getStagesForColumn(col.key).length === 0) {
-              <div class="empty-column">No stages</div>
+              <div class="empty-column">No {{ col.label.toLowerCase() }} stages</div>
             }
           </div>
         </div>

@@ -13,6 +13,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ThreeViewerComponent } from '../shared/components/three-viewer/three-viewer.component';
 import { CoordinationApiService, CoordinationPackage, Drawing } from '../core/services/coordination.service';
 import { io, Socket } from 'socket.io-client';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-coordination-view',
@@ -399,7 +400,8 @@ export class CoordinationViewComponent implements OnInit, OnDestroy {
   }
 
   private connectWebSocket(packageId: string): void {
-    this.socket = io(window.location.origin, { transports: ['websocket'] });
+    const wsUrl = environment.apiUrl.replace('/api', '');
+    this.socket = io(wsUrl, { transports: ['websocket', 'polling'] });
     this.socket.on('coordination:progress', (data: { packageId: string; status: string; message: string }) => {
       if (data.packageId === packageId) {
         this.processingMessage = data.message;

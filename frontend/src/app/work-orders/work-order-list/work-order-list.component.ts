@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
 import { MatPaginatorModule } from '@angular/material/paginator';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -81,7 +81,7 @@ import { WorkOrderFormComponent } from '../work-order-form/work-order-form.compo
         <td mat-cell *matCellDef="let wo">{{ wo.dueDate ? (wo.dueDate | date:'mediumDate') : '—' }}</td>
       </ng-container>
       <tr mat-header-row *matHeaderRowDef="columns"></tr>
-      <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns;" (click)="goToDetail(row)" class="clickable-row"></tr>
     </table>
   `,
   styles: [`
@@ -102,6 +102,8 @@ import { WorkOrderFormComponent } from '../work-order-form/work-order-form.compo
     .priority-medium { background: #f5e6d0; color: #c06820; box-shadow: var(--clay-shadow-soft); }
     .priority-high { background: #f2dbd8; color: #a03528; box-shadow: var(--clay-shadow-soft); }
     .priority-urgent { background: #f44336; color: white; }
+    .clickable-row { cursor: pointer; transition: background 0.15s; }
+    .clickable-row:hover { background: var(--clay-bg, #faf7f2); }
   `]
 })
 export class WorkOrderListComponent implements OnInit {
@@ -110,7 +112,7 @@ export class WorkOrderListComponent implements OnInit {
   statusFilter = '';
   priorityFilter = '';
 
-  constructor(private api: ApiService, private dialog: MatDialog) {}
+  constructor(private api: ApiService, private dialog: MatDialog, private router: Router) {}
 
   ngOnInit(): void { this.load(); }
 
@@ -121,6 +123,10 @@ export class WorkOrderListComponent implements OnInit {
     this.api.get<any>('/work-orders', params).subscribe(data => {
       this.workOrders = Array.isArray(data) ? data : data.data || [];
     });
+  }
+
+  goToDetail(wo: any): void {
+    this.router.navigate(['/work-orders', wo.id]);
   }
 
   openForm(): void {
