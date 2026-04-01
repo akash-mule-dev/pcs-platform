@@ -46,12 +46,15 @@ export function TimerScreen() {
 
       if (!myActive) {
         // Load pending stages to clock into
+        // The list endpoint doesn't include stages, so fetch each WO detail
         const orders = await workOrderService.getAll({ status: 'in_progress' });
+        const orderList = Array.isArray(orders) ? orders : [];
         const stages: { stage: WorkOrderStage; orderNumber: string }[] = [];
-        for (const order of Array.isArray(orders) ? orders : []) {
-          for (const s of order.stages || []) {
+        for (const order of orderList) {
+          const detail = await workOrderService.getById(order.id);
+          for (const s of detail.stages || []) {
             if (s.status === 'pending' || s.status === 'in_progress') {
-              stages.push({ stage: s, orderNumber: order.orderNumber });
+              stages.push({ stage: s, orderNumber: detail.orderNumber });
             }
           }
         }
