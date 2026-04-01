@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text } from 'react-native';
 
 // Lazy-load Viro components — they crash in Expo Go
@@ -7,7 +7,6 @@ let ViroAmbientLight: any = null;
 let ViroDirectionalLight: any = null;
 let Viro3DObject: any = null;
 let ViroNode: any = null;
-let ViroARPlane: any = null;
 let ViroTrackingStateConstants: any = null;
 
 try {
@@ -17,7 +16,6 @@ try {
   ViroDirectionalLight = viro.ViroDirectionalLight;
   Viro3DObject = viro.Viro3DObject;
   ViroNode = viro.ViroNode;
-  ViroARPlane = viro.ViroARPlane;
   ViroTrackingStateConstants = viro.ViroTrackingStateConstants;
 } catch {
   // Viro not available
@@ -60,8 +58,6 @@ function ARModelScene(props: SceneProps) {
     onTrackingUpdated,
   } = props.sceneNavigator.viroAppProps;
 
-  const [anchoredToPlane, setAnchoredToPlane] = useState(false);
-
   const handleDrag = useCallback((dragToPos: number[]) => {
     if (!locked) {
       onDrag([dragToPos[0], dragToPos[1], dragToPos[2]] as Vec3);
@@ -90,10 +86,6 @@ function ARModelScene(props: SceneProps) {
     }
   }, [onTrackingUpdated]);
 
-  const handleAnchorFound = useCallback(() => {
-    setAnchoredToPlane(true);
-  }, []);
-
   const gestureProps = locked
     ? {}
     : {
@@ -107,7 +99,7 @@ function ARModelScene(props: SceneProps) {
       onTrackingUpdated={handleTracking}
       anchorDetectionTypes={['PlanesHorizontal', 'PlanesVertical']}
     >
-      {/* Stronger lighting for better visual anchoring */}
+      {/* Lighting */}
       <ViroAmbientLight color="#ffffff" intensity={400} />
       <ViroDirectionalLight
         color="#ffffff"
@@ -130,31 +122,25 @@ function ARModelScene(props: SceneProps) {
         intensity={100}
       />
 
-      <ViroARPlane
-        minHeight={0.1}
-        minWidth={0.1}
-        alignment="Horizontal"
-        onAnchorFound={handleAnchorFound}
-      >
-        <ViroNode position={position}>
-          <Viro3DObject
-            source={{ uri: modelUri }}
-            type="GLB"
-            position={[0, 0, 0]}
-            scale={scale}
-            rotation={rotation}
-            dragType="FixedToWorld"
-            highAccuracyEvents={true}
-            onLoadStart={() => onModelStatus('loading')}
-            onLoadEnd={() => onModelStatus('loaded')}
-            onError={(event: any) => {
-              console.warn('Model load error:', event.nativeEvent);
-              onModelStatus('error');
-            }}
-            {...gestureProps}
-          />
-        </ViroNode>
-      </ViroARPlane>
+      {/* Render model directly in scene so it's visible immediately */}
+      <ViroNode position={position}>
+        <Viro3DObject
+          source={{ uri: modelUri }}
+          type="GLB"
+          position={[0, 0, 0]}
+          scale={scale}
+          rotation={rotation}
+          dragType="FixedToWorld"
+          highAccuracyEvents={true}
+          onLoadStart={() => onModelStatus('loading')}
+          onLoadEnd={() => onModelStatus('loaded')}
+          onError={(event: any) => {
+            console.warn('Model load error:', event.nativeEvent);
+            onModelStatus('error');
+          }}
+          {...gestureProps}
+        />
+      </ViroNode>
     </ViroARScene>
   );
 }

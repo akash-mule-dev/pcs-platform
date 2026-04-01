@@ -36,7 +36,7 @@ import { environment } from '../../../environments/environment';
 
     <mat-form-field appearance="outline" class="search-field">
       <mat-label>Search products</mat-label>
-      <input matInput [(ngModel)]="searchTerm" (ngModelChange)="applyFilter()" placeholder="Name or SKU">
+      <input matInput [(ngModel)]="searchTerm" (ngModelChange)="applyFilter()" placeholder="Search by name">
       <mat-icon matPrefix>search</mat-icon>
     </mat-form-field>
 
@@ -44,10 +44,6 @@ import { environment } from '../../../environments/environment';
       <ng-container matColumnDef="name">
         <th mat-header-cell *matHeaderCellDef>Name</th>
         <td mat-cell *matCellDef="let p">{{ p.name }}</td>
-      </ng-container>
-      <ng-container matColumnDef="sku">
-        <th mat-header-cell *matHeaderCellDef>SKU</th>
-        <td mat-cell *matCellDef="let p">{{ p.sku }}</td>
       </ng-container>
       <ng-container matColumnDef="description">
         <th mat-header-cell *matHeaderCellDef>Description</th>
@@ -143,7 +139,7 @@ import { environment } from '../../../environments/environment';
 export class ProductListComponent implements OnInit {
   products: any[] = [];
   filtered: any[] = [];
-  columns = ['name', 'sku', 'description', 'model', 'actions'];
+  columns = ['name', 'description', 'model', 'actions'];
   searchTerm = '';
 
   constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar) {}
@@ -160,7 +156,7 @@ export class ProductListComponent implements OnInit {
   applyFilter(): void {
     const term = this.searchTerm.toLowerCase();
     this.filtered = this.products.filter(p =>
-      p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term)
+      p.name.toLowerCase().includes(term)
     );
   }
 

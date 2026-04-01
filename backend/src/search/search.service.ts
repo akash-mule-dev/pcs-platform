@@ -29,7 +29,6 @@ export class SearchService {
 
     const products = await this.productRepo.createQueryBuilder('p')
       .where('LOWER(p.name) LIKE :q', { q })
-      .orWhere('LOWER(p.sku) LIKE :q', { q })
       .take(limit)
       .getMany();
 

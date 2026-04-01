@@ -31,7 +31,7 @@ interface Model3D {
   fileSize: number;
   modelType: string;
   productId: string;
-  product?: { id: string; name: string; sku: string };
+  product?: { id: string; name: string };
   createdAt: string;
 }
 

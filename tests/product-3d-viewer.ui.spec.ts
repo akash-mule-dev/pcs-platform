@@ -18,7 +18,6 @@ import * as path from 'path';
  */
 
 const PRODUCT_NAME = 'Test-glb';
-const PRODUCT_SKU = `TEST-GLB-${Date.now()}`;
 
 let token: string;
 let productId: string;
@@ -80,7 +79,7 @@ test.describe.serial('Product 3D Viewer — "Test-glb" on Products Page', () => 
       // Create the product
       const createRes = await request.post('http://localhost:3000/api/products', {
         headers: { Authorization: `Bearer ${token}` },
-        data: { name: PRODUCT_NAME, sku: PRODUCT_SKU, description: 'Test product with 3D GLB model for viewer testing' },
+        data: { name: PRODUCT_NAME, description: 'Test product with 3D GLB model for viewer testing' },
       });
       expect(createRes.status()).toBe(201);
       const createBody = await createRes.json();
@@ -160,7 +159,7 @@ test.describe.serial('Product 3D Viewer — "Test-glb" on Products Page', () => 
     const dialog = page.locator('mat-dialog-container');
     await expect(dialog).toBeVisible({ timeout: 10000 });
 
-    // Verify the dialog shows the product name (use heading role to avoid strict mode with SKU)
+    // Verify the dialog shows the product name
     await expect(dialog.getByRole('heading', { name: PRODUCT_NAME })).toBeVisible();
 
     await page.screenshot({ path: 'test-results/product-3d-03-dialog-opened.png', fullPage: true });

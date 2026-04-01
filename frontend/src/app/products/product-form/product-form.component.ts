@@ -28,10 +28,6 @@ import { environment } from '../../../environments/environment';
         <input matInput [(ngModel)]="form.name" required>
       </mat-form-field>
       <mat-form-field appearance="outline" class="full-width">
-        <mat-label>SKU</mat-label>
-        <input matInput [(ngModel)]="form.sku" required>
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="full-width">
         <mat-label>Description</mat-label>
         <textarea matInput [(ngModel)]="form.description" rows="3"></textarea>
       </mat-form-field>
@@ -108,7 +104,7 @@ import { environment } from '../../../environments/environment';
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button (click)="dialogRef.close()">Cancel</button>
-      <button mat-raised-button color="primary" (click)="save()" [disabled]="!form.name || !form.sku || saving">
+      <button mat-raised-button color="primary" (click)="save()" [disabled]="!form.name || saving">
         {{ saving ? 'Saving...' : 'Save' }}
       </button>
     </mat-dialog-actions>
@@ -153,7 +149,7 @@ import { environment } from '../../../environments/environment';
   `]
 })
 export class ProductFormComponent {
-  form = { name: '', sku: '', description: '' };
+  form = { name: '', description: '' };
   modelFile: File | null = null;
   cadFile: File | null = null;
   existingModels: any[] = [];
@@ -169,7 +165,7 @@ export class ProductFormComponent {
     private snackBar: MatSnackBar
   ) {
     if (data) {
-      this.form = { name: data.name, sku: data.sku, description: data.description || '' };
+      this.form = { name: data.name, description: data.description || '' };
       this.loadExistingModels(data.id);
     }
   }

@@ -82,7 +82,7 @@ interface NavItem {
                     @for (p of searchResults.products; track p.id) {
                       <div class="search-item" (click)="navigateTo('/products')">
                         <mat-icon>inventory_2</mat-icon>
-                        <span>{{ p.name }} ({{ p.sku }})</span>
+                        <span>{{ p.name }}</span>
                       </div>
                     }
                   </div>

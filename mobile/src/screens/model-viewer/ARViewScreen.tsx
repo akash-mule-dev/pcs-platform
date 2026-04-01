@@ -1,12 +1,14 @@
-import React, { useState, useRef, useCallback, useReducer } from 'react';
+import React, { useState, useRef, useCallback, useReducer, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Linking,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { Camera } from 'expo-camera';
 import { Colors } from '../../theme/colors';
 import { ModelsStackParamList } from '../../navigation/types';
 
@@ -78,6 +80,24 @@ export function ARViewScreen() {
   const [modelStatus, setModelStatus] = useState('loading');
   const [tracking, setTracking] = useState('');
   const [sessionActive, setSessionActive] = useState(false);
+  const [cameraPermission, setCameraPermission] = useState<'undetermined' | 'granted' | 'denied'>('undetermined');
+
+  useEffect(() => {
+    (async () => {
+      const { status } = await Camera.getCameraPermissionsAsync();
+      setCameraPermission(status === 'granted' ? 'granted' : 'undetermined');
+    })();
+  }, []);
+
+  const requestCameraAndStart = useCallback(async () => {
+    const { status } = await Camera.requestCameraPermissionsAsync();
+    if (status === 'granted') {
+      setCameraPermission('granted');
+      setSessionActive(true);
+    } else {
+      setCameraPermission('denied');
+    }
+  }, []);
 
   const handleDrag = useCallback(
     (position: Vec3) => dispatch({ type: 'SET_POSITION', position }),
@@ -141,6 +161,29 @@ export function ARViewScreen() {
     );
   }
 
+  if (cameraPermission === 'denied') {
+    return (
+      <View style={styles.container}>
+        <Ionicons name="camera-outline" size={64} color={Colors.danger} />
+        <Text style={styles.titleText}>Camera Permission Required</Text>
+        <Text style={styles.descText}>
+          AR needs camera access to work.{'\n'}
+          Please grant camera permission in your device settings.
+        </Text>
+        <TouchableOpacity
+          style={styles.startButton}
+          onPress={() => Linking.openSettings()}
+        >
+          <Ionicons name="settings-outline" size={22} color={Colors.white} />
+          <Text style={styles.startButtonText}>Open Settings</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (!sessionActive) {
     return (
       <View style={styles.container}>
@@ -158,7 +201,7 @@ export function ARViewScreen() {
           <Text style={styles.stepBold}>4. Tap LOCK to anchor the model</Text>
           <Text style={styles.stepText}>5. Walk around — model stays rock-solid</Text>
         </View>
-        <TouchableOpacity style={styles.startButton} onPress={() => setSessionActive(true)}>
+        <TouchableOpacity style={styles.startButton} onPress={requestCameraAndStart}>
           <Ionicons name="play" size={22} color={Colors.white} />
           <Text style={styles.startButtonText}>Start AR Session</Text>
         </TouchableOpacity>

@@ -18,7 +18,6 @@ import * as path from 'path';
 
 const TEST_PRODUCT = {
   name: 'Hydraulic Pump Assembly',
-  sku: `HPA-TEST-${Date.now()}`,
   description: 'Test product for 3D visualization E2E',
 };
 
@@ -75,7 +74,6 @@ test.describe.serial('Full 3D Visualization Flow — Product to Rendered Model',
     productId = body.data.id;
     expect(productId).toBeTruthy();
     expect(body.data.name).toBe(TEST_PRODUCT.name);
-    expect(body.data.sku).toBe(TEST_PRODUCT.sku);
   });
 
   test('Step 2: Upload 3D model (GLB with 5 named parts) linked to product', async ({ request }) => {

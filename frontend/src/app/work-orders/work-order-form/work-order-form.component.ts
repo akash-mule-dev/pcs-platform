@@ -22,7 +22,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
         <mat-label>Product</mat-label>
         <mat-select [(ngModel)]="form.productId" (selectionChange)="onProductChange()">
           @for (p of products; track p.id) {
-            <mat-option [value]="p.id">{{ p.name }} ({{ p.sku }})</mat-option>
+            <mat-option [value]="p.id">{{ p.name }}</mat-option>
           }
         </mat-select>
       </mat-form-field>

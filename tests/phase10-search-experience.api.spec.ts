@@ -37,10 +37,9 @@ test.describe('Phase 10 — Global Search', () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.data.products.length).toBeGreaterThan(0);
-    // Search matches on name OR sku — PCB matches the SKU "PCB-X100"
+    // Search matches on product name
     const match = body.data.products[0];
-    const matchStr = `${match.name} ${match.sku}`.toLowerCase();
-    expect(matchStr).toContain('pcb');
+    expect(match.name.toLowerCase()).toContain('pcb');
   });
 
   test('GET /api/search?q=John — should find users', async ({ request }) => {

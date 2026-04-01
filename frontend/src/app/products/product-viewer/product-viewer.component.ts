@@ -25,7 +25,7 @@ import { environment } from '../../../environments/environment';
         <mat-icon class="header-icon">view_in_ar</mat-icon>
         <div>
           <h2>{{ data.product.name }}</h2>
-          <span class="sku">{{ data.product.sku }}</span>
+          <span class="product-id">{{ data.product.id }}</span>
         </div>
       </div>
       <div class="header-right">
@@ -116,7 +116,7 @@ import { environment } from '../../../environments/environment';
     .header-left { display: flex; align-items: center; gap: 12px; }
     .header-icon { font-size: 28px; width: 28px; height: 28px; color: var(--clay-primary, #6b5ce7); }
     h2 { margin: 0; font-size: 18px; color: var(--clay-text, #3d3229); }
-    .sku { font-size: 12px; color: var(--clay-text-muted, #9e8e7e); }
+    .product-id { font-size: 12px; color: var(--clay-text-muted, #9e8e7e); }
     .header-right { display: flex; align-items: center; gap: 8px; }
     .model-select { width: 240px; margin: 0; }
     ::ng-deep .model-select .mat-mdc-form-field-subscript-wrapper { display: none; }

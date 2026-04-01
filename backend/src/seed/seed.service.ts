@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Role } from '../auth/entities/role.entity.js';
 import { User } from '../auth/entities/user.entity.js';
 import { Product } from '../products/product.entity.js';
@@ -12,6 +14,7 @@ import { Station } from '../stations/station.entity.js';
 import { WorkOrder, WorkOrderStatus, WorkOrderPriority } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
 import { TimeEntry, InputMethod } from '../time-tracking/time-entry.entity.js';
+import { Model3D } from '../models/model.entity.js';
 
 @Injectable()
 export class SeedService {
@@ -28,11 +31,14 @@ export class SeedService {
     @InjectRepository(WorkOrder) private woRepo: Repository<WorkOrder>,
     @InjectRepository(WorkOrderStage) private wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(TimeEntry) private teRepo: Repository<TimeEntry>,
+    @InjectRepository(Model3D) private modelRepo: Repository<Model3D>,
   ) {}
 
   async seed() {
     const existingRoles = await this.roleRepo.count();
     if (existingRoles > 0) {
+      // DB already seeded, but models may be missing — seed them independently
+      await this.seedModels();
       this.logger.log('Database already seeded, skipping');
       return;
     }
@@ -79,21 +85,21 @@ export class SeedService {
     // ─── PRODUCTS ───────────────────────────────────────────────────────
     const products: Record<string, Product> = {};
     const productsData = [
-      { name: 'Hydraulic Pump Assembly', sku: 'HPA-3200', description: 'High-pressure hydraulic pump for automotive braking systems' },
-      { name: 'EV Motor Controller', sku: 'EMC-500', description: 'Brushless DC motor controller for electric vehicles' },
-      { name: 'Precision Gear Box', sku: 'PGB-150', description: 'Multi-stage precision gearbox for CNC machines' },
-      { name: 'Temperature Sensor Module', sku: 'TSM-80', description: 'Industrial-grade temperature sensor with digital output' },
-      { name: 'LED Driver Circuit Board', sku: 'LDR-420', description: 'Constant-current LED driver PCB for industrial lighting' },
-      { name: 'Pneumatic Valve Block', sku: 'PVB-600', description: '5/2 directional control pneumatic valve assembly' },
+      { name: 'Hydraulic Pump Assembly', description: 'High-pressure hydraulic pump for automotive braking systems' },
+      { name: 'EV Motor Controller', description: 'Brushless DC motor controller for electric vehicles' },
+      { name: 'Precision Gear Box', description: 'Multi-stage precision gearbox for CNC machines' },
+      { name: 'Temperature Sensor Module', description: 'Industrial-grade temperature sensor with digital output' },
+      { name: 'LED Driver Circuit Board', description: 'Constant-current LED driver PCB for industrial lighting' },
+      { name: 'Pneumatic Valve Block', description: '5/2 directional control pneumatic valve assembly' },
     ];
     for (const p of productsData) {
-      products[p.sku] = await this.productRepo.save(this.productRepo.create(p));
+      products[p.name] = await this.productRepo.save(this.productRepo.create(p));
     }
 
     // ─── PROCESSES & STAGES ─────────────────────────────────────────────
     const processesData = [
       {
-        name: 'Hydraulic Pump Assembly', sku: 'HPA-3200',
+        name: 'Hydraulic Pump Assembly', product: 'Hydraulic Pump Assembly',
         stages: [
           { name: 'Housing Machining', target: 1800 },
           { name: 'Piston Fitting', target: 1200 },
@@ -106,7 +112,7 @@ export class SeedService {
         ],
       },
       {
-        name: 'EV Motor Controller Build', sku: 'EMC-500',
+        name: 'EV Motor Controller Build', product: 'EV Motor Controller',
         stages: [
           { name: 'PCB Preparation', target: 600 },
           { name: 'SMT Component Placement', target: 900 },
@@ -121,7 +127,7 @@ export class SeedService {
         ],
       },
       {
-        name: 'Gearbox Assembly', sku: 'PGB-150',
+        name: 'Gearbox Assembly', product: 'Precision Gear Box',
         stages: [
           { name: 'Gear Cutting & Grinding', target: 2400 },
           { name: 'Shaft Preparation', target: 1200 },
@@ -135,7 +141,7 @@ export class SeedService {
         ],
       },
       {
-        name: 'Sensor Module Assembly', sku: 'TSM-80',
+        name: 'Sensor Module Assembly', product: 'Temperature Sensor Module',
         stages: [
           { name: 'PCB Prep', target: 300 },
           { name: 'Sensor Element Mounting', target: 600 },
@@ -147,7 +153,7 @@ export class SeedService {
         ],
       },
       {
-        name: 'LED Driver PCB Process', sku: 'LDR-420',
+        name: 'LED Driver PCB Process', product: 'LED Driver Circuit Board',
         stages: [
           { name: 'Solder Paste Application', target: 300 },
           { name: 'Component Placement', target: 600 },
@@ -160,7 +166,7 @@ export class SeedService {
         ],
       },
       {
-        name: 'Pneumatic Valve Assembly', sku: 'PVB-600',
+        name: 'Pneumatic Valve Assembly', product: 'Pneumatic Valve Block',
         stages: [
           { name: 'Body Machining QC', target: 600 },
           { name: 'Spool Fitting', target: 900 },
@@ -177,7 +183,7 @@ export class SeedService {
     const allStages: Record<string, Stage[]> = {};
     for (const pd of processesData) {
       const proc = await this.processRepo.save(this.processRepo.create({
-        name: pd.name, version: 1, productId: products[pd.sku].id,
+        name: pd.name, version: 1, productId: products[pd.product].id,
       }));
       processes[pd.name] = proc;
       allStages[pd.name] = [];
@@ -215,26 +221,26 @@ export class SeedService {
 
     const woData = [
       // Active production — visible on Kanban and dashboard
-      { num: 'WO-2026-0101', sku: 'HPA-3200', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 120, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.HIGH },
-      { num: 'WO-2026-0102', sku: 'EMC-500', proc: 'EV Motor Controller Build', line: lineB, qty: 80, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.URGENT },
-      { num: 'WO-2026-0103', sku: 'PGB-150', proc: 'Gearbox Assembly', line: lineC, qty: 45, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.HIGH },
-      { num: 'WO-2026-0104', sku: 'TSM-80', proc: 'Sensor Module Assembly', line: lineD, qty: 500, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.MEDIUM },
-      { num: 'WO-2026-0105', sku: 'LDR-420', proc: 'LED Driver PCB Process', line: lineB, qty: 300, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0101', product: 'Hydraulic Pump Assembly', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 120, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.HIGH },
+      { num: 'WO-2026-0102', product: 'EV Motor Controller', proc: 'EV Motor Controller Build', line: lineB, qty: 80, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.URGENT },
+      { num: 'WO-2026-0103', product: 'Precision Gear Box', proc: 'Gearbox Assembly', line: lineC, qty: 45, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.HIGH },
+      { num: 'WO-2026-0104', product: 'Temperature Sensor Module', proc: 'Sensor Module Assembly', line: lineD, qty: 500, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0105', product: 'LED Driver Circuit Board', proc: 'LED Driver PCB Process', line: lineB, qty: 300, status: WorkOrderStatus.IN_PROGRESS, priority: WorkOrderPriority.MEDIUM },
 
       // Pending — queued up
-      { num: 'WO-2026-0106', sku: 'PVB-600', proc: 'Pneumatic Valve Assembly', line: lineA, qty: 200, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.MEDIUM },
-      { num: 'WO-2026-0107', sku: 'HPA-3200', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 60, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.LOW },
-      { num: 'WO-2026-0108', sku: 'EMC-500', proc: 'EV Motor Controller Build', line: lineB, qty: 150, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.HIGH },
+      { num: 'WO-2026-0106', product: 'Pneumatic Valve Block', proc: 'Pneumatic Valve Assembly', line: lineA, qty: 200, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0107', product: 'Hydraulic Pump Assembly', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 60, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.LOW },
+      { num: 'WO-2026-0108', product: 'EV Motor Controller', proc: 'EV Motor Controller Build', line: lineB, qty: 150, status: WorkOrderStatus.PENDING, priority: WorkOrderPriority.HIGH },
 
       // Draft — planning stage
-      { num: 'WO-2026-0109', sku: 'PGB-150', proc: 'Gearbox Assembly', line: null, qty: 30, status: WorkOrderStatus.DRAFT, priority: WorkOrderPriority.LOW },
-      { num: 'WO-2026-0110', sku: 'TSM-80', proc: 'Sensor Module Assembly', line: null, qty: 1000, status: WorkOrderStatus.DRAFT, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0109', product: 'Precision Gear Box', proc: 'Gearbox Assembly', line: null, qty: 30, status: WorkOrderStatus.DRAFT, priority: WorkOrderPriority.LOW },
+      { num: 'WO-2026-0110', product: 'Temperature Sensor Module', proc: 'Sensor Module Assembly', line: null, qty: 1000, status: WorkOrderStatus.DRAFT, priority: WorkOrderPriority.MEDIUM },
 
       // Completed — for reporting
-      { num: 'WO-2026-0051', sku: 'HPA-3200', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 100, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.HIGH },
-      { num: 'WO-2026-0052', sku: 'EMC-500', proc: 'EV Motor Controller Build', line: lineB, qty: 60, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.MEDIUM },
-      { num: 'WO-2026-0053', sku: 'LDR-420', proc: 'LED Driver PCB Process', line: lineB, qty: 250, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.MEDIUM },
-      { num: 'WO-2026-0054', sku: 'PVB-600', proc: 'Pneumatic Valve Assembly', line: lineA, qty: 150, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.LOW },
+      { num: 'WO-2026-0051', product: 'Hydraulic Pump Assembly', proc: 'Hydraulic Pump Assembly', line: lineA, qty: 100, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.HIGH },
+      { num: 'WO-2026-0052', product: 'EV Motor Controller', proc: 'EV Motor Controller Build', line: lineB, qty: 60, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0053', product: 'LED Driver Circuit Board', proc: 'LED Driver PCB Process', line: lineB, qty: 250, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.MEDIUM },
+      { num: 'WO-2026-0054', product: 'Pneumatic Valve Block', proc: 'Pneumatic Valve Assembly', line: lineA, qty: 150, status: WorkOrderStatus.COMPLETED, priority: WorkOrderPriority.LOW },
     ];
 
     const workOrders: Record<string, WorkOrder> = {};
@@ -249,7 +255,7 @@ export class SeedService {
       const daysAgo = w.status === WorkOrderStatus.COMPLETED ? 14 : w.status === WorkOrderStatus.IN_PROGRESS ? 3 : 0;
       const wo = await this.woRepo.save(this.woRepo.create({
         orderNumber: w.num,
-        productId: products[w.sku].id,
+        productId: products[w.product].id,
         processId: processes[w.proc].id,
         lineId: w.line ? lines[w.line].id : null,
         quantity: w.qty,
@@ -367,5 +373,91 @@ export class SeedService {
     }
 
     this.logger.log(`Seeded: 6 products, 6 processes, 4 lines, 21 stations, 14 work orders, ${entryCount} time entries`);
+
+    await this.seedModels();
+  }
+
+  /** Seed 3D models — runs independently so it works on already-seeded databases */
+  async seedModels() {
+    const existingModels = await this.modelRepo.count();
+    if (existingModels > 0) {
+      this.logger.log('Models already seeded, skipping');
+      return;
+    }
+
+    // Find .glb files in uploads/models that are valid (> 1000 bytes)
+    const uploadsDir = path.resolve(process.cwd(), 'uploads', 'models');
+    if (!fs.existsSync(uploadsDir)) {
+      this.logger.warn('uploads/models directory not found, skipping model seed');
+      return;
+    }
+
+    const glbFiles = fs.readdirSync(uploadsDir)
+      .filter(f => f.endsWith('.glb'))
+      .map(f => ({ name: f, size: fs.statSync(path.join(uploadsDir, f)).size }))
+      .filter(f => f.size > 1000)
+      .sort((a, b) => b.size - a.size);
+
+    if (glbFiles.length === 0) {
+      this.logger.warn('No valid .glb files found in uploads/models');
+      return;
+    }
+
+    // Get products to associate models with
+    const products = await this.productRepo.find();
+    const productMap = new Map(products.map(p => [p.name, p]));
+
+    const modelsData = [
+      { name: 'Hydraulic Pump — Full Assembly', description: 'Complete HPA-3200 pump assembly for AR inspection', modelType: 'assembly', product: 'Hydraulic Pump Assembly',
+        assemblyInstructions: [
+          { step: 1, title: 'Install Housing', description: 'Place machined housing on work surface', meshHighlight: 'housing' },
+          { step: 2, title: 'Insert Pistons', description: 'Fit 6 pistons into cylinder bores', meshHighlight: 'piston' },
+          { step: 3, title: 'Apply Seals', description: 'Install O-rings and shaft seals', meshHighlight: 'seal' },
+          { step: 4, title: 'Mount Valve Plate', description: 'Attach valve plate and torque bolts to 45 Nm', meshHighlight: 'valve' },
+        ],
+      },
+      { name: 'EV Motor Controller PCB', description: 'EMC-500 board layout for quality overlay', modelType: 'quality', product: 'EV Motor Controller', assemblyInstructions: null },
+      { name: 'Precision Gearbox — Exploded View', description: 'PGB-150 gearbox with exploded assembly steps', modelType: 'assembly', product: 'Precision Gear Box',
+        assemblyInstructions: [
+          { step: 1, title: 'Shaft & Bearings', description: 'Press bearings onto input and output shafts' },
+          { step: 2, title: 'Gear Train', description: 'Mesh gear sets on shafts in sequence' },
+          { step: 3, title: 'Housing Closure', description: 'Seal and bolt housing halves together' },
+        ],
+      },
+      { name: 'Temperature Sensor Module', description: 'TSM-80 sensor enclosure and PCB for inspection', modelType: 'quality', product: 'Temperature Sensor Module', assemblyInstructions: null },
+      { name: 'LED Driver Board', description: 'LDR-420 PCB quality check model', modelType: 'quality', product: 'LED Driver Circuit Board', assemblyInstructions: null },
+      { name: 'Pneumatic Valve Block — Assembly', description: 'PVB-600 directional valve with AR overlay', modelType: 'assembly', product: 'Pneumatic Valve Block',
+        assemblyInstructions: [
+          { step: 1, title: 'Body Prep', description: 'Verify machined valve body dimensions' },
+          { step: 2, title: 'Spool & Springs', description: 'Insert spool and return springs' },
+          { step: 3, title: 'Solenoid Mount', description: 'Attach solenoid actuators and connect wiring' },
+        ],
+      },
+    ];
+
+    let seededCount = 0;
+    for (let i = 0; i < modelsData.length; i++) {
+      const md = modelsData[i];
+      const glb = glbFiles[i % glbFiles.length];
+      const product = productMap.get(md.product);
+
+      await this.modelRepo.save(this.modelRepo.create({
+        name: md.name,
+        description: md.description,
+        fileName: glb.name,
+        originalName: `${md.name.replace(/[^a-zA-Z0-9 ]/g, '')}.glb`,
+        filePath: `uploads/models/${glb.name}`,
+        fileSize: glb.size,
+        mimeType: 'model/gltf-binary',
+        fileFormat: 'glb',
+        modelType: md.modelType,
+        productId: product?.id ?? undefined,
+        assemblyInstructions: md.assemblyInstructions,
+        isActive: true,
+      }));
+      seededCount++;
+    }
+
+    this.logger.log(`Seeded ${seededCount} 3D models`);
   }
 }

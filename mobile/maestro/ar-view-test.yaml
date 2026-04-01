@@ -1,0 +1,82 @@
+appId: com.primeterminal.pcs
+name: AR View - Camera Opens Test
+---
+
+# Step 1: Launch app
+- launchApp:
+    appId: com.primeterminal.pcs
+    clearState: false
+
+# Step 2: Login
+- assertVisible: "Sign In"
+- takeScreenshot: "01_login_screen"
+- tapOn: "Enter your email"
+- inputText: "admin@pcs.local"
+- tapOn: "Enter your password"
+- inputText: "password123"
+- hideKeyboard
+- tapOn: "Sign In"
+
+# Step 3: Wait for Dashboard
+- extendedWaitUntil:
+    visible: "Home"
+    timeout: 15000
+- takeScreenshot: "02_dashboard"
+
+# Step 4: Navigate to 3D/AR tab
+- tapOn: "3D/AR"
+- extendedWaitUntil:
+    visible: "3D Models"
+    timeout: 10000
+
+# Step 5: Wait for models to load
+- extendedWaitUntil:
+    visible: "3D Model|GLB|No models"
+    timeout: 10000
+- takeScreenshot: "03_models_list"
+
+# Step 6: Tap first model card
+- tapOn:
+    text: ".*3D Model.*"
+    index: 0
+
+# Step 7: Wait for action sheet and tap AR View
+- extendedWaitUntil:
+    visible: "AR View"
+    timeout: 5000
+- takeScreenshot: "04_action_sheet"
+- tapOn: "AR View"
+
+# Step 8: AR screen loaded
+- extendedWaitUntil:
+    visible: "AR QA Inspector|AR Not Available|Camera Permission|Start AR"
+    timeout: 10000
+- takeScreenshot: "05_ar_screen"
+
+# Step 9: Tap Start AR Session
+- tapOn: "Start AR Session"
+
+# Step 10: Handle permission dialog
+- extendedWaitUntil:
+    visible: "While using|Allow|Scanning|LOCK"
+    timeout: 10000
+- takeScreenshot: "06_permission_or_camera"
+
+- runFlow:
+    when:
+      visible: "While using the app"
+    commands:
+      - tapOn: "While using the app"
+
+- runFlow:
+    when:
+      visible:
+        text: "ALLOW"
+    commands:
+      - tapOn: "ALLOW"
+
+# Step 11: AR session active — camera should be open
+- extendedWaitUntil:
+    visible: "Scanning|LOCK|Drag|Failed"
+    timeout: 15000
+- takeScreenshot: "07_ar_camera_active"

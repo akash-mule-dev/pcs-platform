@@ -27,7 +27,13 @@
       "package": "com.primeterminal.pcs"
     },
     "plugins": [
-      ["@reactvision/react-viro", { "android": { "xrMode": "AR" } }]
+      ["@reactvision/react-viro", { "android": { "xrMode": "AR" } }],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "PCS needs camera access for AR features"
+        }
+      ]
     ]
   }
 }

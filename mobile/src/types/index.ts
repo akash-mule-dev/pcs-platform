@@ -38,7 +38,7 @@ export interface WorkOrderStage {
 export interface WorkOrder {
   id: string;
   orderNumber: string;
-  product?: { id: string; name: string; sku: string };
+  product?: { id: string; name: string };
   process?: { id: string; name: string };
   line?: { id: string; name: string } | null;
   quantity: number;
