@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Linking,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
@@ -22,6 +23,25 @@ try {
   viroAvailable = true;
 } catch {
   viroAvailable = false;
+}
+
+// Error boundary to catch native AR crashes gracefully
+class ARErrorBoundary extends React.Component<
+  { children: React.ReactNode; onError: () => void },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any) {
+    console.warn('AR Error Boundary caught:', error);
+    this.props.onError();
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
 }
 
 type Route = RouteProp<ModelsStackParamList, 'ARView'>;
@@ -77,9 +97,10 @@ export function ARViewScreen() {
 
   const baseScaleRef = useRef<Vec3>(DEFAULT_SCALE);
   const baseRotationRef = useRef<Vec3>(DEFAULT_ROTATION);
-  const [modelStatus, setModelStatus] = useState('loading');
+  const [modelStatus, setModelStatus] = useState('idle');
   const [tracking, setTracking] = useState('');
   const [sessionActive, setSessionActive] = useState(false);
+  const [placed, setPlaced] = useState(false);
   const [cameraPermission, setCameraPermission] = useState<'undetermined' | 'granted' | 'denied'>('undetermined');
 
   useEffect(() => {
@@ -97,6 +118,12 @@ export function ARViewScreen() {
     } else {
       setCameraPermission('denied');
     }
+  }, []);
+
+  const handlePlaced = useCallback((position: Vec3) => {
+    setPlaced(true);
+    setModelStatus('loading');
+    dispatch({ type: 'SET_POSITION', position });
   }, []);
 
   const handleDrag = useCallback(
@@ -194,12 +221,10 @@ export function ARViewScreen() {
           and walk around to inspect from all angles.
         </Text>
         <View style={styles.stepsBox}>
-          <Text style={styles.stepBold}>1. Slowly scan the surface around your product</Text>
-          <Text style={styles.stepText}>    (Move phone side-to-side for 5 seconds)</Text>
-          <Text style={styles.stepText}>2. Model appears on detected surface</Text>
-          <Text style={styles.stepText}>3. Drag to position · Pinch to resize</Text>
-          <Text style={styles.stepBold}>4. Tap LOCK to anchor the model</Text>
-          <Text style={styles.stepText}>5. Walk around — model stays rock-solid</Text>
+          <Text style={styles.stepBold}>1. Tap anywhere on the camera to place the model</Text>
+          <Text style={styles.stepText}>2. Drag to reposition · Pinch to resize</Text>
+          <Text style={styles.stepBold}>3. Tap LOCK to anchor the model</Text>
+          <Text style={styles.stepText}>4. Walk around — model stays rock-solid</Text>
         </View>
         <TouchableOpacity style={styles.startButton} onPress={requestCameraAndStart}>
           <Ionicons name="play" size={22} color={Colors.white} />
@@ -214,66 +239,74 @@ export function ARViewScreen() {
 
   return (
     <View style={styles.arContainer}>
-      <ViroARSceneNavigator
-        autofocus={true}
-        videoQuality="High"
-        hdrEnabled={true}
-        pbrEnabled={true}
-        shadowsEnabled={true}
-        bloomEnabled={false}
-        initialScene={{
-          scene: ARModelScene as any,
-        }}
-        viroAppProps={{
-          modelUri: fileUrl,
-          position: state.position,
-          scale: state.scale,
-          rotation: state.rotation,
-          locked: state.locked,
-          onDrag: handleDrag,
-          onPinch: handlePinch,
-          onRotate: handleRotate,
-          onModelStatus: setModelStatus,
-          onTrackingUpdated: setTracking,
-        }}
-        style={styles.arView}
-      />
+      <ARErrorBoundary onError={() => { setSessionActive(false); }}>
+        <ViroARSceneNavigator
+          autofocus={true}
+          initialScene={{
+            scene: ARModelScene as any,
+          }}
+          viroAppProps={{
+            modelUri: __DEV__ ? 'http://192.168.1.108:9999/model.glb' : fileUrl, // TODO: remove test override
+            placed,
+            position: state.position,
+            scale: state.scale,
+            rotation: state.rotation,
+            locked: state.locked,
+            onPlaced: handlePlaced,
+            onDrag: handleDrag,
+            onPinch: handlePinch,
+            onRotate: handleRotate,
+            onModelStatus: setModelStatus,
+            onTrackingUpdated: setTracking,
+          }}
+          style={styles.arView}
+        />
+      </ARErrorBoundary>
+
+      {/* Tap overlay to place model */}
+      {!placed && (
+        <TouchableWithoutFeedback onPress={() => handlePlaced([0, -0.2, -1])}>
+          <View style={styles.tapOverlay} />
+        </TouchableWithoutFeedback>
+      )}
 
       {/* Status bar */}
       <View
         style={[
           styles.statusBar,
           {
-            backgroundColor: state.locked
-              ? 'rgba(46,125,50,0.9)'
-              : tracking === 'normal'
-                ? 'rgba(21,101,192,0.85)'
-                : 'rgba(100,100,100,0.85)',
+            backgroundColor: !placed
+              ? 'rgba(100,100,100,0.85)'
+              : state.locked
+                ? 'rgba(46,125,50,0.9)'
+                : tracking === 'normal'
+                  ? 'rgba(21,101,192,0.85)'
+                  : 'rgba(100,100,100,0.85)',
           },
         ]}
       >
         <Ionicons
-          name={state.locked ? 'lock-closed' : tracking === 'normal' ? 'move' : 'hourglass'}
+          name={!placed ? 'hand-left' : state.locked ? 'lock-closed' : tracking === 'normal' ? 'move' : 'hourglass'}
           size={16}
           color="#fff"
         />
         <Text style={styles.statusBarText}>
-          {state.locked
-            ? tracking === 'limited'
-              ? 'LOCKED — Tracking limited! Move slowly'
-              : 'LOCKED — Walk around to inspect all sides'
-            : modelStatus === 'loaded'
+          {!placed
+            ? 'Tap anywhere to place the model'
+            : state.locked
               ? tracking === 'limited'
-                ? 'Scan surface slowly... then drag to position'
-                : 'Drag · Pinch · Twist to position, then LOCK'
-              : modelStatus === 'error'
-                ? 'Failed to load model'
-                : 'Scanning surface... move phone slowly'}
+                ? 'LOCKED — Tracking limited! Move slowly'
+                : 'LOCKED — Walk around to inspect all sides'
+              : modelStatus === 'loaded'
+                ? 'Drag · Pinch · Twist to position, then LOCK'
+                : modelStatus === 'error'
+                  ? 'Failed to load model'
+                  : 'Loading model...'}
         </Text>
       </View>
 
       {/* LOCK / UNLOCK */}
-      {modelStatus === 'loaded' && (
+      {placed && modelStatus === 'loaded' && (
         <TouchableOpacity
           style={[styles.lockButton, state.locked ? styles.lockButtonLocked : styles.lockButtonUnlocked]}
           onPress={() => dispatch({ type: 'TOGGLE_LOCK' })}
@@ -298,6 +331,8 @@ export function ARViewScreen() {
               onPress={() => {
                 baseScaleRef.current = DEFAULT_SCALE;
                 baseRotationRef.current = DEFAULT_ROTATION;
+                setPlaced(false);
+                setModelStatus('idle');
                 dispatch({ type: 'RESET' });
               }}
             >
@@ -341,6 +376,9 @@ const styles = StyleSheet.create({
   startButtonText: { color: Colors.white, fontSize: 16, fontWeight: '600' },
   backButton: { marginTop: 16, padding: 12 },
   backButtonText: { color: Colors.primary, fontSize: 15, fontWeight: '600' },
+  tapOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+  },
   arContainer: { flex: 1, backgroundColor: '#000' },
   arView: { flex: 1 },
   statusBar: {

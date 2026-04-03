@@ -1,0 +1,38 @@
+appId: com.primeterminal.pcs
+---
+# Step 1: Home screen
+- takeScreenshot: step1_home
+
+# Step 2: Navigate to 3D/AR tab
+- tapOn: "3D/AR"
+- waitForAnimationToEnd
+- takeScreenshot: step2_model_list
+
+# Step 3: Wait for models to load, then tap first model card area
+- extendedWaitUntil:
+    visible: "3D Models"
+    timeout: 10000
+- tapOn:
+    point: "50%,35%"
+- waitForAnimationToEnd
+- takeScreenshot: step3_model_tapped
+
+# Step 4: Tap "AR View" on the alert dialog
+- tapOn: "AR View"
+- waitForAnimationToEnd
+- takeScreenshot: step4_ar_presession
+
+# Step 5: Tap "Start AR Session"
+- tapOn: "Start AR Session"
+- extendedWaitUntil:
+    visible: "Tap anywhere to place the model"
+    timeout: 10000
+- takeScreenshot: step5_ar_camera_open
+
+# Step 6: Tap center of screen to place model
+- tapOn:
+    point: "50%,50%"
+- extendedWaitUntil:
+    notVisible: "Tap anywhere to place the model"
+    timeout: 10000
+- takeScreenshot: step6_after_tap

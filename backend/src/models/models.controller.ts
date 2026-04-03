@@ -11,6 +11,8 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
+import { NodeIO } from '@gltf-transform/core';
+import { normals } from '@gltf-transform/functions';
 import { ModelsService } from './models.service.js';
 import { CreateModelDto } from './dto/create-model.dto.js';
 import { UpdateModelDto } from './dto/update-model.dto.js';
@@ -59,6 +61,47 @@ export class ModelsController {
       (stream as any).pipe(res);
     } catch {
       return res.status(404).json({ message: 'File not found' });
+    }
+  }
+
+  @Get(':id/file/ar')
+  @Public()
+  @ApiOperation({ summary: 'Download AR-compatible GLB (with tangents for Viro renderer)' })
+  async downloadARFile(@Param('id') id: string, @Res() res: Response) {
+    try {
+      const { stream, model } = await this.service.getFileStream(id);
+
+      const ext = path.extname(model.originalName).toLowerCase();
+      if (ext !== '.glb') {
+        // Non-GLB: stream as-is
+        res.set({
+          'Content-Type': model.mimeType || 'application/octet-stream',
+          'Content-Disposition': `inline; filename="${model.originalName}"`,
+        });
+        return (stream as any).pipe(res);
+      }
+
+      // Buffer the GLB stream, add tangents, and send the processed file
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream as AsyncIterable<Buffer>) {
+        chunks.push(chunk);
+      }
+      const glbBuffer = Buffer.concat(chunks);
+
+      const io = new NodeIO();
+      const doc = await io.readBinary(new Uint8Array(glbBuffer));
+      await doc.transform(normals());
+      const processedGlb = await io.writeBinary(doc);
+
+      res.set({
+        'Content-Type': 'model/gltf-binary',
+        'Content-Disposition': `inline; filename="${model.originalName}"`,
+        'Content-Length': String(processedGlb.byteLength),
+      });
+      res.send(Buffer.from(processedGlb));
+    } catch (err) {
+      console.error('AR file processing error:', err);
+      return res.status(404).json({ message: 'File not found or processing failed' });
     }
   }
 

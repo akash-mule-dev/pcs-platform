@@ -81,7 +81,7 @@ export function ModelListScreen() {
       {
         text: 'AR View',
         onPress: () =>
-          navigation.navigate('ARView', { modelId: model.id, fileUrl }),
+          navigation.navigate('ARView', { modelId: model.id, fileUrl: `${fileUrl}/ar` }),
       },
       {
         text: 'Quality Inspection',

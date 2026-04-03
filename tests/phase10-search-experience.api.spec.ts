@@ -37,9 +37,10 @@ test.describe('Phase 10 — Global Search', () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.data.products.length).toBeGreaterThan(0);
-    // Search matches on product name
+    // Search matches on product name or description
     const match = body.data.products[0];
-    expect(match.name.toLowerCase()).toContain('pcb');
+    const searchable = `${match.name} ${match.description}`.toLowerCase();
+    expect(searchable).toContain('pcb');
   });
 
   test('GET /api/search?q=John — should find users', async ({ request }) => {

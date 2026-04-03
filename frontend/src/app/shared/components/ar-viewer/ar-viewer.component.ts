@@ -1,9 +1,11 @@
 import {
   Component, Input, CUSTOM_ELEMENTS_SCHEMA, OnChanges,
-  SimpleChanges, ViewChild, ElementRef, AfterViewInit, OnDestroy
+  SimpleChanges, ViewChild, ElementRef, AfterViewInit, OnDestroy, NgZone
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import '@google/model-viewer';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 @Component({
   selector: 'app-ar-viewer',
@@ -12,60 +14,82 @@ import '@google/model-viewer';
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   template: `
     <div class="ar-viewer-container" #wrapper>
-      @if (modelUrl) {
-        <model-viewer
-          #modelViewer
-          [attr.src]="modelUrl"
-          camera-controls
-          touch-action="pan-y"
-          ar
-          ar-modes="webxr scene-viewer quick-look"
-          ar-scale="auto"
-          auto-rotate
-          shadow-intensity="1"
-          environment-image="neutral"
-          exposure="1.0"
-          [attr.poster]="null"
-          [attr.alt]="modelName || '3D Model'"
-          class="model-viewer"
-        >
-          <button slot="ar-button" class="ar-button">
-            <span class="ar-icon">📱</span>
-            View in your space
-          </button>
-
-          <div class="ar-prompt" slot="ar-prompt">
-            <img src="https://modelviewer.dev/shared-assets/icons/hand.png" alt="AR prompt">
+      @if (!arSessionActive) {
+        <!-- Normal 3D preview mode -->
+        @if (modelUrl) {
+          <model-viewer
+            #modelViewer
+            [attr.src]="modelUrl"
+            camera-controls
+            touch-action="pan-y"
+            ar
+            ar-modes="webxr scene-viewer quick-look"
+            ar-scale="auto"
+            auto-rotate
+            shadow-intensity="1"
+            environment-image="neutral"
+            exposure="1.0"
+            [attr.poster]="null"
+            [attr.alt]="modelName || '3D Model'"
+            class="model-viewer"
+          >
+          </model-viewer>
+        } @else {
+          <div class="no-model">
+            <span class="no-model-icon">📦</span>
+            <p>No 3D model available</p>
           </div>
-        </model-viewer>
+        }
       } @else {
-        <div class="no-model">
-          <span class="no-model-icon">📦</span>
-          <p>No 3D model available</p>
+        <!-- Custom AR camera session -->
+        <div class="ar-camera-container" #arContainer>
+          <video #cameraVideo autoplay playsinline class="camera-feed"></video>
+          <canvas #arCanvas class="ar-overlay"
+            (click)="onCanvasTap($event)"
+            (touchend)="onCanvasTouch($event)">
+          </canvas>
+          @if (!modelPlaced) {
+            <div class="tap-hint">
+              <span class="hint-icon">👆</span>
+              <span>Tap anywhere to place the model</span>
+            </div>
+          }
+          @if (modelPlaced) {
+            <div class="placed-controls">
+              <button class="placed-btn" (click)="removeModel()">
+                <span>🗑️</span> Remove
+              </button>
+              <button class="placed-btn" (click)="removeModel()">
+                <span>📍</span> Reposition
+              </button>
+            </div>
+          }
         </div>
       }
 
       <div class="ar-controls">
-        @if (!arSupported) {
-          <div class="ar-fallback-notice">
-            <span class="notice-icon">ℹ️</span>
-            <span>AR requires a camera-enabled device (mobile/tablet). You can still interact with the 3D model here.</span>
+        @if (!arSessionActive) {
+          <div class="control-buttons">
+            <button class="control-btn" (click)="resetView()" title="Reset camera">
+              <span class="btn-icon">🎯</span> Reset View
+            </button>
+            <button class="control-btn" (click)="toggleAutoRotate()" title="Toggle rotation">
+              <span class="btn-icon">{{ autoRotate ? '⏸' : '🔄' }}</span>
+              {{ autoRotate ? 'Stop Rotate' : 'Auto Rotate' }}
+            </button>
+            @if (modelUrl) {
+              <button class="control-btn ar-activate" (click)="startARSession()" title="Start AR session">
+                <span class="btn-icon">📷</span> Start AR Session
+              </button>
+            }
+          </div>
+        } @else {
+          <div class="control-buttons">
+            <button class="control-btn ar-stop" (click)="stopARSession()" title="Stop AR session">
+              <span class="btn-icon">✕</span> Stop AR Session
+            </button>
           </div>
         }
-        <div class="control-buttons">
-          <button class="control-btn" (click)="resetView()" title="Reset camera">
-            <span class="btn-icon">🎯</span> Reset View
-          </button>
-          <button class="control-btn" (click)="toggleAutoRotate()" title="Toggle rotation">
-            <span class="btn-icon">{{ autoRotate ? '⏸' : '🔄' }}</span>
-            {{ autoRotate ? 'Stop Rotate' : 'Auto Rotate' }}
-          </button>
-          @if (arSupported) {
-            <button class="control-btn ar-activate" (click)="activateAR()" title="Open camera AR">
-              <span class="btn-icon">📷</span> Open Camera
-            </button>
-          }
-        </div>
       </div>
     </div>
   `,
@@ -89,50 +113,88 @@ import '@google/model-viewer';
       --poster-color: transparent;
     }
 
-    .ar-button {
+    .ar-camera-container {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      min-height: 350px;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .camera-feed {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .ar-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+
+    .tap-hint {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
       display: flex;
       align-items: center;
       gap: 8px;
-      position: absolute;
-      bottom: 16px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--clay-primary, #6b5ce7);
+      background: rgba(0, 0, 0, 0.7);
       color: #fff;
-      border: none;
+      padding: 12px 24px;
       border-radius: 24px;
-      padding: 10px 24px;
       font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(107, 92, 231, 0.4);
-      transition: all 0.2s;
+      font-weight: 500;
+      pointer-events: none;
+      animation: pulse 2s ease-in-out infinite;
       z-index: 10;
     }
-    .ar-button:hover {
-      background: #5a4bd6;
-      box-shadow: 0 6px 20px rgba(107, 92, 231, 0.5);
+    .hint-icon { font-size: 20px; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
     }
-    .ar-icon { font-size: 18px; }
+
+    .placed-controls {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+
+    .placed-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 20px;
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .placed-btn:hover {
+      background: rgba(0, 0, 0, 0.85);
+    }
 
     .ar-controls {
       padding: 12px 16px;
       background: var(--clay-bg, #faf7f2);
       border-top: 1px solid var(--clay-border, #e5ddd0);
     }
-
-    .ar-fallback-notice {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      margin-bottom: 10px;
-      background: rgba(107, 92, 231, 0.06);
-      border-radius: 8px;
-      font-size: 12px;
-      color: var(--clay-text-secondary, #6b5e50);
-    }
-    .notice-icon { font-size: 14px; }
 
     .control-buttons {
       display: flex;
@@ -168,6 +230,15 @@ import '@google/model-viewer';
       background: #5a4bd6;
     }
 
+    .control-btn.ar-stop {
+      background: #e74c3c;
+      color: #fff;
+      border-color: #e74c3c;
+    }
+    .control-btn.ar-stop:hover {
+      background: #c0392b;
+    }
+
     .no-model {
       flex: 1;
       display: flex;
@@ -182,14 +253,29 @@ import '@google/model-viewer';
 })
 export class ArViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('modelViewer') modelViewerRef!: ElementRef;
+  @ViewChild('cameraVideo') cameraVideoRef!: ElementRef<HTMLVideoElement>;
+  @ViewChild('arCanvas') arCanvasRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('arContainer') arContainerRef!: ElementRef<HTMLDivElement>;
 
   @Input() modelUrl: string | null = null;
   @Input() modelName: string | null = null;
 
   arSupported = false;
   autoRotate = true;
+  arSessionActive = false;
+  modelPlaced = false;
 
   private arCheckInterval: any;
+  private mediaStream: MediaStream | null = null;
+  private renderer: THREE.WebGLRenderer | null = null;
+  private scene: THREE.Scene | null = null;
+  private camera: THREE.PerspectiveCamera | null = null;
+  private loadedModel: THREE.Group | null = null;
+  private placedModel: THREE.Object3D | null = null;
+  private animationFrameId: number | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+
+  constructor(private ngZone: NgZone) {}
 
   ngAfterViewInit(): void {
     this.checkArSupport();
@@ -197,6 +283,10 @@ export class ArViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['modelUrl'] && !changes['modelUrl'].firstChange) {
+      this.loadedModel = null;
+      if (this.arSessionActive) {
+        this.stopARSession();
+      }
       setTimeout(() => this.checkArSupport(), 100);
     }
   }
@@ -205,22 +295,20 @@ export class ArViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
     if (this.arCheckInterval) {
       clearTimeout(this.arCheckInterval);
     }
+    this.stopARSession();
   }
 
   private checkArSupport(): void {
     const mv = this.modelViewerRef?.nativeElement;
     if (!mv) return;
 
-    // model-viewer exposes canActivateAR after loading
     if (typeof mv.canActivateAR === 'boolean') {
       this.arSupported = mv.canActivateAR;
     } else {
-      // Check after model loads
       mv.addEventListener('load', () => {
         this.arSupported = mv.canActivateAR ?? false;
       }, { once: true });
 
-      // Also check via WebXR support
       if ('xr' in navigator) {
         (navigator as any).xr?.isSessionSupported('immersive-ar').then((supported: boolean) => {
           this.arSupported = this.arSupported || supported;
@@ -229,11 +317,193 @@ export class ArViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
     }
   }
 
-  activateAR(): void {
-    const mv = this.modelViewerRef?.nativeElement;
-    if (mv?.activateAR) {
-      mv.activateAR();
+  async startARSession(): Promise<void> {
+    try {
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+
+      this.arSessionActive = true;
+      this.modelPlaced = false;
+      this.placedModel = null;
+
+      // Wait for the view to render the camera elements
+      setTimeout(() => this.initARScene(), 50);
+    } catch (err) {
+      console.error('Failed to access camera:', err);
+      alert('Could not access your camera. Please grant camera permission and try again.');
     }
+  }
+
+  private initARScene(): void {
+    const video = this.cameraVideoRef?.nativeElement;
+    const canvas = this.arCanvasRef?.nativeElement;
+    const container = this.arContainerRef?.nativeElement;
+    if (!video || !canvas || !container) return;
+
+    // Set camera video source
+    video.srcObject = this.mediaStream;
+    video.play();
+
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    // Setup Three.js scene
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(60, width / height, 0.01, 1000);
+    this.camera.position.set(0, 0, 0);
+
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: true
+    });
+    this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setClearColor(0x000000, 0);
+
+    // Lighting
+    const ambient = new THREE.AmbientLight(0xffffff, 1.0);
+    this.scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(2, 4, 3);
+    this.scene.add(dirLight);
+
+    // Pre-load the 3D model
+    if (this.modelUrl && !this.loadedModel) {
+      const loader = new GLTFLoader();
+      loader.load(this.modelUrl, (gltf) => {
+        this.loadedModel = gltf.scene;
+        // Normalize model size
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const scale = 0.5 / maxDim; // Normalize to ~0.5 units
+        this.loadedModel.scale.setScalar(scale);
+        // Center the model at its origin
+        const center = box.getCenter(new THREE.Vector3());
+        this.loadedModel.position.sub(center.multiplyScalar(scale));
+      });
+    }
+
+    // Handle resize
+    this.resizeObserver = new ResizeObserver(() => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (this.camera && this.renderer) {
+        this.camera.aspect = w / h;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(w, h);
+      }
+    });
+    this.resizeObserver.observe(container);
+
+    // Start render loop
+    this.ngZone.runOutsideAngular(() => this.renderLoop());
+  }
+
+  private renderLoop(): void {
+    if (!this.arSessionActive || !this.renderer || !this.scene || !this.camera) return;
+
+    // Slowly rotate placed model for visual feedback
+    if (this.placedModel) {
+      this.placedModel.rotation.y += 0.005;
+    }
+
+    this.renderer.render(this.scene, this.camera);
+    this.animationFrameId = requestAnimationFrame(() => this.renderLoop());
+  }
+
+  onCanvasTap(event: MouseEvent): void {
+    if (!this.arSessionActive || !this.loadedModel || !this.camera || !this.scene) return;
+
+    const canvas = this.arCanvasRef.nativeElement;
+    const rect = canvas.getBoundingClientRect();
+    // Convert click to normalized device coordinates
+    const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.placeModelAt(ndcX, ndcY);
+  }
+
+  onCanvasTouch(event: TouchEvent): void {
+    if (!this.arSessionActive || !this.loadedModel || !this.camera || !this.scene) return;
+    event.preventDefault();
+
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+
+    const canvas = this.arCanvasRef.nativeElement;
+    const rect = canvas.getBoundingClientRect();
+    const ndcX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.placeModelAt(ndcX, ndcY);
+  }
+
+  private placeModelAt(ndcX: number, ndcY: number): void {
+    if (!this.scene || !this.camera || !this.loadedModel) return;
+
+    // Remove previous placement
+    if (this.placedModel) {
+      this.scene.remove(this.placedModel);
+    }
+
+    // Clone the pre-loaded model
+    const model = this.loadedModel.clone();
+
+    // Place the model at a fixed distance in front of the camera,
+    // offset by the tap position
+    const distance = 2;
+    const vector = new THREE.Vector3(ndcX, ndcY, -1).normalize();
+    model.position.copy(vector.multiplyScalar(distance));
+
+    this.scene.add(model);
+    this.placedModel = model;
+
+    this.ngZone.run(() => {
+      this.modelPlaced = true;
+    });
+  }
+
+  removeModel(): void {
+    if (this.placedModel && this.scene) {
+      this.scene.remove(this.placedModel);
+      this.placedModel = null;
+    }
+    this.modelPlaced = false;
+  }
+
+  stopARSession(): void {
+    this.arSessionActive = false;
+    this.modelPlaced = false;
+
+    if (this.animationFrameId != null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach(t => t.stop());
+      this.mediaStream = null;
+    }
+
+    if (this.renderer) {
+      this.renderer.dispose();
+      this.renderer = null;
+    }
+
+    if (this.placedModel && this.scene) {
+      this.scene.remove(this.placedModel);
+    }
+    this.placedModel = null;
+    this.scene = null;
+    this.camera = null;
   }
 
   resetView(): void {

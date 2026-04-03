@@ -32,7 +32,7 @@ import { OrganizationModule } from './organization/organization.module.js';
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{
       ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),
-      limit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
+      limit: parseInt(process.env.THROTTLE_LIMIT || '300', 10),
     }]),
     DatabaseModule,
     StorageModule,
