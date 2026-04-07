@@ -136,11 +136,22 @@ async function startAR() {
     const overlay = document.getElementById('ar-overlay');
     overlay.style.display = 'block';
 
-    xrSession = await navigator.xr.requestSession('immersive-ar', {
+    // Try with DOM overlay first, fall back without it
+    let sessionInit = {
       requiredFeatures: ['hit-test', 'local-floor'],
-      optionalFeatures: ['dom-overlay', 'anchors'],
-      domOverlay: { root: overlay }
-    });
+      optionalFeatures: ['anchors'],
+    };
+    try {
+      // Attempt with dom-overlay for UI controls on top of AR
+      xrSession = await navigator.xr.requestSession('immersive-ar', {
+        ...sessionInit,
+        optionalFeatures: ['dom-overlay', 'anchors'],
+        domOverlay: { root: overlay }
+      });
+    } catch {
+      // Fallback: no DOM overlay
+      xrSession = await navigator.xr.requestSession('immersive-ar', sessionInit);
+    }
 
     xrSession.addEventListener('end', onSessionEnd);
     await renderer.xr.setSession(xrSession);
