@@ -237,7 +237,9 @@ function onSelect() {
 function loadModel() {
   if (!modelUrl) { setStatus('No model URL'); return; }
 
-  loader.load(modelUrl,
+  // If mixed content (HTTPS page loading HTTP model), try direct first then proxy
+  const fetchUrl = modelUrl;
+  loader.load(fetchUrl,
     (gltf) => {
       model = gltf.scene;
 
