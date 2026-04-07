@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>AR QA Inspector</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1a1a2e;color:#fff;overflow:hidden;width:100vw;height:100vh;touch-action:none}
+#overlay{position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;display:flex;flex-direction:column;pointer-events:none}
+#status-bar{position:absolute;top:env(safe-area-inset-top,20px);left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.75);padding:10px 20px;border-radius:25px;font-size:14px;font-weight:600;
+  text-align:center;white-space:nowrap;transition:all 0.3s;pointer-events:none}
+#crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:60px;height:60px;border:2px solid rgba(255,255,255,0.6);border-radius:50%;
+  display:none;pointer-events:none}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,0.5)}
+#crosshair::before{width:20px;height:2px;top:50%;left:50%;transform:translate(-50%,-50%)}
+#crosshair::after{width:2px;height:20px;top:50%;left:50%;transform:translate(-50%,-50%)}
+#controls{position:absolute;bottom:30px;left:0;right:0;display:flex;justify-content:center;gap:12px;
+  padding:0 16px;pointer-events:auto;flex-wrap:wrap}
+.btn{padding:12px 20px;border:none;border-radius:12px;font-size:14px;font-weight:700;
+  color:#fff;cursor:pointer;display:flex;align-items:center;gap:6px;letter-spacing:0.5px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:all 0.2s}
+.btn:active{transform:scale(0.95)}
+.btn-lock{background:rgba(21,101,192,0.9)}
+.btn-lock.locked{background:rgba(198,40,40,0.9)}
+.btn-xray{background:rgba(100,100,100,0.8)}
+.btn-xray.active{background:rgba(0,150,136,0.9)}
+.btn-scale{background:rgba(0,0,0,0.5);padding:12px 16px;font-size:18px}
+.btn-close{background:rgba(198,40,40,0.8);position:absolute;top:env(safe-area-inset-top,20px);right:16px;
+  padding:8px 14px;border-radius:20px;pointer-events:auto;z-index:20}
+#start-screen{position:absolute;top:0;left:0;width:100%;height:100%;background:#1a1a2e;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;z-index:100}
+#start-screen h1{font-size:28px;margin-bottom:8px}
+#start-screen p{color:#aaa;text-align:center;margin-bottom:24px;line-height:1.6}
+#start-screen .steps{background:rgba(255,255,255,0.08);border-radius:12px;padding:16px;width:100%;max-width:400px;margin-bottom:24px}
+#start-screen .step{padding:6px 0;font-size:14px}
+#start-screen .step b{color:#64b5f6}
+#start-btn{background:#1565c0;color:#fff;border:none;padding:16px 32px;border-radius:12px;
+  font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px}
+#start-btn:disabled{opacity:0.5}
+#no-ar{display:none;color:#ef5350;margin-top:16px;text-align:center;font-size:14px}
+canvas{position:absolute;top:0;left:0;width:100%!important;height:100%!important}
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>AR QA Inspector</h1>
+  <p>Place the 3D model on your real product<br>and walk around to inspect quality.</p>
+  <div class="steps">
+    <div class="step"><b>1.</b> Point camera at a flat surface</div>
+    <div class="step"><b>2.</b> Tap the surface to place the model</div>
+    <div class="step"><b>3.</b> Tap <b>LOCK</b> to anchor it</div>
+    <div class="step"><b>4.</b> Tap <b>X-RAY</b> for edge inspection</div>
+    <div class="step"><b>5.</b> Walk around to inspect all sides</div>
+  </div>
+  <button id="start-btn" disabled>Checking AR support...</button>
+  <div id="no-ar"></div>
+</div>
+
+<div id="overlay" style="display:none">
+  <div id="status-bar">Detecting surfaces...</div>
+  <div id="crosshair"></div>
+  <button class="btn btn-close" id="btn-close" onclick="endSession()">&#x2715; Exit</button>
+  <div id="controls">
+    <button class="btn btn-xray" id="btn-xray" onclick="toggleXray()" style="display:none">X-RAY</button>
+    <button class="btn btn-lock" id="btn-lock" onclick="toggleLock()" style="display:none">LOCK</button>
+    <button class="btn btn-scale" id="btn-plus" onclick="adjustScale(1.2)" style="display:none">+</button>
+    <button class="btn btn-scale" id="btn-minus" onclick="adjustScale(0.83)" style="display:none">&#x2212;</button>
+  </div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ── State ──
+let renderer, scene, camera, xrSession, xrRefSpace, xrHitTestSource;
+let model = null, reticle = null, anchor = null;
+let isLocked = false, isXray = false, isPlaced = false;
+let edgeLines = [], originalMaterials = new Map();
+const loader = new GLTFLoader();
+
+// ── URL params ──
+const params = new URLSearchParams(location.search);
+const modelUrl = params.get('url');
+const modelId = params.get('id');
+
+// ── Check AR support ──
+const startBtn = document.getElementById('start-btn');
+const noAr = document.getElementById('no-ar');
+
+if (navigator.xr) {
+  navigator.xr.isSessionSupported('immersive-ar').then(supported => {
+    if (supported) {
+      startBtn.textContent = 'Start AR Session';
+      startBtn.disabled = false;
+      startBtn.onclick = startAR;
+    } else {
+      startBtn.textContent = 'AR Not Supported';
+      noAr.style.display = 'block';
+      noAr.textContent = 'This device does not support immersive AR. Try opening in Chrome on an ARCore-compatible device.';
+    }
+  });
+} else {
+  startBtn.textContent = 'WebXR Not Available';
+  noAr.style.display = 'block';
+  noAr.textContent = 'WebXR is not available in this browser. Please use Chrome, Safari, or Meta Quest Browser.';
+}
+
+// ── Init Three.js ──
+function initThree() {
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  document.body.appendChild(renderer.domElement);
+
+  // Lighting
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dir1 = new THREE.DirectionalLight(0xffffff, 1.0);
+  dir1.position.set(2, 4, 3);
+  scene.add(dir1);
+  const dir2 = new THREE.DirectionalLight(0x88aaff, 0.3);
+  dir2.position.set(-3, 1, -2);
+  scene.add(dir2);
+
+  // Reticle (placement indicator)
+  const ring = new THREE.RingGeometry(0.05, 0.06, 32).rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.8 });
+  reticle = new THREE.Mesh(ring, mat);
+  reticle.matrixAutoUpdate = false;
+  reticle.visible = false;
+  scene.add(reticle);
+}
+
+// ── Start AR ──
+async function startAR() {
+  initThree();
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('overlay').style.display = 'flex';
+
+  try {
+    xrSession = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test', 'local-floor'],
+      optionalFeatures: ['anchors', 'light-estimation']
+    });
+
+    xrSession.addEventListener('end', onSessionEnd);
+    await renderer.xr.setSession(xrSession);
+
+    xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
+
+    // Hit test source — from screen center
+    const viewerSpace = await xrSession.requestReferenceSpace('viewer');
+    xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
+
+    // Touch to place
+    xrSession.addEventListener('select', onSelect);
+
+    // Load model
+    setStatus('Detecting surfaces... Point at a flat area.');
+    document.getElementById('crosshair').style.display = 'block';
+    loadModel();
+
+    renderer.setAnimationLoop(onXRFrame);
+  } catch (e) {
+    setStatus('AR Error: ' + e.message);
+  }
+}
+
+// ── XR Frame Loop ──
+function onXRFrame(timestamp, frame) {
+  if (!frame) return;
+
+  const hitTestResults = frame.getHitTestResults(xrHitTestSource);
+
+  if (!isPlaced && hitTestResults.length > 0) {
+    const hit = hitTestResults[0];
+    const pose = hit.getPose(xrRefSpace);
+    if (pose) {
+      reticle.visible = true;
+      reticle.matrix.fromArray(pose.transform.matrix);
+      setStatus('Surface detected! Tap to place model.');
+    }
+  } else if (!isPlaced) {
+    reticle.visible = false;
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ── Tap to Place ──
+function onSelect(event) {
+  if (!model) {
+    setStatus('Model still loading...');
+    return;
+  }
+
+  if (isPlaced && isLocked) return; // locked, ignore taps
+
+  const frame = event.frame;
+  const hitTestResults = frame.getHitTestResults(xrHitTestSource);
+
+  if (hitTestResults.length > 0) {
+    const hit = hitTestResults[0];
+    const pose = hit.getPose(xrRefSpace);
+
+    if (pose) {
+      // Place model at hit point
+      const p = pose.transform.position;
+      model.position.set(p.x, p.y, p.z);
+
+      // Orient model to face camera
+      const camPos = new THREE.Vector3();
+      camera.getWorldPosition(camPos);
+      model.lookAt(camPos.x, model.position.y, camPos.z);
+
+      if (!isPlaced) {
+        scene.add(model);
+        isPlaced = true;
+        reticle.visible = false;
+        document.getElementById('crosshair').style.display = 'none';
+        showControls();
+        setStatus('Model placed! Adjust or tap LOCK.');
+      }
+
+      // Create anchor for stability
+      if (xrSession.restorePersistentAnchor || hit.createAnchor) {
+        try {
+          hit.createAnchor?.().then(a => { anchor = a; });
+        } catch(e) {}
+      }
+    }
+  }
+}
+
+// ── Load GLB Model ──
+function loadModel() {
+  if (!modelUrl) {
+    setStatus('No model URL provided');
+    return;
+  }
+
+  setStatus('Downloading model...');
+  loader.load(modelUrl,
+    (gltf) => {
+      model = gltf.scene;
+
+      // Auto-scale to real-world size (1:1 from GLB)
+      // GLB units are meters by convention
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      // Center the model at its base
+      model.position.sub(new THREE.Vector3(center.x, box.min.y, center.z));
+
+      // Store original materials
+      model.traverse(child => {
+        if (child.isMesh) {
+          originalMaterials.set(child.uuid, child.material.clone());
+        }
+      });
+
+      if (isPlaced) {
+        scene.add(model);
+      }
+
+      setStatus('Surface detected! Tap to place model.');
+    },
+    (progress) => {
+      if (progress.total > 0) {
+        const pct = Math.round((progress.loaded / progress.total) * 100);
+        setStatus('Downloading... ' + pct + '%');
+      }
+    },
+    (error) => {
+      setStatus('Model load error: ' + error.message);
+    }
+  );
+}
+
+// ── Lock ──
+window.toggleLock = function() {
+  if (!isPlaced) return;
+  isLocked = !isLocked;
+  const btn = document.getElementById('btn-lock');
+  btn.textContent = isLocked ? 'UNLOCK' : 'LOCK';
+  btn.classList.toggle('locked', isLocked);
+
+  document.getElementById('btn-plus').style.display = isLocked ? 'none' : 'flex';
+  document.getElementById('btn-minus').style.display = isLocked ? 'none' : 'flex';
+
+  if (isLocked) {
+    setStatus('LOCKED \u2014 Walk around to inspect');
+    document.getElementById('status-bar').style.background = 'rgba(46,125,50,0.85)';
+  } else {
+    setStatus('Unlocked \u2014 Tap surface to reposition');
+    document.getElementById('status-bar').style.background = 'rgba(0,0,0,0.75)';
+  }
+};
+
+// ── X-Ray ──
+const edgeColorMap = { pass: 0x4caf50, fail: 0xef5350, warning: 0xffca28 };
+const faceColorMap = { pass: 0x2e7d32, fail: 0xc62828, warning: 0xf9a825 };
+const defaultEdge = 0x64b5f6;
+const defaultFace = 0x1e88e5;
+
+window.toggleXray = function() {
+  if (!model) return;
+  isXray = !isXray;
+  const btn = document.getElementById('btn-xray');
+  btn.textContent = isXray ? 'SOLID' : 'X-RAY';
+  btn.classList.toggle('active', isXray);
+
+  // Remove old edges
+  edgeLines.forEach(l => { l.parent?.remove(l); l.geometry.dispose(); l.material.dispose(); });
+  edgeLines = [];
+
+  model.traverse(child => {
+    if (!child.isMesh) return;
+
+    if (isXray) {
+      // Save material if not saved
+      if (!originalMaterials.has(child.uuid)) {
+        originalMaterials.set(child.uuid, child.material.clone());
+      }
+
+      // Transparent face
+      child.material = new THREE.MeshStandardMaterial({
+        color: defaultFace,
+        transparent: true,
+        opacity: 0.06,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        roughness: 0.8,
+        metalness: 0.1
+      });
+      child.renderOrder = 0;
+
+      // Edge lines
+      const edges = new THREE.EdgesGeometry(child.geometry, 25);
+      const lineMat = new THREE.LineBasicMaterial({
+        color: defaultEdge,
+        transparent: true,
+        opacity: 1.0,
+        linewidth: 2
+      });
+      const lineSegments = new THREE.LineSegments(edges, lineMat);
+      lineSegments.renderOrder = 1;
+      child.add(lineSegments);
+      edgeLines.push(lineSegments);
+    } else {
+      // Restore original
+      const orig = originalMaterials.get(child.uuid);
+      if (orig) child.material = orig.clone();
+      child.renderOrder = 0;
+    }
+  });
+
+  setStatus(isXray ? 'X-RAY mode \u2014 Edges visible for QA' : (isLocked ? 'LOCKED \u2014 Walk around to inspect' : 'Solid view'));
+};
+
+// ── Scale ──
+window.adjustScale = function(factor) {
+  if (!model || isLocked) return;
+  model.scale.multiplyScalar(factor);
+};
+
+// ── UI Helpers ──
+function setStatus(text) {
+  document.getElementById('status-bar').textContent = text;
+}
+
+function showControls() {
+  ['btn-lock', 'btn-xray', 'btn-plus', 'btn-minus'].forEach(id => {
+    document.getElementById(id).style.display = 'flex';
+  });
+}
+
+function endSession() {
+  if (xrSession) xrSession.end();
+  // If opened from app, go back
+  if (window.ReactNativeWebView) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'close' }));
+  } else {
+    window.close();
+    history.back();
+  }
+}
+
+function onSessionEnd() {
+  xrSession = null;
+  document.getElementById('start-screen').style.display = 'flex';
+  document.getElementById('overlay').style.display = 'none';
+  if (renderer) {
+    renderer.setAnimationLoop(null);
+    renderer.domElement.remove();
+    renderer.dispose();
+  }
+}
+</script>
+</body>
+</html>
