@@ -6,43 +6,189 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../../core/services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 @Component({
   selector: 'app-process-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatButtonModule],
+  imports: [CommonModule, FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatButtonModule, MatIconModule],
   template: `
-    <h2 mat-dialog-title>{{ data ? 'Edit' : 'Add' }} Process</h2>
-    <mat-dialog-content>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Name</mat-label>
-        <input matInput [(ngModel)]="form.name" required>
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Product</mat-label>
-        <mat-select [(ngModel)]="form.productId" required>
-          @for (p of products; track p.id) {
-            <mat-option [value]="p.id">{{ p.name }}</mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Version</mat-label>
-        <input matInput type="number" [(ngModel)]="form.version" min="1">
-      </mat-form-field>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button (click)="dialogRef.close()">Cancel</button>
-      <button mat-raised-button color="primary" (click)="save()" [disabled]="!form.name || !form.productId">Save</button>
-    </mat-dialog-actions>
+    <div class="dialog-shell">
+      <div class="dialog-header">
+        <h2>{{ data ? 'Edit' : 'Add' }} Process</h2>
+        <p class="dialog-subtitle">{{ data ? 'Update process details' : 'Create a new manufacturing process' }}</p>
+      </div>
+
+      <div class="dialog-body">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Name</mat-label>
+          <input matInput [(ngModel)]="form.name" required placeholder="e.g. Assembly Line A">
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Product</mat-label>
+          <mat-select [(ngModel)]="form.productId" required>
+            @for (p of products; track p.id) {
+              <mat-option [value]="p.id">{{ p.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        @if (data) {
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Version</mat-label>
+            <input matInput type="number" [(ngModel)]="form.version" min="1">
+          </mat-form-field>
+        } @else {
+          <p class="hint-text">Version will be assigned automatically.</p>
+        }
+
+        @if (!data) {
+          <div class="stages-section">
+            <div class="stages-header">
+              <h3>Stages</h3>
+              <button class="btn-outline" type="button" (click)="addStage()">
+                <mat-icon>add</mat-icon> Add Stage
+              </button>
+            </div>
+            @if (stages.length === 0) {
+              <div class="stages-empty">
+                <mat-icon>layers</mat-icon>
+                <span>No stages added yet. You can add stages now or later.</span>
+              </div>
+            }
+            @for (stage of stages; track $index) {
+              <div class="stage-row">
+                <span class="stage-num">{{ $index + 1 }}</span>
+                <mat-form-field appearance="outline" class="stage-name-field">
+                  <mat-label>Stage Name</mat-label>
+                  <input matInput [(ngModel)]="stage.name" [ngModelOptions]="{standalone: true}" required>
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="stage-time-field">
+                  <mat-label>Target (sec)</mat-label>
+                  <input matInput type="number" [(ngModel)]="stage.targetTimeSeconds" [ngModelOptions]="{standalone: true}" min="0">
+                </mat-form-field>
+                <button class="icon-btn icon-btn-danger" type="button" (click)="removeStage($index)">
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="dialog-footer">
+        <button class="btn-ghost" (click)="dialogRef.close()">Cancel</button>
+        <button class="btn-primary" (click)="save()" [disabled]="!form.name || !form.productId || saving">
+          {{ saving ? 'Saving...' : 'Save' }}
+        </button>
+      </div>
+    </div>
   `,
-  styles: [`.full-width { width: 100%; margin-bottom: 8px; }`]
+  styles: [`
+    .dialog-shell { padding: 4px; }
+
+    .dialog-header { margin-bottom: 20px; }
+    .dialog-header h2 {
+      margin: 0; font-size: 18px; font-weight: 700;
+      color: var(--clay-text); letter-spacing: -0.01em;
+    }
+    .dialog-subtitle {
+      margin: 4px 0 0; font-size: 12px; color: var(--clay-text-muted);
+    }
+
+    .dialog-body { display: flex; flex-direction: column; gap: 4px; }
+
+    .full-width { width: 100%; }
+
+    .hint-text {
+      color: var(--clay-text-muted); font-size: 12px; margin: -4px 0 8px;
+    }
+
+    /* Stages */
+    .stages-section {
+      margin-top: 8px;
+      padding-top: 16px;
+      border-top: 1px solid var(--clay-border);
+    }
+    .stages-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px;
+    }
+    .stages-header h3 {
+      margin: 0; font-size: 14px; font-weight: 600; color: var(--clay-text);
+    }
+    .stages-empty {
+      display: flex; align-items: center; gap: 8px;
+      color: var(--clay-text-muted); font-size: 12px;
+      padding: 16px; text-align: center;
+      background: var(--clay-bg-warm); border-radius: var(--clay-radius-xs);
+    }
+    .stages-empty mat-icon { font-size: 18px; width: 18px; height: 18px; opacity: 0.5; }
+    .stage-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+    }
+    .stage-num {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: var(--clay-primary); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; flex-shrink: 0;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .stage-name-field { flex: 1; }
+    .stage-time-field { width: 120px; }
+
+    /* Buttons */
+    .dialog-footer {
+      display: flex; justify-content: flex-end; gap: 8px;
+      margin-top: 20px; padding-top: 16px;
+      border-top: 1px solid var(--clay-border);
+    }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--clay-primary); color: #fff;
+      border: none; border-radius: var(--clay-radius-sm);
+      padding: 10px 24px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s; font-family: inherit;
+    }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
+    .btn-ghost {
+      background: transparent; color: var(--clay-text-secondary);
+      border: none; border-radius: var(--clay-radius-sm);
+      padding: 10px 20px; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: all 0.2s; font-family: inherit;
+    }
+    .btn-ghost:hover { background: var(--clay-surface-hover); }
+
+    .btn-outline {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: transparent; color: var(--clay-primary);
+      border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm);
+      padding: 6px 14px; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s; font-family: inherit;
+    }
+    .btn-outline:hover { border-color: var(--clay-primary); background: var(--info-bg); }
+    .btn-outline mat-icon { font-size: 16px; width: 16px; height: 16px; }
+
+    .icon-btn {
+      width: 32px; height: 32px; border-radius: var(--clay-radius-xs);
+      border: none; background: transparent; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--clay-text-muted); transition: all 0.15s;
+    }
+    .icon-btn-danger:hover { color: var(--danger); background: var(--danger-bg); }
+    .icon-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
+  `]
 })
 export class ProcessFormComponent implements OnInit {
   form: any = { name: '', productId: '', version: 1 };
   products: any[] = [];
+  stages: { name: string; targetTimeSeconds: number; description: string }[] = [];
+  saving = false;
 
   constructor(
     public dialogRef: MatDialogRef<ProcessFormComponent>,
@@ -61,8 +207,25 @@ export class ProcessFormComponent implements OnInit {
     });
   }
 
+  addStage(): void {
+    this.stages.push({ name: '', targetTimeSeconds: 600, description: '' });
+  }
+
+  removeStage(index: number): void {
+    this.stages.splice(index, 1);
+  }
+
   save(): void {
-    const body = { name: this.form.name, productId: this.form.productId, version: this.form.version };
+    this.saving = true;
+    const body: any = { name: this.form.name, productId: this.form.productId };
+    if (this.data) {
+      body.version = this.form.version;
+    } else if (this.stages.length > 0) {
+      const validStages = this.stages.filter(s => s.name.trim());
+      if (validStages.length > 0) {
+        body.stages = validStages;
+      }
+    }
     const obs = this.data
       ? this.api.patch(`/processes/${this.data.id}`, body)
       : this.api.post('/processes', body);
@@ -71,7 +234,11 @@ export class ProcessFormComponent implements OnInit {
         this.snackBar.open(`Process ${this.data ? 'updated' : 'created'}`, 'Close', { duration: 3000 });
         this.dialogRef.close(true);
       },
-      error: () => {}
+      error: (err: any) => {
+        this.saving = false;
+        const msg = err?.error?.message || 'Failed to save process';
+        this.snackBar.open(msg, 'Close', { duration: 5000 });
+      }
     });
   }
 }

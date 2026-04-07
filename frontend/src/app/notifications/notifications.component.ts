@@ -61,10 +61,10 @@ import { NotificationService, AppNotification } from '../core/services/notificat
       width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
     }
-    .notif-icon-wrap.low { background: #e8f5e9; color: #388e3c; }
-    .notif-icon-wrap.medium { background: #fff3e0; color: #f57c00; }
-    .notif-icon-wrap.high { background: #fce4ec; color: #d32f2f; }
-    .notif-icon-wrap.critical { background: #e74c3c; color: white; }
+    .notif-icon-wrap.low { background: var(--success-bg); color: var(--success-text); }
+    .notif-icon-wrap.medium { background: var(--warning-bg); color: var(--warning-text); }
+    .notif-icon-wrap.high { background: var(--danger-bg); color: var(--danger-text); }
+    .notif-icon-wrap.critical { background: var(--danger); color: white; }
     .notif-body { flex: 1; }
     .notif-title { font-weight: 600; font-size: 14px; color: var(--clay-text); }
     .notif-message { font-size: 13px; color: var(--clay-text-secondary); margin: 4px 0; }

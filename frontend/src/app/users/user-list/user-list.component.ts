@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MatTableModule } from '@angular/material/table';
+import { MatTableModule, MatTableDataSource } from '@angular/material/table';
+import { MatPaginatorModule, MatPaginator } from '@angular/material/paginator';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -16,7 +17,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 @Component({
   selector: 'app-user-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatTableModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatSelectModule, MatChipsModule],
+  imports: [CommonModule, FormsModule, MatTableModule, MatPaginatorModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatSelectModule, MatChipsModule],
   template: `
     <div class="page-header">
       <h2>Users</h2>
@@ -36,7 +37,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       </mat-select>
     </mat-form-field>
 
-    <table mat-table [dataSource]="filtered" class="full-width mat-elevation-z2">
+    <table mat-table [dataSource]="dataSource" class="full-width mat-elevation-z2">
       <ng-container matColumnDef="name">
         <th mat-header-cell *matHeaderCellDef>Name</th>
         <td mat-cell *matCellDef="let u">{{ u.firstName }} {{ u.lastName }}</td>
@@ -65,6 +66,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       <tr mat-header-row *matHeaderRowDef="columns"></tr>
       <tr mat-row *matRowDef="let row; columns: columns;"></tr>
     </table>
+
+    <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
   `,
   styles: [`
     .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -72,21 +75,24 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     .filter-field { margin-bottom: 16px; }
     .full-width { width: 100%; }
     .role-chip { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; }
-    .role-admin { background: #dce0ed; color: var(--clay-primary); box-shadow: var(--clay-shadow-soft); }
-    .role-manager { background: #dce8f3; color: var(--clay-primary); box-shadow: var(--clay-shadow-soft); }
-    .role-supervisor { background: #f5e6d0; color: #c06820; box-shadow: var(--clay-shadow-soft); }
-    .role-operator { background: #d8edda; color: #3a7d3e; box-shadow: var(--clay-shadow-soft); }
+    .role-admin { background: var(--info-bg); color: var(--info-text); box-shadow: var(--clay-shadow-soft); }
+    .role-manager { background: var(--info-bg); color: var(--info-text); box-shadow: var(--clay-shadow-soft); }
+    .role-supervisor { background: var(--warning-bg); color: var(--warning-text); box-shadow: var(--clay-shadow-soft); }
+    .role-operator { background: var(--success-bg); color: var(--success-text); box-shadow: var(--clay-shadow-soft); }
   `]
 })
-export class UserListComponent implements OnInit {
+export class UserListComponent implements OnInit, AfterViewInit {
   users: any[] = [];
-  filtered: any[] = [];
+  dataSource = new MatTableDataSource<any>([]);
   columns = ['name', 'email', 'employeeId', 'role', 'actions'];
   roleFilter = '';
+  @ViewChild(MatPaginator) paginator!: MatPaginator;
 
   constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar) {}
 
   ngOnInit(): void { this.load(); }
+
+  ngAfterViewInit(): void { this.dataSource.paginator = this.paginator; }
 
   load(): void {
     this.api.get<any>('/users').subscribe(data => {
@@ -96,7 +102,7 @@ export class UserListComponent implements OnInit {
   }
 
   applyFilter(): void {
-    this.filtered = this.roleFilter
+    this.dataSource.data = this.roleFilter
       ? this.users.filter(u => u.role?.name === this.roleFilter)
       : [...this.users];
   }

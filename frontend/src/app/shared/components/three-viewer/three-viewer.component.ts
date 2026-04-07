@@ -67,7 +67,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .error-overlay { color: #c0392b; }
+    .error-overlay { color: var(--danger, #c0392b); }
     .progress-ring {
       position: relative; width: 80px; height: 80px;
     }
@@ -91,6 +91,13 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
 
   @Input() modelUrl: string | null = null;
   @Input() qualityData: { meshName: string; status: 'pass' | 'fail' | 'warning' }[] = [];
+  @Input() set renderMode(mode: 'solid' | 'xray') {
+    if (mode !== this._renderMode) {
+      this._renderMode = mode;
+      this.applyRenderMode();
+    }
+  }
+  get renderMode(): 'solid' | 'xray' { return this._renderMode; }
   @Output() modelLoaded = new EventEmitter<void>();
   @Output() meshClicked = new EventEmitter<string>(); // emits meshName on click
 
@@ -98,6 +105,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   loadProgress = 0;
   error: string | null = null;
 
+  private _renderMode: 'solid' | 'xray' = 'solid';
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
@@ -107,6 +115,8 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   private currentModel: THREE.Group | null = null;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
+  private edgeLines: THREE.LineSegments[] = [];
+  private originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -234,7 +244,16 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
         this.controls.target.set(0, 0, 0);
         this.controls.update();
 
+        // Store original materials for mode switching
+        this.originalMaterials.clear();
+        this.currentModel.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            this.originalMaterials.set(child, child.material);
+          }
+        });
+
         this.applyQualityOverlay();
+        this.applyRenderMode();
         this.loadProgress = 0;
         this.loading = false;
         this.modelLoaded.emit();
@@ -294,6 +313,69 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     if (intersects.length > 0) {
       const hit = intersects[0].object as THREE.Mesh;
       this.meshClicked.emit(hit.name || 'unnamed');
+    }
+  }
+
+  private applyRenderMode(): void {
+    if (!this.currentModel) return;
+
+    // Remove existing edge lines
+    this.edgeLines.forEach(line => {
+      line.parent?.remove(line);
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    });
+    this.edgeLines = [];
+
+    const defaultEdgeColor = 0x4a90d9;
+    const defaultFaceColor = 0x3a7bd5;
+    const qualityEdgeColors: Record<string, number> = { pass: 0x4caf50, fail: 0xef5350, warning: 0xffca28 };
+    const qualityFaceColors: Record<string, number> = { pass: 0x27ae60, fail: 0xe74c3c, warning: 0xf39c12 };
+
+    this.currentModel.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const qa = this.qualityData.find(q => q.meshName === child.name);
+
+      if (this._renderMode === 'xray') {
+        const faceColor = qa ? (qualityFaceColors[qa.status] ?? defaultFaceColor) : defaultFaceColor;
+        const edgeColor = qa ? (qualityEdgeColors[qa.status] ?? defaultEdgeColor) : defaultEdgeColor;
+
+        child.material = new THREE.MeshStandardMaterial({
+          color: faceColor,
+          transparent: true,
+          opacity: 0.1,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          roughness: 0.8,
+        });
+        child.renderOrder = 0;
+
+        const edges = new THREE.EdgesGeometry(child.geometry, 25);
+        const lineMat = new THREE.LineBasicMaterial({ color: edgeColor });
+        const lineSegments = new THREE.LineSegments(edges, lineMat);
+        lineSegments.renderOrder = 1;
+        child.add(lineSegments);
+        this.edgeLines.push(lineSegments);
+      } else {
+        // Restore original material or apply quality overlay
+        const original = this.originalMaterials.get(child);
+        if (qa) {
+          child.material = new THREE.MeshStandardMaterial({
+            color: qualityFaceColors[qa.status] ?? 0x999999,
+            transparent: true,
+            opacity: 0.85,
+            roughness: 0.5,
+          });
+        } else if (original) {
+          child.material = original;
+        }
+        child.renderOrder = 0;
+      }
+    });
+
+    // Darker background for X-Ray to make edges pop
+    if (this.scene) {
+      this.scene.background = new THREE.Color(this._renderMode === 'xray' ? 0x1a1a2e : 0xf5f0e8);
     }
   }
 

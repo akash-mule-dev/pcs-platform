@@ -186,14 +186,14 @@ import { environment } from '../../environments/environment';
       margin-left: auto; padding: 4px 12px; border-radius: 12px;
       font-size: 12px; font-weight: 600; text-transform: uppercase;
     }
-    .status-ready { background: #e8f5e9; color: #2e7d32; }
-    .status-processing { background: #fff3e0; color: #e65100; }
-    .status-error { background: #fbe9e7; color: #c62828; }
+    .status-ready { background: var(--success-bg); color: var(--success-text); }
+    .status-processing { background: var(--warning-bg); color: var(--warning-text); }
+    .status-error { background: var(--danger-bg); color: var(--danger-text); }
     .package-stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
     .stat { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--clay-text-secondary); }
     .stat mat-icon { font-size: 18px; width: 18px; height: 18px; }
     .processing-text { font-size: 13px; color: var(--clay-text-muted); text-align: center; margin-top: 8px; }
-    .error-text { color: #c62828; font-size: 13px; }
+    .error-text { color: var(--danger); font-size: 13px; }
     .package-footer {
       display: flex; justify-content: space-between; margin-top: 12px;
       padding-top: 8px; border-top: 1px solid var(--clay-border);

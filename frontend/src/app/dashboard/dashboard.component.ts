@@ -1,7 +1,8 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
-import { MatTableModule } from '@angular/material/table';
+import { MatTableModule, MatTableDataSource } from '@angular/material/table';
+import { MatPaginatorModule, MatPaginator } from '@angular/material/paginator';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { NgChartsModule } from 'ng2-charts';
@@ -15,7 +16,7 @@ Chart.register(...registerables);
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, MatCardModule, MatTableModule, MatIconModule, MatProgressSpinnerModule, NgChartsModule, DurationPipe],
+  imports: [CommonModule, MatCardModule, MatTableModule, MatPaginatorModule, MatIconModule, MatProgressSpinnerModule, NgChartsModule, DurationPipe],
   template: `
     <h2>Dashboard</h2>
 
@@ -76,7 +77,7 @@ Chart.register(...registerables);
       <mat-card class="chart-card live-table-card">
         <mat-card-header><mat-card-title>Live Stage Status</mat-card-title></mat-card-header>
         <mat-card-content>
-          <table mat-table [dataSource]="liveEntries" class="full-width">
+          <table mat-table [dataSource]="liveDataSource" class="full-width">
             <ng-container matColumnDef="operator">
               <th mat-header-cell *matHeaderCellDef>Operator</th>
               <td mat-cell *matCellDef="let e">{{ e.user?.firstName }} {{ e.user?.lastName }}</td>
@@ -100,7 +101,8 @@ Chart.register(...registerables);
             <tr mat-header-row *matHeaderRowDef="liveColumns"></tr>
             <tr mat-row *matRowDef="let row; columns: liveColumns;"></tr>
           </table>
-          @if (liveEntries.length === 0) {
+          <mat-paginator [pageSize]="5" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
+          @if (liveDataSource.data.length === 0) {
             <p class="no-data">No active entries</p>
           }
         </mat-card-content>
@@ -123,30 +125,31 @@ Chart.register(...registerables);
       transform: translateY(-2px);
     }
     .kpi-icon-wrap {
-      width: 52px; height: 52px;
+      width: 48px; height: 48px;
       border-radius: var(--clay-radius-sm);
       display: flex; align-items: center; justify-content: center;
-      box-shadow: var(--clay-shadow-inset);
     }
-    .kpi-icon-wrap.blue { background: #e0e8f0; }
-    .kpi-icon-wrap.green { background: #dde9dd; }
-    .kpi-icon-wrap.orange { background: #f3e4d4; }
-    .kpi-icon-wrap.purple { background: #e6dded; }
-    .kpi-icon-wrap.blue .kpi-icon { color: var(--clay-primary); }
-    .kpi-icon-wrap.green .kpi-icon { color: #5a8a5a; }
-    .kpi-icon-wrap.orange .kpi-icon { color: var(--clay-accent); }
-    .kpi-icon-wrap.purple .kpi-icon { color: #8a6a9e; }
-    .kpi-icon {
-      font-size: 28px; width: 28px; height: 28px;
+    .kpi-icon-wrap.blue { background: var(--kpi-blue-bg); }
+    .kpi-icon-wrap.green { background: var(--kpi-green-bg); }
+    .kpi-icon-wrap.orange { background: var(--kpi-orange-bg); }
+    .kpi-icon-wrap.purple { background: var(--kpi-purple-bg); }
+    .kpi-icon-wrap.blue .kpi-icon { color: var(--kpi-blue-fg); }
+    .kpi-icon-wrap.green .kpi-icon { color: var(--kpi-green-fg); }
+    .kpi-icon-wrap.orange .kpi-icon { color: var(--kpi-orange-fg); }
+    .kpi-icon-wrap.purple .kpi-icon { color: var(--kpi-purple-fg); }
+    .kpi-icon { font-size: 26px; width: 26px; height: 26px; }
+    .kpi-value {
+      font-size: 28px; font-weight: 700; color: var(--clay-text);
+      font-family: 'Space Grotesk', sans-serif;
     }
-    .kpi-value { font-size: 28px; font-weight: 700; color: var(--clay-text); }
-    .kpi-label { font-size: 13px; color: var(--clay-text-muted); font-weight: 500; }
+    .kpi-label { font-size: 12px; color: var(--clay-text-muted); font-weight: 500; margin-top: 2px; }
     .charts-row { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
     .chart-card {
       padding: 20px;
       background: var(--clay-surface) !important;
       border-radius: var(--clay-radius) !important;
       box-shadow: var(--clay-shadow-raised) !important;
+      border: 1px solid var(--clay-border) !important;
     }
     .live-table-card { overflow: auto; }
     .full-width { width: 100%; }
@@ -157,10 +160,11 @@ Chart.register(...registerables);
     }
   `]
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   summary: any = null;
-  liveEntries: any[] = [];
+  liveDataSource = new MatTableDataSource<any>([]);
   liveColumns = ['operator', 'workOrder', 'stage', 'elapsed', 'station'];
+  @ViewChild(MatPaginator) paginator!: MatPaginator;
   doughnutData: ChartConfiguration<'doughnut'>['data'] | null = null;
   doughnutOptions: ChartConfiguration<'doughnut'>['options'] = {
     responsive: true,
@@ -171,6 +175,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private timerSub?: Subscription;
 
   constructor(private api: ApiService) {}
+
+  ngAfterViewInit(): void { this.liveDataSource.paginator = this.paginator; }
 
   ngOnInit(): void {
     this.loadData();
@@ -190,9 +196,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
       const totalWorkOrders = statusArr.reduce((sum: number, item: any) => sum + parseInt(item.count, 10), 0);
       this.summary = { ...data, totalWorkOrders };
       if (statusArr.length > 0) {
+        const root = getComputedStyle(document.documentElement);
         const statusColors: Record<string, string> = {
-          draft: '#b0a798', pending: '#e8945a', in_progress: '#5b7fa6',
-          completed: '#5a8a5a', cancelled: '#c47a6a'
+          draft: root.getPropertyValue('--status-draft').trim() || '#94a3b8',
+          pending: root.getPropertyValue('--status-pending').trim() || '#f59e0b',
+          in_progress: root.getPropertyValue('--status-in-progress').trim() || '#3b82f6',
+          completed: root.getPropertyValue('--status-completed').trim() || '#22c55e',
+          cancelled: root.getPropertyValue('--status-cancelled').trim() || '#ef4444',
         };
         const labels = statusArr.map((item: any) => item.status);
         const values = statusArr.map((item: any) => parseInt(item.count, 10));
@@ -206,7 +216,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       }
     });
     this.api.get<any[]>('/dashboard/live-status').subscribe(entries => {
-      this.liveEntries = entries || [];
+      this.liveDataSource.data = entries || [];
     });
   }
 

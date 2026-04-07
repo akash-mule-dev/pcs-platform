@@ -405,8 +405,8 @@ interface Model3D {
     .model-info { flex: 1; display: flex; flex-direction: column; }
     .model-name { font-weight: 600; font-size: 13px; }
     .model-meta { font-size: 11px; color: var(--clay-text-muted, #9e8e7e); }
-    .type-chip.quality { color: #27ae60; }
-    .type-chip.assembly { color: #3498db; }
+    .type-chip.quality { color: var(--success, #27ae60); }
+    .type-chip.assembly { color: var(--info, #3498db); }
 
     /* Legend Card */
     .legend-card mat-card-content { padding-top: 8px; }
@@ -420,17 +420,17 @@ interface Model3D {
     }
     .stat-count { font-size: 20px; font-weight: 700; }
     .stat-label { font-size: 11px; color: var(--clay-text-muted, #9e8e7e); }
-    .stat-item.pass .stat-count { color: #27ae60; }
-    .stat-item.fail .stat-count { color: #e74c3c; }
-    .stat-item.warning .stat-count { color: #f39c12; }
+    .stat-item.pass .stat-count { color: var(--success, #27ae60); }
+    .stat-item.fail .stat-count { color: var(--danger, #e74c3c); }
+    .stat-item.warning .stat-count { color: var(--warning, #f39c12); }
     .legend-items { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
     .legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--clay-text-secondary, #6b5e50); }
     .legend-dot {
       width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
     }
-    .legend-dot.pass { background: #27ae60; }
-    .legend-dot.fail { background: #e74c3c; }
-    .legend-dot.warning { background: #f39c12; }
+    .legend-dot.pass { background: var(--success, #27ae60); }
+    .legend-dot.fail { background: var(--danger, #e74c3c); }
+    .legend-dot.warning { background: var(--warning, #f39c12); }
     .legend-hint { font-size: 11px; color: var(--clay-text-muted, #9e8e7e); font-style: italic; margin: 0; }
 
     /* Viewer */
@@ -452,19 +452,19 @@ interface Model3D {
       padding: 12px; border-radius: 8px; margin-bottom: 16px;
       font-weight: 700; font-size: 16px;
     }
-    .detail-status.pass { background: #e8f5e9; color: #27ae60; }
-    .detail-status.fail { background: #fce4ec; color: #e74c3c; }
-    .detail-status.warning { background: #fff8e1; color: #f39c12; }
+    .detail-status.pass { background: var(--success-bg, #e8f5e9); color: var(--success-text, #27ae60); }
+    .detail-status.fail { background: var(--danger-bg, #fce4ec); color: var(--danger-text, #e74c3c); }
+    .detail-status.warning { background: var(--warning-bg, #fff8e1); color: var(--warning-text, #f39c12); }
     .detail-status mat-icon { font-size: 28px; width: 28px; height: 28px; }
     .detail-grid { display: flex; flex-direction: column; gap: 10px; }
     .detail-row { display: flex; flex-direction: column; gap: 2px; }
     .detail-row.notes { padding-top: 8px; border-top: 1px solid var(--clay-border, #e5ddd0); }
     .detail-label { font-size: 11px; color: var(--clay-text-muted, #9e8e7e); text-transform: uppercase; letter-spacing: 0.5px; }
     .detail-value { font-size: 14px; font-weight: 500; }
-    .detail-value.severity.low { color: #27ae60; }
-    .detail-value.severity.medium { color: #f39c12; }
-    .detail-value.severity.high { color: #e67e22; }
-    .detail-value.severity.critical { color: #e74c3c; }
+    .detail-value.severity.low { color: var(--success, #27ae60); }
+    .detail-value.severity.medium { color: var(--warning, #f39c12); }
+    .detail-value.severity.high { color: var(--warning-text, #e67e22); }
+    .detail-value.severity.critical { color: var(--danger, #e74c3c); }
 
     /* Entries List */
     .entries-card { max-height: 350px; overflow-y: auto; }
@@ -477,9 +477,9 @@ interface Model3D {
     .entry-item:hover { background: var(--clay-bg, #faf7f2); }
     .entry-item.active { background: var(--clay-bg, #faf7f2); border-color: var(--clay-border, #e5ddd0); }
     .entry-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .entry-dot.pass { background: #27ae60; }
-    .entry-dot.fail { background: #e74c3c; }
-    .entry-dot.warning { background: #f39c12; }
+    .entry-dot.pass { background: var(--success, #27ae60); }
+    .entry-dot.fail { background: var(--danger, #e74c3c); }
+    .entry-dot.warning { background: var(--warning, #f39c12); }
     .entry-info { flex: 1; display: flex; flex-direction: column; }
     .entry-name { font-size: 13px; font-weight: 500; }
     .entry-meta { font-size: 11px; color: var(--clay-text-muted, #9e8e7e); }
@@ -509,7 +509,7 @@ interface Model3D {
     .pattern-stats { text-align: right; }
     .pattern-count { font-weight: 700; font-size: 14px; margin-right: 8px; }
     .pattern-rate { font-size: 12px; color: var(--clay-text-secondary); }
-    .pattern-rate.high-rate { color: #e74c3c; font-weight: 600; }
+    .pattern-rate.high-rate { color: var(--danger, #e74c3c); font-weight: 600; }
 
     /* Phase 6: Sign-off */
     .signoff-card { max-height: 250px; overflow-y: auto; }
@@ -622,12 +622,19 @@ export class QualityAnalysisComponent implements OnInit {
       entry[d.status as 'pass' | 'fail' | 'warning'] = parseInt(d.count, 10);
     }
     const dates = Array.from(dateMap.keys()).sort();
+    const cs = getComputedStyle(document.documentElement);
+    const successColor = cs.getPropertyValue('--success').trim() || '#27ae60';
+    const dangerColor = cs.getPropertyValue('--danger').trim() || '#e74c3c';
+    const warningColor = cs.getPropertyValue('--warning').trim() || '#f39c12';
+    const successBg = cs.getPropertyValue('--success-bg').trim() || 'rgba(39,174,96,0.1)';
+    const dangerBg = cs.getPropertyValue('--danger-bg').trim() || 'rgba(231,76,60,0.1)';
+    const warningBg = cs.getPropertyValue('--warning-bg').trim() || 'rgba(243,156,18,0.1)';
     this.trendChartData = {
       labels: dates,
       datasets: [
-        { label: 'Pass', data: dates.map(d => dateMap.get(d)!.pass), borderColor: '#27ae60', backgroundColor: 'rgba(39,174,96,0.1)', fill: true },
-        { label: 'Fail', data: dates.map(d => dateMap.get(d)!.fail), borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)', fill: true },
-        { label: 'Warning', data: dates.map(d => dateMap.get(d)!.warning), borderColor: '#f39c12', backgroundColor: 'rgba(243,156,18,0.1)', fill: true },
+        { label: 'Pass', data: dates.map(d => dateMap.get(d)!.pass), borderColor: successColor, backgroundColor: successBg, fill: true },
+        { label: 'Fail', data: dates.map(d => dateMap.get(d)!.fail), borderColor: dangerColor, backgroundColor: dangerBg, fill: true },
+        { label: 'Warning', data: dates.map(d => dateMap.get(d)!.warning), borderColor: warningColor, backgroundColor: warningBg, fill: true },
       ],
     };
   }

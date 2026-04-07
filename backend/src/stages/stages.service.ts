@@ -32,12 +32,14 @@ export class StagesService {
   }
 
   async reorder(processId: string, stageIds: string[]): Promise<Stage[]> {
-    const stages: Stage[] = [];
+    // Set all to negative sequences first to avoid unique constraint violations
+    for (let i = 0; i < stageIds.length; i++) {
+      await this.repo.update(stageIds[i], { sequence: -(i + 1) });
+    }
+    // Then set to the correct positive values
     for (let i = 0; i < stageIds.length; i++) {
       await this.repo.update(stageIds[i], { sequence: i + 1 });
-      const s = await this.repo.findOne({ where: { id: stageIds[i] } });
-      if (s) stages.push(s);
     }
-    return stages;
+    return this.repo.find({ where: { processId }, order: { sequence: 'ASC' } });
   }
 }

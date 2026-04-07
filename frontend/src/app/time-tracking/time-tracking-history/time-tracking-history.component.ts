@@ -102,8 +102,8 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
     .filters { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
     .full-width { width: 100%; }
     .table-container { max-height: 70vh; overflow: auto; }
-    .over-target { color: #c62828; font-weight: 500; }
-    .under-target { color: #2e7d32; font-weight: 500; }
+    .over-target { color: var(--danger-text); font-weight: 500; }
+    .under-target { color: var(--success-text); font-weight: 500; }
     ::ng-deep .mat-mdc-header-row { background: var(--clay-surface, #f5f0e8) !important; }
   `]
 })

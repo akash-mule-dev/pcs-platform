@@ -42,7 +42,7 @@ import { ArViewerComponent } from '../../shared/components/ar-viewer/ar-viewer.c
       padding: 0 4px; margin-bottom: 0;
     }
     .header-left { display: flex; align-items: center; gap: 12px; }
-    .header-icon { font-size: 28px; width: 28px; height: 28px; color: #27ae60; }
+    .header-icon { font-size: 28px; width: 28px; height: 28px; color: var(--success, #27ae60); }
     h2 { margin: 0; font-size: 18px; color: var(--clay-text, #3d3229); }
     .subtitle { font-size: 12px; color: var(--clay-text-muted, #9e8e7e); }
     .header-right { display: flex; align-items: center; gap: 8px; }

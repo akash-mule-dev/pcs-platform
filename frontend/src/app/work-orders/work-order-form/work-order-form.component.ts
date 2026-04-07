@@ -70,7 +70,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
       <button mat-raised-button color="primary" (click)="save()" [disabled]="!form.productId || !form.processId || !form.quantity">Create</button>
     </mat-dialog-actions>
   `,
-  styles: [`.full-width { width: 100%; margin-bottom: 8px; }`]
+  styles: [`.full-width { width: 100%; margin-bottom: 4px; }`]
 })
 export class WorkOrderFormComponent implements OnInit {
   products: any[] = [];

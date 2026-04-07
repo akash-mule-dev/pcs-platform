@@ -36,10 +36,10 @@ interface WorkOrderStage {
 }
 
 const COLUMNS = [
-  { key: 'pending', label: 'Pending', icon: 'hourglass_empty', color: '#b0a798' },
-  { key: 'in_progress', label: 'In Progress', icon: 'play_circle', color: '#5b7fa6' },
-  { key: 'completed', label: 'Completed', icon: 'check_circle', color: '#5a8a5a' },
-  { key: 'skipped', label: 'Skipped', icon: 'skip_next', color: '#9e8e7e' },
+  { key: 'pending', label: 'Pending', icon: 'hourglass_empty', color: 'var(--status-pending)' },
+  { key: 'in_progress', label: 'In Progress', icon: 'play_circle', color: 'var(--status-in-progress)' },
+  { key: 'completed', label: 'Completed', icon: 'check_circle', color: 'var(--status-completed)' },
+  { key: 'skipped', label: 'Skipped', icon: 'skip_next', color: 'var(--status-cancelled)' },
 ];
 
 @Component({
@@ -151,18 +151,18 @@ const COLUMNS = [
       padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.5px;
     }
-    .priority-low { background: #e8f5e9; color: #388e3c; }
-    .priority-medium { background: #fff3e0; color: #f57c00; }
-    .priority-high { background: #fce4ec; color: #d32f2f; }
-    .priority-urgent { background: #e74c3c; color: white; }
-    .status-draft { background: #f5f5f5; color: #757575; }
-    .status-pending { background: #fff3e0; color: #f57c00; }
-    .status-in_progress { background: #e3f2fd; color: #1976d2; }
-    .status-completed { background: #e8f5e9; color: #388e3c; }
-    .status-cancelled { background: #fce4ec; color: #d32f2f; }
+    .priority-low { background: var(--success-bg); color: var(--success-text); }
+    .priority-medium { background: var(--warning-bg); color: var(--warning-text); }
+    .priority-high { background: var(--danger-bg); color: var(--danger-text); }
+    .priority-urgent { background: var(--danger); color: white; }
+    .status-draft { background: var(--badge-draft-bg); color: var(--badge-draft-text); }
+    .status-pending { background: var(--badge-pending-bg); color: var(--badge-pending-text); }
+    .status-in_progress { background: var(--badge-progress-bg); color: var(--badge-progress-text); }
+    .status-completed { background: var(--badge-completed-bg); color: var(--badge-completed-text); }
+    .status-cancelled { background: var(--badge-cancelled-bg); color: var(--badge-cancelled-text); }
     .wo-qty { font-size: 14px; font-weight: 500; color: var(--clay-text); }
     .wo-due { font-size: 13px; color: var(--clay-text-secondary); }
-    .wo-due.overdue { color: #e74c3c; font-weight: 600; }
+    .wo-due.overdue { color: var(--danger); font-weight: 600; }
 
     .kanban-board {
       display: grid;
@@ -218,8 +218,8 @@ const COLUMNS = [
     }
     .target-time { color: var(--clay-text-muted); display: flex; align-items: center; gap: 3px; }
     .actual-time { display: flex; align-items: center; gap: 3px; }
-    .over-target { color: #e74c3c; font-weight: 600; }
-    .under-target { color: #27ae60; font-weight: 600; }
+    .over-target { color: var(--danger); font-weight: 600; }
+    .under-target { color: var(--success); font-weight: 600; }
 
     .empty-column {
       text-align: center; padding: 24px; color: var(--clay-text-muted);

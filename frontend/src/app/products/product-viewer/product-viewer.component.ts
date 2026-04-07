@@ -45,6 +45,13 @@ import { environment } from '../../../environments/environment';
                 matTooltip="Reset camera" [disabled]="viewMode !== '3d'">
           <mat-icon>center_focus_strong</mat-icon>
         </button>
+        <button mat-flat-button class="xray-toggle-btn"
+                (click)="toggleRenderMode()"
+                [disabled]="viewMode !== '3d'"
+                matTooltip="Toggle X-Ray edges view">
+          <mat-icon>{{ renderMode === 'xray' ? 'visibility' : 'blur_on' }}</mat-icon>
+          {{ renderMode === 'xray' ? 'Solid' : 'X-Ray' }}
+        </button>
         <button mat-flat-button class="camera-toggle-btn"
                 (click)="toggleViewMode()"
                 [matTooltip]="viewMode === '3d' ? 'Open camera / AR view' : 'Back to 3D viewer'">
@@ -62,6 +69,7 @@ import { environment } from '../../../environments/environment';
         @if (viewMode === '3d') {
           <app-three-viewer #viewer
             [modelUrl]="selectedModelUrl"
+            [renderMode]="renderMode"
             (modelLoaded)="onModelLoaded()"
             (meshClicked)="onMeshClicked($event)"
           ></app-three-viewer>
@@ -150,6 +158,24 @@ import { environment } from '../../../environments/environment';
     .footer-right { display: flex; align-items: center; gap: 12px; }
     .model-count { font-size: 12px; color: var(--clay-text-muted, #9e8e7e); }
 
+    .xray-toggle-btn {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 6px;
+      background: rgba(26, 26, 46, 0.08) !important;
+      color: var(--clay-text, #3d3229) !important;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px !important;
+      padding: 0 16px;
+      height: 36px;
+      transition: all 0.2s;
+    }
+    .xray-toggle-btn:hover {
+      background: rgba(26, 26, 46, 0.15) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+    .xray-toggle-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
     .camera-toggle-btn {
       display: inline-flex !important;
       align-items: center;
@@ -179,6 +205,7 @@ export class ProductViewerComponent {
   selectedModel: any = null;
   clickedMesh: string | null = null;
   viewMode: '3d' | 'ar' = '3d';
+  renderMode: 'solid' | 'xray' = 'solid';
 
   constructor(
     public dialogRef: MatDialogRef<ProductViewerComponent>,
@@ -208,5 +235,9 @@ export class ProductViewerComponent {
   toggleViewMode(): void {
     this.viewMode = this.viewMode === '3d' ? 'ar' : '3d';
     this.clickedMesh = null;
+  }
+
+  toggleRenderMode(): void {
+    this.renderMode = this.renderMode === 'solid' ? 'xray' : 'solid';
   }
 }

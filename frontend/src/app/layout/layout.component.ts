@@ -15,6 +15,7 @@ import { Subscription, Subject, debounceTime, switchMap, of } from 'rxjs';
 import { AuthService, User } from '../core/services/auth.service';
 import { NotificationService } from '../core/services/notification.service';
 import { SearchService, SearchResults } from '../core/services/search.service';
+import { ThemeService } from '../core/services/theme.service';
 import { BUILD_INFO } from '../../build-info';
 
 interface NavItem {
@@ -38,9 +39,12 @@ interface NavItem {
       <div class="sidenav-overlay" [class.visible]="mobileMenuOpen" (click)="closeMobileMenu()"></div>
       <aside class="sidenav" [class.collapsed]="sidenavCollapsed" [class.mobile-open]="mobileMenuOpen">
         <div class="sidenav-header">
-          <mat-icon class="logo-icon">precision_manufacturing</mat-icon>
+          <div class="logo-mark">SB</div>
           @if (!sidenavCollapsed) {
-            <span class="logo-text">PCS Platform</span>
+            <div class="logo-block">
+              <span class="logo-text">SpadeBloom</span>
+              <span class="logo-sub">Production Control</span>
+            </div>
           }
         </div>
         <mat-nav-list>
@@ -119,6 +123,12 @@ interface NavItem {
 
           <span class="toolbar-spacer"></span>
 
+          <!-- Theme Toggle -->
+          <button mat-icon-button (click)="themeService.toggle()"
+                  [matTooltip]="themeService.theme() === 'dark' ? 'Switch to light' : 'Switch to dark'">
+            <mat-icon>{{ themeService.theme() === 'dark' ? 'light_mode' : 'dark_mode' }}</mat-icon>
+          </button>
+
           <!-- Notification Bell -->
           <button mat-icon-button (click)="navigateTo('/notifications')" matTooltip="Notifications"
                   [matBadge]="unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : null" matBadgeColor="accent" matBadgeSize="small">
@@ -145,13 +155,14 @@ interface NavItem {
       height: 100vh;
       overflow: hidden;
     }
+
+    /* ======================== SIDEBAR ======================== */
     .sidenav {
       width: 260px;
       min-width: 260px;
       background: var(--clay-sidebar);
-      color: var(--clay-text);
-      border-right: 1px solid var(--clay-border);
-      box-shadow: 4px 0 12px rgba(0,0,0,0.04);
+      color: var(--clay-sidebar-text);
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
       transition: width 0.25s ease, min-width 0.25s ease;
       overflow-x: hidden;
       overflow-y: auto;
@@ -162,6 +173,129 @@ interface NavItem {
       width: 64px;
       min-width: 64px;
     }
+
+    .sidenav-header {
+      display: flex;
+      align-items: center;
+      padding: 20px;
+      gap: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .sidenav.collapsed .sidenav-header {
+      justify-content: center;
+      padding: 20px 12px;
+    }
+
+    .logo-mark {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--clay-sidebar-accent), var(--clay-accent));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: #fff;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+    }
+    .logo-block {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .logo-text {
+      font-size: 16px; font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+    .logo-sub {
+      font-size: 11px;
+      color: var(--clay-sidebar-text);
+      letter-spacing: 0.02em;
+    }
+
+    /* Nav items — force text/icon colors on all Material internals */
+    .sidenav ::ng-deep .mat-mdc-list-item {
+      color: var(--clay-sidebar-text) !important;
+      border-radius: 0 var(--clay-radius-sm) var(--clay-radius-sm) 0;
+      margin: 1px 12px 1px 0;
+      transition: all var(--clay-transition);
+      height: 42px !important;
+    }
+    .sidenav ::ng-deep .mat-mdc-list-item .mdc-list-item__primary-text,
+    .sidenav ::ng-deep .mat-mdc-list-item .mat-mdc-list-item-title,
+    .sidenav ::ng-deep .mat-mdc-list-item span[matlistitemtitle] {
+      color: var(--clay-sidebar-text) !important;
+    }
+    .sidenav ::ng-deep .mat-mdc-list-item .mat-icon,
+    .sidenav ::ng-deep .mat-mdc-list-item .mdc-list-item__start {
+      color: var(--clay-sidebar-text) !important;
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+      transition: color var(--clay-transition);
+    }
+
+    .sidenav ::ng-deep .mat-mdc-list-item:hover {
+      background: rgba(255, 255, 255, 0.06) !important;
+    }
+    .sidenav ::ng-deep .mat-mdc-list-item:hover .mdc-list-item__primary-text,
+    .sidenav ::ng-deep .mat-mdc-list-item:hover span[matlistitemtitle],
+    .sidenav ::ng-deep .mat-mdc-list-item:hover .mat-icon {
+      color: var(--clay-sidebar-text-hover) !important;
+    }
+
+    .sidenav ::ng-deep .active-link {
+      background: rgba(255, 255, 255, 0.08) !important;
+      font-weight: 600;
+    }
+    .sidenav ::ng-deep .active-link .mdc-list-item__primary-text,
+    .sidenav ::ng-deep .active-link span[matlistitemtitle] {
+      color: var(--clay-sidebar-text-active) !important;
+    }
+    .sidenav ::ng-deep .active-link .mat-icon {
+      color: var(--clay-sidebar-accent) !important;
+    }
+
+    /* Collapsed sidenav */
+    .sidenav.collapsed ::ng-deep .mat-mdc-nav-list { padding: 8px 0; }
+    .sidenav.collapsed ::ng-deep .mat-mdc-list-item {
+      margin: 2px 6px !important;
+      border-radius: var(--clay-radius-sm) !important;
+      height: 44px !important;
+      min-height: 44px !important;
+      padding: 0 !important;
+      width: calc(100% - 12px) !important;
+    }
+    .sidenav.collapsed ::ng-deep .mat-mdc-list-item .mdc-list-item__content {
+      padding: 0 !important; display: flex !important; justify-content: center !important;
+    }
+    .sidenav.collapsed ::ng-deep .mat-mdc-list-item .mdc-list-item__start,
+    .sidenav.collapsed ::ng-deep .mat-mdc-list-item .mdc-list-item__primary-text {
+      margin: 0 !important; padding: 0 !important;
+    }
+    .sidenav.collapsed ::ng-deep .mat-mdc-list-item .mat-icon {
+      margin: 0 !important; font-size: 22px; width: 22px; height: 22px;
+    }
+    .sidenav.collapsed ::ng-deep .mdc-list-item__start { margin-inline-end: 0 !important; }
+    .sidenav.collapsed ::ng-deep .mat-mdc-list-item { overflow: visible !important; }
+
+    /* Build info */
+    .build-info {
+      padding: 12px 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 11px;
+      color: var(--clay-sidebar-text);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-top: auto;
+      cursor: default;
+      opacity: 0.6;
+    }
+    .build-commit { font-family: 'Space Grotesk', monospace; font-weight: 600; }
+    .build-time { opacity: 0.7; }
+
+    /* ======================== MAIN CONTENT ======================== */
     .main-content {
       flex: 1;
       display: flex;
@@ -169,57 +303,7 @@ interface NavItem {
       overflow: hidden;
       min-width: 0;
     }
-    .sidenav-header {
-      display: flex;
-      align-items: center;
-      padding: 24px 20px;
-      gap: 12px;
-      border-bottom: 1px solid var(--clay-border);
-      background: var(--clay-sidebar-active);
-      white-space: nowrap;
-      overflow: hidden;
-    }
-    .sidenav.collapsed .sidenav-header {
-      justify-content: center;
-      padding: 24px 12px;
-    }
-    .logo-icon {
-      font-size: 32px; width: 32px; height: 32px;
-      color: var(--clay-accent);
-      filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.1));
-    }
-    .logo-text {
-      font-size: 18px; font-weight: 700;
-      color: var(--clay-text);
-      letter-spacing: -0.01em;
-    }
-    .sidenav ::ng-deep .mat-mdc-list-item {
-      color: var(--clay-text-secondary) !important;
-      border-radius: 0 var(--clay-radius-sm) var(--clay-radius-sm) 0;
-      margin: 2px 12px 2px 0;
-      transition: all var(--clay-transition);
-    }
-    .sidenav ::ng-deep .mat-mdc-list-item:hover {
-      background: var(--clay-surface) !important;
-      color: var(--clay-text) !important;
-      box-shadow: var(--clay-shadow-soft);
-    }
-    .sidenav ::ng-deep .active-link {
-      background: var(--clay-surface) !important;
-      color: var(--clay-primary) !important;
-      box-shadow: var(--clay-shadow-raised);
-      font-weight: 600;
-    }
-    .sidenav ::ng-deep .mat-mdc-list-item .mat-icon {
-      color: var(--clay-text-muted);
-      transition: color var(--clay-transition);
-    }
-    .sidenav ::ng-deep .mat-mdc-list-item:hover .mat-icon {
-      color: var(--clay-text);
-    }
-    .sidenav ::ng-deep .active-link .mat-icon {
-      color: var(--clay-accent);
-    }
+
     .top-toolbar {
       position: sticky;
       top: 0;
@@ -229,22 +313,24 @@ interface NavItem {
       box-shadow: var(--clay-shadow-soft) !important;
       border-bottom: 1px solid var(--clay-border);
     }
+
     .toolbar-spacer { flex: 1; }
-    .user-name { margin-right: 4px; font-size: 14px; font-weight: 500; color: var(--clay-text); }
-    .user-role { margin-right: 16px; font-size: 12px; color: var(--clay-text-muted); }
+    .user-name { margin-right: 4px; font-size: 13px; font-weight: 500; color: var(--clay-text); }
+    .user-role { margin-right: 12px; font-size: 11px; color: var(--clay-text-muted); }
+
     .page-content {
-      padding: 28px;
+      padding: 24px;
       background: var(--clay-bg);
       flex: 1;
       overflow-y: auto;
     }
 
-    /* Global Search */
+    /* ======================== SEARCH ======================== */
     .search-container {
       position: relative; display: flex; align-items: center;
-      background: var(--clay-bg, #f0ece2); border-radius: var(--clay-radius-sm);
+      background: var(--clay-bg); border-radius: var(--clay-radius-sm);
       padding: 4px 12px; max-width: 380px; width: 100%;
-      box-shadow: var(--clay-shadow-inset);
+      border: 1px solid var(--clay-border);
     }
     .search-icon { color: var(--clay-text-muted); font-size: 20px; width: 20px; height: 20px; margin-right: 8px; }
     .search-input {
@@ -261,75 +347,27 @@ interface NavItem {
     }
     .search-group { padding: 8px 0; }
     .search-group-title {
-      padding: 4px 16px; font-size: 11px; font-weight: 700; color: var(--clay-text-muted);
-      text-transform: uppercase; letter-spacing: 0.5px;
+      padding: 4px 16px; font-size: 10px; font-weight: 700; color: var(--clay-text-muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      font-family: 'Space Grotesk', sans-serif;
     }
     .search-item {
       display: flex; align-items: center; gap: 8px;
       padding: 8px 16px; cursor: pointer; font-size: 13px;
-      transition: background 0.15s;
+      transition: background 0.15s; color: var(--clay-text);
     }
     .search-item:hover { background: var(--clay-bg); }
     .search-item mat-icon { font-size: 18px; width: 18px; height: 18px; color: var(--clay-text-muted); }
     .search-empty { padding: 16px; text-align: center; color: var(--clay-text-muted); font-size: 13px; }
 
-    /* Collapsed sidenav overrides */
-    .sidenav.collapsed ::ng-deep .mat-mdc-nav-list {
-      padding: 8px 0;
-    }
-    .sidenav.collapsed ::ng-deep .mat-mdc-list-item {
-      margin: 2px 6px !important;
-      border-radius: var(--clay-radius-sm) !important;
-      height: 44px !important;
-      min-height: 44px !important;
-      padding: 0 !important;
-      width: calc(100% - 12px) !important;
-    }
-    .sidenav.collapsed ::ng-deep .mat-mdc-list-item .mdc-list-item__content {
-      padding: 0 !important;
-      display: flex !important;
-      justify-content: center !important;
-    }
-    .sidenav.collapsed ::ng-deep .mat-mdc-list-item .mdc-list-item__start,
-    .sidenav.collapsed ::ng-deep .mat-mdc-list-item .mdc-list-item__primary-text {
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-    .sidenav.collapsed ::ng-deep .mat-mdc-list-item .mat-icon {
-      margin: 0 !important;
-      font-size: 22px;
-      width: 22px;
-      height: 22px;
-    }
-    .sidenav.collapsed ::ng-deep .mdc-list-item__start {
-      margin-inline-end: 0 !important;
-    }
-    .sidenav.collapsed ::ng-deep .mat-mdc-list-item {
-      overflow: visible !important;
-    }
-
-    /* Build info */
-    .build-info {
-      padding: 12px 20px;
-      border-top: 1px solid var(--clay-border);
-      font-size: 11px;
-      color: var(--clay-text-muted);
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      margin-top: auto;
-      cursor: default;
-    }
-    .build-commit { font-family: monospace; font-weight: 600; }
-    .build-time { opacity: 0.7; }
-
-    /* Mobile overlay for sidebar */
+    /* Mobile overlay */
     .sidenav-overlay {
       display: none;
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.4);
+      background: rgba(0, 0, 0, 0.5);
       z-index: 99;
+      backdrop-filter: blur(2px);
     }
 
     @media (max-width: 768px) {
@@ -340,32 +378,17 @@ interface NavItem {
         transform: translateX(-100%);
         transition: transform 0.25s ease;
       }
-      .sidenav.mobile-open {
-        transform: translateX(0);
-      }
-      .sidenav.collapsed {
-        transform: translateX(-100%);
-      }
+      .sidenav.mobile-open { transform: translateX(0); }
+      .sidenav.collapsed { transform: translateX(-100%); }
       .sidenav.collapsed.mobile-open {
         transform: translateX(0);
-        width: 260px;
-        min-width: 260px;
+        width: 260px; min-width: 260px;
       }
-      .main-content {
-        margin-left: 0 !important;
-      }
-      .sidenav-overlay.visible {
-        display: block;
-      }
-      .search-container {
-        max-width: 160px;
-      }
-      .user-name, .user-role {
-        display: none;
-      }
-      .page-content {
-        padding: 16px;
-      }
+      .main-content { margin-left: 0 !important; }
+      .sidenav-overlay.visible { display: block; }
+      .search-container { max-width: 160px; }
+      .user-name, .user-role { display: none; }
+      .page-content { padding: 16px; }
     }
   `]
 })
@@ -408,6 +431,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     private notificationService: NotificationService,
     private searchService: SearchService,
     private router: Router,
+    public themeService: ThemeService,
   ) {}
 
   ngOnInit(): void {

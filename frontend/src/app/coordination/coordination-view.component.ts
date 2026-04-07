@@ -194,15 +194,15 @@ import { environment } from '../../environments/environment';
       margin-left: auto; padding: 4px 12px; border-radius: 12px;
       font-size: 12px; font-weight: 600; text-transform: uppercase;
     }
-    .status-ready { background: #e8f5e9; color: #2e7d32; }
-    .status-processing { background: #fff3e0; color: #e65100; }
-    .status-error { background: #fbe9e7; color: #c62828; }
+    .status-ready { background: var(--success-bg); color: var(--success-text); }
+    .status-processing { background: var(--warning-bg); color: var(--warning-text); }
+    .status-error { background: var(--danger-bg); color: var(--danger-text); }
     .clay-card {
       background: var(--clay-surface); border-radius: var(--clay-radius);
       box-shadow: var(--clay-shadow-raised); border: 1px solid var(--clay-border);
     }
     .processing-card, .error-card { padding: 24px; text-align: center; }
-    .error-card { color: #c62828; }
+    .error-card { color: var(--danger); }
 
     /* Main layout */
     .coordination-layout {
@@ -256,10 +256,10 @@ import { environment } from '../../environments/environment';
       padding: 10px 12px; cursor: pointer;
       border-radius: 8px; transition: background 0.15s;
     }
-    .drawing-item:hover { background: var(--clay-bg, #faf7f2); }
+    .drawing-item:hover { background: var(--clay-bg, var(--clay-surface)); }
     .drawing-item.active {
       background: rgba(107, 92, 231, 0.08);
-      border-left: 3px solid var(--clay-primary, #6b5ce7);
+      border-left: 3px solid var(--clay-primary);
     }
     .drawing-icon {
       font-size: 20px; width: 20px; height: 20px;

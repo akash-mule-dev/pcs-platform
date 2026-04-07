@@ -81,10 +81,10 @@ import { ApiService } from '../core/services/api.service';
       display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 600;
       text-transform: capitalize;
     }
-    .action-chip.create { background: #e8f5e9; color: #388e3c; }
-    .action-chip.update { background: #e3f2fd; color: #1976d2; }
-    .action-chip.delete { background: #fce4ec; color: #d32f2f; }
-    .action-chip.status_change { background: #fff3e0; color: #f57c00; }
+    .action-chip.create { background: var(--success-bg); color: var(--success-text); }
+    .action-chip.update { background: var(--info-bg); color: var(--info-text); }
+    .action-chip.delete { background: var(--danger-bg); color: var(--danger-text); }
+    .action-chip.status_change { background: var(--warning-bg); color: var(--warning-text); }
     .details-cell { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--clay-text-secondary); }
     .empty-state { text-align: center; padding: 40px; color: var(--clay-text-muted); }
     .empty-state mat-icon { font-size: 48px; width: 48px; height: 48px; opacity: 0.3; }

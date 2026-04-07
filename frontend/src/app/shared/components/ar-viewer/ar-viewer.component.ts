@@ -227,16 +227,16 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
       border-color: var(--clay-primary, #6b5ce7);
     }
     .control-btn.ar-activate:hover {
-      background: #5a4bd6;
+      background: var(--clay-primary, #5a4bd6);
     }
 
     .control-btn.ar-stop {
-      background: #e74c3c;
+      background: var(--danger, #e74c3c);
       color: #fff;
-      border-color: #e74c3c;
+      border-color: var(--danger, #e74c3c);
     }
     .control-btn.ar-stop:hover {
-      background: #c0392b;
+      background: var(--danger, #c0392b);
     }
 
     .no-model {

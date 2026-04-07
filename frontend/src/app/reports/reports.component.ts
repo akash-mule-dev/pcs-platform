@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -9,7 +9,8 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { MatTableModule } from '@angular/material/table';
+import { MatTableModule, MatTableDataSource } from '@angular/material/table';
+import { MatPaginatorModule, MatPaginator } from '@angular/material/paginator';
 import { NgChartsModule } from 'ng2-charts';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
 import { ApiService } from '../core/services/api.service';
@@ -24,7 +25,7 @@ Chart.register(...registerables);
     CommonModule, FormsModule, MatCardModule, MatFormFieldModule,
     MatDatepickerModule, MatNativeDateModule, MatInputModule,
     MatButtonModule, MatIconModule, MatProgressBarModule,
-    MatTableModule, NgChartsModule, DurationPipe,
+    MatTableModule, MatPaginatorModule, NgChartsModule, DurationPipe,
   ],
   template: `
     <h2>Reports & Analytics</h2>
@@ -125,7 +126,7 @@ Chart.register(...registerables);
       <mat-card class="table-card">
         <mat-card-header><mat-card-title>Operator Metrics</mat-card-title></mat-card-header>
         <mat-card-content>
-          <table mat-table [dataSource]="operatorData" class="full-width">
+          <table mat-table [dataSource]="operatorTableSource" class="full-width">
             <ng-container matColumnDef="name">
               <th mat-header-cell *matHeaderCellDef>Operator</th>
               <td mat-cell *matCellDef="let r">{{ r.operatorName }}</td>
@@ -147,6 +148,7 @@ Chart.register(...registerables);
             <tr mat-header-row *matHeaderRowDef="['name','stages','totalTime','efficiency']"></tr>
             <tr mat-row *matRowDef="let row; columns: ['name','stages','totalTime','efficiency']"></tr>
           </table>
+          <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
         </mat-card-content>
       </mat-card>
     }
@@ -160,9 +162,9 @@ Chart.register(...registerables);
     .oee-grid { display: grid; grid-template-columns: 160px 1fr 1fr 1fr; gap: 24px; align-items: center; }
     .oee-main { text-align: center; }
     .oee-score { font-size: 48px; font-weight: 800; }
-    .oee-score.good { color: #27ae60; }
-    .oee-score.warning { color: #f39c12; }
-    .oee-score.poor { color: #e74c3c; }
+    .oee-score.good { color: var(--success); }
+    .oee-score.warning { color: var(--warning); }
+    .oee-score.poor { color: var(--danger); }
     .oee-label { font-size: 13px; color: var(--clay-text-muted); font-weight: 500; }
     .oee-factor { display: flex; flex-direction: column; gap: 4px; }
     .factor-label { font-size: 12px; color: var(--clay-text-secondary); font-weight: 500; }
@@ -173,8 +175,8 @@ Chart.register(...registerables);
     .table-card { padding: 16px; }
     .full-width { width: 100%; }
     .no-data { text-align: center; color: var(--clay-text-muted); padding: 40px; }
-    .over-target { color: #e74c3c; font-weight: 600; }
-    .on-target { color: #27ae60; font-weight: 600; }
+    .over-target { color: var(--danger); font-weight: 600; }
+    .on-target { color: var(--success); font-weight: 600; }
 
     @media (max-width: 960px) {
       .charts-grid { grid-template-columns: 1fr; }
@@ -182,13 +184,15 @@ Chart.register(...registerables);
     }
   `]
 })
-export class ReportsComponent implements OnInit {
+export class ReportsComponent implements OnInit, AfterViewInit {
   dateFrom: Date | null = null;
   dateTo: Date | null = null;
   oee: any = null;
   operatorChartData: ChartConfiguration<'bar'>['data'] | null = null;
   stageChartData: ChartConfiguration<'bar'>['data'] | null = null;
   operatorData: any[] = [];
+  operatorTableSource = new MatTableDataSource<any>([]);
+  @ViewChild(MatPaginator) paginator!: MatPaginator;
   barOptions: ChartConfiguration<'bar'>['options'] = {
     responsive: true,
     plugins: { legend: { position: 'top' } },
@@ -196,6 +200,12 @@ export class ReportsComponent implements OnInit {
   };
 
   constructor(private api: ApiService) {}
+
+  ngAfterViewInit(): void { this.operatorTableSource.paginator = this.paginator; }
+
+  private cssVar(name: string, fallback: string): string {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  }
 
   ngOnInit(): void {
     const now = new Date();
@@ -233,18 +243,23 @@ export class ReportsComponent implements OnInit {
           return;
         }
         this.operatorData = data;
+        this.operatorTableSource.data = data;
+        const successBg = this.cssVar('--success-bg', 'rgba(76,175,80,0.6)');
+        const warningBg = this.cssVar('--warning-bg', 'rgba(255,152,0,0.6)');
+        const successColor = this.cssVar('--success', '#4caf50');
+        const warningColor = this.cssVar('--warning', '#ff9800');
         this.operatorChartData = {
           labels: data.map(d => d.operatorName || `${d.firstName} ${d.lastName}`),
           datasets: [{
             label: 'Avg Efficiency %',
             data: data.map(d => d.avgEfficiency || 0),
-            backgroundColor: data.map(d => (d.avgEfficiency || 0) >= 80 ? 'rgba(76,175,80,0.6)' : 'rgba(255,152,0,0.6)'),
-            borderColor: data.map(d => (d.avgEfficiency || 0) >= 80 ? '#4caf50' : '#ff9800'),
+            backgroundColor: data.map(d => (d.avgEfficiency || 0) >= 80 ? successBg : warningBg),
+            borderColor: data.map(d => (d.avgEfficiency || 0) >= 80 ? successColor : warningColor),
             borderWidth: 2,
           }]
         };
       },
-      error: () => { this.operatorChartData = null; this.operatorData = []; }
+      error: () => { this.operatorChartData = null; this.operatorData = []; this.operatorTableSource.data = []; }
     });
   }
 
@@ -252,11 +267,14 @@ export class ReportsComponent implements OnInit {
     this.api.get<any[]>('/dashboard/stage-analytics', this.getParams()).subscribe({
       next: (data) => {
         if (!data || !Array.isArray(data) || data.length === 0) { this.stageChartData = null; return; }
+        const stageWarning = this.cssVar('--warning', '#ff9800');
+        const stageSuccessBg = this.cssVar('--success-bg', 'rgba(76,175,80,0.4)');
+        const stageSuccess = this.cssVar('--success', '#4caf50');
         this.stageChartData = {
           labels: data.map(d => d.stageName),
           datasets: [
-            { label: 'Avg Time (s)', data: data.map(d => d.avgTime || 0), backgroundColor: '#ff9800' },
-            { label: 'Target (s)', data: data.map(d => d.targetTime || 0), backgroundColor: 'rgba(76,175,80,0.4)', borderColor: '#4caf50', borderWidth: 2 },
+            { label: 'Avg Time (s)', data: data.map(d => d.avgTime || 0), backgroundColor: stageWarning },
+            { label: 'Target (s)', data: data.map(d => d.targetTime || 0), backgroundColor: stageSuccessBg, borderColor: stageSuccess, borderWidth: 2 },
           ]
         };
       },

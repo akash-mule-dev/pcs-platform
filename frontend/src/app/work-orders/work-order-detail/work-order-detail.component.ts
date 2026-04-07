@@ -199,25 +199,25 @@ import { environment } from '../../../environments/environment';
     .subtitle { margin: 4px 0 0; color: var(--clay-text-muted); }
     .header-actions { display: flex; gap: 8px; align-items: center; }
     .status-chip, .priority-chip { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; }
-    .status-draft { background: #e8e2d6; color: #7a7062; box-shadow: var(--clay-shadow-soft); } .status-pending { background: #f5e6d0; color: #c06820; box-shadow: var(--clay-shadow-soft); }
-    .status-in_progress { background: #dce8f3; color: var(--clay-primary); box-shadow: var(--clay-shadow-soft); } .status-completed { background: #d8edda; color: #3a7d3e; box-shadow: var(--clay-shadow-soft); }
-    .status-cancelled { background: #f2dbd8; color: #a03528; box-shadow: var(--clay-shadow-soft); }
-    .priority-low { background: #d8edda; color: #3a7d3e; box-shadow: var(--clay-shadow-soft); } .priority-medium { background: #f5e6d0; color: #c06820; box-shadow: var(--clay-shadow-soft); }
-    .priority-high { background: #f2dbd8; color: #a03528; box-shadow: var(--clay-shadow-soft); } .priority-urgent { background: #f44336; color: white; }
+    .status-draft { background: var(--badge-draft-bg); color: var(--badge-draft-text); box-shadow: var(--clay-shadow-soft); } .status-pending { background: var(--badge-pending-bg); color: var(--badge-pending-text); box-shadow: var(--clay-shadow-soft); }
+    .status-in_progress { background: var(--badge-progress-bg); color: var(--badge-progress-text); box-shadow: var(--clay-shadow-soft); } .status-completed { background: var(--badge-completed-bg); color: var(--badge-completed-text); box-shadow: var(--clay-shadow-soft); }
+    .status-cancelled { background: var(--badge-cancelled-bg); color: var(--badge-cancelled-text); box-shadow: var(--clay-shadow-soft); }
+    .priority-low { background: var(--success-bg); color: var(--success-text); box-shadow: var(--clay-shadow-soft); } .priority-medium { background: var(--warning-bg); color: var(--warning-text); box-shadow: var(--clay-shadow-soft); }
+    .priority-high { background: var(--danger-bg); color: var(--danger-text); box-shadow: var(--clay-shadow-soft); } .priority-urgent { background: var(--danger); color: white; }
     .status-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 24px; padding: 12px; background: var(--clay-surface); border-radius: var(--clay-radius-xs); }
     h3 { color: var(--clay-text); margin: 24px 0 12px; display: flex; align-items: center; gap: 8px; }
     .section-icon { font-size: 20px; width: 20px; height: 20px; color: var(--clay-primary, #6b5ce7); }
     .stages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
     .stage-progress-card { padding: 16px; }
-    .stage-completed { border-left: 4px solid #4caf50; }
-    .stage-active { border-left: 4px solid #2196f3; }
+    .stage-completed { border-left: 4px solid var(--status-completed); }
+    .stage-active { border-left: 4px solid var(--status-in-progress); }
     .stage-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .stage-name { font-weight: 500; }
     .stage-status-field { width: 140px; font-size: 11px; }
     ::ng-deep .stage-status-field .mat-mdc-form-field-subscript-wrapper { display: none; }
     ::ng-deep .stage-status-field .mat-mdc-select-value-text { font-size: 11px; text-transform: uppercase; font-weight: 600; }
-    .ss-pending { color: #ff9800; } .ss-in_progress { color: #2196f3; }
-    .ss-completed { color: #4caf50; } .ss-skipped { color: #9e9e9e; }
+    .ss-pending { color: var(--status-pending); } .ss-in_progress { color: var(--status-in-progress); }
+    .ss-completed { color: var(--status-completed); } .ss-skipped { color: var(--clay-text-muted); }
     .stage-times { display: flex; justify-content: space-between; font-size: 12px; color: var(--clay-text-secondary); margin-bottom: 8px; }
     .assign-row { margin-top: 12px; }
     .assign-field { width: 100%; }
@@ -235,9 +235,9 @@ import { environment } from '../../../environments/environment';
     .viewer-actions { display: flex; gap: 4px; }
     .viewer-content { min-height: 400px; }
     .quality-summary-inline { display: inline-flex; gap: 10px; font-size: 12px; font-weight: 600; }
-    .qs-pass { color: #27ae60; }
-    .qs-fail { color: #e74c3c; }
-    .qs-warn { color: #f39c12; }
+    .qs-pass { color: var(--success); }
+    .qs-fail { color: var(--danger); }
+    .qs-warn { color: var(--warning); }
 
     /* Mesh detail card */
     .mesh-detail-card { margin-bottom: 16px; }
@@ -246,12 +246,12 @@ import { environment } from '../../../environments/environment';
       padding: 10px 14px; border-radius: 8px; margin-bottom: 8px;
       font-weight: 600; font-size: 14px;
     }
-    .mesh-detail-status.pass { background: #e8f5e9; color: #27ae60; }
-    .mesh-detail-status.fail { background: #fce4ec; color: #e74c3c; }
-    .mesh-detail-status.warning { background: #fff8e1; color: #f39c12; }
+    .mesh-detail-status.pass { background: var(--success-bg); color: var(--success); }
+    .mesh-detail-status.fail { background: var(--danger-bg); color: var(--danger); }
+    .mesh-detail-status.warning { background: var(--warning-bg); color: var(--warning); }
     .mesh-detail-status mat-icon { font-size: 20px; width: 20px; height: 20px; }
     .mesh-detail-row { font-size: 13px; color: var(--clay-text-secondary, #6b5e50); padding: 4px 0; }
-    .mesh-detail-row.notes { font-style: italic; border-top: 1px solid var(--clay-border, #e5ddd0); padding-top: 8px; margin-top: 4px; }
+    .mesh-detail-row.notes { font-style: italic; border-top: 1px solid var(--clay-border); padding-top: 8px; margin-top: 4px; }
   `]
 })
 export class WorkOrderDetailComponent implements OnInit, OnDestroy {
@@ -409,17 +409,31 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
     return wos.actualTimeSeconds > wos.stage.targetTimeSeconds ? 'warn' : 'primary';
   }
 
+  private getCssVar(name: string): string {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  private hexToRgba(hex: string, alpha: number): string {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
   private buildTimeChart(): void {
     if (!this.stages.length) return;
     const labels = this.stages.map(s => s.stage?.name || 'Unknown');
+    const successColor = this.getCssVar('--success') || '#4caf50';
+    const dangerColor = this.getCssVar('--danger') || '#f44336';
+    const infoColor = this.getCssVar('--info') || '#2196f3';
     this.timeChartData = {
       labels,
       datasets: [
         {
           label: 'Target Time (s)',
           data: this.stages.map(s => s.stage?.targetTimeSeconds || 0),
-          backgroundColor: 'rgba(76,175,80,0.4)',
-          borderColor: '#4caf50',
+          backgroundColor: this.hexToRgba(successColor, 0.4),
+          borderColor: successColor,
           borderWidth: 2,
         },
         {
@@ -427,11 +441,11 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
           data: this.stages.map(s => s.actualTimeSeconds || 0),
           backgroundColor: this.stages.map(s =>
             s.actualTimeSeconds && s.stage?.targetTimeSeconds && s.actualTimeSeconds > s.stage.targetTimeSeconds
-              ? 'rgba(244,67,54,0.5)' : 'rgba(33,150,243,0.5)'
+              ? this.hexToRgba(dangerColor, 0.5) : this.hexToRgba(infoColor, 0.5)
           ),
           borderColor: this.stages.map(s =>
             s.actualTimeSeconds && s.stage?.targetTimeSeconds && s.actualTimeSeconds > s.stage.targetTimeSeconds
-              ? '#f44336' : '#2196f3'
+              ? dangerColor : infoColor
           ),
           borderWidth: 2,
         },

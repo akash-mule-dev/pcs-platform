@@ -110,9 +110,9 @@ import { environment } from '../../../environments/environment';
     </mat-dialog-actions>
   `,
   styles: [`
-    .full-width { width: 100%; margin-bottom: 8px; }
+    .full-width { width: 100%; margin-bottom: 4px; }
     .model-upload-section {
-      margin-top: 8px; padding: 16px;
+      margin-top: 4px; padding: 16px;
       background: var(--clay-bg, #faf7f2);
       border: 1px dashed var(--clay-border, #e5ddd0);
       border-radius: 8px;

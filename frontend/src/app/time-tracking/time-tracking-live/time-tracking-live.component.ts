@@ -1,8 +1,9 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
-import { MatTableModule } from '@angular/material/table';
+import { MatTableModule, MatTableDataSource } from '@angular/material/table';
+import { MatPaginatorModule, MatPaginator } from '@angular/material/paginator';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSelectModule } from '@angular/material/select';
@@ -17,7 +18,7 @@ import { RouterModule } from '@angular/router';
 @Component({
   selector: 'app-time-tracking-live',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MatCardModule, MatTableModule, MatButtonModule, MatIconModule, MatSelectModule, MatFormFieldModule, DurationPipe],
+  imports: [CommonModule, FormsModule, RouterModule, MatCardModule, MatTableModule, MatPaginatorModule, MatButtonModule, MatIconModule, MatSelectModule, MatFormFieldModule, DurationPipe],
   template: `
     <div class="page-header">
       <h2>Time Tracking — Live</h2>
@@ -63,7 +64,7 @@ import { RouterModule } from '@angular/router';
       </mat-card>
     }
 
-    <table mat-table [dataSource]="activeEntries" class="full-width mat-elevation-z2">
+    <table mat-table [dataSource]="dataSource" class="full-width mat-elevation-z2">
       <ng-container matColumnDef="operator">
         <th mat-header-cell *matHeaderCellDef>Operator</th>
         <td mat-cell *matCellDef="let e">{{ e.user?.firstName }} {{ e.user?.lastName }}</td>
@@ -101,7 +102,9 @@ import { RouterModule } from '@angular/router';
       <tr mat-row *matRowDef="let row; columns: columns;"></tr>
     </table>
 
-    @if (activeEntries.length === 0) {
+    <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
+
+    @if (dataSource.data.length === 0) {
       <mat-card class="empty-card">
         <mat-icon>hourglass_empty</mat-icon>
         <p>No active time entries</p>
@@ -116,16 +119,17 @@ import { RouterModule } from '@angular/router';
     .clock-in-card h3 { margin: 0 0 16px; color: var(--clay-text); }
     .clock-in-form { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
     .full-width { width: 100%; }
-    .elapsed-cell { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; color: #2e7d32; }
-    .pulse { font-size: 12px; width: 12px; height: 12px; color: #4caf50; animation: pulse 1.5s infinite; }
+    .elapsed-cell { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; color: var(--success-text); }
+    .pulse { font-size: 12px; width: 12px; height: 12px; color: var(--success); animation: pulse 1.5s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     .empty-card { text-align: center; padding: 40px; color: var(--clay-text-muted); }
     .empty-card mat-icon { font-size: 48px; width: 48px; height: 48px; opacity: 0.3; }
   `]
 })
-export class TimeTrackingLiveComponent implements OnInit, OnDestroy {
-  activeEntries: any[] = [];
+export class TimeTrackingLiveComponent implements OnInit, OnDestroy, AfterViewInit {
+  dataSource = new MatTableDataSource<any>([]);
   columns = ['operator', 'workOrder', 'stage', 'elapsed', 'station', 'actions'];
+  @ViewChild(MatPaginator) paginator!: MatPaginator;
   showClockIn = false;
   workOrders: any[] = [];
   availableStages: any[] = [];
@@ -138,6 +142,8 @@ export class TimeTrackingLiveComponent implements OnInit, OnDestroy {
   private timerSub?: Subscription;
 
   constructor(private api: ApiService, private snackBar: MatSnackBar) {}
+
+  ngAfterViewInit(): void { this.dataSource.paginator = this.paginator; }
 
   ngOnInit(): void {
     this.loadActive();
@@ -154,7 +160,7 @@ export class TimeTrackingLiveComponent implements OnInit, OnDestroy {
 
   loadActive(): void {
     this.api.get<any[]>('/time-tracking/active').subscribe(data => {
-      this.activeEntries = data || [];
+      this.dataSource.data = data || [];
     });
   }
 
