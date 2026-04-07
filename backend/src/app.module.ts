@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -29,6 +31,10 @@ import { OrganizationModule } from './organization/organization.module.js';
 
 @Module({
   imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'public'),
+      serveRoot: '/ar',
+    }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{
       ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),

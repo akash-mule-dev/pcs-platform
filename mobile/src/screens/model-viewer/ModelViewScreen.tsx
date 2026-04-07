@@ -190,7 +190,7 @@ export function ModelViewScreen() {
       <View style={styles.controls}>
         <TouchableOpacity
           style={[styles.controlButton, { backgroundColor: Colors.tertiary }]}
-          onPress={() => navigation.navigate('ARView', { modelId, fileUrl: `${fileUrl}/ar` })}
+          onPress={() => navigation.navigate('ARView', { modelId, fileUrl })}
         >
           <Ionicons name="glasses-outline" size={22} color={Colors.white} />
         </TouchableOpacity>

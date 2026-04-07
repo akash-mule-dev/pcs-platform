@@ -79,9 +79,9 @@ export function ModelListScreen() {
           }),
       },
       {
-        text: 'AR View',
+        text: 'AR QA Inspector',
         onPress: () =>
-          navigation.navigate('ARView', { modelId: model.id, fileUrl: `${fileUrl}/ar` }),
+          navigation.navigate('ARView', { modelId: model.id, fileUrl }),
       },
       {
         text: 'Quality Inspection',

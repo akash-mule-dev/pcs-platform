@@ -1,235 +1,142 @@
-import React, { useState, useRef, useCallback, useReducer, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   Linking,
+  Alert,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Camera } from 'expo-camera';
+import WebView from 'react-native-webview';
 import { Colors } from '../../theme/colors';
 import { ModelsStackParamList } from '../../navigation/types';
-
-// Lazy-load Viro AR — it crashes in Expo Go where native modules aren't available
-let ViroARSceneNavigator: any = null;
-let ARModelScene: any = null;
-let viroAvailable = false;
-try {
-  ViroARSceneNavigator = require('@reactvision/react-viro').ViroARSceneNavigator;
-  ARModelScene = require('./ARModelScene').default;
-  viroAvailable = true;
-} catch {
-  viroAvailable = false;
-}
-
-// Error boundary to catch native AR crashes gracefully
-class ARErrorBoundary extends React.Component<
-  { children: React.ReactNode; onError: () => void },
-  { hasError: boolean }
-> {
-  state = { hasError: false };
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  componentDidCatch(error: any) {
-    console.warn('AR Error Boundary caught:', error);
-    this.props.onError();
-  }
-  render() {
-    if (this.state.hasError) return null;
-    return this.props.children;
-  }
-}
+import { environment } from '../../config/environment';
 
 type Route = RouteProp<ModelsStackParamList, 'ARView'>;
-type Vec3 = [number, number, number];
-
-// ── State ──
-interface ModelState {
-  position: Vec3;
-  scale: Vec3;
-  rotation: Vec3;
-  locked: boolean;
-}
-
-type Action =
-  | { type: 'SET_POSITION'; position: Vec3 }
-  | { type: 'SET_SCALE'; scale: Vec3 }
-  | { type: 'SET_ROTATION'; rotation: Vec3 }
-  | { type: 'TOGGLE_LOCK' }
-  | { type: 'RESET' };
-
-const DEFAULT_POSITION: Vec3 = [0, -0.5, -1];
-const DEFAULT_SCALE: Vec3 = [0.5, 0.5, 0.5];
-const DEFAULT_ROTATION: Vec3 = [0, 0, 0];
-
-function reducer(state: ModelState, action: Action): ModelState {
-  switch (action.type) {
-    case 'SET_POSITION':
-      return state.locked ? state : { ...state, position: action.position };
-    case 'SET_SCALE':
-      return state.locked ? state : { ...state, scale: action.scale };
-    case 'SET_ROTATION':
-      return state.locked ? state : { ...state, rotation: action.rotation };
-    case 'TOGGLE_LOCK':
-      return { ...state, locked: !state.locked };
-    case 'RESET':
-      return { position: DEFAULT_POSITION, scale: DEFAULT_SCALE, rotation: DEFAULT_ROTATION, locked: false };
-    default:
-      return state;
-  }
-}
 
 export function ARViewScreen() {
   const route = useRoute<Route>();
   const navigation = useNavigation();
   const { modelId, fileUrl } = route.params;
 
-  const [state, dispatch] = useReducer(reducer, {
-    position: DEFAULT_POSITION,
-    scale: DEFAULT_SCALE,
-    rotation: DEFAULT_ROTATION,
-    locked: false,
-  });
+  const [mode, setMode] = useState<'choice' | 'webxr' | 'fallback'>('choice');
+  const webviewRef = useRef<WebView>(null);
+  const [modelStatus, setModelStatus] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [isLocked, setIsLocked] = useState(false);
+  const [isXray, setIsXray] = useState(false);
 
-  const baseScaleRef = useRef<Vec3>(DEFAULT_SCALE);
-  const baseRotationRef = useRef<Vec3>(DEFAULT_ROTATION);
-  const [modelStatus, setModelStatus] = useState('idle');
-  const [tracking, setTracking] = useState('');
-  const [sessionActive, setSessionActive] = useState(false);
-  const [placed, setPlaced] = useState(false);
-  const [cameraPermission, setCameraPermission] = useState<'undetermined' | 'granted' | 'denied'>('undetermined');
+  // WebXR AR — opens in Chrome with full ARCore SLAM
+  const launchWebXR = useCallback(() => {
+    const arPageUrl = `https://akash-mule-dev.github.io/pcs-platform/ar-viewer.html?url=${encodeURIComponent(fileUrl)}&id=${modelId}`;
+    Linking.openURL(arPageUrl).catch(() => {
+      Alert.alert('Cannot open browser', 'Please install Chrome or another WebXR-compatible browser.');
+    });
+    // Go back since AR is now in browser
+    navigation.goBack();
+  }, [fileUrl, modelId, navigation]);
 
-  useEffect(() => {
-    (async () => {
-      const { status } = await Camera.getCameraPermissionsAsync();
-      setCameraPermission(status === 'granted' ? 'granted' : 'undetermined');
-    })();
+  // Fallback WebView AR (camera + Three.js, no SLAM)
+  const startFallbackAR = useCallback(() => {
+    setMode('fallback');
   }, []);
 
-  const requestCameraAndStart = useCallback(async () => {
-    const { status } = await Camera.requestCameraPermissionsAsync();
-    if (status === 'granted') {
-      setCameraPermission('granted');
-      setSessionActive(true);
-    } else {
-      setCameraPermission('denied');
+  const fetchAndSendModel = useCallback(async () => {
+    try {
+      setModelStatus('loading');
+      const response = await fetch(fileUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const base64: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      const CHUNK = 512 * 1024;
+      const totalChunks = Math.ceil(base64.length / CHUNK);
+      webviewRef.current?.injectJavaScript(`
+        window._modelChunks = [];
+        window._totalChunks = ${totalChunks};
+        document.getElementById('status').textContent = 'Receiving data...';
+        true;
+      `);
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = base64.substring(i * CHUNK, (i + 1) * CHUNK);
+        const pct = Math.round(((i + 1) / totalChunks) * 100);
+        webviewRef.current?.injectJavaScript(`
+          window._modelChunks.push("${chunk}");
+          document.getElementById('status').textContent = 'Downloading... ${pct}%';
+          if (window._modelChunks.length === window._totalChunks) {
+            loadModelFromBase64(window._modelChunks.join(''));
+          }
+          true;
+        `);
+      }
+    } catch {
+      setModelStatus('error');
     }
+  }, [fileUrl]);
+
+  const onWebViewMessage = useCallback((event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'ready') fetchAndSendModel();
+      else if (data.type === 'loaded') setModelStatus('loaded');
+      else if (data.type === 'error') setModelStatus('error');
+    } catch {}
+  }, [fetchAndSendModel]);
+
+  const toggleLock = useCallback(() => {
+    const next = !isLocked;
+    setIsLocked(next);
+    webviewRef.current?.injectJavaScript(`window.setLocked(${next}); true;`);
+  }, [isLocked]);
+
+  const toggleXray = useCallback(() => {
+    const next = !isXray;
+    setIsXray(next);
+    webviewRef.current?.injectJavaScript(`window.setXrayMode(${next}); true;`);
+  }, [isXray]);
+
+  const adjustScale = useCallback((factor: number) => {
+    webviewRef.current?.injectJavaScript(`
+      window.scale = Math.max(0.1, Math.min(5, window.scale * ${factor}));
+      if (window.model) window.model.scale.set(window.scale, window.scale, window.scale);
+      true;
+    `);
   }, []);
 
-  const handlePlaced = useCallback((position: Vec3) => {
-    setPlaced(true);
-    setModelStatus('loading');
-    dispatch({ type: 'SET_POSITION', position });
-  }, []);
-
-  const handleDrag = useCallback(
-    (position: Vec3) => dispatch({ type: 'SET_POSITION', position }),
-    [],
-  );
-
-  const handlePinch = useCallback(
-    (pinchState: number, scaleFactor: number) => {
-      if (state.locked) return;
-      if (pinchState === 2) {
-        const newScale = baseScaleRef.current.map(
-          (s) => Math.max(0.01, Math.min(5, s * scaleFactor)),
-        ) as Vec3;
-        dispatch({ type: 'SET_SCALE', scale: newScale });
-      } else if (pinchState === 3) {
-        baseScaleRef.current = state.scale;
-      }
-    },
-    [state.locked, state.scale],
-  );
-
-  const handleRotate = useCallback(
-    (rotateState: number, rotationFactor: number) => {
-      if (state.locked) return;
-      if (rotateState === 2) {
-        const newRotation: Vec3 = [
-          baseRotationRef.current[0],
-          baseRotationRef.current[1] + rotationFactor,
-          baseRotationRef.current[2],
-        ];
-        dispatch({ type: 'SET_ROTATION', rotation: newRotation });
-      } else if (rotateState === 3) {
-        baseRotationRef.current = state.rotation;
-      }
-    },
-    [state.locked, state.rotation],
-  );
-
-  const adjustScale = (factor: number) => {
-    if (state.locked) return;
-    const newScale = state.scale.map(
-      (s) => Math.max(0.01, Math.min(5, s * factor)),
-    ) as Vec3;
-    baseScaleRef.current = newScale;
-    dispatch({ type: 'SET_SCALE', scale: newScale });
-  };
-
-  if (!viroAvailable) {
-    return (
-      <View style={styles.container}>
-        <Ionicons name="warning-outline" size={64} color={Colors.warning} />
-        <Text style={styles.titleText}>AR Not Available</Text>
-        <Text style={styles.descText}>
-          AR features require a development build.{'\n'}
-          They are not supported in Expo Go.
-        </Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (cameraPermission === 'denied') {
-    return (
-      <View style={styles.container}>
-        <Ionicons name="camera-outline" size={64} color={Colors.danger} />
-        <Text style={styles.titleText}>Camera Permission Required</Text>
-        <Text style={styles.descText}>
-          AR needs camera access to work.{'\n'}
-          Please grant camera permission in your device settings.
-        </Text>
-        <TouchableOpacity
-          style={styles.startButton}
-          onPress={() => Linking.openSettings()}
-        >
-          <Ionicons name="settings-outline" size={22} color={Colors.white} />
-          <Text style={styles.startButtonText}>Open Settings</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (!sessionActive) {
+  // ── Choice Screen ──
+  if (mode === 'choice') {
     return (
       <View style={styles.container}>
         <Ionicons name="glasses-outline" size={64} color={Colors.primary} />
         <Text style={styles.titleText}>AR QA Inspector</Text>
         <Text style={styles.descText}>
-          Place the 3D model on your manufactured product{'\n'}
-          and walk around to inspect from all angles.
+          Overlay the 3D model on your real product{'\n'}
+          and walk around to inspect quality.
         </Text>
-        <View style={styles.stepsBox}>
-          <Text style={styles.stepBold}>1. Tap anywhere on the camera to place the model</Text>
-          <Text style={styles.stepText}>2. Drag to reposition · Pinch to resize</Text>
-          <Text style={styles.stepBold}>3. Tap LOCK to anchor the model</Text>
-          <Text style={styles.stepText}>4. Walk around — model stays rock-solid</Text>
-        </View>
-        <TouchableOpacity style={styles.startButton} onPress={requestCameraAndStart}>
-          <Ionicons name="play" size={22} color={Colors.white} />
-          <Text style={styles.startButtonText}>Start AR Session</Text>
+
+        {/* Primary: WebXR in Chrome */}
+        <TouchableOpacity style={styles.primaryButton} onPress={launchWebXR}>
+          <Ionicons name="navigate" size={22} color={Colors.white} />
+          <View>
+            <Text style={styles.primaryButtonText}>AR with SLAM Tracking</Text>
+            <Text style={styles.primaryButtonSub}>Opens in browser - walk around the object</Text>
+          </View>
         </TouchableOpacity>
+
+        {/* Secondary: In-app fallback */}
+        <TouchableOpacity style={styles.secondaryButton} onPress={startFallbackAR}>
+          <Ionicons name="phone-portrait-outline" size={22} color={Colors.primary} />
+          <View>
+            <Text style={styles.secondaryButtonText}>Quick AR Preview</Text>
+            <Text style={styles.secondaryButtonSub}>In-app camera overlay - no SLAM</Text>
+          </View>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Text style={styles.backButtonText}>Cancel</Text>
         </TouchableOpacity>
@@ -237,88 +144,44 @@ export function ARViewScreen() {
     );
   }
 
+  // ── Fallback WebView AR ──
   return (
     <View style={styles.arContainer}>
-      <ARErrorBoundary onError={() => { setSessionActive(false); }}>
-        <ViroARSceneNavigator
-          autofocus={true}
-          initialScene={{
-            scene: ARModelScene as any,
-          }}
-          viroAppProps={{
-            modelUri: __DEV__ ? 'http://192.168.1.108:9999/model.glb' : fileUrl, // TODO: remove test override
-            placed,
-            position: state.position,
-            scale: state.scale,
-            rotation: state.rotation,
-            locked: state.locked,
-            onPlaced: handlePlaced,
-            onDrag: handleDrag,
-            onPinch: handlePinch,
-            onRotate: handleRotate,
-            onModelStatus: setModelStatus,
-            onTrackingUpdated: setTracking,
-          }}
-          style={styles.arView}
-        />
-      </ARErrorBoundary>
+      <WebView
+        ref={webviewRef}
+        source={{ html: FALLBACK_AR_HTML, baseUrl: 'https://localhost' }}
+        style={styles.webviewOverlay}
+        originWhitelist={['*']}
+        javaScriptEnabled
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        mediaCapturePermissionGrantType="grant"
+        onMessage={onWebViewMessage}
+        onPermissionRequest={(event: any) => event.nativeEvent?.grant?.()}
+      />
 
-      {/* Tap overlay to place model */}
-      {!placed && (
-        <TouchableWithoutFeedback onPress={() => handlePlaced([0, -0.2, -1])}>
-          <View style={styles.tapOverlay} />
-        </TouchableWithoutFeedback>
+      {modelStatus === 'loaded' && (
+        <>
+          <TouchableOpacity
+            style={[styles.lockButton, isLocked ? styles.lockButtonLocked : styles.lockButtonUnlocked]}
+            onPress={toggleLock}
+          >
+            <Ionicons name={isLocked ? 'lock-open' : 'lock-closed'} size={22} color="#fff" />
+            <Text style={styles.lockButtonText}>{isLocked ? 'UNLOCK' : 'LOCK'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.xrayButton, isXray ? styles.xrayActive : styles.xrayInactive]}
+            onPress={toggleXray}
+          >
+            <Ionicons name="scan-outline" size={20} color="#fff" />
+            <Text style={styles.xrayText}>{isXray ? 'SOLID' : 'X-RAY'}</Text>
+          </TouchableOpacity>
+        </>
       )}
 
-      {/* Status bar */}
-      <View
-        style={[
-          styles.statusBar,
-          {
-            backgroundColor: !placed
-              ? 'rgba(100,100,100,0.85)'
-              : state.locked
-                ? 'rgba(46,125,50,0.9)'
-                : tracking === 'normal'
-                  ? 'rgba(21,101,192,0.85)'
-                  : 'rgba(100,100,100,0.85)',
-          },
-        ]}
-      >
-        <Ionicons
-          name={!placed ? 'hand-left' : state.locked ? 'lock-closed' : tracking === 'normal' ? 'move' : 'hourglass'}
-          size={16}
-          color="#fff"
-        />
-        <Text style={styles.statusBarText}>
-          {!placed
-            ? 'Tap anywhere to place the model'
-            : state.locked
-              ? tracking === 'limited'
-                ? 'LOCKED — Tracking limited! Move slowly'
-                : 'LOCKED — Walk around to inspect all sides'
-              : modelStatus === 'loaded'
-                ? 'Drag · Pinch · Twist to position, then LOCK'
-                : modelStatus === 'error'
-                  ? 'Failed to load model'
-                  : 'Loading model...'}
-        </Text>
-      </View>
-
-      {/* LOCK / UNLOCK */}
-      {placed && modelStatus === 'loaded' && (
-        <TouchableOpacity
-          style={[styles.lockButton, state.locked ? styles.lockButtonLocked : styles.lockButtonUnlocked]}
-          onPress={() => dispatch({ type: 'TOGGLE_LOCK' })}
-        >
-          <Ionicons name={state.locked ? 'lock-open' : 'lock-closed'} size={24} color="#fff" />
-          <Text style={styles.lockButtonText}>{state.locked ? 'UNLOCK' : 'LOCK MODEL'}</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Side controls */}
       <View style={styles.arControls}>
-        {!state.locked && (
+        {!isLocked && (
           <>
             <TouchableOpacity style={styles.arControlBtn} onPress={() => adjustScale(1.3)}>
               <Ionicons name="add" size={24} color={Colors.white} />
@@ -326,29 +189,16 @@ export function ARViewScreen() {
             <TouchableOpacity style={styles.arControlBtn} onPress={() => adjustScale(0.7)}>
               <Ionicons name="remove" size={24} color={Colors.white} />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.arControlBtn, { backgroundColor: 'rgba(21,101,192,0.8)' }]}
-              onPress={() => {
-                baseScaleRef.current = DEFAULT_SCALE;
-                baseRotationRef.current = DEFAULT_ROTATION;
-                setPlaced(false);
-                setModelStatus('idle');
-                dispatch({ type: 'RESET' });
-              }}
-            >
-              <Ionicons name="refresh" size={24} color={Colors.white} />
-            </TouchableOpacity>
           </>
         )}
         <TouchableOpacity
           style={[styles.arControlBtn, { backgroundColor: Colors.danger }]}
-          onPress={() => { setSessionActive(false); navigation.goBack(); }}
+          onPress={() => navigation.goBack()}
         >
           <Ionicons name="close" size={24} color={Colors.white} />
         </TouchableOpacity>
       </View>
 
-      {/* Back */}
       <TouchableOpacity style={styles.arBackBtn} onPress={() => navigation.goBack()}>
         <Ionicons name="arrow-back" size={22} color="#fff" />
       </TouchableOpacity>
@@ -356,45 +206,200 @@ export function ARViewScreen() {
   );
 }
 
+// ── Fallback HTML (camera + Three.js, no SLAM) ──
+const FALLBACK_AR_HTML = `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+*{margin:0;padding:0;overflow:hidden}
+body{background:#000;width:100vw;height:100vh}
+#cam{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0}
+canvas{position:absolute;top:0;left:0;width:100%!important;height:100%!important;z-index:1}
+#status{position:absolute;top:20px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.7);color:#fff;padding:10px 20px;border-radius:20px;
+  font-family:sans-serif;font-size:14px;z-index:10;text-align:center;transition:all 0.3s}
+</style>
+</head><body>
+<video id="cam" autoplay playsinline muted></video>
+<div id="status">Loading model...</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const status = document.getElementById('status');
+let scene, camera, renderer, model;
+let scale = 1, isDragging = false;
+let lastTouchX = 0, lastTouchY = 0, modelRotX = 0, modelRotY = 0;
+let pinchStartDist = 0, pinchStartScale = 1;
+let edgeLines = [], originalMaterials = new Map();
+window.model = null; window.scale = 1; window._locked = false;
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    document.getElementById('cam').srcObject = stream;
+  } catch(e) {
+    document.body.style.background = 'linear-gradient(135deg,#1a1a2e,#0f3460)';
+  }
+}
+
+function init() {
+  startCamera();
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+  camera.position.set(0, 0.5, 2);
+  camera.lookAt(0, 0, 0);
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setClearColor(0x000000, 0);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  document.body.appendChild(renderer.domElement);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const d1 = new THREE.DirectionalLight(0xffffff, 1.0); d1.position.set(2,4,3); scene.add(d1);
+  const d2 = new THREE.DirectionalLight(0x88aaff, 0.4); d2.position.set(-3,1,-2); scene.add(d2);
+  renderer.domElement.addEventListener('touchstart', onTS, { passive: false });
+  renderer.domElement.addEventListener('touchmove', onTM, { passive: false });
+  renderer.domElement.addEventListener('touchend', () => { isDragging = false; }, { passive: false });
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+  (function anim() { requestAnimationFrame(anim); renderer.render(scene, camera); })();
+}
+
+function onTS(e) {
+  e.preventDefault(); if (window._locked) return;
+  if (e.touches.length === 1) { isDragging = true; lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY; }
+  else if (e.touches.length === 2) { isDragging = false; pinchStartDist = getTD(e.touches); pinchStartScale = scale; }
+}
+function onTM(e) {
+  e.preventDefault(); if (window._locked) return;
+  if (e.touches.length === 1 && isDragging && model) {
+    modelRotY += (e.touches[0].clientX - lastTouchX) * 0.01;
+    modelRotX += (e.touches[0].clientY - lastTouchY) * 0.01;
+    modelRotX = Math.max(-Math.PI/3, Math.min(Math.PI/3, modelRotX));
+    model.rotation.y = modelRotY; model.rotation.x = modelRotX;
+    lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
+  } else if (e.touches.length === 2 && model) {
+    scale = Math.max(0.1, Math.min(5, pinchStartScale * (getTD(e.touches) / pinchStartDist)));
+    model.scale.set(scale, scale, scale); window.scale = scale;
+  }
+}
+function getTD(t) { return Math.sqrt((t[0].clientX-t[1].clientX)**2 + (t[0].clientY-t[1].clientY)**2); }
+
+window.setLocked = function(v) {
+  window._locked = v; isDragging = false;
+  status.textContent = v ? 'LOCKED \\u2014 Model anchored' : 'Drag to position \\u00b7 Lock to anchor';
+  status.style.background = v ? 'rgba(46,125,50,0.85)' : 'rgba(0,0,0,0.7)';
+  status.style.opacity = '1';
+};
+
+window.setXrayMode = function(on) {
+  if (!model) return;
+  edgeLines.forEach(l => { l.parent?.remove(l); l.geometry.dispose(); l.material.dispose(); });
+  edgeLines = [];
+  model.traverse(c => {
+    if (!c.isMesh) return;
+    if (on) {
+      if (!originalMaterials.has(c.uuid)) originalMaterials.set(c.uuid, c.material.clone());
+      c.material = new THREE.MeshStandardMaterial({ color:0x1e88e5, transparent:true, opacity:0.06, depthWrite:false, side:THREE.DoubleSide, roughness:0.8 });
+      c.renderOrder = 0;
+      const edges = new THREE.EdgesGeometry(c.geometry, 25);
+      const ls = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x64b5f6, opacity:1, transparent:true }));
+      ls.renderOrder = 1; c.add(ls); edgeLines.push(ls);
+    } else {
+      const o = originalMaterials.get(c.uuid); if (o) c.material = o.clone(); c.renderOrder = 0;
+    }
+  });
+};
+
+window._modelChunks = []; window._totalChunks = 0;
+window.loadModelFromBase64 = function(b64) {
+  try {
+    status.textContent = 'Parsing model...';
+    const bin = atob(b64); const buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    new GLTFLoader().parse(buf.buffer, '', (gltf) => {
+      model = gltf.scene; window.model = model;
+      const box = new THREE.Box3().setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const s = 1.5 / Math.max(size.x, size.y, size.z);
+      model.scale.set(s, s, s); scale = s; window.scale = s;
+      model.position.sub(center.multiplyScalar(s));
+      model.traverse(c => { if (c.isMesh) originalMaterials.set(c.uuid, c.material.clone()); });
+      scene.add(model);
+      status.textContent = 'Drag to position \\u00b7 Lock to anchor';
+      setTimeout(() => { status.style.opacity = '0.4'; }, 3000);
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'loaded'}));
+    }, (err) => {
+      status.textContent = 'Error: ' + (err.message || err);
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'error'}));
+    });
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'error'}));
+  }
+};
+window.resetModel = function() {
+  if (!model) return;
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  scale = 1.5 / Math.max(size.x, size.y, size.z);
+  window.scale = scale; model.scale.set(scale,scale,scale);
+  modelRotX = 0; modelRotY = 0; model.rotation.set(0,0,0);
+};
+init();
+window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
+</script></body></html>`;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1, backgroundColor: Colors.background,
     justifyContent: 'center', alignItems: 'center', padding: 32,
   },
   titleText: { fontSize: 24, fontWeight: '700', color: Colors.text, marginTop: 16 },
-  descText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginTop: 12, lineHeight: 20 },
-  stepsBox: {
-    marginTop: 20, backgroundColor: Colors.white, borderRadius: 12, padding: 16, width: '100%',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-  },
-  stepText: { fontSize: 14, color: Colors.text, paddingVertical: 6, paddingLeft: 4 },
-  stepBold: { fontSize: 14, color: Colors.primary, paddingVertical: 6, paddingLeft: 4, fontWeight: '700' },
-  startButton: {
+  descText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginTop: 12, lineHeight: 20, marginBottom: 24 },
+  primaryButton: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary,
-    paddingHorizontal: 28, paddingVertical: 14, borderRadius: 10, marginTop: 24, gap: 8,
+    paddingHorizontal: 24, paddingVertical: 16, borderRadius: 12, width: '100%', gap: 14,
   },
-  startButtonText: { color: Colors.white, fontSize: 16, fontWeight: '600' },
-  backButton: { marginTop: 16, padding: 12 },
+  primaryButtonText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+  primaryButtonSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
+  secondaryButton: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white,
+    paddingHorizontal: 24, paddingVertical: 16, borderRadius: 12, width: '100%', gap: 14,
+    marginTop: 12, borderWidth: 1, borderColor: Colors.border,
+  },
+  secondaryButtonText: { color: Colors.text, fontSize: 16, fontWeight: '700' },
+  secondaryButtonSub: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
+  backButton: { marginTop: 20, padding: 12 },
   backButtonText: { color: Colors.primary, fontSize: 15, fontWeight: '600' },
-  tapOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-  },
   arContainer: { flex: 1, backgroundColor: '#000' },
-  arView: { flex: 1 },
-  statusBar: {
-    position: 'absolute', top: 100, left: 16, right: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, paddingHorizontal: 16, borderRadius: 25,
-  },
-  statusBarText: { color: '#fff', fontSize: 12, fontWeight: '600', flexShrink: 1 },
+  webviewOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
   lockButton: {
     position: 'absolute', bottom: 30, left: 16, right: 80,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    paddingVertical: 16, borderRadius: 14,
+    paddingVertical: 14, borderRadius: 14,
   },
   lockButtonUnlocked: { backgroundColor: 'rgba(21,101,192,0.9)' },
   lockButtonLocked: { backgroundColor: 'rgba(198,40,40,0.9)' },
-  lockButtonText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 1 },
+  lockButtonText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 1 },
+  xrayButton: {
+    position: 'absolute', bottom: 90, left: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10,
+  },
+  xrayInactive: { backgroundColor: 'rgba(100,100,100,0.8)' },
+  xrayActive: { backgroundColor: 'rgba(0,150,136,0.9)' },
+  xrayText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   arControls: { position: 'absolute', right: 16, bottom: 100, gap: 12 },
   arControlBtn: {
     width: 48, height: 48, borderRadius: 24,
