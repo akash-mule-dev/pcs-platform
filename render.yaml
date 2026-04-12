@@ -1,0 +1,36 @@
+databases:
+  - name: pcs-db
+    plan: free
+    databaseName: pcs_db
+    user: pcs_user
+
+services:
+  - type: web
+    name: pcs-backend
+    plan: free
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/main.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pcs-db
+          property: connectionString
+      - key: DB_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://frontend-mu-three-23.vercel.app
+      - key: STORAGE_TYPE
+        value: local
+      - key: THROTTLE_TTL
+        value: "60000"
+      - key: THROTTLE_LIMIT
+        value: "100"

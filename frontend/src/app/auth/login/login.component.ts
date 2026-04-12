@@ -335,6 +335,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
       padding: 20px 28px;
       z-index: 2;
       position: relative;
+      flex-shrink: 0;
     }
     .scan-header h2 {
       font-family: 'Space Grotesk', monospace;
@@ -368,6 +369,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
     /* ===== 3D Viewer ===== */
     .viewer-wrapper {
       flex: 1;
+      min-height: 0;
       position: relative;
       overflow: hidden;
     }
@@ -395,6 +397,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
       z-index: 2;
       position: relative;
       justify-content: flex-end;
+      flex-shrink: 0;
     }
     .metric {
       display: flex;
@@ -511,7 +514,7 @@ export class LoginComponent implements AfterViewInit, OnDestroy {
     this.updateSceneTheme();
 
     this.camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 1000);
-    this.camera.position.set(4, 1.5, 4);
+    this.camera.position.set(5, 2, 5);
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
@@ -584,7 +587,7 @@ export class LoginComponent implements AfterViewInit, OnDestroy {
       undefined,
       () => {
         // Model failed to load — show a fallback wireframe torus knot
-        const geometry = new THREE.TorusKnotGeometry(1.2, 0.4, 128, 32);
+        const geometry = new THREE.TorusKnotGeometry(1.05, 0.35, 128, 32);
         const wireframe = new THREE.WireframeGeometry(geometry);
         const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({
           color: 0x4b8eff,

@@ -25,7 +25,7 @@ $pcs-warn: mat.define-palette(mat.$red-palette);
 $pcs-theme: mat.define-light-theme((
   color: (primary: $pcs-primary, accent: $pcs-accent, warn: $pcs-warn),
   typography: mat.define-typography-config(
-    $font-family: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
+    $font-family: '"Space Grotesk", "Inter", "Roboto", sans-serif',
   ),
   density: 0,
 ));
@@ -270,7 +270,7 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: 'Inter', 'Roboto', 'Helvetica Neue', sans-serif;
+  font-family: 'Space Grotesk', 'Inter', 'Roboto', sans-serif;
   background: var(--clay-bg);
   color: var(--clay-text);
   -webkit-font-smoothing: antialiased;
@@ -283,15 +283,22 @@ a {
   color: var(--clay-primary);
 }
 
+// Dual-font strategy: Space Grotesk for headings/labels, Inter for body
 h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
   color: var(--clay-text);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-// Monospace for technical data (Space Grotesk)
+// Technical / monospace data (timestamps, serial numbers, coordinates)
 .font-mono, .font-technical {
   font-family: 'Space Grotesk', 'Roboto Mono', monospace;
+}
+
+// Labels, metadata, small caps
+label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
 }
 
 // ============================================
@@ -350,6 +357,7 @@ h1, h2, h3, h4, h5, h6 {
 .mat-mdc-raised-button,
 .mat-mdc-flat-button,
 .mat-mdc-unelevated-button {
+  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
   border-radius: var(--clay-radius-sm) !important;
   font-weight: 600 !important;
   letter-spacing: 0.02em;
@@ -552,6 +560,16 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+// Card title typography (both themes)
+.mat-mdc-card-title {
+  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+}
+
+// Dialog title typography
+.mat-mdc-dialog-title, .mdc-dialog__title {
+  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+}
+
 .mat-mdc-form-field-subscript-wrapper {
   margin-bottom: 4px;
 }
@@ -601,6 +619,7 @@ h1, h2, h3, h4, h5, h6 {
 
 // Toolbar override
 .mat-toolbar.mat-primary {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
   background: var(--clay-surface) !important;
   color: var(--clay-text) !important;
   box-shadow: var(--clay-shadow-soft) !important;
@@ -626,6 +645,7 @@ h1, h2, h3, h4, h5, h6 {
 
 // Paginator
 .mat-mdc-paginator {
+  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
   background: transparent !important;
   color: var(--clay-text-secondary) !important;
 }
@@ -639,6 +659,11 @@ h1, h2, h3, h4, h5, h6 {
   .mat-mdc-tab-header {
     background: var(--clay-bg-warm);
     border-radius: var(--clay-radius-sm) var(--clay-radius-sm) 0 0;
+  }
+  .mat-mdc-tab {
+    font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em;
   }
 }
 
