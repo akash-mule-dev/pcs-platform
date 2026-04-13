@@ -1,3 +1,3 @@
-const { handler } = require('../dist/serverless.js');
+const mod = require('../dist/serverless.js');
 
-module.exports = handler;
+module.exports = mod.default || mod;

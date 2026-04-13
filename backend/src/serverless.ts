@@ -1,16 +1,18 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import serverlessExpress from '@codegenie/serverless-express';
+import { ExpressAdapter } from '@nestjs/platform-express';
 import helmet from 'helmet';
+import express from 'express';
 import { AppModule } from './app.module.js';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter.js';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor.js';
 
-let cachedHandler: any;
+const server = express();
+let isReady = false;
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
     logger: ['error', 'warn', 'log'],
   });
 
@@ -36,14 +38,14 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
 
   await app.init();
-
-  const expressApp = app.getHttpAdapter().getInstance();
-  return serverlessExpress({ app: expressApp });
+  isReady = true;
 }
 
-export const handler = async (event: any, context: any, callback: any) => {
-  if (!cachedHandler) {
-    cachedHandler = await bootstrap();
+const bootstrapPromise = bootstrap();
+
+export default async function handler(req: any, res: any) {
+  if (!isReady) {
+    await bootstrapPromise;
   }
-  return cachedHandler(event, context, callback);
-};
+  server(req, res);
+}
