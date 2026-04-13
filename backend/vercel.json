@@ -1,0 +1,14 @@
+{
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build && rm -rf node_modules/opencascade.js node_modules/web-ifc node_modules/mikktspace node_modules/three node_modules/@types/three node_modules/@gltf-transform node_modules/typescript node_modules/@img node_modules/swagger-ui-dist",
+  "outputDirectory": ".",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30,
+      "includeFiles": "dist/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ]
+}

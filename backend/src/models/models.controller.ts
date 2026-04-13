@@ -11,8 +11,18 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
-import { NodeIO } from '@gltf-transform/core';
-import { normals } from '@gltf-transform/functions';
+// Lazy-loaded: these are heavy WASM packages only needed for AR file processing
+let _NodeIO: any;
+let _normals: any;
+async function getGltfTransform() {
+  if (!_NodeIO) {
+    const core = await import('@gltf-transform/core');
+    const functions = await import('@gltf-transform/functions');
+    _NodeIO = core.NodeIO;
+    _normals = functions.normals;
+  }
+  return { NodeIO: _NodeIO, normals: _normals };
+}
 import { ModelsService } from './models.service.js';
 import { CreateModelDto } from './dto/create-model.dto.js';
 import { UpdateModelDto } from './dto/update-model.dto.js';
@@ -88,6 +98,7 @@ export class ModelsController {
       }
       const glbBuffer = Buffer.concat(chunks);
 
+      const { NodeIO, normals } = await getGltfTransform();
       const io = new NodeIO();
       const doc = await io.readBinary(new Uint8Array(glbBuffer));
       await doc.transform(normals());
