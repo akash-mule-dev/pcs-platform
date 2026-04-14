@@ -43,9 +43,11 @@ async function bootstrap() {
 
 const bootstrapPromise = bootstrap();
 
-export default async function handler(req: any, res: any) {
+async function handler(req: any, res: any) {
   if (!isReady) {
     await bootstrapPromise;
   }
   server(req, res);
 }
+
+module.exports = handler;

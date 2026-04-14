@@ -7,6 +7,10 @@
 module.exports = function (options) {
   return {
     ...options,
+    output: {
+      ...options.output,
+      libraryTarget: 'commonjs2',
+    },
     node: {
       __dirname: false,
       __filename: false,

@@ -3,5 +3,4 @@ if (!process.argv[1]) {
   process.argv[1] = __filename;
 }
 
-const mod = require('../dist/serverless.js');
-module.exports = mod.default || mod;
+module.exports = require('../dist/serverless.js');
