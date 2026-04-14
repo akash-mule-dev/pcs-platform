@@ -12,8 +12,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
-import { AuthService } from '../../core/services/auth.service';
-import { canManage } from '../../core/permissions';
+import { PermissionsService } from '../../core/services/permissions.service';
 import { WorkOrderFormComponent } from '../work-order-form/work-order-form.component';
 
 @Component({
@@ -244,8 +243,8 @@ export class WorkOrderListComponent implements OnInit, AfterViewInit {
 
   canEdit = false;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private router: Router, private auth: AuthService) {
-    this.canEdit = canManage('work-orders', this.auth.userRole);
+  constructor(private api: ApiService, private dialog: MatDialog, private router: Router, private permissions: PermissionsService) {
+    this.canEdit = this.permissions.canManage('work-orders');
   }
 
   ngOnInit(): void { this.load(); }

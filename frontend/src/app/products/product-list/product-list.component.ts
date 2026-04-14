@@ -12,8 +12,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
-import { AuthService } from '../../core/services/auth.service';
-import { canManage } from '../../core/permissions';
+import { PermissionsService } from '../../core/services/permissions.service';
 import { ProductFormComponent } from '../product-form/product-form.component';
 import { ProductViewerComponent } from '../product-viewer/product-viewer.component';
 import { ArViewerDialogComponent } from '../ar-viewer-dialog/ar-viewer-dialog.component';
@@ -269,8 +268,8 @@ export class ProductListComponent implements OnInit, AfterViewInit {
 
   canEdit = false;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private auth: AuthService) {
-    this.canEdit = canManage('products', this.auth.userRole);
+  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private permissions: PermissionsService) {
+    this.canEdit = this.permissions.canManage('products');
   }
 
   ngOnInit(): void { this.load(); }

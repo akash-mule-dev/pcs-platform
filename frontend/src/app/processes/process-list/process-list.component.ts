@@ -11,8 +11,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
-import { AuthService } from '../../core/services/auth.service';
-import { canManage } from '../../core/permissions';
+import { PermissionsService } from '../../core/services/permissions.service';
 import { ProcessFormComponent } from '../process-form/process-form.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
@@ -217,8 +216,8 @@ export class ProcessListComponent implements OnInit, AfterViewInit {
 
   canEdit = false;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private auth: AuthService) {
-    this.canEdit = canManage('processes', this.auth.userRole);
+  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private permissions: PermissionsService) {
+    this.canEdit = this.permissions.canManage('processes');
   }
 
   ngOnInit(): void { this.load(); }

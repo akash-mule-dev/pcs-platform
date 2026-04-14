@@ -17,7 +17,7 @@ import { NotificationService } from '../core/services/notification.service';
 import { SearchService, SearchResults } from '../core/services/search.service';
 import { ThemeService } from '../core/services/theme.service';
 import { BUILD_INFO } from '../../build-info';
-import { canView } from '../core/permissions';
+import { PermissionsService } from '../core/services/permissions.service';
 
 interface NavItem {
   label: string;
@@ -422,7 +422,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   ];
 
   get visibleNavItems() {
-    return this.navItems.filter(item => canView(item.feature, this.auth.userRole));
+    return this.navItems.filter(item => this.permissions.canView(item.feature));
   }
 
   constructor(
@@ -431,6 +431,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     private searchService: SearchService,
     private router: Router,
     public themeService: ThemeService,
+    private permissions: PermissionsService,
   ) {}
 
   ngOnInit(): void {

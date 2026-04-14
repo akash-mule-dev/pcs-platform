@@ -1,7 +1,7 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { AuthService } from '../services/auth.service';
-import { canView } from '../permissions';
+import { PermissionsService } from '../services/permissions.service';
 
 /** Guard by explicit role list */
 export const roleGuard = (...allowedRoles: string[]): CanActivateFn => {
@@ -14,12 +14,12 @@ export const roleGuard = (...allowedRoles: string[]): CanActivateFn => {
   };
 };
 
-/** Guard by feature name — reads allowed roles from the central permissions config */
+/** Guard by feature name — reads allowed roles from the backend permissions config */
 export const featureGuard = (feature: string): CanActivateFn => {
   return () => {
-    const auth = inject(AuthService);
+    const permissions = inject(PermissionsService);
     const router = inject(Router);
-    if (canView(feature, auth.userRole)) return true;
+    if (permissions.canView(feature)) return true;
     router.navigate(['/']);
     return false;
   };

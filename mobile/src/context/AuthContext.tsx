@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User } from '../types';
 import { authService } from '../services/auth.service';
+import { loadPermissions } from '../config/permissions';
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -29,13 +30,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(u);
     });
 
-    authService.init().finally(() => setIsLoading(false));
+    authService.init()
+      .then(() => { if (authService.isAuthenticated) return loadPermissions(); })
+      .finally(() => setIsLoading(false));
 
     return unsubscribe;
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     await authService.login(email, password);
+    await loadPermissions();
   }, []);
 
   const logout = useCallback(async () => {

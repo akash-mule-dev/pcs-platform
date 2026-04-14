@@ -13,8 +13,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
 import { LoadingService } from '../../core/services/loading.service';
-import { AuthService } from '../../core/services/auth.service';
-import { canManage } from '../../core/permissions';
+import { PermissionsService } from '../../core/services/permissions.service';
 import { UserFormComponent } from '../user-form/user-form.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
@@ -124,8 +123,8 @@ export class UserListComponent implements OnInit, AfterViewInit {
   canEdit = false;
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private loading: LoadingService, private auth: AuthService) {
-    this.canEdit = canManage('users', this.auth.userRole);
+  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private loading: LoadingService, private permissions: PermissionsService) {
+    this.canEdit = this.permissions.canManage('users');
     this.columns = this.canEdit
       ? ['name', 'mobileNo', 'employeeId', 'role', 'status', 'actions']
       : ['name', 'mobileNo', 'employeeId', 'role', 'status'];

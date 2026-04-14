@@ -13,8 +13,7 @@ import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { HttpEventType } from '@angular/common/http';
 import { CoordinationApiService, CoordinationPackage } from '../core/services/coordination.service';
-import { AuthService } from '../core/services/auth.service';
-import { canManage } from '../core/permissions';
+import { PermissionsService } from '../core/services/permissions.service';
 import { io, Socket } from 'socket.io-client';
 import { environment } from '../../environments/environment';
 
@@ -232,9 +231,9 @@ export class CoordinationListComponent implements OnInit {
   constructor(
     private api: CoordinationApiService,
     private snackBar: MatSnackBar,
-    private auth: AuthService,
+    private permissions: PermissionsService,
   ) {
-    this.canEdit = canManage('coordination', this.auth.userRole);
+    this.canEdit = this.permissions.canManage('coordination');
   }
 
   ngOnInit(): void {
