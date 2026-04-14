@@ -11,4 +11,11 @@ rm -rf node_modules/opencascade.js \
        node_modules/@img \
        node_modules/swagger-ui-dist \
        node_modules/@azure \
-       node_modules/typescript
+       node_modules/typescript \
+       node_modules/@aws-sdk \
+       node_modules/@smithy \
+       node_modules/@typespec \
+       node_modules/libphonenumber-js
+
+echo "=== Post-prune node_modules size ==="
+du -sm node_modules || true
