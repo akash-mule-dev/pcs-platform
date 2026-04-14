@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "vercel-build": "nest build vercel && npm prune --omit=dev && rm -rf node_modules/opencascade.js node_modules/web-ifc node_modules/mikktspace node_modules/three node_modules/@types node_modules/@gltf-transform node_modules/@img node_modules/swagger-ui-dist node_modules/@azure node_modules/typescript node_modules/@aws-sdk node_modules/@smithy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
