@@ -17,7 +17,7 @@ module.exports = function (options) {
     },
     optimization: {
       splitChunks: false,
-      minimize: false,
+      minimize: true,
     },
     resolve: {
       ...options.resolve,
