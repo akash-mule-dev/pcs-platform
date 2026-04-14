@@ -39,12 +39,13 @@ async function bootstrap() {
 
   await app.init();
   isReady = true;
+  console.log('NestJS bootstrap complete');
 }
 
 let bootstrapError: any = null;
 const bootstrapPromise = bootstrap().catch(err => {
   bootstrapError = err;
-  console.error('NestJS bootstrap failed:', err);
+  console.error('NestJS bootstrap failed:', err.message);
 });
 
 async function handler(req: any, res: any) {

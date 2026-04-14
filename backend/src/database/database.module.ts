@@ -20,6 +20,8 @@ const connectionConfig = databaseUrl
       database: process.env.DB_NAME || 'pcs_db',
     };
 
+const connectTimeoutMs = parseInt(process.env.DB_CONNECT_TIMEOUT || '8000', 10);
+
 if (!isProduction) {
   logger.warn('TypeORM synchronize is ON — never use this in production. Use migrations instead.');
 }
@@ -30,8 +32,14 @@ if (!isProduction) {
       ...connectionConfig,
       autoLoadEntities: true,
       synchronize: !isProduction,
-      migrationsRun: isProduction,
+      migrationsRun: false,
       migrations: isProduction ? ['dist/database/migrations/*.js'] : [],
+      extra: {
+        connectionTimeoutMillis: connectTimeoutMs,
+        query_timeout: 10000,
+      },
+      retryAttempts: 2,
+      retryDelay: 1000,
     }),
   ],
 })
