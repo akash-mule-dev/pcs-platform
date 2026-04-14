@@ -1,11 +1,11 @@
 // ── Auth ──
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
+  mobileNo: string;
   firstName: string;
   lastName: string;
   employeeId: string;
-  badgeId: string | null;
   role: { id: string; name: string };
   isActive: boolean;
 }

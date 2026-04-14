@@ -23,6 +23,7 @@ const STAGING_DIR = path.join(os.tmpdir(), 'pcs-coordination-staging');
 @ApiTags('Coordination Packages')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin', 'manager', 'supervisor')
 @Controller('api/coordination')
 export class CoordinationController {
   constructor(private readonly service: CoordinationService) {}

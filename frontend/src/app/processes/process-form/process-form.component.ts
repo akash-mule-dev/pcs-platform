@@ -88,29 +88,8 @@ import { MatSnackBar } from '@angular/material/snack-bar';
     </div>
   `,
   styles: [`
-    .dialog-shell { padding: 4px; }
-
-    .dialog-header { margin-bottom: 20px; }
-    .dialog-header h2 {
-      margin: 0; font-size: 18px; font-weight: 700;
-      color: var(--clay-text); letter-spacing: -0.01em;
-    }
-    .dialog-subtitle {
-      margin: 4px 0 0; font-size: 12px; color: var(--clay-text-muted);
-    }
-
-    .dialog-body { display: flex; flex-direction: column; gap: 4px; }
-
-    .full-width { width: 100%; }
-
-    .hint-text {
-      color: var(--clay-text-muted); font-size: 12px; margin: -4px 0 8px;
-    }
-
-    /* Stages */
     .stages-section {
-      margin-top: 8px;
-      padding-top: 16px;
+      margin-top: 8px; padding-top: 16px;
       border-top: 1px solid var(--clay-border);
     }
     .stages-header {
@@ -139,49 +118,6 @@ import { MatSnackBar } from '@angular/material/snack-bar';
     }
     .stage-name-field { flex: 1; }
     .stage-time-field { width: 120px; }
-
-    /* Buttons */
-    .dialog-footer {
-      display: flex; justify-content: flex-end; gap: 8px;
-      margin-top: 20px; padding-top: 16px;
-      border-top: 1px solid var(--clay-border);
-    }
-    .btn-primary {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--clay-primary); color: #fff;
-      border: none; border-radius: var(--clay-radius-sm);
-      padding: 10px 24px; font-size: 13px; font-weight: 600;
-      cursor: pointer; transition: all 0.2s; font-family: inherit;
-    }
-    .btn-primary:hover { filter: brightness(1.1); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
-
-    .btn-ghost {
-      background: transparent; color: var(--clay-text-secondary);
-      border: none; border-radius: var(--clay-radius-sm);
-      padding: 10px 20px; font-size: 13px; font-weight: 500;
-      cursor: pointer; transition: all 0.2s; font-family: inherit;
-    }
-    .btn-ghost:hover { background: var(--clay-surface-hover); }
-
-    .btn-outline {
-      display: inline-flex; align-items: center; gap: 4px;
-      background: transparent; color: var(--clay-primary);
-      border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm);
-      padding: 6px 14px; font-size: 12px; font-weight: 600;
-      cursor: pointer; transition: all 0.2s; font-family: inherit;
-    }
-    .btn-outline:hover { border-color: var(--clay-primary); background: var(--info-bg); }
-    .btn-outline mat-icon { font-size: 16px; width: 16px; height: 16px; }
-
-    .icon-btn {
-      width: 32px; height: 32px; border-radius: var(--clay-radius-xs);
-      border: none; background: transparent; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      color: var(--clay-text-muted); transition: all 0.15s;
-    }
-    .icon-btn-danger:hover { color: var(--danger); background: var(--danger-bg); }
-    .icon-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
   `]
 })
 export class ProcessFormComponent implements OnInit {

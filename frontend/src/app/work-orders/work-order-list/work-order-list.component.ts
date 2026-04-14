@@ -12,6 +12,8 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
+import { canManage } from '../../core/permissions';
 import { WorkOrderFormComponent } from '../work-order-form/work-order-form.component';
 
 @Component({
@@ -26,10 +28,12 @@ import { WorkOrderFormComponent } from '../work-order-form/work-order-form.compo
           <h1 class="page-title">Work Orders</h1>
           <p class="page-subtitle">Track and manage production orders across the floor</p>
         </div>
-        <button class="btn-primary" (click)="openForm()">
-          <mat-icon>add</mat-icon>
-          <span>New Work Order</span>
-        </button>
+        @if (canEdit) {
+          <button class="btn-primary" (click)="openForm()">
+            <mat-icon>add</mat-icon>
+            <span>New Work Order</span>
+          </button>
+        }
       </div>
 
       <!-- Filters -->
@@ -238,7 +242,11 @@ export class WorkOrderListComponent implements OnInit, AfterViewInit {
   priorityFilter = '';
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private router: Router) {}
+  canEdit = false;
+
+  constructor(private api: ApiService, private dialog: MatDialog, private router: Router, private auth: AuthService) {
+    this.canEdit = canManage('work-orders', this.auth.userRole);
+  }
 
   ngOnInit(): void { this.load(); }
 

@@ -19,8 +19,11 @@ export class User {
   @Column({ name: 'employee_id', type: 'varchar', length: 50, unique: true })
   employeeId: string;
 
-  @Column({ type: 'varchar', length: 255, unique: true })
-  email: string;
+  @Column({ type: 'varchar', length: 255, unique: true, nullable: true })
+  email: string | null;
+
+  @Column({ name: 'mobile_no', type: 'varchar', length: 15 })
+  mobileNo: string;
 
   @Column({ name: 'password_hash', type: 'varchar', length: 255 })
   @Exclude()
@@ -31,9 +34,6 @@ export class User {
 
   @Column({ name: 'last_name', type: 'varchar', length: 100 })
   lastName: string;
-
-  @Column({ name: 'badge_id', type: 'varchar', length: 50, unique: true, nullable: true })
-  badgeId: string | null;
 
   @Column({ name: 'role_id', type: 'uuid' })
   roleId: string;

@@ -11,6 +11,8 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
+import { canManage } from '../../core/permissions';
 import { ProcessFormComponent } from '../process-form/process-form.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
@@ -26,10 +28,12 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
           <h1 class="page-title">Processes</h1>
           <p class="page-subtitle">Define manufacturing workflows and stage sequences</p>
         </div>
-        <button class="btn-primary" (click)="openForm()">
-          <mat-icon>add</mat-icon>
-          <span>Add Process</span>
-        </button>
+        @if (canEdit) {
+          <button class="btn-primary" (click)="openForm()">
+            <mat-icon>add</mat-icon>
+            <span>Add Process</span>
+          </button>
+        }
       </div>
 
       <!-- Toolbar -->
@@ -77,14 +81,16 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
           <ng-container matColumnDef="actions">
             <th mat-header-cell *matHeaderCellDef></th>
             <td mat-cell *matCellDef="let p">
-              <div class="row-actions">
-                <button class="icon-btn" (click)="openForm(p); $event.stopPropagation()" matTooltip="Edit">
-                  <mat-icon>edit</mat-icon>
-                </button>
-                <button class="icon-btn icon-btn-danger" (click)="deleteProcess(p); $event.stopPropagation()" matTooltip="Delete">
-                  <mat-icon>delete_outline</mat-icon>
-                </button>
-              </div>
+              @if (canEdit) {
+                <div class="row-actions">
+                  <button class="icon-btn" (click)="openForm(p); $event.stopPropagation()" matTooltip="Edit">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button class="icon-btn icon-btn-danger" (click)="deleteProcess(p); $event.stopPropagation()" matTooltip="Delete">
+                    <mat-icon>delete_outline</mat-icon>
+                  </button>
+                </div>
+              }
             </td>
           </ng-container>
           <tr mat-header-row *matHeaderRowDef="columns"></tr>
@@ -209,7 +215,11 @@ export class ProcessListComponent implements OnInit, AfterViewInit {
   searchTerm = '';
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar) {}
+  canEdit = false;
+
+  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private auth: AuthService) {
+    this.canEdit = canManage('processes', this.auth.userRole);
+  }
 
   ngOnInit(): void { this.load(); }
 

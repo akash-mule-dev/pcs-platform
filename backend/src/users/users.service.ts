@@ -43,18 +43,18 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto): Promise<User> {
-    const byEmail = await this.userRepo.findOne({ where: { email: dto.email } });
-    if (byEmail) throw new ConflictException('A user with this email already exists');
-    const byEmpId = await this.userRepo.findOne({ where: { employeeId: dto.employeeId } });
-    if (byEmpId) throw new ConflictException('A user with this employee ID already exists');
+    const conditions: any[] = [{ employeeId: dto.employeeId }];
+    if (dto.email) conditions.push({ email: dto.email });
+    const exists = await this.userRepo.findOne({ where: conditions });
+    if (exists) throw new ConflictException('User with this email or employee ID already exists');
     const hash = await bcrypt.hash(dto.password, 10);
     const user = this.userRepo.create({
       employeeId: dto.employeeId,
-      email: dto.email,
+      email: dto.email || null,
+      mobileNo: dto.mobileNo,
       passwordHash: hash,
       firstName: dto.firstName,
       lastName: dto.lastName,
-      badgeId: dto.badgeId || null,
       roleId: dto.roleId,
     });
     const saved = await this.userRepo.save(user);
@@ -67,9 +67,9 @@ export class UsersService {
       (user as any).passwordHash = await bcrypt.hash(dto.password, 10);
     }
     if (dto.email !== undefined) user.email = dto.email;
+    if (dto.mobileNo !== undefined) user.mobileNo = dto.mobileNo;
     if (dto.firstName !== undefined) user.firstName = dto.firstName;
     if (dto.lastName !== undefined) user.lastName = dto.lastName;
-    if (dto.badgeId !== undefined) user.badgeId = dto.badgeId;
     if (dto.roleId !== undefined) user.roleId = dto.roleId;
     if (dto.isActive !== undefined) user.isActive = dto.isActive;
     await this.userRepo.save(user);

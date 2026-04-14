@@ -16,12 +16,14 @@ export class ProcessesController {
   constructor(private readonly service: ProcessesService) {}
 
   @Get()
+  @Roles('admin', 'manager', 'supervisor')
   @ApiOperation({ summary: 'List processes' })
   findAll(@Query() pageOptions: PageOptionsDto) {
     return this.service.findAll(pageOptions);
   }
 
   @Get(':id')
+  @Roles('admin', 'manager', 'supervisor')
   @ApiOperation({ summary: 'Get process with stages' })
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);

@@ -12,6 +12,8 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
+import { canManage } from '../../core/permissions';
 import { ProductFormComponent } from '../product-form/product-form.component';
 import { ProductViewerComponent } from '../product-viewer/product-viewer.component';
 import { ArViewerDialogComponent } from '../ar-viewer-dialog/ar-viewer-dialog.component';
@@ -34,10 +36,12 @@ import { environment } from '../../../environments/environment';
           <h1 class="page-title">Product Catalog</h1>
           <p class="page-subtitle">Manage your manufacturing product library</p>
         </div>
-        <button class="btn-primary" (click)="openForm()">
-          <mat-icon>add</mat-icon>
-          <span>Create New Product</span>
-        </button>
+        @if (canEdit) {
+          <button class="btn-primary" (click)="openForm()">
+            <mat-icon>add</mat-icon>
+            <span>Create New Product</span>
+          </button>
+        }
       </div>
 
       <!-- Toolbar -->
@@ -95,14 +99,16 @@ import { environment } from '../../../environments/environment';
           <ng-container matColumnDef="actions">
             <th mat-header-cell *matHeaderCellDef></th>
             <td mat-cell *matCellDef="let p">
-              <div class="row-actions">
-                <button class="icon-btn" (click)="openForm(p)" matTooltip="Edit">
-                  <mat-icon>edit</mat-icon>
-                </button>
-                <button class="icon-btn icon-btn-danger" (click)="deleteProduct(p)" matTooltip="Delete">
-                  <mat-icon>delete_outline</mat-icon>
-                </button>
-              </div>
+              @if (canEdit) {
+                <div class="row-actions">
+                  <button class="icon-btn" (click)="openForm(p)" matTooltip="Edit">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button class="icon-btn icon-btn-danger" (click)="deleteProduct(p)" matTooltip="Delete">
+                    <mat-icon>delete_outline</mat-icon>
+                  </button>
+                </div>
+              }
             </td>
           </ng-container>
           <tr mat-header-row *matHeaderRowDef="columns"></tr>
@@ -261,7 +267,11 @@ export class ProductListComponent implements OnInit, AfterViewInit {
   searchTerm = '';
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar) {}
+  canEdit = false;
+
+  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private auth: AuthService) {
+    this.canEdit = canManage('products', this.auth.userRole);
+  }
 
   ngOnInit(): void { this.load(); }
 

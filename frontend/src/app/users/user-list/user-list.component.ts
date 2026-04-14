@@ -13,6 +13,8 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
 import { LoadingService } from '../../core/services/loading.service';
+import { AuthService } from '../../core/services/auth.service';
+import { canManage } from '../../core/permissions';
 import { UserFormComponent } from '../user-form/user-form.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
@@ -23,9 +25,11 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
   template: `
     <div class="page-header">
       <h2>Users</h2>
-      <button mat-raised-button color="primary" (click)="openForm()">
-        <mat-icon>person_add</mat-icon> Add User
-      </button>
+      @if (canEdit) {
+        <button mat-raised-button color="primary" (click)="openForm()">
+          <mat-icon>person_add</mat-icon> Add User
+        </button>
+      }
     </div>
 
     <div class="filters">
@@ -54,9 +58,9 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         <th mat-header-cell *matHeaderCellDef>Name</th>
         <td mat-cell *matCellDef="let u">{{ u.firstName }} {{ u.lastName }}</td>
       </ng-container>
-      <ng-container matColumnDef="email">
-        <th mat-header-cell *matHeaderCellDef>Email</th>
-        <td mat-cell *matCellDef="let u">{{ u.email }}</td>
+      <ng-container matColumnDef="mobileNo">
+        <th mat-header-cell *matHeaderCellDef>Mobile No</th>
+        <td mat-cell *matCellDef="let u">{{ u.mobileNo }}</td>
       </ng-container>
       <ng-container matColumnDef="employeeId">
         <th mat-header-cell *matHeaderCellDef>Employee ID</th>
@@ -76,17 +80,19 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
           </span>
         </td>
       </ng-container>
-      <ng-container matColumnDef="actions">
-        <th mat-header-cell *matHeaderCellDef>Actions</th>
-        <td mat-cell *matCellDef="let u">
-          @if (u.isActive) {
-            <button mat-icon-button color="primary" (click)="openForm(u)"><mat-icon>edit</mat-icon></button>
-            <button mat-icon-button color="warn" (click)="deleteUser(u)"><mat-icon>delete</mat-icon></button>
-          } @else {
-            <button mat-icon-button color="primary" (click)="activateUser(u)" matTooltip="Activate user"><mat-icon>person_add</mat-icon></button>
-          }
-        </td>
-      </ng-container>
+      @if (canEdit) {
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef>Actions</th>
+          <td mat-cell *matCellDef="let u">
+            @if (u.isActive) {
+              <button mat-icon-button color="primary" (click)="openForm(u)"><mat-icon>edit</mat-icon></button>
+              <button mat-icon-button color="warn" (click)="deleteUser(u)"><mat-icon>delete</mat-icon></button>
+            } @else {
+              <button mat-icon-button color="primary" (click)="activateUser(u)" matTooltip="Activate user"><mat-icon>person_add</mat-icon></button>
+            }
+          </td>
+        </ng-container>
+      }
       <tr mat-header-row *matHeaderRowDef="columns"></tr>
       <tr mat-row *matRowDef="let row; columns: columns;"></tr>
     </table>
@@ -112,12 +118,18 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 export class UserListComponent implements OnInit, AfterViewInit {
   users: any[] = [];
   dataSource = new MatTableDataSource<any>([]);
-  columns = ['name', 'email', 'employeeId', 'role', 'status', 'actions'];
+  columns: string[] = [];
   roleFilter = '';
   statusFilter = 'active';
+  canEdit = false;
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private loading: LoadingService) {}
+  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private loading: LoadingService, private auth: AuthService) {
+    this.canEdit = canManage('users', this.auth.userRole);
+    this.columns = this.canEdit
+      ? ['name', 'mobileNo', 'employeeId', 'role', 'status', 'actions']
+      : ['name', 'mobileNo', 'employeeId', 'role', 'status'];
+  }
 
   ngOnInit(): void { this.load(); }
 

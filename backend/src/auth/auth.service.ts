@@ -37,39 +37,10 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
+        mobileNo: user.mobileNo,
         firstName: user.firstName,
         lastName: user.lastName,
         employeeId: user.employeeId,
-        badgeId: user.badgeId,
-        role: user.role,
-      },
-    };
-  }
-
-  /** Phase 9: Badge-based login (no password needed) */
-  async loginByBadge(badgeId: string) {
-    const user = await this.userRepo.findOne({
-      where: { badgeId },
-      relations: ['role'],
-    });
-    if (!user || !user.isActive) {
-      throw new UnauthorizedException('Badge not found or user inactive');
-    }
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role.name,
-      employeeId: user.employeeId,
-    };
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        employeeId: user.employeeId,
-        badgeId: user.badgeId,
         role: user.role,
       },
     };

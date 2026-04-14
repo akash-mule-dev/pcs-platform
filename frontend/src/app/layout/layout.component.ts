@@ -17,6 +17,7 @@ import { NotificationService } from '../core/services/notification.service';
 import { SearchService, SearchResults } from '../core/services/search.service';
 import { ThemeService } from '../core/services/theme.service';
 import { BUILD_INFO } from '../../build-info';
+import { canView } from '../core/permissions';
 
 interface NavItem {
   label: string;
@@ -405,25 +406,23 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private searchSubject = new Subject<string>();
   private subs: Subscription[] = [];
 
-  navItems: NavItem[] = [
-    { label: 'Dashboard', icon: 'dashboard', route: '/' },
-    { label: 'Products', icon: 'inventory_2', route: '/products' },
-    { label: 'Processes', icon: 'account_tree', route: '/processes' },
-    { label: 'Work Orders', icon: 'assignment', route: '/work-orders' },
-    { label: 'Time Tracking', icon: 'timer', route: '/time-tracking' },
-    { label: 'Users', icon: 'people', route: '/users', roles: ['admin', 'manager'] },
-    { label: 'Stations', icon: 'location_on', route: '/stations', roles: ['admin', 'manager'] },
-    { label: 'Kanban', icon: 'view_kanban', route: '/work-orders/kanban' },
-    { label: 'Coordination', icon: 'hub', route: '/coordination' },
-    { label: '3D Quality', icon: 'view_in_ar', route: '/quality-analysis' },
-    { label: 'Reports', icon: 'bar_chart', route: '/reports' },
-    { label: 'Audit Log', icon: 'history', route: '/audit', roles: ['admin', 'manager'] },
+  navItems: (NavItem & { feature: string })[] = [
+    { label: 'Dashboard', icon: 'dashboard', route: '/', feature: 'dashboard' },
+    { label: 'Products', icon: 'inventory_2', route: '/products', feature: 'products' },
+    { label: 'Processes', icon: 'account_tree', route: '/processes', feature: 'processes' },
+    { label: 'Work Orders', icon: 'assignment', route: '/work-orders', feature: 'work-orders' },
+    { label: 'Kanban', icon: 'view_kanban', route: '/work-orders/kanban', feature: 'kanban' },
+    { label: 'Time Tracking', icon: 'timer', route: '/time-tracking', feature: 'time-tracking' },
+    { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
+    { label: 'Stations', icon: 'location_on', route: '/stations', feature: 'stations' },
+    { label: 'Coordination', icon: 'hub', route: '/coordination', feature: 'coordination' },
+    { label: '3D Quality', icon: 'view_in_ar', route: '/quality-analysis', feature: 'quality-analysis' },
+    { label: 'Reports', icon: 'bar_chart', route: '/reports', feature: 'reports' },
+    { label: 'Audit Log', icon: 'history', route: '/audit', feature: 'audit' },
   ];
 
-  get visibleNavItems(): NavItem[] {
-    return this.navItems.filter(item =>
-      !item.roles || item.roles.includes(this.auth.userRole)
-    );
+  get visibleNavItems() {
+    return this.navItems.filter(item => canView(item.feature, this.auth.userRole));
   }
 
   constructor(

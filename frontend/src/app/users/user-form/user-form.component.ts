@@ -35,25 +35,23 @@ import { LoadingService } from '../../core/services/loading.service';
         </mat-form-field>
       </div>
       <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Email</mat-label>
-        <input matInput type="email" [(ngModel)]="form.email" name="email" required #email="ngModel">
-        @if (email.invalid && submitted) {
-          <mat-error>Email is required</mat-error>
+        <mat-label>Mobile No</mat-label>
+        <input matInput type="tel" [(ngModel)]="form.mobileNo" name="mobileNo" required #mobileNo="ngModel">
+        @if (mobileNo.invalid && submitted) {
+          <mat-error>Mobile number is required</mat-error>
         }
       </mat-form-field>
-      <div class="form-row">
-        <mat-form-field appearance="outline">
-          <mat-label>Employee ID</mat-label>
-          <input matInput [(ngModel)]="form.employeeId" name="employeeId" required #employeeId="ngModel">
-          @if (employeeId.invalid && submitted) {
-            <mat-error>Employee ID is required</mat-error>
-          }
-        </mat-form-field>
-        <mat-form-field appearance="outline">
-          <mat-label>Badge ID</mat-label>
-          <input matInput [(ngModel)]="form.badgeId" name="badgeId">
-        </mat-form-field>
-      </div>
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Email</mat-label>
+        <input matInput type="email" [(ngModel)]="form.email" name="email">
+      </mat-form-field>
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Employee ID</mat-label>
+        <input matInput [(ngModel)]="form.employeeId" name="employeeId" required #employeeId="ngModel">
+        @if (employeeId.invalid && submitted) {
+          <mat-error>Employee ID is required</mat-error>
+        }
+      </mat-form-field>
       <mat-form-field appearance="outline" class="full-width">
         <mat-label>Role</mat-label>
         <mat-select [(ngModel)]="form.roleId" name="roleId" required #roleId="ngModel">
@@ -81,16 +79,11 @@ import { LoadingService } from '../../core/services/loading.service';
       <button mat-raised-button color="primary" (click)="save()">Save</button>
     </mat-dialog-actions>
   `,
-  styles: [`
-    .full-width { width: 100%; }
-    .form-row { display: flex; gap: 16px; }
-    .form-row mat-form-field { flex: 1; }
-    mat-form-field { margin-bottom: 4px; }
-  `]
+  styles: []
 })
 export class UserFormComponent implements OnInit {
   @ViewChild('userForm') userForm!: NgForm;
-  form: any = { firstName: '', lastName: '', email: '', employeeId: '', badgeId: '', roleId: '', password: '' };
+  form: any = { firstName: '', lastName: '', mobileNo: '', email: '', employeeId: '', roleId: '', password: '' };
   roles: any[] = [];
   submitted = false;
 
@@ -105,9 +98,9 @@ export class UserFormComponent implements OnInit {
       this.form = {
         firstName: data.firstName,
         lastName: data.lastName,
-        email: data.email,
+        mobileNo: data.mobileNo || '',
+        email: data.email || '',
         employeeId: data.employeeId,
-        badgeId: data.badgeId || '',
         roleId: data.role?.id || data.roleId,
         password: ''
       };
@@ -135,7 +128,7 @@ export class UserFormComponent implements OnInit {
   }
 
   isValid(): boolean {
-    return this.form.firstName && this.form.lastName && this.form.email && this.form.employeeId && this.form.roleId && (this.data || this.form.password);
+    return this.form.firstName && this.form.lastName && this.form.mobileNo && this.form.employeeId && this.form.roleId && (this.data || this.form.password);
   }
 
   save(): void {
@@ -146,7 +139,7 @@ export class UserFormComponent implements OnInit {
     if (!this.isValid()) return;
     const body: any = { ...this.form };
     if (!body.password) delete body.password;
-    if (!body.badgeId) delete body.badgeId;
+    if (!body.email) delete body.email;
 
     this.loadingService.show();
     const obs = this.data

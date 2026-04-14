@@ -7,9 +7,15 @@ export class RegisterDto {
   @IsNotEmpty()
   employeeId: string;
 
-  @ApiProperty({ example: 'newuser@pcs.local' })
+  @ApiPropertyOptional({ example: 'newuser@pcs.local' })
   @IsEmail()
-  email: string;
+  @IsOptional()
+  email?: string;
+
+  @ApiProperty({ example: '9876543210' })
+  @IsString()
+  @IsNotEmpty()
+  mobileNo: string;
 
   @ApiProperty({ example: 'password123' })
   @IsString()
@@ -25,11 +31,6 @@ export class RegisterDto {
   @IsString()
   @IsNotEmpty()
   lastName: string;
-
-  @ApiPropertyOptional()
-  @IsString()
-  @IsOptional()
-  badgeId?: string;
 
   @ApiProperty({ description: 'Role UUID' })
   @IsUUID()

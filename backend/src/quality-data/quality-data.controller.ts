@@ -15,6 +15,7 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 @ApiTags('Quality Data')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin', 'manager', 'supervisor')
 @Controller('api/quality-data')
 export class QualityDataController {
   constructor(private readonly service: QualityDataService) {}

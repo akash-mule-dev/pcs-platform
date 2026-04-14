@@ -50,28 +50,28 @@ export class SeedService {
 
     // ─── DEFAULT USERS (login accounts only) ────────────────────────────
     const usersData = [
-      { employeeId: 'EMP-001', email: 'admin@pcs.com', firstName: 'Rajesh', lastName: 'Patil', role: 'admin' },
-      { employeeId: 'EMP-002', email: 'manager@pcs.com', firstName: 'Priya', lastName: 'Sharma', role: 'manager' },
-      { employeeId: 'EMP-003', email: 'supervisor1@pcs.com', firstName: 'Vikram', lastName: 'Deshmukh', role: 'supervisor' },
-      { employeeId: 'EMP-004', email: 'supervisor2@pcs.com', firstName: 'Sneha', lastName: 'Kulkarni', role: 'supervisor' },
-      { employeeId: 'EMP-005', email: 'operator1@pcs.com', firstName: 'Amit', lastName: 'Jadhav', role: 'operator', badgeId: 'B-001' },
-      { employeeId: 'EMP-006', email: 'operator2@pcs.com', firstName: 'Pooja', lastName: 'Shinde', role: 'operator', badgeId: 'B-002' },
-      { employeeId: 'EMP-007', email: 'operator3@pcs.com', firstName: 'Rahul', lastName: 'More', role: 'operator', badgeId: 'B-003' },
-      { employeeId: 'EMP-008', email: 'operator4@pcs.com', firstName: 'Anita', lastName: 'Pawar', role: 'operator', badgeId: 'B-004' },
-      { employeeId: 'EMP-009', email: 'operator5@pcs.com', firstName: 'Suresh', lastName: 'Kale', role: 'operator', badgeId: 'B-005' },
-      { employeeId: 'EMP-010', email: 'operator6@pcs.com', firstName: 'Meena', lastName: 'Gaikwad', role: 'operator', badgeId: 'B-006' },
-      { employeeId: 'EMP-011', email: 'operator7@pcs.com', firstName: 'Deepak', lastName: 'Bhosale', role: 'operator', badgeId: 'B-007' },
-      { employeeId: 'EMP-012', email: 'operator8@pcs.com', firstName: 'Kavita', lastName: 'Mane', role: 'operator', badgeId: 'B-008' },
+      { employeeId: 'EMP-001', email: 'admin@pcs.com', mobileNo: '9876543001', firstName: 'Rajesh', lastName: 'Patil', role: 'admin' },
+      { employeeId: 'EMP-002', email: 'manager@pcs.com', mobileNo: '9876543002', firstName: 'Priya', lastName: 'Sharma', role: 'manager' },
+      { employeeId: 'EMP-003', email: 'supervisor1@pcs.com', mobileNo: '9876543003', firstName: 'Vikram', lastName: 'Deshmukh', role: 'supervisor' },
+      { employeeId: 'EMP-004', email: 'supervisor2@pcs.com', mobileNo: '9876543004', firstName: 'Sneha', lastName: 'Kulkarni', role: 'supervisor' },
+      { employeeId: 'EMP-005', email: 'operator1@pcs.com', mobileNo: '9876543005', firstName: 'Amit', lastName: 'Jadhav', role: 'operator' },
+      { employeeId: 'EMP-006', email: 'operator2@pcs.com', mobileNo: '9876543006', firstName: 'Pooja', lastName: 'Shinde', role: 'operator' },
+      { employeeId: 'EMP-007', email: 'operator3@pcs.com', mobileNo: '9876543007', firstName: 'Rahul', lastName: 'More', role: 'operator' },
+      { employeeId: 'EMP-008', email: 'operator4@pcs.com', mobileNo: '9876543008', firstName: 'Anita', lastName: 'Pawar', role: 'operator' },
+      { employeeId: 'EMP-009', email: 'operator5@pcs.com', mobileNo: '9876543009', firstName: 'Suresh', lastName: 'Kale', role: 'operator' },
+      { employeeId: 'EMP-010', email: 'operator6@pcs.com', mobileNo: '9876543010', firstName: 'Meena', lastName: 'Gaikwad', role: 'operator' },
+      { employeeId: 'EMP-011', email: 'operator7@pcs.com', mobileNo: '9876543011', firstName: 'Deepak', lastName: 'Bhosale', role: 'operator' },
+      { employeeId: 'EMP-012', email: 'operator8@pcs.com', mobileNo: '9876543012', firstName: 'Kavita', lastName: 'Mane', role: 'operator' },
     ];
 
     for (const u of usersData) {
       await this.userRepo.save(this.userRepo.create({
         employeeId: u.employeeId,
         email: u.email,
+        mobileNo: u.mobileNo,
         passwordHash: hash,
         firstName: u.firstName,
         lastName: u.lastName,
-        badgeId: (u as any).badgeId || null,
         roleId: roles[u.role].id,
       }));
     }

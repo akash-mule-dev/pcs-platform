@@ -13,6 +13,8 @@ import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { HttpEventType } from '@angular/common/http';
 import { CoordinationApiService, CoordinationPackage } from '../core/services/coordination.service';
+import { AuthService } from '../core/services/auth.service';
+import { canManage } from '../core/permissions';
 import { io, Socket } from 'socket.io-client';
 import { environment } from '../../environments/environment';
 
@@ -30,10 +32,12 @@ import { environment } from '../../environments/environment';
         <h1>Coordination Packages</h1>
         <p class="subtitle">Upload and manage IFC coordination views with linked drawings</p>
       </div>
-      <button mat-raised-button color="primary" (click)="showUploadPanel = !showUploadPanel">
-        <mat-icon>cloud_upload</mat-icon>
-        Upload Package
-      </button>
+      @if (canEdit) {
+        <button mat-raised-button color="primary" (click)="showUploadPanel = !showUploadPanel">
+          <mat-icon>cloud_upload</mat-icon>
+          Upload Package
+        </button>
+      }
     </div>
 
     @if (showUploadPanel) {
@@ -223,11 +227,15 @@ export class CoordinationListComponent implements OnInit {
   // WebSocket progress messages per package
   processingMessages: Record<string, string> = {};
   private socket: Socket | null = null;
+  canEdit = false;
 
   constructor(
     private api: CoordinationApiService,
     private snackBar: MatSnackBar,
-  ) {}
+    private auth: AuthService,
+  ) {
+    this.canEdit = canManage('coordination', this.auth.userRole);
+  }
 
   ngOnInit(): void {
     this.loadPackages();

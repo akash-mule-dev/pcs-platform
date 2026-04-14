@@ -32,9 +32,13 @@ export function WorkOrderListScreen() {
       setOrders(list);
       offlineService.cacheWorkOrders(list);
     } catch {
-      // Fallback to cached
-      const cached = await offlineService.getCachedWorkOrders();
-      setOrders(cached as WorkOrder[]);
+      // Only use cache if offline
+      if (!offlineService.isOnline) {
+        const cached = await offlineService.getCachedWorkOrders();
+        setOrders(cached as WorkOrder[]);
+      } else {
+        setOrders([]);
+      }
     } finally {
       setLoading(false);
     }

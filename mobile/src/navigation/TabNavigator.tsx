@@ -4,6 +4,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
 import { TabParamList, WorkOrdersStackParamList, TimeTrackingStackParamList, ModelsStackParamList } from './types';
+import { useAuth } from '../context/AuthContext';
+import { canViewTab, TabKey } from '../config/permissions';
 
 // Screens
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
@@ -56,8 +58,20 @@ function ModelsStack() {
   );
 }
 
+// ── Tab config ──
+const TAB_CONFIG: { name: TabKey; component: React.ComponentType<any>; title: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { name: 'Dashboard', component: DashboardScreen, title: 'Home', icon: 'home' },
+  { name: 'WorkOrders', component: WorkOrdersStack, title: 'Orders', icon: 'clipboard' },
+  { name: 'Timer', component: TimeTrackingStack, title: 'Timer', icon: 'timer' },
+  { name: 'Models', component: ModelsStack, title: '3D/AR', icon: 'cube' },
+  { name: 'Profile', component: ProfileScreen, title: 'Profile', icon: 'person' },
+];
+
 // ── Main Tab Navigator ──
 export function TabNavigator() {
+  const { user } = useAuth();
+  const userRole = user?.role?.name || '';
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -66,33 +80,19 @@ export function TabNavigator() {
         tabBarInactiveTintColor: Colors.medium,
         tabBarStyle: { paddingBottom: 4, height: 60 },
         tabBarIcon: ({ color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap = 'home';
-          switch (route.name) {
-            case 'Dashboard':
-              iconName = 'home';
-              break;
-            case 'WorkOrders':
-              iconName = 'clipboard';
-              break;
-            case 'Timer':
-              iconName = 'timer';
-              break;
-            case 'Models':
-              iconName = 'cube';
-              break;
-            case 'Profile':
-              iconName = 'person';
-              break;
-          }
-          return <Ionicons name={iconName} size={size} color={color} />;
+          const tab = TAB_CONFIG.find(t => t.name === route.name);
+          return <Ionicons name={tab?.icon || 'home'} size={size} color={color} />;
         },
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Home' }} />
-      <Tab.Screen name="WorkOrders" component={WorkOrdersStack} options={{ title: 'Orders' }} />
-      <Tab.Screen name="Timer" component={TimeTrackingStack} />
-      <Tab.Screen name="Models" component={ModelsStack} options={{ title: '3D/AR' }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      {TAB_CONFIG.filter(tab => canViewTab(tab.name, userRole)).map(tab => (
+        <Tab.Screen
+          key={tab.name}
+          name={tab.name}
+          component={tab.component}
+          options={{ title: tab.title }}
+        />
+      ))}
     </Tab.Navigator>
   );
 }

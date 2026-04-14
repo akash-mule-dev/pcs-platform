@@ -66,3 +66,11 @@ mobile/.metro-health-check*
 # TypeScript build info
 *.tsbuildinfo
 .vercel
+
+# Playwright MCP
+.playwright-mcp/
+
+# Screenshots and temp files in root
+*.png
+screen_b64.txt
+todo.txt
