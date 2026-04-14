@@ -29,7 +29,6 @@ module.exports = function (options) {
     externals: [
       ({ request }, callback) => {
         const nativeModules = [
-          'bcrypt',
           'pg-native',
           'sharp',
           'cpu-features',
