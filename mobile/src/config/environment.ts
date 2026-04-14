@@ -1,9 +1,9 @@
 const ENV = {
   development: {
-    apiUrl: 'http://13.234.202.29:3001/api',
+    apiUrl: 'https://pcsapi.spadebloom.com/api',
   },
   production: {
-    apiUrl: 'http://13.234.202.29:3001/api',
+    apiUrl: 'https://pcsapi.spadebloom.com/api',
   },
 };
 
