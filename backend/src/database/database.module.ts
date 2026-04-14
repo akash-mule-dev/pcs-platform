@@ -31,7 +31,7 @@ if (!isProduction) {
     TypeOrmModule.forRoot({
       ...connectionConfig,
       autoLoadEntities: true,
-      synchronize: !isProduction,
+      synchronize: true,
       migrationsRun: false,
       migrations: isProduction ? ['dist/database/migrations/*.js'] : [],
       extra: {

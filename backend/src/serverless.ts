@@ -7,6 +7,7 @@ import express from 'express';
 import { AppModule } from './app.module.js';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter.js';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor.js';
+import { SeedService } from './seed/seed.service.js';
 
 const server = express();
 let isReady = false;
@@ -38,6 +39,14 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
 
   await app.init();
+
+  try {
+    const seeder = app.get(SeedService);
+    await seeder.seed();
+  } catch (err) {
+    console.warn('Seed skipped:', (err as Error).message);
+  }
+
   isReady = true;
   console.log('NestJS bootstrap complete');
 }
