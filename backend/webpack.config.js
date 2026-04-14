@@ -11,6 +11,10 @@ module.exports = function (options) {
       __dirname: false,
       __filename: false,
     },
+    optimization: {
+      splitChunks: false,
+      minimize: false,
+    },
     resolve: {
       ...options.resolve,
       extensions: ['.ts', '.js', '.json'],
@@ -38,6 +42,9 @@ module.exports = function (options) {
     ],
     plugins: [
       ...options.plugins,
+      new (require('webpack')).optimize.LimitChunkCountPlugin({
+        maxChunks: 1,
+      }),
       new (require('webpack')).IgnorePlugin({
         checkResource(resource) {
           const lazyImports = [
