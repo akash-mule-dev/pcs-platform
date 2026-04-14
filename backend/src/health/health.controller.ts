@@ -69,6 +69,24 @@ export class HealthController {
       const hash = await bcrypt.hash('password123', 10);
       log.push(`bcrypt hash: ${hash ? hash.substring(0, 20) + '...' : 'null'}`);
 
+      // Try direct SQL insert as fallback
+      try {
+        await this.dataSource.query(`INSERT INTO "roles" (name, description) VALUES ('admin', 'admin role') ON CONFLICT DO NOTHING`);
+        log.push('direct role insert ok');
+        const roleResult = await this.dataSource.query(`SELECT id FROM "roles" WHERE name = 'admin'`);
+        const roleId = roleResult[0]?.id;
+        log.push(`admin role id: ${roleId}`);
+        if (roleId) {
+          await this.dataSource.query(
+            `INSERT INTO "users" ("employeeId", email, "passwordHash", "firstName", "lastName", "roleId") VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+            ['EMP-001', 'admin@pcs.com', hash, 'Rajesh', 'Patil', roleId],
+          );
+          log.push('direct user insert ok');
+        }
+      } catch (sqlErr) {
+        log.push(`direct insert error: ${(sqlErr as Error).message}`);
+      }
+
       await this.seedService.seed();
       log.push('seed() completed');
 
