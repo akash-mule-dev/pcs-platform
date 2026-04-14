@@ -40,7 +40,7 @@ export class SeedService {
     }
 
     this.logger.log('Seeding roles and default users...');
-    const hash = await bcrypt.hash('password123', 10);
+    const hash = await bcrypt.hash('123456', 10);
 
     // ─── ROLES ──────────────────────────────────────────────────────────
     const roles: Record<string, Role> = {};
