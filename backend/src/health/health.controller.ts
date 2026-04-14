@@ -1,13 +1,17 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Post } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Public } from '../common/decorators/public.decorator.js';
+import { SeedService } from '../seed/seed.service.js';
 
 @ApiTags('Health')
 @Controller('api/health')
 export class HealthController {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly seedService: SeedService,
+  ) {}
 
   @Get()
   @Public()
@@ -38,6 +42,18 @@ export class HealthController {
         heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
       },
     };
+  }
+
+  @Post('seed')
+  @Public()
+  @ApiOperation({ summary: 'Trigger database seed' })
+  async seed() {
+    try {
+      await this.seedService.seed();
+      return { status: 'seeded' };
+    } catch (err) {
+      return { status: 'error', message: (err as Error).message, stack: (err as Error).stack?.split('\n').slice(0, 5) };
+    }
   }
 
   @Get('ready')
