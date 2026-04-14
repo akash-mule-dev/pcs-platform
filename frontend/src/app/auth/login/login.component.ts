@@ -9,10 +9,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
-import { environment } from '../../../environments/environment';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 @Component({
   selector: 'app-login',
@@ -564,39 +562,14 @@ export class LoginComponent implements AfterViewInit, OnDestroy {
   }
 
   private loadModel(): void {
-    const modelUrl = `${environment.apiUrl.replace('/api', '')}/test-model.glb`;
-    const loader = new GLTFLoader();
-    loader.load(
-      modelUrl,
-      (gltf) => {
-        const model = gltf.scene;
-        this.scene.add(model);
-
-        const box = new THREE.Box3().setFromObject(model);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 3 / maxDim;
-
-        model.scale.setScalar(scale);
-        model.position.sub(center.multiplyScalar(scale));
-
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
-      },
-      undefined,
-      () => {
-        // Model failed to load — show a fallback wireframe torus knot
-        const geometry = new THREE.TorusKnotGeometry(1.05, 0.35, 128, 32);
-        const wireframe = new THREE.WireframeGeometry(geometry);
-        const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({
-          color: 0x4b8eff,
-          transparent: true,
-          opacity: 0.6,
-        }));
-        this.scene.add(line);
-      }
-    );
+    const geometry = new THREE.TorusKnotGeometry(1.05, 0.35, 128, 32);
+    const wireframe = new THREE.WireframeGeometry(geometry);
+    const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({
+      color: 0x4b8eff,
+      transparent: true,
+      opacity: 0.6,
+    }));
+    this.scene.add(line);
   }
 
   private updateSceneTheme(): void {
