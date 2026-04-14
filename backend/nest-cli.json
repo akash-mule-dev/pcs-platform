@@ -11,5 +11,18 @@
         "watchAssets": true
       }
     ]
+  },
+  "projects": {
+    "vercel": {
+      "type": "application",
+      "root": "",
+      "sourceRoot": "src",
+      "entryFile": "serverless",
+      "compilerOptions": {
+        "deleteOutDir": true,
+        "webpack": true,
+        "webpackConfigPath": "webpack.config.js"
+      }
+    }
   }
 }
