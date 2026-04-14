@@ -48,16 +48,33 @@ export class HealthController {
   @Public()
   @ApiOperation({ summary: 'Trigger database seed (force re-seed)' })
   async seed() {
+    const log: string[] = [];
     try {
-      // Clear existing partial seed data so seed runs fully
-      await this.dataSource.query('DELETE FROM "users" WHERE true');
-      await this.dataSource.query('DELETE FROM "roles" WHERE true');
+      const beforeRoles = await this.dataSource.query('SELECT COUNT(*) as cnt FROM "roles"');
+      log.push(`before: ${beforeRoles[0].cnt} roles`);
+      const beforeUsers = await this.dataSource.query('SELECT COUNT(*) as cnt FROM "users"');
+      log.push(`before: ${beforeUsers[0].cnt} users`);
+
+      if (Number(beforeUsers[0].cnt) > 0) {
+        await this.dataSource.query('DELETE FROM "users"');
+        log.push('deleted users');
+      }
+      if (Number(beforeRoles[0].cnt) > 0) {
+        await this.dataSource.query('DELETE FROM "roles"');
+        log.push('deleted roles');
+      }
+
       await this.seedService.seed();
-      const userCount = await this.dataSource.query('SELECT COUNT(*) FROM "users"');
-      const roleCount = await this.dataSource.query('SELECT COUNT(*) FROM "roles"');
-      return { status: 'seeded', users: userCount[0].count, roles: roleCount[0].count };
+      log.push('seed() completed');
+
+      const afterRoles = await this.dataSource.query('SELECT COUNT(*) as cnt FROM "roles"');
+      const afterUsers = await this.dataSource.query('SELECT COUNT(*) as cnt FROM "users"');
+      log.push(`after: ${afterRoles[0].cnt} roles, ${afterUsers[0].cnt} users`);
+
+      return { status: 'seeded', log };
     } catch (err) {
-      return { status: 'error', message: (err as Error).message, stack: (err as Error).stack?.split('\n').slice(0, 5) };
+      log.push(`error: ${(err as Error).message}`);
+      return { status: 'error', log, stack: (err as Error).stack?.split('\n').slice(0, 5) };
     }
   }
 
