@@ -1,6 +1,6 @@
 {
   "installCommand": "npm ci --include=dev",
-  "buildCommand": "npm run build && npm prune --omit=dev && rm -rf node_modules/opencascade.js node_modules/web-ifc node_modules/mikktspace node_modules/three node_modules/@types node_modules/@gltf-transform node_modules/@img node_modules/swagger-ui-dist node_modules/@azure node_modules/typescript",
+  "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": ".",
   "functions": {
     "api/index.js": {
