@@ -50,11 +50,11 @@ export class HealthController {
   async seed() {
     try {
       // Clear existing partial seed data so seed runs fully
-      await this.dataSource.query('DELETE FROM "user" WHERE true');
-      await this.dataSource.query('DELETE FROM "role" WHERE true');
+      await this.dataSource.query('DELETE FROM "users" WHERE true');
+      await this.dataSource.query('DELETE FROM "roles" WHERE true');
       await this.seedService.seed();
-      const userCount = await this.dataSource.query('SELECT COUNT(*) FROM "user"');
-      const roleCount = await this.dataSource.query('SELECT COUNT(*) FROM "role"');
+      const userCount = await this.dataSource.query('SELECT COUNT(*) FROM "users"');
+      const roleCount = await this.dataSource.query('SELECT COUNT(*) FROM "roles"');
       return { status: 'seeded', users: userCount[0].count, roles: roleCount[0].count };
     } catch (err) {
       return { status: 'error', message: (err as Error).message, stack: (err as Error).stack?.split('\n').slice(0, 5) };
