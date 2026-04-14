@@ -3,10 +3,6 @@ if (!process.argv[1]) {
   process.argv[1] = __filename;
 }
 
-// Force nft to include native modules
-try { require('bcrypt'); } catch (_) {}
-try { require('pg'); } catch (_) {}
-
 let handler;
 let loadError;
 
@@ -37,5 +33,15 @@ module.exports = async (req, res) => {
     }));
   }
 
-  return handler(req, res);
+  try {
+    return await handler(req, res);
+  } catch (err) {
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    return res.end(JSON.stringify({
+      error: 'Handler error',
+      message: err.message,
+      stack: err.stack?.split('\n').slice(0, 5),
+    }));
+  }
 };
