@@ -14,12 +14,18 @@ export class UsersService {
     private readonly userRepo: Repository<User>,
   ) {}
 
-  async findAll(pageOptions: PageOptionsDto, roleFilter?: string): Promise<PageDto<User>> {
+  async findAll(pageOptions: PageOptionsDto, roleFilter?: string, status?: string): Promise<PageDto<User>> {
     const qb = this.userRepo.createQueryBuilder('user')
       .leftJoinAndSelect('user.role', 'role')
       .orderBy('user.createdAt', pageOptions.order)
       .skip(pageOptions.skip)
       .take(pageOptions.limit);
+
+    if (status === 'inactive') {
+      qb.andWhere('user.isActive = :isActive', { isActive: false });
+    } else if (status !== 'all') {
+      qb.andWhere('user.isActive = :isActive', { isActive: true });
+    }
 
     if (roleFilter) {
       qb.andWhere('role.name = :role', { role: roleFilter });
@@ -37,8 +43,10 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto): Promise<User> {
-    const exists = await this.userRepo.findOne({ where: [{ email: dto.email }, { employeeId: dto.employeeId }] });
-    if (exists) throw new ConflictException('User with this email or employee ID already exists');
+    const byEmail = await this.userRepo.findOne({ where: { email: dto.email } });
+    if (byEmail) throw new ConflictException('A user with this email already exists');
+    const byEmpId = await this.userRepo.findOne({ where: { employeeId: dto.employeeId } });
+    if (byEmpId) throw new ConflictException('A user with this employee ID already exists');
     const hash = await bcrypt.hash(dto.password, 10);
     const user = this.userRepo.create({
       employeeId: dto.employeeId,

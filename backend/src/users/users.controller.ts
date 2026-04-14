@@ -19,8 +19,9 @@ export class UsersController {
   @Roles('admin', 'manager')
   @ApiOperation({ summary: 'List users (paginated)' })
   @ApiQuery({ name: 'role', required: false })
-  findAll(@Query() pageOptions: PageOptionsDto, @Query('role') role?: string) {
-    return this.usersService.findAll(pageOptions, role);
+  @ApiQuery({ name: 'status', required: false, enum: ['active', 'inactive', 'all'] })
+  findAll(@Query() pageOptions: PageOptionsDto, @Query('role') role?: string, @Query('status') status?: string) {
+    return this.usersService.findAll(pageOptions, role, status);
   }
 
   @Get(':id')
