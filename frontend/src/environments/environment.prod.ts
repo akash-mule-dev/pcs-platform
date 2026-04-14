@@ -1,4 +1,4 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://api.spadebloom.com/api'
+  apiUrl: 'https://backend-mu-beryl-91.vercel.app/api'
 };
