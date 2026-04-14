@@ -4,6 +4,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Public } from '../common/decorators/public.decorator.js';
 import { SeedService } from '../seed/seed.service.js';
+import * as bcrypt from 'bcryptjs';
 
 @ApiTags('Health')
 @Controller('api/health')
@@ -63,6 +64,10 @@ export class HealthController {
         await this.dataSource.query('DELETE FROM "roles"');
         log.push('deleted roles');
       }
+
+      // Test bcryptjs
+      const hash = await bcrypt.hash('password123', 10);
+      log.push(`bcrypt hash: ${hash ? hash.substring(0, 20) + '...' : 'null'}`);
 
       await this.seedService.seed();
       log.push('seed() completed');
