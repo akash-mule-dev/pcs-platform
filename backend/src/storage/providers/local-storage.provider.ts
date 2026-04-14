@@ -3,15 +3,22 @@ import { StorageProvider } from '../storage.interface.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'models');
+const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const UPLOAD_DIR = isServerless
+  ? path.join('/tmp', 'uploads', 'models')
+  : path.join(process.cwd(), 'uploads', 'models');
 
 @Injectable()
 export class LocalStorageProvider implements StorageProvider {
   private readonly logger = new Logger(LocalStorageProvider.name);
 
   constructor() {
-    if (!fs.existsSync(UPLOAD_DIR)) {
-      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    try {
+      if (!fs.existsSync(UPLOAD_DIR)) {
+        fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      }
+    } catch (err) {
+      this.logger.warn(`Could not create upload directory: ${(err as Error).message}`);
     }
   }
 
