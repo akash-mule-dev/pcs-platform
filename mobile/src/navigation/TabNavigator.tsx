@@ -14,6 +14,7 @@ import { HistoryScreen } from '../screens/time-tracking/HistoryScreen';
 import { ModelListScreen } from '../screens/model-viewer/ModelListScreen';
 import { ModelViewScreen } from '../screens/model-viewer/ModelViewScreen';
 import { ARViewScreen } from '../screens/model-viewer/ARViewScreen';
+import { VRViewScreen } from '../screens/model-viewer/VRViewScreen';
 import { QualityViewScreen } from '../screens/model-viewer/QualityViewScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 
@@ -49,6 +50,7 @@ function ModelsStack() {
       <MStack.Screen name="ModelList" component={ModelListScreen} options={{ title: '3D Models' }} />
       <MStack.Screen name="ModelView" component={ModelViewScreen} options={{ title: '3D Viewer' }} />
       <MStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
+      <MStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <MStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
     </MStack.Navigator>
   );

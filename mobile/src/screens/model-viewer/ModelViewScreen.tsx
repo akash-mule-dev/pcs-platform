@@ -189,6 +189,12 @@ export function ModelViewScreen() {
       />
       <View style={styles.controls}>
         <TouchableOpacity
+          style={[styles.controlButton, { backgroundColor: '#5b21b6' }]}
+          onPress={() => navigation.navigate('VRView', { modelId, modelName, fileUrl })}
+        >
+          <Ionicons name="headset-outline" size={22} color={Colors.white} />
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.controlButton, { backgroundColor: Colors.tertiary }]}
           onPress={() => navigation.navigate('ARView', { modelId, fileUrl })}
         >

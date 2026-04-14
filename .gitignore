@@ -65,3 +65,4 @@ mobile/.metro-health-check*
 
 # TypeScript build info
 *.tsbuildinfo
+.vercel

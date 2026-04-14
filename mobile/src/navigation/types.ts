@@ -26,6 +26,7 @@ export type ModelsStackParamList = {
   ModelList: undefined;
   ModelView: { modelId: string; modelName: string; fileUrl: string };
   ARView: { modelId: string; fileUrl: string };
+  VRView: { modelId: string; modelName: string; fileUrl: string };
   QualityView: { modelId: string; modelName: string; fileUrl: string };
 };
 

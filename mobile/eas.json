@@ -13,6 +13,15 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "quest": {
+      "distribution": "internal",
+      "env": {
+        "XR_MODE": "VR"
+      },
+      "android": {
+        "buildType": "apk"
+      }
     }
   }
 }
