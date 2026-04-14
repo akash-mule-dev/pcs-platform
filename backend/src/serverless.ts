@@ -41,11 +41,24 @@ async function bootstrap() {
   isReady = true;
 }
 
-const bootstrapPromise = bootstrap();
+let bootstrapError: any = null;
+const bootstrapPromise = bootstrap().catch(err => {
+  bootstrapError = err;
+  console.error('NestJS bootstrap failed:', err);
+});
 
 async function handler(req: any, res: any) {
   if (!isReady) {
     await bootstrapPromise;
+  }
+  if (bootstrapError) {
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    return res.end(JSON.stringify({
+      error: 'Bootstrap failed',
+      message: bootstrapError.message,
+      stack: bootstrapError.stack?.split('\n').slice(0, 8),
+    }));
   }
   server(req, res);
 }
