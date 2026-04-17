@@ -278,6 +278,114 @@ html, body {
   transition: background 0.3s ease, color 0.3s ease;
 }
 
+// ============================================
+// FONT SIZE SCALING
+// ============================================
+html {
+  --pcs-font-scale: 1;
+}
+html[data-font-size="small"]   { --pcs-font-scale: 0.9; }
+html[data-font-size="medium"]  { --pcs-font-scale: 1; }
+html[data-font-size="large"]   { --pcs-font-scale: 1.15; }
+html[data-font-size="x-large"] { --pcs-font-scale: 1.3; }
+
+// Scale base body text
+html, body {
+  font-size: calc(14px * var(--pcs-font-scale));
+}
+
+// Scale Material table cells
+.mat-mdc-cell {
+  font-size: calc(13px * var(--pcs-font-scale)) !important;
+}
+.mat-mdc-header-cell {
+  font-size: calc(11px * var(--pcs-font-scale)) !important;
+}
+
+// Scale form field text
+.mdc-text-field--outlined .mdc-text-field__input,
+.mat-mdc-input-element,
+.mat-mdc-select-value-text {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+.mdc-floating-label {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
+// Scale buttons
+.mat-mdc-raised-button,
+.mat-mdc-flat-button,
+.mat-mdc-unelevated-button,
+.mat-mdc-stroked-button {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
+// Scale dialog titles & content
+.mat-mdc-dialog-title, .mdc-dialog__title {
+  font-size: calc(18px * var(--pcs-font-scale)) !important;
+}
+.mat-mdc-dialog-content, .mdc-dialog__content {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
+// Scale headings
+h1 { font-size: calc(28px * var(--pcs-font-scale)); }
+h2 { font-size: calc(24px * var(--pcs-font-scale)); }
+h3 { font-size: calc(20px * var(--pcs-font-scale)); }
+h4 { font-size: calc(18px * var(--pcs-font-scale)); }
+h5 { font-size: calc(16px * var(--pcs-font-scale)); }
+h6 { font-size: calc(14px * var(--pcs-font-scale)); }
+
+// Scale status chips & badges
+.status-chip, .priority-chip, .role-chip {
+  font-size: calc(11px * var(--pcs-font-scale));
+}
+
+// Scale paginator
+.mat-mdc-paginator {
+  font-size: calc(12px * var(--pcs-font-scale)) !important;
+}
+
+// Scale card titles
+.mat-mdc-card-title {
+  font-size: calc(16px * var(--pcs-font-scale)) !important;
+}
+.mat-mdc-card-subtitle {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
+// Scale nav list items
+.mat-mdc-nav-list .mdc-list-item__primary-text,
+.mat-mdc-list-item-title {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
+// Scale tab labels
+.mat-mdc-tab {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
+// Scale menu items
+.mat-mdc-menu-item {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
+// Scale tooltips
+.mat-mdc-tooltip {
+  font-size: calc(12px * var(--pcs-font-scale)) !important;
+}
+
+// Scale snackbar text
+.mat-mdc-snack-bar-container {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
+// Scale empty state text
+.no-data,
+.mat-mdc-no-data-row td {
+  font-size: calc(14px * var(--pcs-font-scale)) !important;
+}
+
 a {
   text-decoration: none;
   color: var(--clay-primary);

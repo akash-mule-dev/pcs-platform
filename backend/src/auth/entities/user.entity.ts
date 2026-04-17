@@ -22,8 +22,8 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true, nullable: true })
   email: string | null;
 
-  @Column({ name: 'mobile_no', type: 'varchar', length: 15 })
-  mobileNo: string;
+  @Column({ name: 'mobile_no', type: 'varchar', length: 15, nullable: true })
+  mobileNo: string | null;
 
   @Column({ name: 'password_hash', type: 'varchar', length: 255 })
   @Exclude()

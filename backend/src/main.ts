@@ -65,4 +65,15 @@ async function bootstrap() {
   logger.log(`PCS Backend running on port ${port} [${process.env.NODE_ENV || 'development'}]`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Fatal error during bootstrap:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});

@@ -1,18 +1,19 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, delay } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class LoadingService {
   private count = 0;
-  loading$ = new BehaviorSubject<boolean>(false);
+  private _loading$ = new BehaviorSubject<boolean>(false);
+  loading$ = this._loading$.pipe(delay(0));
 
   show(): void {
     this.count++;
-    this.loading$.next(true);
+    this._loading$.next(true);
   }
 
   hide(): void {
     this.count = Math.max(0, this.count - 1);
-    if (this.count === 0) this.loading$.next(false);
+    if (this.count === 0) this._loading$.next(false);
   }
 }

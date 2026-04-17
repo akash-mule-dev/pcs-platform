@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
@@ -14,6 +14,15 @@ export class DashboardService {
     @InjectRepository(TimeEntry) private readonly teRepo: Repository<TimeEntry>,
     @InjectRepository(QualityData) private readonly qdRepo: Repository<QualityData>,
   ) {}
+
+  private parseDate(value: string | undefined, fieldName: string): Date | undefined {
+    if (!value) return undefined;
+    const d = new Date(value);
+    if (isNaN(d.getTime())) {
+      throw new BadRequestException(`Invalid ${fieldName}: '${value}'`);
+    }
+    return d;
+  }
 
   async getSummary() {
     const statusCounts = await this.woRepo.createQueryBuilder('wo')
@@ -113,14 +122,17 @@ export class DashboardService {
 
   /** Phase 8: OEE = Availability × Performance × Quality */
   async getOEE(startDate?: string, endDate?: string) {
+    const start = this.parseDate(startDate, 'startDate');
+    const end = this.parseDate(endDate, 'endDate');
+
     // Use QueryBuilder so date filters actually work
     const qb = this.teRepo.createQueryBuilder('te')
       .leftJoinAndSelect('te.workOrderStage', 'wos')
       .leftJoinAndSelect('wos.stage', 'stage')
       .where('te.end_time IS NOT NULL');
 
-    if (startDate) qb.andWhere('te.start_time >= :startDate', { startDate });
-    if (endDate) qb.andWhere('te.start_time <= :endDate', { endDate });
+    if (start) qb.andWhere('te.start_time >= :startDate', { startDate: start });
+    if (end) qb.andWhere('te.start_time <= :endDate', { endDate: end });
 
     const finished = await qb.getMany();
 
@@ -160,6 +172,9 @@ export class DashboardService {
 
   /** Phase 8: Exportable report data (CSV-friendly) */
   async getExportData(startDate?: string, endDate?: string) {
+    const start = this.parseDate(startDate, 'startDate');
+    const end = this.parseDate(endDate, 'endDate');
+
     const qb = this.teRepo.createQueryBuilder('te')
       .leftJoinAndSelect('te.user', 'user')
       .leftJoinAndSelect('te.workOrderStage', 'wos')
@@ -169,8 +184,8 @@ export class DashboardService {
       .where('te.end_time IS NOT NULL')
       .orderBy('te.start_time', 'DESC');
 
-    if (startDate) qb.andWhere('te.start_time >= :startDate', { startDate });
-    if (endDate) qb.andWhere('te.start_time <= :endDate', { endDate });
+    if (start) qb.andWhere('te.start_time >= :startDate', { startDate: start });
+    if (end) qb.andWhere('te.start_time <= :endDate', { endDate: end });
 
     const entries = await qb.getMany();
 

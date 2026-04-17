@@ -13,8 +13,17 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'suite',
+      testDir: './tests/suite',
+      testMatch: /.*\.api\.spec\.ts/,
+      use: {
+        baseURL: 'http://localhost:3000',
+      },
+    },
+    {
       name: 'api',
       testMatch: /.*\.api\.spec\.ts/,
+      testIgnore: /suite\/.*/,
       use: {
         baseURL: 'http://localhost:3000',
       },

@@ -82,6 +82,15 @@ export class TimeTrackingService {
   }
 
   async getHistory(pageOptions: PageOptionsDto, userId?: string, workOrderId?: string, startDate?: string, endDate?: string): Promise<PageDto<TimeEntry>> {
+    const parseDate = (v: string | undefined, name: string): Date | undefined => {
+      if (!v) return undefined;
+      const d = new Date(v);
+      if (isNaN(d.getTime())) throw new BadRequestException(`Invalid ${name}: '${v}'`);
+      return d;
+    };
+    const start = parseDate(startDate, 'startDate');
+    const end = parseDate(endDate, 'endDate');
+
     const qb = this.teRepo.createQueryBuilder('te')
       .leftJoinAndSelect('te.user', 'user')
       .leftJoinAndSelect('te.workOrderStage', 'wos')
@@ -94,8 +103,8 @@ export class TimeTrackingService {
 
     if (userId) qb.andWhere('te.user_id = :userId', { userId });
     if (workOrderId) qb.andWhere('wos.work_order_id = :workOrderId', { workOrderId });
-    if (startDate) qb.andWhere('te.start_time >= :startDate', { startDate });
-    if (endDate) qb.andWhere('te.start_time <= :endDate', { endDate });
+    if (start) qb.andWhere('te.start_time >= :startDate', { startDate: start });
+    if (end) qb.andWhere('te.start_time <= :endDate', { endDate: end });
 
     const [items, count] = await qb.getManyAndCount();
     return new PageDto(items, new PageMetaDto(pageOptions, count));

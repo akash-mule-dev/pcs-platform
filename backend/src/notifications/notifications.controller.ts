@@ -14,31 +14,31 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Get current user notifications' })
   @ApiQuery({ name: 'unreadOnly', required: false, type: Boolean })
   findMine(@Req() req: any, @Query('unreadOnly') unreadOnly?: string) {
-    return this.service.findByUser(req.user.sub, unreadOnly === 'true');
+    return this.service.findByUser(req.user.id, unreadOnly === 'true');
   }
 
   @Get('unread-count')
   @ApiOperation({ summary: 'Get unread notification count' })
   async getUnreadCount(@Req() req: any) {
-    const count = await this.service.getUnreadCount(req.user.sub);
+    const count = await this.service.getUnreadCount(req.user.id);
     return { count };
   }
 
   @Patch(':id/read')
   @ApiOperation({ summary: 'Mark notification as read' })
   markAsRead(@Param('id') id: string, @Req() req: any) {
-    return this.service.markAsRead(id, req.user.sub);
+    return this.service.markAsRead(id, req.user.id);
   }
 
   @Post('read-all')
   @ApiOperation({ summary: 'Mark all notifications as read' })
   markAllAsRead(@Req() req: any) {
-    return this.service.markAllAsRead(req.user.sub);
+    return this.service.markAllAsRead(req.user.id);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a notification' })
   remove(@Param('id') id: string, @Req() req: any) {
-    return this.service.remove(id, req.user.sub);
+    return this.service.remove(id, req.user.id);
   }
 }

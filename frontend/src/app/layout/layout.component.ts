@@ -11,11 +11,12 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatMenuModule } from '@angular/material/menu';
 import { Subscription, Subject, debounceTime, switchMap, of } from 'rxjs';
 import { AuthService, User } from '../core/services/auth.service';
 import { NotificationService } from '../core/services/notification.service';
 import { SearchService, SearchResults } from '../core/services/search.service';
-import { ThemeService } from '../core/services/theme.service';
+import { ThemeService, FONT_SIZE_OPTIONS } from '../core/services/theme.service';
 import { BUILD_INFO } from '../../build-info';
 import { PermissionsService } from '../core/services/permissions.service';
 
@@ -33,7 +34,7 @@ interface NavItem {
     CommonModule, RouterModule, FormsModule,
     MatToolbarModule, MatListModule, MatIconModule,
     MatButtonModule, MatBadgeModule, MatFormFieldModule, MatInputModule,
-    MatAutocompleteModule, MatTooltipModule,
+    MatAutocompleteModule, MatTooltipModule, MatMenuModule,
   ],
   template: `
     <div class="layout-container">
@@ -51,7 +52,7 @@ interface NavItem {
         <mat-nav-list>
           @for (item of visibleNavItems; track item.route) {
             <a mat-list-item [routerLink]="item.route" routerLinkActive="active-link"
-               [routerLinkActiveOptions]="{ exact: item.route === '/' }"
+               [routerLinkActiveOptions]="{ exact: item.route === '/' || item.route === '/work-orders' }"
                [matTooltip]="sidenavCollapsed ? item.label : ''" matTooltipPosition="right"
                (click)="closeMobileMenu()">
               <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
@@ -123,6 +124,20 @@ interface NavItem {
           </div>
 
           <span class="toolbar-spacer"></span>
+
+          <!-- Font Size -->
+          <button mat-icon-button [matMenuTriggerFor]="fontSizeMenu" matTooltip="Font size">
+            <mat-icon>text_fields</mat-icon>
+          </button>
+          <mat-menu #fontSizeMenu="matMenu">
+            @for (opt of fontSizeOptions; track opt.value) {
+              <button mat-menu-item (click)="themeService.setFontSize(opt.value)"
+                      [class.font-size-active]="themeService.fontSize() === opt.value">
+                <mat-icon>{{ themeService.fontSize() === opt.value ? 'check' : '' }}</mat-icon>
+                <span>{{ opt.label }}</span>
+              </button>
+            }
+          </mat-menu>
 
           <!-- Theme Toggle -->
           <button mat-icon-button (click)="themeService.toggle()"
@@ -361,6 +376,12 @@ interface NavItem {
     .search-item mat-icon { font-size: 18px; width: 18px; height: 18px; color: var(--clay-text-muted); }
     .search-empty { padding: 16px; text-align: center; color: var(--clay-text-muted); font-size: 13px; }
 
+    /* Font size menu active item */
+    ::ng-deep .font-size-active {
+      font-weight: 600;
+      color: var(--clay-primary) !important;
+    }
+
     /* Mobile overlay */
     .sidenav-overlay {
       display: none;
@@ -395,6 +416,7 @@ interface NavItem {
 })
 export class LayoutComponent implements OnInit, OnDestroy {
   buildInfo = BUILD_INFO;
+  fontSizeOptions = FONT_SIZE_OPTIONS;
   currentUser: User | null = null;
   unreadCount = 0;
   searchQuery = '';

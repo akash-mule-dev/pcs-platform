@@ -14,6 +14,11 @@ export class UsersService {
     private readonly userRepo: Repository<User>,
   ) {}
 
+  private stripPassword(user: User): User {
+    const { passwordHash, ...safe } = user as any;
+    return safe as User;
+  }
+
   async findAll(pageOptions: PageOptionsDto, roleFilter?: string, status?: string): Promise<PageDto<User>> {
     const qb = this.userRepo.createQueryBuilder('user')
       .leftJoinAndSelect('user.role', 'role')
@@ -33,10 +38,15 @@ export class UsersService {
 
     const [items, count] = await qb.getManyAndCount();
     const meta = new PageMetaDto(pageOptions, count);
-    return new PageDto(items, meta);
+    return new PageDto(items.map(u => this.stripPassword(u)), meta);
   }
 
   async findOne(id: string): Promise<User> {
+    const user = await this.findOneWithHash(id);
+    return this.stripPassword(user);
+  }
+
+  private async findOneWithHash(id: string): Promise<User> {
     const user = await this.userRepo.findOne({ where: { id }, relations: ['role'] });
     if (!user) throw new NotFoundException('User not found');
     return user;
@@ -62,9 +72,9 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {
-    const user = await this.findOne(id);
+    const user = await this.findOneWithHash(id);
     if (dto.password) {
-      (user as any).passwordHash = await bcrypt.hash(dto.password, 10);
+      user.passwordHash = await bcrypt.hash(dto.password, 10);
     }
     if (dto.email !== undefined) user.email = dto.email;
     if (dto.mobileNo !== undefined) user.mobileNo = dto.mobileNo;

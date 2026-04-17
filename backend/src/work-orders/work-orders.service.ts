@@ -46,28 +46,40 @@ export class WorkOrdersService {
 
   async create(dto: CreateWorkOrderDto): Promise<WorkOrder> {
     const year = new Date().getFullYear();
-    const count = await this.woRepo.count();
-    const orderNumber = `WO-${year}-${String(count + 1).padStart(4, '0')}`;
 
-    const wo = this.woRepo.create({
-      orderNumber,
-      productId: dto.productId,
-      processId: dto.processId,
-      lineId: dto.lineId || null,
-      quantity: dto.quantity,
-      priority: dto.priority,
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-    });
-    const saved = await this.woRepo.save(wo);
+    // Retry loop handles concurrent duplicate orderNumber race condition
+    let saved: WorkOrder | undefined;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const count = await this.woRepo.count();
+      const orderNumber = `WO-${year}-${String(count + 1).padStart(4, '0')}`;
+
+      try {
+        const wo = this.woRepo.create({
+          orderNumber,
+          productId: dto.productId,
+          processId: dto.processId,
+          lineId: dto.lineId || null,
+          quantity: dto.quantity,
+          priority: dto.priority,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+        });
+        saved = await this.woRepo.save(wo);
+        break;
+      } catch (error: any) {
+        // 23505 = PostgreSQL unique_violation — another request used the same orderNumber
+        if (error.code === '23505' && attempt < 4) continue;
+        throw error;
+      }
+    }
 
     // Auto-create work order stages from process stages
     const stages = await this.stageRepo.find({ where: { processId: dto.processId }, order: { sequence: 'ASC' } });
     for (const stage of stages) {
-      const wos = this.wosRepo.create({ workOrderId: saved.id, stageId: stage.id });
+      const wos = this.wosRepo.create({ workOrderId: saved!.id, stageId: stage.id });
       await this.wosRepo.save(wos);
     }
 
-    return this.findOne(saved.id);
+    return this.findOne(saved!.id);
   }
 
   async update(id: string, dto: UpdateWorkOrderDto): Promise<WorkOrder> {
