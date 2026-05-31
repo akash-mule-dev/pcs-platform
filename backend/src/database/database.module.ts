@@ -22,17 +22,19 @@ const connectionConfig = databaseUrl
 
 const connectTimeoutMs = parseInt(process.env.DB_CONNECT_TIMEOUT || '8000', 10);
 
-// synchronize auto-mutates the DB schema to match entities. Convenient for
-// dev/demo but dangerous in production (silent data loss on entity changes).
-// Default: ON for non-production, OFF for production. Override with
-// DB_SYNCHRONIZE=true|false. Production can never enable it implicitly.
+// synchronize auto-mutates the DB schema to match the entities on boot.
+// This app currently ships NO migrations, so synchronize is load-bearing: it
+// is what keeps the deployed schema in step with the entities (e.g. the
+// time_entries columns the eager relations select). It therefore defaults ON,
+// including in production. Once real migrations exist, set DB_SYNCHRONIZE=false
+// and rely on migrationsRun instead.
 const synchronize =
   process.env.DB_SYNCHRONIZE !== undefined
-    ? process.env.DB_SYNCHRONIZE === 'true' && !isProduction
-    : !isProduction;
+    ? process.env.DB_SYNCHRONIZE === 'true'
+    : true;
 
-if (synchronize) {
-  logger.warn('TypeORM synchronize is ON — never use this in production. Use migrations instead.');
+if (synchronize && isProduction) {
+  logger.warn('TypeORM synchronize is ON in production — required until DB migrations exist. Set DB_SYNCHRONIZE=false after adding migrations.');
 }
 
 @Module({
@@ -41,9 +43,10 @@ if (synchronize) {
       ...connectionConfig,
       autoLoadEntities: true,
       synchronize,
-      // In production, apply committed migrations on boot (synchronize is off there).
-      migrationsRun: isProduction,
-      migrations: isProduction ? ['dist/database/migrations/*.js'] : [],
+      // Run committed migrations on boot only when synchronize is disabled
+      // (i.e. once migrations have been generated and DB_SYNCHRONIZE=false).
+      migrationsRun: !synchronize && isProduction,
+      migrations: ['dist/database/migrations/*.js'],
       extra: {
         connectionTimeoutMillis: connectTimeoutMs,
         query_timeout: 10000,
