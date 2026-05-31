@@ -1,8 +1,8 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, MoreThanOrEqual } from 'typeorm';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
-import { WorkOrderStage } from '../work-orders/work-order-stage.entity.js';
+import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
 import { TimeEntry } from '../time-tracking/time-entry.entity.js';
 import { QualityData } from '../quality-data/quality-data.entity.js';
 
@@ -15,6 +15,8 @@ export class DashboardService {
     @InjectRepository(QualityData) private readonly qdRepo: Repository<QualityData>,
   ) {}
 
+  private readonly logger = new Logger(DashboardService.name);
+
   private parseDate(value: string | undefined, fieldName: string): Date | undefined {
     if (!value) return undefined;
     const d = new Date(value);
@@ -25,33 +27,56 @@ export class DashboardService {
   }
 
   async getSummary() {
-    const statusCounts = await this.woRepo.createQueryBuilder('wo')
-      .select('wo.status', 'status')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('wo.status')
-      .getRawMany();
+    // Each KPI is computed independently and defensively: a single failing
+    // query degrades that metric to a safe default instead of returning a 500
+    // for the entire dashboard.
+    let workOrdersByStatus: Array<{ status: string; count: string }> = [];
+    try {
+      workOrdersByStatus = await this.woRepo.createQueryBuilder('wo')
+        .select('wo.status', 'status')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy('wo.status')
+        .getRawMany();
+    } catch (err) {
+      this.logger.error(`getSummary.workOrdersByStatus failed: ${(err as Error).message}`);
+    }
 
-    const activeOperators = await this.teRepo.count({ where: { endTime: IsNull() } });
+    let activeOperators = 0;
+    try {
+      activeOperators = await this.teRepo.count({ where: { endTime: IsNull() } });
+    } catch (err) {
+      this.logger.error(`getSummary.activeOperators failed: ${(err as Error).message}`);
+    }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayCompleted = await this.wosRepo.createQueryBuilder('wos')
-      .where('wos.completed_at >= :today', { today })
-      .andWhere('wos.status = :status', { status: 'completed' })
-      .getCount();
+    let todayCompletedStages = 0;
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      todayCompletedStages = await this.wosRepo.count({
+        where: { status: WorkOrderStageStatus.COMPLETED, completedAt: MoreThanOrEqual(today) },
+      });
+    } catch (err) {
+      this.logger.error(`getSummary.todayCompletedStages failed: ${(err as Error).message}`);
+    }
 
-    const effResult = await this.teRepo.createQueryBuilder('te')
-      .leftJoin('te.workOrderStage', 'wos')
-      .leftJoin('wos.stage', 'stage')
-      .select('AVG(CASE WHEN te.duration_seconds > 0 AND stage.target_time_seconds > 0 THEN (stage.target_time_seconds::float / te.duration_seconds) * 100 ELSE NULL END)', 'avgEfficiency')
-      .where('te.end_time IS NOT NULL')
-      .getRawOne();
+    let avgEfficiency: number | null = null;
+    try {
+      const effResult = await this.teRepo.createQueryBuilder('te')
+        .leftJoin('te.workOrderStage', 'wos')
+        .leftJoin('wos.stage', 'stage')
+        .select('AVG(CASE WHEN te.duration_seconds > 0 AND stage.target_time_seconds > 0 THEN (stage.target_time_seconds::float / te.duration_seconds) * 100 ELSE NULL END)', 'avgEfficiency')
+        .where('te.end_time IS NOT NULL')
+        .getRawOne();
+      avgEfficiency = effResult?.avgEfficiency ? parseFloat(parseFloat(effResult.avgEfficiency).toFixed(1)) : null;
+    } catch (err) {
+      this.logger.error(`getSummary.avgEfficiency failed: ${(err as Error).message}`);
+    }
 
     return {
-      workOrdersByStatus: statusCounts,
+      workOrdersByStatus,
       activeOperators,
-      todayCompletedStages: todayCompleted,
-      avgEfficiency: effResult?.avgEfficiency ? parseFloat(parseFloat(effResult.avgEfficiency).toFixed(1)) : null,
+      todayCompletedStages,
+      avgEfficiency,
     };
   }
 

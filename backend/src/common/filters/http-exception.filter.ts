@@ -4,18 +4,24 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger('GlobalExceptionFilter');
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
     if (!(exception instanceof HttpException)) {
-      console.error('Unhandled exception:', exception);
+      // Log the real cause (message + stack) with the offending route so
+      // production 500s are diagnosable from server logs.
+      const e = exception as Error;
+      this.logger.error(`Unhandled exception on ${request.method} ${request.url}: ${e?.message}`, e?.stack);
     }
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;

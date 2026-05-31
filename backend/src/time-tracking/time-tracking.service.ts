@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { TimeEntry } from './time-entry.entity.js';
@@ -16,6 +16,8 @@ export class TimeTrackingService {
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     private readonly eventsGateway: EventsGateway,
   ) {}
+
+  private readonly logger = new Logger(TimeTrackingService.name);
 
   async clockIn(userId: string, dto: ClockInDto): Promise<TimeEntry> {
     // Check no active entry
@@ -75,10 +77,17 @@ export class TimeTrackingService {
   }
 
   async getActive(): Promise<TimeEntry[]> {
-    return this.teRepo.find({
-      where: { endTime: IsNull() },
-      relations: ['user', 'workOrderStage', 'workOrderStage.stage', 'workOrderStage.workOrder', 'station'],
-    });
+    try {
+      return await this.teRepo.find({
+        where: { endTime: IsNull() },
+        relations: ['user', 'workOrderStage', 'workOrderStage.stage', 'workOrderStage.workOrder', 'station'],
+      });
+    } catch (err) {
+      // Degrade gracefully: the live view shows no active entries rather than
+      // failing the whole request if a related row is malformed.
+      this.logger.error(`getActive failed: ${(err as Error).message}`);
+      return [];
+    }
   }
 
   async getHistory(pageOptions: PageOptionsDto, userId?: string, workOrderId?: string, startDate?: string, endDate?: string): Promise<PageDto<TimeEntry>> {
