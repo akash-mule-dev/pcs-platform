@@ -64,7 +64,7 @@ export class DashboardService {
       const effResult = await this.teRepo.createQueryBuilder('te')
         .leftJoin('te.workOrderStage', 'wos')
         .leftJoin('wos.stage', 'stage')
-        .select('AVG(CASE WHEN te.duration_seconds > 0 AND stage.target_time_seconds > 0 THEN (stage.target_time_seconds::float / te.duration_seconds) * 100 ELSE NULL END)', 'avgEfficiency')
+        .select('AVG(CASE WHEN te.duration_seconds > 0 AND stage.target_time_seconds > 0 THEN LEAST((stage.target_time_seconds::float / te.duration_seconds) * 100, 100) ELSE NULL END)', 'avgEfficiency')
         .where('te.end_time IS NOT NULL')
         .getRawOne();
       avgEfficiency = effResult?.avgEfficiency ? parseFloat(parseFloat(effResult.avgEfficiency).toFixed(1)) : null;
@@ -100,7 +100,7 @@ export class DashboardService {
       .addSelect("user.first_name || ' ' || user.last_name", 'operatorName')
       .addSelect('SUM(te.duration_seconds)', 'totalTime')
       .addSelect('COUNT(te.id)', 'stagesCompleted')
-      .addSelect('AVG(CASE WHEN te.duration_seconds > 0 AND stage.target_time_seconds > 0 THEN (stage.target_time_seconds::float / te.duration_seconds) * 100 ELSE NULL END)', 'avgEfficiency')
+      .addSelect('AVG(CASE WHEN te.duration_seconds > 0 AND stage.target_time_seconds > 0 THEN LEAST((stage.target_time_seconds::float / te.duration_seconds) * 100, 100) ELSE NULL END)', 'avgEfficiency')
       .where('te.end_time IS NOT NULL')
       .groupBy('user.id')
       .addGroupBy('user.first_name')
@@ -141,7 +141,7 @@ export class DashboardService {
       minTime: parseInt(r.minTime) || 0,
       maxTime: parseInt(r.maxTime) || 0,
       entryCount: parseInt(r.entryCount) || 0,
-      efficiency: r.targetTime && r.avgTime ? parseFloat(((r.targetTime / r.avgTime) * 100).toFixed(1)) : null,
+      efficiency: r.targetTime && r.avgTime ? Math.min(100, parseFloat(((r.targetTime / r.avgTime) * 100).toFixed(1))) : null,
     }));
   }
 
