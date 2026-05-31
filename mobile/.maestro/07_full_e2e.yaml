@@ -22,9 +22,9 @@ name: "Full End-to-End Flow"
 - assertVisible: "Sign In"
 
 - tapOn: "Enter your email"
-- inputText: "admin@pcs.local"
+- inputText: "admin@pcs.com"
 - tapOn: "Enter your password"
-- inputText: "password123"
+- inputText: "123456"
 - tapOn: "Sign In"
 
 # ── 3. Dashboard Loaded ──
@@ -58,7 +58,7 @@ name: "Full End-to-End Flow"
 # Profile
 - tapOn: "Profile"
 - extendedWaitUntil:
-    visible: "admin@pcs.local"
+    visible: "admin@pcs.com"
     timeout: 5000
 - assertVisible: "This Week"
 

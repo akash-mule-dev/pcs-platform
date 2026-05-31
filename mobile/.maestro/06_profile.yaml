@@ -10,9 +10,9 @@ name: "Profile Screen"
       visible: "Sign In"
     commands:
       - tapOn: "Enter your email"
-      - inputText: "admin@pcs.local"
+      - inputText: "admin@pcs.com"
       - tapOn: "Enter your password"
-      - inputText: "password123"
+      - inputText: "123456"
       - tapOn: "Sign In"
 
 # Navigate to Profile tab
@@ -21,7 +21,7 @@ name: "Profile Screen"
 # Verify user profile info is displayed
 - assertVisible: "Employee ID"
 - assertVisible: "Email"
-- assertVisible: "admin@pcs.local"
+- assertVisible: "admin@pcs.com"
 
 # Verify weekly stats section
 - assertVisible: "This Week"

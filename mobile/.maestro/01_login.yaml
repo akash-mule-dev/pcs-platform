@@ -29,9 +29,9 @@ name: "Login Flow"
 
 # Enter valid credentials
 - tapOn: "Enter your email"
-- inputText: "admin@pcs.local"
+- inputText: "admin@pcs.com"
 - tapOn: "Enter your password"
-- inputText: "password123"
+- inputText: "123456"
 - tapOn: "Sign In"
 
 # Verify we land on the dashboard

@@ -11,9 +11,9 @@ name: "3D Model Viewer Test"
       visible: "Sign In"
     commands:
       - tapOn: "Enter your email"
-      - inputText: "admin@pcs.local"
+      - inputText: "admin@pcs.com"
       - tapOn: "Enter your password"
-      - inputText: "password123"
+      - inputText: "123456"
       - tapOn: "Sign In"
       - extendedWaitUntil:
           visible: "Today's Stats"
