@@ -31,7 +31,8 @@ export function WorkOrderListScreen() {
       const list = Array.isArray(data) ? data : [];
       setOrders(list);
       offlineService.cacheWorkOrders(list);
-    } catch {
+    } catch (err) {
+      if (__DEV__) console.warn('Work order load failed:', err);
       // Only use cache if offline
       if (!offlineService.isOnline) {
         const cached = await offlineService.getCachedWorkOrders();

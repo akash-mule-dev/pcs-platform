@@ -21,6 +21,7 @@ export class QualityDataService {
     if (modelId) {
       qb.where('qd.model_id = :modelId', { modelId });
     }
+    qb.andWhere('qd.is_active = :active', { active: true });
 
     const [items, count] = await qb.getManyAndCount();
     return new PageDto(items, new PageMetaDto(pageOptions, count));
@@ -28,7 +29,7 @@ export class QualityDataService {
 
   async findByModel(modelId: string): Promise<QualityData[]> {
     return this.repo.find({
-      where: { modelId },
+      where: { modelId, isActive: true },
       order: { createdAt: 'DESC' },
     });
   }
@@ -58,11 +59,12 @@ export class QualityDataService {
   }
 
   async removeByModel(modelId: string): Promise<void> {
-    await this.repo.delete({ modelId });
+    // Soft delete to stay consistent with remove() and preserve the audit trail.
+    await this.repo.update({ modelId }, { isActive: false });
   }
 
   async getSummary(modelId: string): Promise<{ total: number; pass: number; fail: number; warning: number }> {
-    const data = await this.repo.find({ where: { modelId } });
+    const data = await this.repo.find({ where: { modelId, isActive: true } });
     return {
       total: data.length,
       pass: data.filter(d => d.status === 'pass').length,
@@ -128,7 +130,7 @@ export class QualityDataService {
 
   /** Phase 6: Get items pending sign-off */
   async getPendingSignoffs(modelId?: string): Promise<QualityData[]> {
-    const where: any = { signoffStatus: 'pending', status: 'fail' };
+    const where: any = { signoffStatus: 'pending', status: 'fail', isActive: true };
     if (modelId) where.modelId = modelId;
     return this.repo.find({ where, relations: ['model'], order: { createdAt: 'DESC' } });
   }

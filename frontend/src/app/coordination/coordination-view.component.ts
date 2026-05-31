@@ -395,8 +395,8 @@ export class CoordinationViewComponent implements OnInit, OnDestroy {
     this.safePdfUrl = null;
   }
 
-  onMeshClicked(meshName: string): void {
-    console.log('Mesh clicked:', meshName);
+  onMeshClicked(_meshName: string): void {
+    // Mesh selection hook — wire to inspection panel as needed.
   }
 
   private connectWebSocket(packageId: string): void {

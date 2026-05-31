@@ -3,7 +3,13 @@ import { Server, Socket } from 'socket.io';
 import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
-@WebSocketGateway({ cors: { origin: ['http://localhost:4200', 'http://localhost:8100'] } })
+@WebSocketGateway({
+  cors: {
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+      : ['http://localhost:4200', 'http://localhost:8100'],
+  },
+})
 export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(EventsGateway.name);
 

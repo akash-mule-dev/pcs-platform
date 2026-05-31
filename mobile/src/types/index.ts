@@ -6,6 +6,7 @@ export interface User {
   firstName: string;
   lastName: string;
   employeeId: string;
+  badgeId?: string;
   role: { id: string; name: string };
   isActive: boolean;
 }

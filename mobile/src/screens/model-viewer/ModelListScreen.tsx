@@ -39,8 +39,9 @@ export function ModelListScreen() {
     try {
       const data = await api.get<Model3D[]>('/models');
       setModels(Array.isArray(data) ? data : []);
-    } catch {
-      // fail silently
+    } catch (err) {
+      if (__DEV__) console.warn('Model list load failed:', err);
+      setModels([]);
     } finally {
       setLoading(false);
     }

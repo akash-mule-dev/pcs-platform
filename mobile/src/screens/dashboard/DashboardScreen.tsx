@@ -73,8 +73,8 @@ export function DashboardScreen() {
         totalTimeSeconds,
         workOrderCount: workOrderIds.size,
       });
-    } catch {
-      // silently fail on refresh
+    } catch (err) {
+      if (__DEV__) console.warn('Dashboard load failed:', err);
     }
   }, [user?.id]);
 

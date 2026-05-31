@@ -40,7 +40,14 @@ export class SeedService {
     }
 
     this.logger.log('Seeding roles and default users...');
-    const hash = await bcrypt.hash('123456', 10);
+    const defaultPassword = process.env.SEED_DEFAULT_PASSWORD || 'changeme-dev-only';
+    if (!process.env.SEED_DEFAULT_PASSWORD) {
+      this.logger.warn(
+        'SEED_DEFAULT_PASSWORD not set — seeding users with an insecure default. ' +
+          'Set SEED_DEFAULT_PASSWORD before using seeded accounts beyond local dev.',
+      );
+    }
+    const hash = await bcrypt.hash(defaultPassword, 10);
 
     // ─── ROLES ──────────────────────────────────────────────────────────
     const roles: Record<string, Role> = {};

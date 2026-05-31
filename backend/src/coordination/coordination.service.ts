@@ -276,9 +276,28 @@ export class CoordinationService {
 
   private async extractZip(zipPath: string, destDir: string): Promise<void> {
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-    await fs.createReadStream(zipPath)
-      .pipe(unzipper.Extract({ path: destDir }))
-      .promise();
+    const resolvedDest = path.resolve(destDir);
+    const directory = await unzipper.Open.file(zipPath);
+    for (const entry of directory.files) {
+      // Guard against Zip Slip / path traversal: ensure every entry resolves
+      // strictly inside the extraction directory.
+      const targetPath = path.resolve(resolvedDest, entry.path);
+      if (targetPath !== resolvedDest && !targetPath.startsWith(resolvedDest + path.sep)) {
+        throw new Error(`Blocked unsafe zip entry (path traversal): ${entry.path}`);
+      }
+      if (entry.type === 'Directory') {
+        fs.mkdirSync(targetPath, { recursive: true });
+        continue;
+      }
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      await new Promise<void>((resolve, reject) => {
+        entry
+          .stream()
+          .pipe(fs.createWriteStream(targetPath))
+          .on('finish', () => resolve())
+          .on('error', reject);
+      });
+    }
   }
 
   private discoverFiles(dir: string) {

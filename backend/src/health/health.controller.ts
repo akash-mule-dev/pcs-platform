@@ -1,4 +1,4 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -49,6 +49,15 @@ export class HealthController {
   @Public()
   @ApiOperation({ summary: 'Trigger database seed (force re-seed)' })
   async seed() {
+    // This endpoint DROPS all users/roles and re-seeds. It must never be
+    // reachable in production, and is only enabled when explicitly opted in
+    // via ALLOW_SEED_ENDPOINT=true (e.g. for internal demo environments).
+    if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SEED_ENDPOINT !== 'true') {
+      throw new ForbiddenException(
+        'Seed endpoint is disabled. Set ALLOW_SEED_ENDPOINT=true in a non-production environment to enable it.',
+      );
+    }
+
     const log: string[] = [];
     try {
       const beforeRoles = await this.dataSource.query('SELECT COUNT(*) as cnt FROM "roles"');
@@ -97,7 +106,7 @@ export class HealthController {
       return { status: 'seeded', log };
     } catch (err) {
       log.push(`error: ${(err as Error).message}`);
-      return { status: 'error', log, stack: (err as Error).stack?.split('\n').slice(0, 5) };
+      return { status: 'error', log };
     }
   }
 

@@ -63,8 +63,8 @@ export function ProfileScreen() {
           : 0;
 
       setWeekStats({ stagesCompleted, avgTimePerStage, efficiency });
-    } catch {
-      // silently fail
+    } catch (err) {
+      if (__DEV__) console.warn('Profile stats load failed:', err);
     }
   }, [user?.id]);
 

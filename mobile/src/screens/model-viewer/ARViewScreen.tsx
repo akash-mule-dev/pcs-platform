@@ -29,7 +29,7 @@ export function ARViewScreen() {
 
   // WebXR AR — opens in Chrome with full ARCore SLAM
   const launchWebXR = useCallback(() => {
-    const arPageUrl = `https://akash-mule-dev.github.io/pcs-platform/ar-viewer.html?url=${encodeURIComponent(fileUrl)}&id=${modelId}`;
+    const arPageUrl = `${environment.arViewerUrl}?url=${encodeURIComponent(fileUrl)}&id=${modelId}`;
     Linking.openURL(arPageUrl).catch(() => {
       Alert.alert('Cannot open browser', 'Please install Chrome or another WebXR-compatible browser.');
     });
@@ -157,7 +157,7 @@ export function ARViewScreen() {
         mediaPlaybackRequiresUserAction={false}
         mediaCapturePermissionGrantType="grant"
         onMessage={onWebViewMessage}
-        onPermissionRequest={(event: any) => event.nativeEvent?.grant?.()}
+        {...({ onPermissionRequest: (event: any) => event.nativeEvent?.grant?.() } as any)}
       />
 
       {modelStatus === 'loaded' && (

@@ -159,42 +159,51 @@ export class TimeTrackingLiveComponent implements OnInit, OnDestroy, AfterViewIn
   }
 
   loadActive(): void {
-    this.api.get<any[]>('/time-tracking/active').subscribe(data => {
-      this.dataSource.data = data || [];
+    this.api.get<any[]>('/time-tracking/active').subscribe({
+      next: data => { this.dataSource.data = data || []; },
+      error: () => { /* surfaced by global error interceptor; keep last good data */ },
     });
   }
 
   loadWorkOrders(): void {
-    this.api.get<any>('/work-orders', { status: 'in_progress' }).subscribe(data => {
-      this.workOrders = Array.isArray(data) ? data : data.data || [];
+    this.api.get<any>('/work-orders', { status: 'in_progress' }).subscribe({
+      next: data => { this.workOrders = Array.isArray(data) ? data : data.data || []; },
+      error: () => { this.workOrders = []; },
     });
   }
 
   loadStations(): void {
-    this.api.get<any>('/lines').subscribe(lines => {
-      const allLines = Array.isArray(lines) ? lines : lines.data || [];
-      this.stations = [];
-      allLines.forEach((line: any) => {
-        if (line.stations && Array.isArray(line.stations)) {
-          this.stations.push(...line.stations);
-        }
-      });
-      // Fallback: if no nested stations, fetch per line
-      if (this.stations.length === 0 && allLines.length > 0) {
+    this.api.get<any>('/lines').subscribe({
+      next: lines => {
+        const allLines = Array.isArray(lines) ? lines : lines.data || [];
+        this.stations = [];
         allLines.forEach((line: any) => {
-          this.api.get<any>(`/lines/${line.id}/stations`).subscribe(sts => {
-            const stArr = Array.isArray(sts) ? sts : sts?.data || [];
-            this.stations.push(...stArr);
-          });
+          if (line.stations && Array.isArray(line.stations)) {
+            this.stations.push(...line.stations);
+          }
         });
-      }
+        // Fallback: if no nested stations, fetch per line
+        if (this.stations.length === 0 && allLines.length > 0) {
+          allLines.forEach((line: any) => {
+            this.api.get<any>(`/lines/${line.id}/stations`).subscribe({
+              next: sts => {
+                const stArr = Array.isArray(sts) ? sts : sts?.data || [];
+                this.stations.push(...stArr);
+              },
+              error: () => { /* non-critical: station list stays as-is */ },
+            });
+          });
+        }
+      },
+      error: () => { this.stations = []; },
     });
   }
 
   onWOSelect(): void {
     if (!this.clockInWO) return;
-    this.api.get<any>(`/work-orders/${this.clockInWO}`).subscribe(wo => {
-      this.availableStages = wo.workOrderStages || wo.stages || [];
+    this.api.get<any>(`/work-orders/${this.clockInWO}`).subscribe({
+      next: wo => { this.availableStages = wo.workOrderStages || wo.stages || []; },
+      error: () => { this.availableStages = []; },
     });
   }
 
@@ -206,7 +215,8 @@ export class TimeTrackingLiveComponent implements OnInit, OnDestroy, AfterViewIn
         this.snackBar.open('Clocked in', 'Close', { duration: 3000 });
         this.showClockIn = false;
         this.loadActive();
-      }
+      },
+      error: () => { /* failure message surfaced by global error interceptor */ },
     });
   }
 
@@ -215,7 +225,8 @@ export class TimeTrackingLiveComponent implements OnInit, OnDestroy, AfterViewIn
       next: () => {
         this.snackBar.open('Clocked out', 'Close', { duration: 3000 });
         this.loadActive();
-      }
+      },
+      error: () => { /* failure message surfaced by global error interceptor */ },
     });
   }
 
