@@ -8,10 +8,12 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { User } from './entities/user.entity.js';
 import { Role } from './entities/role.entity.js';
 import { JWT_SECRET, JWT_EXPIRES_IN } from '../common/constants/jwt.constant.js';
+import { RbacModule } from '../rbac/rbac.module.js';
 
 
 @Module({
   imports: [
+    RbacModule,
     TypeOrmModule.forFeature([User, Role]),
     PassportModule,
     JwtModule.register({

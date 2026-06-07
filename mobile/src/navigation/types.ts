@@ -6,6 +6,7 @@ export type TabParamList = {
   WorkOrders: undefined;
   Timer: undefined;
   Models: undefined;
+  More: undefined;
   Profile: undefined;
 };
 
@@ -28,6 +29,14 @@ export type ModelsStackParamList = {
   ARView: { modelId: string; fileUrl: string };
   VRView: { modelId: string; modelName: string; fileUrl: string };
   QualityView: { modelId: string; modelName: string; fileUrl: string };
+};
+
+// ── More Stack (nested in tab) ──
+export type MoreStackParamList = {
+  MoreMenu: undefined;
+  NcrList: undefined;
+  EquipmentList: undefined;
+  MaterialList: undefined;
 };
 
 // ── Root Navigator ──

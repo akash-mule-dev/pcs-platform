@@ -18,10 +18,10 @@ export const timeTrackingService = {
   },
 
   async getActive(): Promise<TimeEntry[]> {
-    return api.get<TimeEntry[]>('/time-tracking/active');
+    return api.getList<TimeEntry>('/time-tracking/active');
   },
 
   async getHistory(params?: Record<string, string | number>): Promise<TimeEntry[]> {
-    return api.get<TimeEntry[]>('/time-tracking/history', params);
+    return api.getList<TimeEntry>('/time-tracking/history', params);
   },
 };

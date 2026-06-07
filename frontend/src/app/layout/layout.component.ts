@@ -24,7 +24,15 @@ interface NavItem {
   label: string;
   icon: string;
   route: string;
+  feature?: string;
   roles?: string[];
+}
+
+interface NavGroup {
+  label: string;
+  icon: string;
+  expanded: boolean;
+  items: (NavItem & { feature: string })[];
 }
 
 @Component({
@@ -50,16 +58,40 @@ interface NavItem {
           }
         </div>
         <mat-nav-list>
-          @for (item of visibleNavItems; track item.route) {
-            <a mat-list-item [routerLink]="item.route" routerLinkActive="active-link"
-               [routerLinkActiveOptions]="{ exact: item.route === '/' || item.route === '/work-orders' }"
-               [matTooltip]="sidenavCollapsed ? item.label : ''" matTooltipPosition="right"
-               (click)="closeMobileMenu()">
-              <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
-              @if (!sidenavCollapsed) {
-                <span matListItemTitle>{{ item.label }}</span>
-              }
+          @if (sidenavCollapsed) {
+            <!-- Collapsed: flat icon rail with tooltips -->
+            @for (item of visibleNavItems; track item.route) {
+              <a mat-list-item [routerLink]="item.route" routerLinkActive="active-link"
+                 [routerLinkActiveOptions]="{ exact: item.route === '/' || item.route === '/work-orders' }"
+                 [matTooltip]="item.label" matTooltipPosition="right" (click)="closeMobileMenu()">
+                <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+              </a>
+            }
+          } @else {
+            <!-- Expanded: Dashboard pinned, then collapsible groups -->
+            <a mat-list-item [routerLink]="dashboardItem.route" routerLinkActive="active-link"
+               [routerLinkActiveOptions]="{ exact: true }" (click)="closeMobileMenu()">
+              <mat-icon matListItemIcon>{{ dashboardItem.icon }}</mat-icon>
+              <span matListItemTitle>{{ dashboardItem.label }}</span>
             </a>
+            @for (group of visibleGroups; track group.label) {
+              <div class="nav-group">
+                <button type="button" class="nav-group-header" (click)="toggleGroup(group)">
+                  <mat-icon class="grp-icon">{{ group.icon }}</mat-icon>
+                  <span class="grp-label">{{ group.label }}</span>
+                  <mat-icon class="grp-chevron">{{ group.expanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+                </button>
+                @if (group.expanded) {
+                  @for (item of visibleItems(group); track item.route) {
+                    <a mat-list-item class="nav-sub" [routerLink]="item.route" routerLinkActive="active-link"
+                       [routerLinkActiveOptions]="{ exact: item.route === '/work-orders' }" (click)="closeMobileMenu()">
+                      <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+                      <span matListItemTitle>{{ item.label }}</span>
+                    </a>
+                  }
+                }
+              </div>
+            }
           }
         </mat-nav-list>
         @if (!sidenavCollapsed) {
@@ -295,6 +327,27 @@ interface NavItem {
     .sidenav.collapsed ::ng-deep .mdc-list-item__start { margin-inline-end: 0 !important; }
     .sidenav.collapsed ::ng-deep .mat-mdc-list-item { overflow: visible !important; }
 
+    /* Nav groups */
+    .nav-group { margin-top: 2px; }
+    .nav-group-header {
+      display: flex; align-items: center; gap: 12px;
+      width: calc(100% - 12px); margin: 1px 12px 1px 0;
+      padding: 8px 16px; height: 36px;
+      background: transparent; border: none; cursor: pointer;
+      color: var(--clay-sidebar-text); font: inherit; text-align: left;
+      border-radius: 0 var(--clay-radius-sm) var(--clay-radius-sm) 0;
+      opacity: 0.7; transition: all var(--clay-transition);
+    }
+    .nav-group-header:hover { background: rgba(255, 255, 255, 0.05); opacity: 1; }
+    .nav-group-header .grp-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
+    .nav-group-header .grp-label {
+      flex: 1; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; font-family: 'Space Grotesk', sans-serif; white-space: nowrap;
+    }
+    .nav-group-header .grp-chevron { font-size: 18px; width: 18px; height: 18px; opacity: 0.6; }
+    .sidenav ::ng-deep a.nav-sub { padding-left: 10px !important; }
+    .sidenav ::ng-deep a.nav-sub .mat-icon { font-size: 18px; width: 18px; height: 18px; }
+
     /* Build info */
     .build-info {
       padding: 12px 20px;
@@ -428,23 +481,62 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private searchSubject = new Subject<string>();
   private subs: Subscription[] = [];
 
-  navItems: (NavItem & { feature: string })[] = [
-    { label: 'Dashboard', icon: 'dashboard', route: '/', feature: 'dashboard' },
-    { label: 'Products', icon: 'inventory_2', route: '/products', feature: 'products' },
-    { label: 'Processes', icon: 'account_tree', route: '/processes', feature: 'processes' },
-    { label: 'Work Orders', icon: 'assignment', route: '/work-orders', feature: 'work-orders' },
-    { label: 'Kanban', icon: 'view_kanban', route: '/work-orders/kanban', feature: 'kanban' },
-    { label: 'Time Tracking', icon: 'timer', route: '/time-tracking', feature: 'time-tracking' },
-    { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
-    { label: 'Stations', icon: 'location_on', route: '/stations', feature: 'stations' },
-    { label: 'Coordination', icon: 'hub', route: '/coordination', feature: 'coordination' },
-    { label: '3D Quality', icon: 'view_in_ar', route: '/quality-analysis', feature: 'quality-analysis' },
-    { label: 'Reports', icon: 'bar_chart', route: '/reports', feature: 'reports' },
-    { label: 'Audit Log', icon: 'history', route: '/audit', feature: 'audit' },
+  dashboardItem: NavItem & { feature: string } = { label: 'Dashboard', icon: 'dashboard', route: '/', feature: 'dashboard' };
+
+  navGroups: NavGroup[] = [
+    { label: 'Production', icon: 'precision_manufacturing', expanded: true, items: [
+      { label: 'Work Orders', icon: 'assignment', route: '/work-orders', feature: 'work-orders' },
+      { label: 'Kanban', icon: 'view_kanban', route: '/work-orders/kanban', feature: 'kanban' },
+      { label: 'Processes', icon: 'account_tree', route: '/processes', feature: 'processes' },
+      { label: 'Products', icon: 'inventory_2', route: '/products', feature: 'products' },
+      { label: 'Capacity', icon: 'calendar_month', route: '/scheduling', feature: 'scheduling' },
+    ] },
+    { label: 'Shop Floor', icon: 'engineering', expanded: true, items: [
+      { label: 'Time Tracking', icon: 'timer', route: '/time-tracking', feature: 'time-tracking' },
+      { label: 'Equipment', icon: 'precision_manufacturing', route: '/equipment', feature: 'equipment' },
+      { label: 'Stations', icon: 'location_on', route: '/stations', feature: 'stations' },
+      { label: 'Workforce', icon: 'badge', route: '/workforce', feature: 'workforce' },
+    ] },
+    { label: 'Materials', icon: 'inventory_2', expanded: false, items: [
+      { label: 'Materials', icon: 'category', route: '/materials', feature: 'materials' },
+      { label: 'Traceability', icon: 'qr_code_2', route: '/traceability', feature: 'traceability' },
+    ] },
+    { label: 'Quality', icon: 'verified', expanded: false, items: [
+      { label: 'NCR / CAPA', icon: 'report_problem', route: '/ncr', feature: 'ncr' },
+      { label: '3D Quality', icon: 'view_in_ar', route: '/quality-analysis', feature: 'quality-analysis' },
+    ] },
+    { label: 'Engineering', icon: 'hub', expanded: false, items: [
+      { label: 'Coordination', icon: 'hub', route: '/coordination', feature: 'coordination' },
+      { label: '3D Conversion', icon: 'transform', route: '/conversion', feature: 'coordination' },
+      { label: 'Model Viewer', icon: 'view_in_ar', route: '/model-viewer', feature: 'coordination' },
+    ] },
+    { label: 'Analytics', icon: 'insights', expanded: false, items: [
+      { label: 'Reports', icon: 'bar_chart', route: '/reports', feature: 'reports' },
+      { label: 'Costing', icon: 'payments', route: '/costing', feature: 'costing' },
+      { label: 'Audit Log', icon: 'history', route: '/audit', feature: 'audit' },
+    ] },
+    { label: 'Administration', icon: 'settings', expanded: false, items: [
+      { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
+      { label: 'Roles & Access', icon: 'admin_panel_settings', route: '/rbac', feature: 'rbac' },
+      { label: 'Templates', icon: 'dynamic_form', route: '/templates', feature: 'templates' },
+    ] },
   ];
 
-  get visibleNavItems() {
-    return this.navItems.filter(item => this.permissions.canView(item.feature));
+  visibleItems(group: NavGroup): (NavItem & { feature: string })[] {
+    return group.items.filter(item => this.permissions.canView(item.feature));
+  }
+
+  get visibleGroups(): NavGroup[] {
+    return this.navGroups.filter(g => this.visibleItems(g).length > 0);
+  }
+
+  get visibleNavItems(): (NavItem & { feature: string })[] {
+    const all = [this.dashboardItem, ...this.navGroups.flatMap(g => g.items)];
+    return all.filter(item => this.permissions.canView(item.feature));
+  }
+
+  toggleGroup(group: NavGroup): void {
+    group.expanded = !group.expanded;
   }
 
   constructor(
@@ -457,6 +549,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    // Auto-expand the group containing the active route so the active item is visible.
+    const url = this.router.url;
+    for (const g of this.navGroups) {
+      if (g.items.some(i => url === i.route || url.startsWith(i.route + '/'))) g.expanded = true;
+    }
     this.subs.push(
       this.auth.currentUser$.subscribe(user => this.currentUser = user),
       this.notificationService.unreadCount$.subscribe(c => this.unreadCount = c),

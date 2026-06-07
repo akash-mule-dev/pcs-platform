@@ -41,6 +41,17 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     client.leave(`user:${userId}`);
   }
 
+  /** Watch a single conversion job's progress */
+  @SubscribeMessage('join-conversion')
+  handleJoinConversion(client: Socket, jobId: string) {
+    client.join(`conversion:${jobId}`);
+  }
+
+  @SubscribeMessage('leave-conversion')
+  handleLeaveConversion(client: Socket, jobId: string) {
+    client.leave(`conversion:${jobId}`);
+  }
+
   // --- Existing events ---
 
   emitTimeEntryUpdate(data: any) {
@@ -89,6 +100,19 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   emitAlert(data: { type: string; title: string; message: string; priority: string }) {
     if (this.server) {
       this.server.emit('alert', data);
+    }
+  }
+
+  /** Broadcast file-conversion progress (any format -> GLB) */
+  emitConversionProgress(data: {
+    jobId: string;
+    status: string;
+    progress: number;
+    [key: string]: any;
+  }) {
+    if (this.server) {
+      this.server.emit('conversion:progress', data);
+      this.server.to(`conversion:${data.jobId}`).emit('conversion:progress', data);
     }
   }
 }

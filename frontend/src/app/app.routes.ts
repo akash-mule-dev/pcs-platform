@@ -74,6 +74,51 @@ export const routes: Routes = [
         loadComponent: () => import('./quality-analysis/quality-analysis.component').then(m => m.QualityAnalysisComponent)
       },
       {
+        path: 'materials',
+        canActivate: [featureGuard('materials')],
+        loadComponent: () => import('./materials/materials.component').then(m => m.MaterialsComponent)
+      },
+      {
+        path: 'ncr',
+        canActivate: [featureGuard('ncr')],
+        loadComponent: () => import('./quality-ncr/ncr.component').then(m => m.NcrComponent)
+      },
+      {
+        path: 'equipment',
+        canActivate: [featureGuard('equipment')],
+        loadComponent: () => import('./equipment/equipment.component').then(m => m.EquipmentComponent)
+      },
+      {
+        path: 'workforce',
+        canActivate: [featureGuard('workforce')],
+        loadComponent: () => import('./workforce/workforce.component').then(m => m.WorkforceComponent)
+      },
+      {
+        path: 'scheduling',
+        canActivate: [featureGuard('scheduling')],
+        loadComponent: () => import('./scheduling/scheduling.component').then(m => m.SchedulingComponent)
+      },
+      {
+        path: 'traceability',
+        canActivate: [featureGuard('traceability')],
+        loadComponent: () => import('./traceability/traceability.component').then(m => m.TraceabilityComponent)
+      },
+      {
+        path: 'rbac',
+        canActivate: [featureGuard('rbac')],
+        loadComponent: () => import('./rbac/rbac.component').then(m => m.RbacComponent)
+      },
+      {
+        path: 'costing',
+        canActivate: [featureGuard('costing')],
+        loadComponent: () => import('./costing/costing.component').then(m => m.CostingComponent)
+      },
+      {
+        path: 'templates',
+        canActivate: [featureGuard('templates')],
+        loadComponent: () => import('./templates/templates.component').then(m => m.TemplatesComponent)
+      },
+      {
         path: 'notifications',
         loadComponent: () => import('./notifications/notifications.component').then(m => m.NotificationsComponent)
       },
@@ -96,6 +141,16 @@ export const routes: Routes = [
         path: 'coordination/:id',
         canActivate: [featureGuard('coordination')],
         loadComponent: () => import('./coordination/coordination-view.component').then(m => m.CoordinationViewComponent)
+      },
+      {
+        path: 'conversion',
+        canActivate: [featureGuard('coordination')],
+        loadComponent: () => import('./conversion/conversion-upload.component').then(m => m.ConversionUploadComponent)
+      },
+      {
+        path: 'model-viewer',
+        canActivate: [featureGuard('coordination')],
+        loadComponent: () => import('./engineering/glb-viewer/glb-viewer.component').then(m => m.GlbViewerComponent)
       }
     ]
   },

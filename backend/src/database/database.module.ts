@@ -43,9 +43,11 @@ if (synchronize && isProduction) {
       ...connectionConfig,
       autoLoadEntities: true,
       synchronize,
-      // Run committed migrations on boot only when synchronize is disabled
-      // (i.e. once migrations have been generated and DB_SYNCHRONIZE=false).
-      migrationsRun: !synchronize && isProduction,
+      // Run committed migrations on boot whenever synchronize is disabled
+      // (any environment) — i.e. once migrations exist and DB_SYNCHRONIZE=false.
+      // Previously gated on isProduction too, which silently skipped migrations
+      // in the dev/Neon setup and made the cutover impossible to test.
+      migrationsRun: !synchronize,
       migrations: ['dist/database/migrations/*.js'],
       extra: {
         connectionTimeoutMillis: connectTimeoutMs,

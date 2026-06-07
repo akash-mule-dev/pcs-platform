@@ -51,6 +51,19 @@ export const api = {
     return handleResponse<T>(response);
   },
 
+  /**
+   * GET a list endpoint and always return a plain array, transparently
+   * unwrapping the backend's paginated `{ data, meta }` page object. Use this
+   * for any endpoint the backend paginates (work-orders, time-tracking/history,
+   * models, products, users) so a page object is never mistaken for an array.
+   */
+  async getList<T>(path: string, params?: Record<string, string | number>): Promise<T[]> {
+    const res = await this.get<any>(path, params);
+    if (Array.isArray(res)) return res as T[];
+    if (res && Array.isArray(res.data)) return res.data as T[];
+    return [];
+  },
+
   async post<T>(path: string, body?: unknown): Promise<T> {
     const headers = await getHeaders();
     const response = await fetch(`${BASE_URL}${path}`, {

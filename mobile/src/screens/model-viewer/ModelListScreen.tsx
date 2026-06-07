@@ -37,8 +37,8 @@ export function ModelListScreen() {
 
   const loadModels = useCallback(async () => {
     try {
-      const data = await api.get<Model3D[]>('/models');
-      setModels(Array.isArray(data) ? data : []);
+      const data = await api.getList<Model3D>('/models');
+      setModels(data);
     } catch (err) {
       if (__DEV__) console.warn('Model list load failed:', err);
       setModels([]);

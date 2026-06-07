@@ -1,4 +1,4 @@
-import { Component, OnInit, AfterViewInit, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule, Router } from '@angular/router';
@@ -14,6 +14,8 @@ import { MatDialog } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
 import { PermissionsService } from '../../core/services/permissions.service';
 import { WorkOrderFormComponent } from '../work-order-form/work-order-form.component';
+import { RealtimeService } from '../../core/services/realtime.service';
+import { merge, Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-work-order-list',
@@ -234,7 +236,7 @@ import { WorkOrderFormComponent } from '../work-order-form/work-order-form.compo
     }
   `]
 })
-export class WorkOrderListComponent implements OnInit, AfterViewInit {
+export class WorkOrderListComponent implements OnInit, OnDestroy, AfterViewInit {
   dataSource = new MatTableDataSource<any>([]);
   columns = ['orderNumber', 'quantity', 'status', 'priority', 'dueDate'];
   statusFilter = '';
@@ -242,12 +244,24 @@ export class WorkOrderListComponent implements OnInit, AfterViewInit {
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
   canEdit = false;
+  private realtimeSub?: Subscription;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private router: Router, private permissions: PermissionsService) {
+  constructor(private api: ApiService, private dialog: MatDialog, private router: Router, private permissions: PermissionsService, private realtime: RealtimeService) {
     this.canEdit = this.permissions.canManage('work-orders');
   }
 
-  ngOnInit(): void { this.load(); }
+  ngOnInit(): void {
+    this.load();
+    // Live-update the list when work orders or their stages change on any client.
+    this.realtimeSub = merge(
+      this.realtime.on('work-order-update'),
+      this.realtime.on('stage-update'),
+    ).subscribe(() => this.load());
+  }
+
+  ngOnDestroy(): void {
+    this.realtimeSub?.unsubscribe();
+  }
 
   ngAfterViewInit(): void { this.dataSource.paginator = this.paginator; }
 

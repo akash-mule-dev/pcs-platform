@@ -3,7 +3,7 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { DatabaseModule } from './database/database.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -20,6 +20,7 @@ import { TimeTrackingModule } from './time-tracking/time-tracking.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { WebsocketModule } from './websocket/websocket.module.js';
 import { CadConversionModule } from './cad-conversion/cad-conversion.module.js';
+import { ConversionModule } from './conversion/conversion.module.js';
 import { CoordinationModule } from './coordination/coordination.module.js';
 import { SeedModule } from './seed/seed.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
@@ -28,6 +29,17 @@ import { AuditModule } from './audit/audit.module.js';
 import { SearchModule } from './search/search.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OrganizationModule } from './organization/organization.module.js';
+import { MaterialsModule } from './materials/materials.module.js';
+import { EquipmentModule } from './equipment/equipment.module.js';
+import { WorkforceModule } from './workforce/workforce.module.js';
+import { CostingModule } from './costing/costing.module.js';
+import { TraceabilityModule } from './traceability/traceability.module.js';
+import { TemplatesModule } from './templates/templates.module.js';
+import { QualityNcrModule } from './quality-ncr/quality-ncr.module.js';
+import { SchedulingModule } from './scheduling/scheduling.module.js';
+import { RbacModule } from './rbac/rbac.module.js';
+import { SpcModule } from './spc/spc.module.js';
+import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
 
 @Module({
   imports: [
@@ -56,6 +68,7 @@ import { OrganizationModule } from './organization/organization.module.js';
     TimeTrackingModule,
     DashboardModule,
     CadConversionModule,
+    ConversionModule,
     CoordinationModule,
     SeedModule,
     NotificationsModule,
@@ -64,11 +77,25 @@ import { OrganizationModule } from './organization/organization.module.js';
     SearchModule,
     HealthModule,
     OrganizationModule,
+    MaterialsModule,
+    EquipmentModule,
+    WorkforceModule,
+    CostingModule,
+    TraceabilityModule,
+    TemplatesModule,
+    QualityNcrModule,
+    SchedulingModule,
+    RbacModule,
+    SpcModule,
   ],
   providers: [
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantInterceptor,
     },
   ],
 })

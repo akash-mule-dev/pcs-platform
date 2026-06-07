@@ -145,8 +145,8 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     const container = this.containerRef.nativeElement;
 
-    // Renderer
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    // Renderer (preserveDrawingBuffer lets us capture a thumbnail via toBlob)
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -392,5 +392,25 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
       if (child instanceof THREE.Mesh && child.name) names.push(child.name);
     });
     return names;
+  }
+
+  /** Capture a square PNG thumbnail of the current view (client-side, no server GL). */
+  async captureThumbnail(maxSize = 256): Promise<Blob | null> {
+    if (!this.renderer || !this.currentModel) return null;
+    // Draw a fresh frame so the buffer is populated before we read it.
+    this.renderer.render(this.scene, this.camera);
+    const source = this.renderer.domElement;
+    const side = Math.min(source.width, source.height);
+    if (!side) return null;
+    const out = document.createElement('canvas');
+    const s = Math.min(maxSize, side);
+    out.width = s;
+    out.height = s;
+    const ctx = out.getContext('2d');
+    if (!ctx) return null;
+    const sx = (source.width - side) / 2;
+    const sy = (source.height - side) / 2;
+    ctx.drawImage(source, sx, sy, side, side, 0, 0, s, s);
+    return new Promise((resolve) => out.toBlob((b) => resolve(b), 'image/png'));
   }
 }

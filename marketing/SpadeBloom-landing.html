@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SpadeBloom — Production Control &amp; 3D/AR Quality for Fab Shops</title>
+<meta name="description" content="See who's building what in real time, track labor per stage, and inspect assemblies in 3D/AR. Production control for metal-fabrication shops — live in weeks." />
+<style>
+  :root{
+    --navy:#0E1A2B; --navy2:#16263B; --blue:#2563EB; --blue-d:#1D4ED8; --blue-l:#3B82F6;
+    --teal:#0D9488; --teal-l:#14B8A6; --teal-bg:#E7F4F2; --green:#16A34A; --amber:#D97706;
+    --slate:#334155; --muted:#64748B; --line:#E2E8F0; --bg:#F4F7FB; --ice:#DCE7FB; --white:#fff;
+    --maxw:1120px; --r:14px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font);color:var(--slate);background:var(--white);line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  h1,h2,h3{color:var(--navy);line-height:1.15;letter-spacing:-.01em}
+  .eyebrow{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue)}
+  .btn{display:inline-block;padding:13px 22px;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer;border:none;transition:transform .08s ease, background .15s ease}
+  .btn:hover{transform:translateY(-1px)}
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:hover{background:var(--blue-d)}
+  .btn-ghost{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.35)}
+  .btn-ghost:hover{border-color:#fff}
+  .btn-light{background:#fff;color:var(--navy)}
+  .section{padding:84px 0}
+  .center{text-align:center}
+  .lead{font-size:18px;color:var(--muted)}
+
+  /* NAV */
+  header.nav{position:sticky;top:0;z-index:50;background:rgba(14,26,43,.92);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,.08)}
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;color:#fff;font-weight:800;font-size:19px;letter-spacing:-.02em}
+  .logo .mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--blue),var(--teal));display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800}
+  .logo small{display:block;font-size:10px;font-weight:600;letter-spacing:.14em;color:var(--blue-l);text-transform:uppercase;margin-top:-2px}
+  .nav-links{display:flex;align-items:center;gap:28px}
+  .nav-links a{color:#cdd9ec;font-size:14.5px;font-weight:600}
+  .nav-links a:hover{color:#fff}
+  .nav-links .btn{padding:9px 18px;font-size:14px}
+
+  /* HERO */
+  .hero{background:var(--navy);color:#fff;position:relative;overflow:hidden;padding:72px 0 90px}
+  .hero:before{content:"";position:absolute;top:0;left:0;width:6px;height:100%;background:var(--blue)}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center}
+  .hero h1{color:#fff;font-size:46px;font-weight:800;margin:14px 0 18px}
+  .hero p.sub{font-size:18px;color:#AFC2DD;max-width:540px;margin-bottom:28px}
+  .hero .cta-row{display:flex;gap:14px;flex-wrap:wrap}
+  .hero .trust{margin-top:18px;font-size:13.5px;color:#7E93B0}
+  .hero .eyebrow{color:var(--teal-l)}
+
+  /* dashboard mock */
+  .mock{background:var(--white);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.35);padding:18px;color:var(--slate)}
+  .mock-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .mock-top b{color:var(--navy);font-size:16px}
+  .live{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--green)}
+  .live i{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+  .kpi{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 10px 10px 12px;position:relative;overflow:hidden}
+  .kpi:before{content:"";position:absolute;left:0;top:0;width:4px;height:100%}
+  .kpi.b:before{background:var(--blue)} .kpi.t:before{background:var(--teal)} .kpi.g:before{background:var(--green)} .kpi.a:before{background:var(--amber)}
+  .kpi .n{font-size:22px;font-weight:800;color:var(--navy)}
+  .kpi .l{font-size:10px;color:var(--muted)}
+  .lss-title{font-size:10.5px;font-weight:700;letter-spacing:.1em;color:var(--muted);margin:4px 0 8px}
+  table.lss{width:100%;border-collapse:collapse;font-size:12px}
+  table.lss th{background:var(--navy);color:#fff;text-align:left;padding:7px 8px;font-size:10px;letter-spacing:.04em}
+  table.lss td{padding:7px 8px;border-bottom:1px solid var(--line);color:var(--slate)}
+  table.lss tr:last-child td{border-bottom:none}
+
+  /* generic grid cards */
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:26px;box-shadow:0 8px 24px rgba(14,26,43,.05)}
+  .card h3{font-size:19px;margin-bottom:8px}
+  .card p{font-size:14.5px;color:var(--muted)}
+  .icon{width:46px;height:46px;border-radius:11px;display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+  .icon svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:2}
+  .ic-blue{background:var(--blue)} .ic-teal{background:var(--teal)} .ic-navy{background:var(--navy)} .ic-amber{background:var(--amber)} .ic-green{background:var(--green)} .ic-red{background:#DC2626}
+  .tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--teal);border:1px solid var(--teal);border-radius:20px;padding:3px 10px;text-transform:uppercase}
+
+  /* problem */
+  .pill-row{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:34px}
+
+  /* 3D/AR spotlight */
+  .qa{background:var(--navy);color:#fff}
+  .qa h2{color:#fff}
+  .qa-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+  .viewer{background:var(--navy2);border:1px solid #24405e;border-radius:16px;padding:22px;position:relative;min-height:340px}
+  .viewer .vt{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .viewer .vt span{color:#AFC2DD;font-weight:700;font-size:14px}
+  .viewer .armode{background:var(--teal);color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:4px 12px}
+  .cube-stage{position:relative;height:230px;display:flex;align-items:center;justify-content:center}
+  .cube-ring{width:200px;height:200px;border-radius:50%;background:#123A39;display:flex;align-items:center;justify-content:center}
+  .pin{position:absolute;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;border:2px solid var(--navy2)}
+  .legend{font-size:13px;color:#CFE0F7;margin-top:4px}
+  .legend div{margin:5px 0;display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .qa-feat{display:flex;gap:14px;margin-bottom:20px}
+  .qa-feat .icon{flex:0 0 46px}
+  .qa-feat h4{color:#fff;font-size:16px;margin-bottom:3px}
+  .qa-feat p{color:#AFC2DD;font-size:14px}
+  .qa .note{color:var(--teal-l);font-style:italic;font-size:13px;margin-top:6px}
+
+  /* steps */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;counter-reset:s}
+  .step{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:26px;position:relative;box-shadow:0 8px 24px rgba(14,26,43,.05)}
+  .step .num{counter-increment:s;width:38px;height:38px;border-radius:50%;border:2px solid var(--blue);color:var(--blue);font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+  .step .num:after{content:counter(s)}
+
+  /* compare */
+  table.cmp{width:100%;border-collapse:separate;border-spacing:0;margin-top:14px;font-size:14.5px;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  table.cmp th,table.cmp td{padding:14px 12px;text-align:center;border-bottom:1px solid var(--line)}
+  table.cmp th{background:var(--navy);color:#fff;font-size:13px}
+  table.cmp td:first-child,table.cmp th:first-child{text-align:left;font-weight:700;color:var(--navy)}
+  table.cmp tr:last-child td{border-bottom:none}
+  table.cmp .row-sb{background:var(--ice)}
+  table.cmp .row-sb td:first-child{color:var(--blue-d)}
+  .yes{color:var(--green);font-weight:800}
+  .nope{color:#B6C0CC;font-weight:800}
+  .part{color:var(--amber);font-weight:700}
+
+  /* pricing */
+  .price-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:14px}
+  .plan{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:24px;display:flex;flex-direction:column}
+  .plan.feat{border:2px solid var(--blue);box-shadow:0 14px 34px rgba(37,99,235,.14)}
+  .plan h3{font-size:18px}
+  .plan .for{font-size:13px;color:var(--muted);margin:4px 0 14px;min-height:34px}
+  .plan ul{list-style:none;font-size:13.5px;color:var(--slate)}
+  .plan li{padding:5px 0 5px 22px;position:relative}
+  .plan li:before{content:"";position:absolute;left:0;top:11px;width:10px;height:10px;border-radius:3px;background:var(--teal)}
+  .badge{align-self:flex-start;background:var(--blue);color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:3px 10px;margin-bottom:8px}
+
+  /* final cta */
+  .final{background:var(--navy);color:#fff;text-align:center}
+  .final h2{color:#fff;font-size:38px}
+  .final p{color:#AFC2DD;font-size:18px;margin:12px auto 26px;max-width:620px}
+
+  footer{background:#0a1220;color:#8298b5;font-size:14px;padding:46px 0 30px}
+  footer .fgrid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1.2fr;gap:24px;margin-bottom:28px}
+  footer h5{color:#fff;font-size:13px;letter-spacing:.04em;margin-bottom:12px;text-transform:uppercase}
+  footer a{display:block;color:#8298b5;padding:4px 0}
+  footer a:hover{color:#fff}
+  footer .legal{border-top:1px solid #1c2a3e;padding-top:18px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+  .section-head{max-width:680px;margin-bottom:8px}
+  .section-head.center{margin:0 auto 8px}
+  h2{font-size:33px;font-weight:800}
+  .mt8{margin-top:36px}
+
+  @media (max-width:860px){
+    .hero-grid,.qa-grid{grid-template-columns:1fr;gap:34px}
+    .grid-3,.pill-row,.steps,.price-grid{grid-template-columns:1fr}
+    .nav-links a:not(.btn){display:none}
+    .hero h1{font-size:34px}
+    h2{font-size:26px}
+    .section{padding:56px 0}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    table.cmp{font-size:12.5px}
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="logo" href="#top"><span class="mark">SB</span><span>SpadeBloom<small>Production Control</small></span></a>
+    <nav class="nav-links">
+      <a href="#product">Product</a>
+      <a href="#qa">3D/AR Quality</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#compare">Compare</a>
+      <a class="btn btn-primary" href="#demo">Book a demo</a>
+    </nav>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">Production control for metal-fabrication shops</span>
+      <h1>See who's building what — and inspect it in 3D.</h1>
+      <p class="sub">SpadeBloom shows who's on which order and stage in real time, lets operators inspect assemblies against the 3D model, and captures labor time per stage — so you can run the floor on live data instead of paper.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#demo">Book a demo</a>
+        <a class="btn btn-ghost" href="#demo">Watch the 90-sec demo</a>
+      </div>
+      <p class="trust">Live on web and the operator's phone · Up and running in weeks</p>
+    </div>
+    <div class="mock" aria-hidden="true">
+      <div class="mock-top"><b>Dashboard</b><span class="live"><i></i> Live</span></div>
+      <div class="kpis">
+        <div class="kpi b"><div class="n">248</div><div class="l">Work Orders</div></div>
+        <div class="kpi t"><div class="n">31</div><div class="l">Active Operators</div></div>
+        <div class="kpi g"><div class="n">42</div><div class="l">Completed Today</div></div>
+        <div class="kpi a"><div class="n">87%</div><div class="l">Labor Efficiency</div></div>
+      </div>
+      <div class="lss-title">LIVE STAGE STATUS</div>
+      <table class="lss">
+        <tr><th>Operator</th><th>Order</th><th>Stage</th><th>Elapsed</th><th>Station</th></tr>
+        <tr><td>Amit P.</td><td>WO-1042</td><td>Weld</td><td>00:18:42</td><td>Cell-3</td></tr>
+        <tr><td>Pooja K.</td><td>WO-1039</td><td>Assemble</td><td>00:07:10</td><td>Bay-1</td></tr>
+        <tr><td>Anita S.</td><td>WO-1047</td><td>Inspect (3D)</td><td>00:03:28</td><td>QA-1</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section class="section" id="product">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">The problem</span>
+      <h2 class="mt8" style="margin-top:10px">Running a growing floor on paper? You're flying half-blind.</h2>
+      <p class="lead" style="margin-top:14px">Paper travelers and spreadsheets work fine with six jobs open. At sixty, they break — and you can't see the floor, the labor, or the quality in time to act.</p>
+    </div>
+    <div class="pill-row">
+      <div class="card"><div class="icon ic-amber"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h3>Stale visibility</h3><p>You learn where a job stands at the end of the shift — not while you can still do something about it.</p></div>
+      <div class="card"><div class="icon ic-blue"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-3"/></svg></div><h3>Labor you can't trust</h3><p>Hand-written times are slow and skipped, so costing and quoting become guesswork.</p></div>
+      <div class="card"><div class="icon ic-red"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg></div><h3>QA that misses the part</h3><p>A 2D checklist can't verify a built assembly against intent — rework shows up late.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PILLARS -->
+<section class="section" style="background:var(--bg)">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="eyebrow">The solution</span>
+      <h2 style="margin-top:10px">One platform — from work order to weld inspection.</h2>
+      <p class="lead" style="margin-top:12px">The fast, operator-first layer between paper and a heavyweight ERP.</p>
+    </div>
+    <div class="grid-3 mt8">
+      <div class="card"><div class="icon ic-blue"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div><h3>See your floor live</h3><p>Know who's on which order and stage, against target — right now, on web and phone.</p></div>
+      <div class="card"><div class="icon ic-teal"><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3.5 7L12 12l8.5-5M12 12v10"/></svg></div><h3>QA in 3D &amp; AR</h3><p>Inspect assemblies against the actual 3D model and pin defects to the geometry, in AR.</p></div>
+      <div class="card"><div class="icon ic-navy"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 13V9M12 2h0M9 2h6"/></svg></div><h3>Labor that tracks itself</h3><p>Per-operator, per-stage time with idle, break and rework — no paper travelers.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3D/AR QA SPOTLIGHT -->
+<section class="section qa" id="qa">
+  <div class="wrap">
+    <span class="eyebrow" style="color:var(--teal-l)">What sets us apart</span>
+    <h2 style="margin:10px 0 30px">Quality you can see, in 3D and AR.</h2>
+    <div class="qa-grid">
+      <div class="viewer">
+        <div class="vt"><span>Assembly viewer</span><span class="armode">AR mode</span></div>
+        <div class="cube-stage">
+          <div class="cube-ring">
+            <svg viewBox="0 0 24 24" style="width:96px;height:96px;stroke:var(--teal-l);fill:none;stroke-width:1.4"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3.5 7L12 12l8.5-5M12 12v10"/></svg>
+          </div>
+          <div class="pin" style="background:#DC2626;top:34px;left:42%">1</div>
+          <div class="pin" style="background:var(--amber);top:120px;right:30%">2</div>
+          <div class="pin" style="background:var(--green);bottom:30px;left:34%">&#10003;</div>
+        </div>
+        <div class="legend">
+          <div><span class="dot" style="background:#DC2626"></span> Defect — weld porosity (severity high)</div>
+          <div><span class="dot" style="background:var(--amber)"></span> Out-of-tolerance — gap 2.1mm &gt; 1.5mm</div>
+          <div><span class="dot" style="background:var(--green)"></span> Pass — signed off</div>
+        </div>
+      </div>
+      <div>
+        <div class="qa-feat"><div class="icon ic-teal"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4M9 11h4M11 9v4"/></svg></div><div><h4>Inspect against the real model</h4><p>Compare the built assembly to the actual 3D geometry — not a 2D checklist.</p></div></div>
+        <div class="qa-feat"><div class="icon ic-teal"><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3.5 7L12 12l8.5-5"/></svg></div><div><h4>Defects pinned to the geometry</h4><p>Capture type, severity, measurements and tolerances right on the part.</p></div></div>
+        <div class="qa-feat"><div class="icon ic-teal"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="3"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/></svg></div><div><h4>AR-assisted on the floor</h4><p>Operators view and check assemblies in AR, where the work happens.</p></div></div>
+        <div class="qa-feat"><div class="icon ic-teal"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div><div><h4>Sign-offs &amp; defect patterns</h4><p>Approvals and recurring-defect views build a real quality record.</p></div></div>
+        <p class="note">Deeper scan-to-model comparison is in active development.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head center"><span class="eyebrow">How it works</span><h2 style="margin-top:10px">Live in weeks, not quarters.</h2></div>
+    <div class="steps mt8">
+      <div class="step"><div class="num"></div><h3>Model your routings</h3><p style="color:var(--muted);font-size:14.5px;margin-top:6px">Define each product's stages and target times once. Versioned, drag-to-reorder.</p></div>
+      <div class="step"><div class="num"></div><h3>Operators run &amp; inspect</h3><p style="color:var(--muted);font-size:14.5px;margin-top:6px">Clock into each stage on the phone or web; view the 3D model and flag defects in AR.</p></div>
+      <div class="step"><div class="num"></div><h3>See it all, live</h3><p style="color:var(--muted);font-size:14.5px;margin-top:6px">Real-time dashboard, Live Stage Status, QA results and labor reports — no refresh.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARE -->
+<section class="section" style="background:var(--bg)" id="compare">
+  <div class="wrap">
+    <div class="section-head center"><span class="eyebrow">Why SpadeBloom</span><h2 style="margin-top:10px">Lighter than an ERP. Smarter than a spreadsheet.</h2><p class="lead" style="margin-top:12px">We're honest about what we do and don't do — so the comparison is fair.</p></div>
+    <table class="cmp mt8">
+      <tr><th></th><th>Real-time labor</th><th>3D / AR QA</th><th>Fast to deploy</th><th>Operator-first</th></tr>
+      <tr class="row-sb"><td>SpadeBloom</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+      <tr><td>Heavy ERP / MES</td><td class="nope">—</td><td class="part">Logs only</td><td class="nope">—</td><td class="nope">—</td></tr>
+      <tr><td>Machine monitors</td><td class="part">Partial</td><td class="nope">—</td><td class="part">Partial</td><td class="nope">—</td></tr>
+      <tr><td>Paper &amp; spreadsheets</td><td class="nope">—</td><td class="nope">—</td><td class="yes">Yes</td><td class="part">Partial</td></tr>
+    </table>
+    <p style="font-size:13.5px;color:var(--muted);margin-top:14px;font-style:italic">Materials, scheduling and costing are on our roadmap — if you need them today, a full ERP may fit better, and SpadeBloom can sit alongside one.</p>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="section-head center"><span class="eyebrow">Pricing</span><h2 style="margin-top:10px">Scales with your shop, not against it.</h2><p class="lead" style="margin-top:12px">Per-site plans banded by operator count — so every operator can clock in without running up the bill.</p></div>
+    <div class="price-grid mt8">
+      <div class="plan"><h3>Pilot</h3><div class="for">Proving value on one line</div><ul><li>One line, ~10 operators</li><li>Core tracking &amp; dashboard</li><li>30–60 days</li></ul></div>
+      <div class="plan"><h3>Starter</h3><div class="for">A single small shop</div><ul><li>One site, ~15 operators</li><li>Web + mobile, kanban</li><li>Reports</li></ul></div>
+      <div class="plan feat"><span class="badge">Most popular</span><h3>Growth</h3><div class="for">A busy multi-line shop</div><ul><li>One site, ~50 operators</li><li>3D/AR QA &amp; inspection</li><li>Audit log</li></ul></div>
+      <div class="plan"><h3>Plant</h3><div class="for">Larger or multi-site</div><ul><li>Multi-site, 50+ operators</li><li>Priority support</li><li>SSO</li></ul></div>
+    </div>
+    <p class="center" style="margin-top:26px"><a class="btn btn-primary" href="#demo">Get a quote</a></p>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="section final" id="demo">
+  <div class="wrap">
+    <h2>See your floor live.</h2>
+    <p>Book a 20-minute demo and we'll show you your shop's workflow on SpadeBloom — including a 3D/AR quality check.</p>
+    <div class="cta-row" style="justify-content:center;display:flex;gap:14px;flex-wrap:wrap">
+      <a class="btn btn-light" href="mailto:akash.mule@eterio.ca?subject=SpadeBloom%20demo">Book a demo</a>
+      <a class="btn btn-ghost" href="#top">Watch the 90-sec demo</a>
+    </div>
+    <p style="margin-top:20px;font-size:14px;color:#7E93B0">demo.spadebloom.com · akash.mule@eterio.ca</p>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div>
+        <div class="logo" style="margin-bottom:10px"><span class="mark">SB</span><span style="color:#fff">SpadeBloom<small>Production Control</small></span></div>
+        <p style="max-width:280px">Production control, 3D/AR quality and live labor visibility for the modern fab floor.</p>
+      </div>
+      <div><h5>Product</h5><a href="#product">Live visibility</a><a href="#qa">3D/AR Quality</a><a href="#product">Labor tracking</a><a href="#pricing">Pricing</a></div>
+      <div><h5>Company</h5><a href="#demo">Book a demo</a><a href="#compare">Compare</a><a href="mailto:akash.mule@eterio.ca">Contact</a></div>
+      <div><h5>Get started</h5><a href="#demo">Book a demo</a><a href="https://demo.spadebloom.com">demo.spadebloom.com</a><a href="mailto:akash.mule@eterio.ca">akash.mule@eterio.ca</a></div>
+    </div>
+    <div class="legal"><span>© 2026 SpadeBloom. All rights reserved.</span><span>See who's building what — and inspect it in 3D.</span></div>
+  </div>
+</footer>
+
+</body>
+</html>

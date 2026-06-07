@@ -7,6 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { Role } from './role.entity.js';
 import { Exclude } from 'class-transformer';
@@ -41,6 +42,11 @@ export class User {
   @ManyToOne(() => Role, (role) => role.users, { eager: true })
   @JoinColumn({ name: 'role_id' })
   role: Role;
+
+  // Tenant the user belongs to (shared-DB multi-tenancy). Nullable during rollout.
+  @Index()
+  @Column({ name: 'organization_id', type: 'uuid', nullable: true })
+  organizationId: string | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;

@@ -3,7 +3,7 @@ import { WorkOrder } from '../types';
 
 export const workOrderService = {
   async getAll(params?: Record<string, string | number>): Promise<WorkOrder[]> {
-    return api.get<WorkOrder[]>('/work-orders', params);
+    return api.getList<WorkOrder>('/work-orders', params);
   },
 
   async getById(id: string): Promise<WorkOrder> {

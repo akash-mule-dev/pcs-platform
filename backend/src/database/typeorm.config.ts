@@ -2,12 +2,20 @@ import 'dotenv/config';
 import { DataSource } from 'typeorm';
 
 /**
- * TypeORM CLI data source configuration for generating and running migrations.
+ * TypeORM CLI data source for generating and running migrations.
  *
- * Usage:
- *   npx typeorm migration:generate -d src/database/typeorm.config.ts src/database/migrations/MigrationName
- *   npx typeorm migration:run -d src/database/typeorm.config.ts
- *   npx typeorm migration:revert -d src/database/typeorm.config.ts
+ * IMPORTANT: this file is consumed *compiled* as dist/database/typeorm.config.js
+ * so the CLI never loads .ts under Node's strip-only mode (which rejects the
+ * `enum` declarations in the entities). The npm scripts build first, then point
+ * the CLI at the dist copy:
+ *
+ *   npm run migration:generate -- src/database/migrations/MyChange
+ *   npm run migration:run
+ *   npm run migration:revert
+ *
+ * Globs resolve relative to this file (when compiled, __dirname = dist/database)
+ * so they match the emitted JS entities and migrations. `ssl` mirrors the
+ * runtime config so the CLI can connect to a managed Postgres such as Neon.
  */
 export default new DataSource({
   type: 'postgres',
@@ -17,7 +25,8 @@ export default new DataSource({
   username: process.env.DB_USER || 'pcs_user',
   password: process.env.DB_PASSWORD || 'pcs_password',
   database: process.env.DB_NAME || 'pcs_platform',
-  entities: ['src/**/*.entity.ts'],
-  migrations: ['src/database/migrations/*.ts'],
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  entities: [__dirname + '/../**/*.entity.js'],
+  migrations: [__dirname + '/migrations/*.js'],
   synchronize: false,
 });

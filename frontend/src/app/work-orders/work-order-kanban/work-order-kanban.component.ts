@@ -97,7 +97,7 @@ const COLUMNS = [
           <div class="column-body">
             @for (stage of getStagesForColumn(col.key); track stage.id) {
               <mat-card class="stage-card">
-                <div class="stage-name">{{ stage.stage?.name }}</div>
+                <div class="stage-name">{{ stage.stage.name }}</div>
                 @if (stage.assignedUser) {
                   <div class="stage-assignee">
                     <mat-icon class="small-icon">person</mat-icon>
@@ -111,7 +111,7 @@ const COLUMNS = [
                   </div>
                 }
                 <div class="stage-time">
-                  @if (stage.stage?.targetTimeSeconds) {
+                  @if (stage.stage.targetTimeSeconds) {
                     <span class="target-time" matTooltip="Target time">
                       <mat-icon class="small-icon">flag</mat-icon>
                       {{ stage.stage.targetTimeSeconds | duration }}
@@ -119,8 +119,8 @@ const COLUMNS = [
                   }
                   @if (stage.actualTimeSeconds) {
                     <span class="actual-time"
-                          [class.over-target]="stage.stage?.targetTimeSeconds && stage.actualTimeSeconds > stage.stage.targetTimeSeconds"
-                          [class.under-target]="stage.stage?.targetTimeSeconds && stage.actualTimeSeconds <= stage.stage.targetTimeSeconds"
+                          [class.over-target]="stage.stage.targetTimeSeconds && stage.actualTimeSeconds > stage.stage.targetTimeSeconds"
+                          [class.under-target]="stage.stage.targetTimeSeconds && stage.actualTimeSeconds <= stage.stage.targetTimeSeconds"
                           matTooltip="Actual time">
                       <mat-icon class="small-icon">timer</mat-icon>
                       {{ stage.actualTimeSeconds | duration }}

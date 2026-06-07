@@ -8,6 +8,7 @@ import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.d
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
 import * as path from 'path';
+import * as fs from 'fs';
 
 @Injectable()
 export class ModelsService {
@@ -73,6 +74,23 @@ export class ModelsService {
   async getFileStream(id: string): Promise<{ stream: NodeJS.ReadableStream; model: Model3D }> {
     const model = await this.findOne(id);
     const stream = await this.storage.download(model.fileName);
+    return { stream, model };
+  }
+
+  /** Store a client-captured thumbnail PNG and record its storage key on the model. */
+  async setThumbnail(id: string, file: Express.Multer.File): Promise<Model3D> {
+    const model = await this.findOne(id);
+    const key = `thumbnails/${model.id}.png`;
+    await this.storage.upload(file.path, key, file.mimetype || 'image/png');
+    try { fs.unlinkSync(file.path); } catch { /* ignore */ }
+    model.thumbnailPath = key;
+    return this.repo.save(model);
+  }
+
+  async getThumbnailStream(id: string): Promise<{ stream: NodeJS.ReadableStream; model: Model3D }> {
+    const model = await this.findOne(id);
+    if (!model.thumbnailPath) throw new NotFoundException('No thumbnail for this model');
+    const stream = await this.storage.download(model.thumbnailPath);
     return { stream, model };
   }
 }

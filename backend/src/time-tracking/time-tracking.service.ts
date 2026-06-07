@@ -76,12 +76,47 @@ export class TimeTrackingService {
     return result!;
   }
 
-  async getActive(): Promise<TimeEntry[]> {
+  async getActive(): Promise<any[]> {
+    // Targeted projection (same approach as getHistory's QueryBuilder and the
+    // dashboard live-status query). `find` with these relations auto-expands the
+    // work-order's eager graph (product/process/line) and SELECTs every column,
+    // which throws if any of those columns is absent from the DB — so the old
+    // version silently returned [] even when operators were clocked in. Selecting
+    // only the columns the live view renders avoids that entirely. The try/catch
+    // remains as a final safety net.
     try {
-      return await this.teRepo.find({
-        where: { endTime: IsNull() },
-        relations: ['user', 'workOrderStage', 'workOrderStage.stage', 'workOrderStage.workOrder', 'station'],
-      });
+      const rows = await this.teRepo.createQueryBuilder('te')
+        .leftJoin('te.user', 'user')
+        .leftJoin('te.station', 'station')
+        .leftJoin('te.workOrderStage', 'wos')
+        .leftJoin('wos.stage', 'stage')
+        .leftJoin('wos.workOrder', 'wo')
+        .select('te.id', 'id')
+        .addSelect('te.start_time', 'startTime')
+        .addSelect('te.user_id', 'userId')
+        .addSelect('user.first_name', 'firstName')
+        .addSelect('user.last_name', 'lastName')
+        .addSelect('station.name', 'stationName')
+        .addSelect('stage.name', 'stageName')
+        .addSelect('wo.order_number', 'orderNumber')
+        .where('te.end_time IS NULL')
+        .orderBy('te.start_time', 'ASC')
+        .getRawMany();
+
+      return rows.map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        startTime: r.startTime,
+        elapsedSeconds: r.startTime
+          ? Math.round((Date.now() - new Date(r.startTime).getTime()) / 1000)
+          : 0,
+        user: { firstName: r.firstName, lastName: r.lastName },
+        station: r.stationName ? { name: r.stationName } : null,
+        workOrderStage: {
+          stage: r.stageName ? { name: r.stageName } : null,
+          workOrder: r.orderNumber ? { orderNumber: r.orderNumber } : null,
+        },
+      }));
     } catch (err) {
       // Degrade gracefully: the live view shows no active entries rather than
       // failing the whole request if a related row is malformed.

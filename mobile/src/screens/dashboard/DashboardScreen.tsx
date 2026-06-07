@@ -14,6 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import { timeTrackingService } from '../../services/time-tracking.service';
 import { TimeEntry } from '../../types';
 import { formatDuration, formatTimer } from '../../utils/duration';
+import { useSocketEvents } from '../../hooks/useSocketEvent';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -81,6 +82,9 @@ export function DashboardScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Live-update when an operator clocks in/out on any client (web or mobile).
+  useSocketEvents(['time-entry-update', 'stage-update', 'dashboard-refresh'], loadData);
 
   // Elapsed timer for active entry
   useEffect(() => {

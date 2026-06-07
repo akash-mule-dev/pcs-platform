@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
-import { TabParamList, WorkOrdersStackParamList, TimeTrackingStackParamList, ModelsStackParamList } from './types';
+import { TabParamList, WorkOrdersStackParamList, TimeTrackingStackParamList, ModelsStackParamList, MoreStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 import { canViewTab, TabKey } from '../config/permissions';
 
@@ -19,6 +19,10 @@ import { ARViewScreen } from '../screens/model-viewer/ARViewScreen';
 import { VRViewScreen } from '../screens/model-viewer/VRViewScreen';
 import { QualityViewScreen } from '../screens/model-viewer/QualityViewScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
+import { MoreMenuScreen } from '../screens/more/MoreMenuScreen';
+import { NcrListScreen } from '../screens/more/NcrListScreen';
+import { EquipmentListScreen } from '../screens/more/EquipmentListScreen';
+import { MaterialListScreen } from '../screens/more/MaterialListScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -58,12 +62,26 @@ function ModelsStack() {
   );
 }
 
+// ── More Stack ──
+const MoreStack = createNativeStackNavigator<MoreStackParamList>();
+function MoreStackNav() {
+  return (
+    <MoreStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
+      <MoreStack.Screen name="MoreMenu" component={MoreMenuScreen} options={{ title: 'More' }} />
+      <MoreStack.Screen name="NcrList" component={NcrListScreen} options={{ title: 'Quality / NCRs' }} />
+      <MoreStack.Screen name="EquipmentList" component={EquipmentListScreen} options={{ title: 'Equipment' }} />
+      <MoreStack.Screen name="MaterialList" component={MaterialListScreen} options={{ title: 'Materials' }} />
+    </MoreStack.Navigator>
+  );
+}
+
 // ── Tab config ──
 const TAB_CONFIG: { name: TabKey; component: React.ComponentType<any>; title: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { name: 'Dashboard', component: DashboardScreen, title: 'Home', icon: 'home' },
   { name: 'WorkOrders', component: WorkOrdersStack, title: 'Orders', icon: 'clipboard' },
   { name: 'Timer', component: TimeTrackingStack, title: 'Timer', icon: 'timer' },
   { name: 'Models', component: ModelsStack, title: '3D/AR', icon: 'cube' },
+  { name: 'More', component: MoreStackNav, title: 'More', icon: 'grid' },
   { name: 'Profile', component: ProfileScreen, title: 'Profile', icon: 'person' },
 ];
 

@@ -1,7 +1,7 @@
 import { api } from '../services/api.service';
 
 export type Role = 'admin' | 'manager' | 'supervisor' | 'operator';
-export type TabKey = 'Dashboard' | 'WorkOrders' | 'Timer' | 'Models' | 'Profile';
+export type TabKey = 'Dashboard' | 'WorkOrders' | 'Timer' | 'Models' | 'More' | 'Profile';
 
 export interface FeaturePermission {
   view: string[];
@@ -14,6 +14,7 @@ const TAB_FEATURE_MAP: Record<TabKey, string> = {
   WorkOrders: 'work-orders',
   Timer:      'time-tracking',
   Models:     'quality-analysis',
+  More:       '_always_visible',
   Profile:    '_always_visible',
 };
 

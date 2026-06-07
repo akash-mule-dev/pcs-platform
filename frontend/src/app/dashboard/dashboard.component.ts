@@ -8,8 +8,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { NgChartsModule } from 'ng2-charts';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
 import { ApiService } from '../core/services/api.service';
+import { RealtimeService } from '../core/services/realtime.service';
 import { DurationPipe } from '../shared/pipes/duration.pipe';
-import { interval, Subscription } from 'rxjs';
+import { interval, merge, Subscription } from 'rxjs';
 
 Chart.register(...registerables);
 
@@ -173,13 +174,22 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   private refreshSub?: Subscription;
   private timerSub?: Subscription;
+  private realtimeSub?: Subscription;
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private realtime: RealtimeService) {}
 
   ngAfterViewInit(): void { this.liveDataSource.paginator = this.paginator; }
 
   ngOnInit(): void {
     this.loadData();
+    // Real-time: refresh KPIs the moment anything changes on any client (web or
+    // mobile). The 30s interval below stays as a safety-net fallback.
+    this.realtimeSub = merge(
+      this.realtime.on('dashboard-refresh'),
+      this.realtime.on('time-entry-update'),
+      this.realtime.on('stage-update'),
+      this.realtime.on('work-order-update'),
+    ).subscribe(() => this.loadData());
     this.refreshSub = interval(30000).subscribe(() => this.loadData());
     this.timerSub = interval(1000).subscribe(() => {}); // triggers change detection for elapsed
   }
@@ -187,6 +197,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnDestroy(): void {
     this.refreshSub?.unsubscribe();
     this.timerSub?.unsubscribe();
+    this.realtimeSub?.unsubscribe();
   }
 
   loadData(): void {

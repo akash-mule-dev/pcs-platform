@@ -9,6 +9,8 @@ import { UpdateWorkOrderDto } from './dto/update-work-order.dto.js';
 import { AssignWorkOrderDto } from './dto/assign-work-order.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
 import { AuditService } from '../audit/audit.service.js';
+import { EventsGateway } from '../websocket/events.gateway.js';
+import { InventoryService } from '../materials/inventory.service.js';
 
 @Injectable()
 export class WorkOrdersService {
@@ -17,6 +19,8 @@ export class WorkOrdersService {
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
     private readonly auditService: AuditService,
+    private readonly eventsGateway: EventsGateway,
+    private readonly inventoryService: InventoryService,
   ) {}
 
   async findAll(pageOptions: PageOptionsDto, status?: string, priority?: string): Promise<PageDto<WorkOrder>> {
@@ -79,7 +83,10 @@ export class WorkOrdersService {
       await this.wosRepo.save(wos);
     }
 
-    return this.findOne(saved!.id);
+    const created = await this.findOne(saved!.id);
+    this.eventsGateway.emitWorkOrderUpdate(created);
+    this.eventsGateway.emitDashboardRefresh();
+    return created;
   }
 
   async update(id: string, dto: UpdateWorkOrderDto): Promise<WorkOrder> {
@@ -89,7 +96,9 @@ export class WorkOrdersService {
     if (dto.priority !== undefined) wo.priority = dto.priority;
     if (dto.dueDate !== undefined) wo.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
     await this.woRepo.save(wo);
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    this.eventsGateway.emitWorkOrderUpdate(updated);
+    return updated;
   }
 
   async updateStatus(id: string, newStatus: WorkOrderStatus): Promise<WorkOrder> {
@@ -109,6 +118,18 @@ export class WorkOrdersService {
       const dep = await this.woRepo.findOne({ where: { id: wo.dependsOnId } });
       if (dep && dep.status !== WorkOrderStatus.COMPLETED) {
         throw new BadRequestException(`Cannot start: depends on ${dep.orderNumber} which is not completed`);
+      }
+    }
+
+    // Phase 2: Block starting a job we don't have the materials for.
+    // (Only enforced when the product has a BOM; soft-passes otherwise.)
+    if (newStatus === WorkOrderStatus.IN_PROGRESS) {
+      const availability = await this.inventoryService.checkAvailability(wo.productId, wo.quantity);
+      if (availability.hasBom && !availability.canRelease) {
+        throw new BadRequestException({
+          message: 'Cannot start work order: insufficient materials in stock',
+          shortages: availability.shortages,
+        });
       }
     }
 
@@ -148,7 +169,10 @@ export class WorkOrdersService {
       newValues: { status: newStatus },
     });
 
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    this.eventsGateway.emitWorkOrderUpdate(updated);
+    this.eventsGateway.emitDashboardRefresh();
+    return updated;
   }
 
   // Phase 7: Batch status update
@@ -169,6 +193,7 @@ export class WorkOrdersService {
   // Phase 7: Batch assign to line
   async batchAssignLine(ids: string[], lineId: string): Promise<number> {
     const result = await this.woRepo.update({ id: In(ids) }, { lineId });
+    this.eventsGateway.emitWorkOrderUpdate({ ids, lineId });
     return result.affected || 0;
   }
 
@@ -202,7 +227,9 @@ export class WorkOrdersService {
       newValues: { status: newStatus },
     });
 
-    return this.findOne(workOrderId);
+    const updated = await this.findOne(workOrderId);
+    this.eventsGateway.emitWorkOrderUpdate(updated);
+    return updated;
   }
 
   async assign(id: string, dto: AssignWorkOrderDto): Promise<WorkOrder> {
@@ -213,6 +240,8 @@ export class WorkOrdersService {
       if (assignment.stationId) wos.stationId = assignment.stationId;
       await this.wosRepo.save(wos);
     }
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    this.eventsGateway.emitWorkOrderUpdate(updated);
+    return updated;
   }
 }

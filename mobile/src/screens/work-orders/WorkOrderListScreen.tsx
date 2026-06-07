@@ -16,6 +16,7 @@ import { offlineService } from '../../services/offline.service';
 import { StatusBadge } from '../../components/StatusBadge';
 import { formatDate } from '../../utils/duration';
 import { WorkOrdersStackParamList } from '../../navigation/types';
+import { useSocketEvents } from '../../hooks/useSocketEvent';
 
 type Nav = NativeStackNavigationProp<WorkOrdersStackParamList, 'WorkOrderList'>;
 
@@ -48,6 +49,9 @@ export function WorkOrderListScreen() {
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  // Live-update when work orders or their stages change on any client.
+  useSocketEvents(['work-order-update', 'stage-update'], loadOrders);
 
   const onRefresh = async () => {
     setRefreshing(true);

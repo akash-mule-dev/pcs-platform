@@ -116,6 +116,37 @@ export class ModelsController {
     }
   }
 
+  @Get(':id/thumbnail')
+  @Public()
+  @ApiOperation({ summary: 'Get the model thumbnail PNG (public)' })
+  async getThumbnail(@Param('id') id: string, @Res() res: Response) {
+    try {
+      const { stream } = await this.service.getThumbnailStream(id);
+      res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=3600' });
+      (stream as any).pipe(res);
+    } catch {
+      return res.status(404).json({ message: 'No thumbnail' });
+    }
+  }
+
+  @Post(':id/thumbnail')
+  @ApiOperation({ summary: 'Upload/replace the model thumbnail (captured client-side from the viewer)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] } })
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: (_req, _file, cb) => {
+        if (!fs.existsSync(STAGING_DIR)) fs.mkdirSync(STAGING_DIR, { recursive: true });
+        cb(null, STAGING_DIR);
+      },
+      filename: (_req, _file, cb) => cb(null, `${crypto.randomUUID()}.png`),
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+  }))
+  uploadThumbnail(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    return this.service.setThumbnail(id, file);
+  }
+
   @Post()
   @Roles('admin', 'manager')
   @ApiOperation({ summary: 'Upload a 3D model' })

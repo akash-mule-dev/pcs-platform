@@ -39,6 +39,10 @@ export class QualityService {
     return this.api.get<QualitySummary>(`/quality-data/summary/${modelId}`);
   }
 
+  summaryBatch(modelIds: string[]): Observable<Record<string, QualitySummary>> {
+    return this.api.get<Record<string, QualitySummary>>('/quality-data/summary-batch', { modelIds: modelIds.join(',') });
+  }
+
   getOne(id: string): Observable<QualityDataEntry> {
     return this.api.get<QualityDataEntry>(`/quality-data/${id}`);
   }

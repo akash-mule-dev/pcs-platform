@@ -81,14 +81,47 @@ export class DashboardService {
   }
 
   async getLiveStatus() {
-    const entries = await this.teRepo.find({
-      where: { endTime: IsNull() },
-      relations: ['user', 'workOrderStage', 'workOrderStage.stage', 'workOrderStage.workOrder', 'station'],
-    });
-    return entries.map((e) => ({
-      ...e,
-      elapsedSeconds: Math.round((Date.now() - new Date(e.startTime).getTime()) / 1000),
-    }));
+    // Select only the columns the dashboard "Live Stage Status" table reads.
+    // Using an explicit QueryBuilder (instead of `find` with eager relations)
+    // avoids two failure modes: (1) SELECTing every column of the eager entity
+    // graph — which 500s if any entity declares a column missing from the DB —
+    // and (2) serializing spread entities that can carry circular references.
+    // Defensive try/catch mirrors getSummary: a query failure degrades to an
+    // empty list rather than a 500 for the whole widget.
+    try {
+      const rows = await this.teRepo.createQueryBuilder('te')
+        .leftJoin('te.user', 'user')
+        .leftJoin('te.station', 'station')
+        .leftJoin('te.workOrderStage', 'wos')
+        .leftJoin('wos.stage', 'stage')
+        .leftJoin('wos.workOrder', 'wo')
+        .select('te.id', 'id')
+        .addSelect('te.start_time', 'startTime')
+        .addSelect('user.first_name', 'firstName')
+        .addSelect('user.last_name', 'lastName')
+        .addSelect('station.name', 'stationName')
+        .addSelect('stage.name', 'stageName')
+        .addSelect('wo.order_number', 'orderNumber')
+        .where('te.end_time IS NULL')
+        .getRawMany();
+
+      return rows.map((r) => ({
+        id: r.id,
+        startTime: r.startTime,
+        elapsedSeconds: r.startTime
+          ? Math.round((Date.now() - new Date(r.startTime).getTime()) / 1000)
+          : 0,
+        user: { firstName: r.firstName, lastName: r.lastName },
+        station: r.stationName ? { name: r.stationName } : null,
+        workOrderStage: {
+          stage: r.stageName ? { name: r.stageName } : null,
+          workOrder: r.orderNumber ? { orderNumber: r.orderNumber } : null,
+        },
+      }));
+    } catch (err) {
+      this.logger.error(`getLiveStatus failed: ${(err as Error).message}`);
+      return [];
+    }
   }
 
   async getOperatorPerformance() {

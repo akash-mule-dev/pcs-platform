@@ -11,12 +11,15 @@ import {
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, StatusColors } from '../../theme/colors';
-import { WorkOrder, WorkOrderStage } from '../../types';
+import { WorkOrder, WorkOrderStage, Model3D } from '../../types';
 import { workOrderService } from '../../services/work-order.service';
 import { timeTrackingService } from '../../services/time-tracking.service';
+import { api } from '../../services/api.service';
+import { environment } from '../../config/environment';
 import { StatusBadge } from '../../components/StatusBadge';
 import { formatDate, formatDuration } from '../../utils/duration';
 import { WorkOrdersStackParamList } from '../../navigation/types';
+import { useSocketEvents } from '../../hooks/useSocketEvent';
 
 type Route = RouteProp<WorkOrdersStackParamList, 'WorkOrderDetail'>;
 
@@ -47,11 +50,36 @@ export function WorkOrderDetailScreen() {
     loadOrder();
   }, [loadOrder]);
 
+  // Live-update this work order when its stages or time entries change anywhere.
+  useSocketEvents(['work-order-update', 'stage-update', 'time-entry-update'], loadOrder);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadOrder();
     setRefreshing(false);
   };
+
+  // Resolve the 3D model for this work order's product and open it in AR.
+  const openModelInAR = useCallback(async () => {
+    const productId = order?.product?.id;
+    if (!productId) {
+      Alert.alert('No product', 'This work order has no product linked, so there is no model to inspect.');
+      return;
+    }
+    try {
+      const models = await api.getList<Model3D>('/models');
+      const forProduct = models.filter((m) => m.productId === productId);
+      const model = forProduct.find((m) => m.modelType === 'quality') || forProduct[0];
+      if (!model) {
+        Alert.alert('No 3D model', 'No 3D model is linked to this product yet.');
+        return;
+      }
+      const fileUrl = `${environment.apiUrl}/models/${model.id}/file`;
+      navigation.navigate('Models', { screen: 'ARView', params: { modelId: model.id, fileUrl } });
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Could not load the 3D model for this product.');
+    }
+  }, [order, navigation]);
 
   const handleStageAction = (stage: WorkOrderStage) => {
     const actions: { text: string; onPress: () => void; style?: 'cancel' | 'destructive' }[] = [];
@@ -99,6 +127,12 @@ export function WorkOrderDetailScreen() {
           }
         },
       });
+    }
+
+    // On a QA / quality / inspection stage, offer the AR inspector.
+    const stageName = stage.stage?.name || '';
+    if (/\b(qa|quality|inspect|inspection|scan)\b/i.test(stageName)) {
+      actions.push({ text: 'Inspect in AR', onPress: () => { void openModelInAR(); } });
     }
 
     actions.push({ text: 'Cancel', onPress: () => {}, style: 'cancel' });

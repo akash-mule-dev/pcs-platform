@@ -43,6 +43,13 @@ export class QualityDataController {
     return this.service.getSummary(modelId);
   }
 
+  @Get('summary-batch')
+  @ApiOperation({ summary: 'Batch quality summary for multiple models (?modelIds=a,b,c)' })
+  getSummaryBatch(@Query('modelIds') modelIds?: string) {
+    const ids = (modelIds || '').split(',').map((s) => s.trim()).filter(Boolean);
+    return this.service.getSummaryBatch(ids);
+  }
+
   @Get('trends/:modelId')
   @ApiOperation({ summary: 'Get quality trends over time for a model' })
   getTrends(@Param('modelId') modelId: string) {

@@ -20,6 +20,7 @@ import { offlineService } from '../../services/offline.service';
 import { TimeEntry, WorkOrder, WorkOrderStage } from '../../types';
 import { formatTimer, formatDuration } from '../../utils/duration';
 import { TimeTrackingStackParamList } from '../../navigation/types';
+import { useSocketEvents } from '../../hooks/useSocketEvent';
 
 type Nav = NativeStackNavigationProp<TimeTrackingStackParamList, 'TimerMain'>;
 
@@ -68,6 +69,9 @@ export function TimerScreen() {
   useEffect(() => {
     loadState();
   }, [loadState]);
+
+  // Live-update when time entries / stages change on any client (web or mobile).
+  useSocketEvents(['time-entry-update', 'stage-update', 'dashboard-refresh'], loadState);
 
   // Timer tick
   useEffect(() => {

@@ -20,6 +20,7 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
 import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
 import { QualityService, QualityDataEntry, QualitySummary } from './quality.service';
+import { ModelMediaService } from '../core/services/model-media.service';
 import { environment } from '../../environments/environment';
 
 interface Model3D {
@@ -32,6 +33,7 @@ interface Model3D {
   modelType: string;
   productId: string;
   product?: { id: string; name: string };
+  thumbnailPath?: string | null;
   createdAt: string;
 }
 
@@ -90,13 +92,24 @@ interface Model3D {
                 @for (model of models; track model.id) {
                   <div class="model-item" [class.selected]="selectedModel?.id === model.id"
                        (click)="selectModel(model)">
-                    <mat-icon class="model-icon">view_in_ar</mat-icon>
+                    @if (model.thumbnailPath) {
+                      <img class="model-thumb" [src]="thumbnailUrl(model)" alt="" (error)="onThumbError(model)">
+                    } @else {
+                      <mat-icon class="model-icon">view_in_ar</mat-icon>
+                    }
                     <div class="model-info">
                       <span class="model-name">{{ model.name }}</span>
                       <span class="model-meta">
                         {{ model.product?.name || 'No product' }} &middot;
                         {{ (model.fileSize / 1024 / 1024).toFixed(1) }}MB
                       </span>
+                      @if (qaByModel[model.id]?.total) {
+                        <span class="qa-mini">
+                          <span class="qa-seg pass">{{ qaByModel[model.id].pass }}</span>
+                          <span class="qa-seg warning">{{ qaByModel[model.id].warning }}</span>
+                          <span class="qa-seg fail">{{ qaByModel[model.id].fail }}</span>
+                        </span>
+                      }
                     </div>
                     <mat-icon class="type-chip" [class]="model.modelType">
                       {{ model.modelType === 'quality' ? 'verified' : 'build' }}
@@ -189,6 +202,55 @@ interface Model3D {
 
         <!-- Right Panel: Inspection Detail -->
         <div class="right-panel">
+          @if (selectedModel && canInspect) {
+            <mat-card class="inspect-card">
+              <mat-card-header><mat-card-title>Inspect Part</mat-card-title></mat-card-header>
+              <mat-card-content>
+                @if (selectedPart) {
+                  <div class="inspect-part-name">{{ selectedPart }}</div>
+                  @if (statusOfPart(selectedPart); as st) {
+                    <div class="inspect-current" [class]="st">Current: {{ st | uppercase }}</div>
+                  }
+                  <div class="inspect-actions">
+                    <button mat-raised-button class="btn-pass" (click)="markPart('pass')" [disabled]="savingInspection">
+                      <mat-icon>check_circle</mat-icon> Pass
+                    </button>
+                    <button mat-raised-button class="btn-warning" (click)="markPart('warning')" [disabled]="savingInspection">
+                      <mat-icon>warning</mat-icon> Warn
+                    </button>
+                    <button mat-raised-button class="btn-fail" (click)="markPart('fail')" [disabled]="savingInspection">
+                      <mat-icon>cancel</mat-icon> Fail
+                    </button>
+                  </div>
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Note (optional)</mat-label>
+                    <input matInput [(ngModel)]="inspectNote" placeholder="e.g. weld undercut at flange">
+                  </mat-form-field>
+                } @else {
+                  <p class="inspect-hint">Tap a part in the 3D model — or the list below — to mark it pass / fail / warning.</p>
+                }
+              </mat-card-content>
+            </mat-card>
+          }
+
+          @if (allParts.length > 0) {
+            <mat-card class="parts-card">
+              <mat-card-header>
+                <mat-card-title>Parts ({{ inspectedCount }}/{{ allParts.length }} inspected)</mat-card-title>
+              </mat-card-header>
+              <mat-card-content>
+                <div class="parts-list">
+                  @for (part of allParts; track part) {
+                    <div class="part-item" [class.active]="selectedPart === part" (click)="selectPart(part)">
+                      <span class="entry-dot" [class]="statusOfPart(part) || 'none'"></span>
+                      <span class="part-name">{{ part }}</span>
+                    </div>
+                  }
+                </div>
+              </mat-card-content>
+            </mat-card>
+          }
+
           @if (selectedEntry) {
             <mat-card class="detail-card">
               <mat-card-header>
@@ -402,6 +464,12 @@ interface Model3D {
       box-shadow: var(--clay-shadow-raised, 0 4px 12px rgba(0,0,0,0.1));
     }
     .model-icon { color: var(--clay-primary, #6b5ce7); font-size: 20px; width: 20px; height: 20px; }
+    .model-thumb { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; background: var(--clay-bg, #faf7f2); flex-shrink: 0; }
+    .qa-mini { display: inline-flex; gap: 3px; margin-top: 3px; }
+    .qa-mini .qa-seg { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 7px; }
+    .qa-seg.pass { background: var(--success-bg, #e8f5e9); color: var(--success-text, #27ae60); }
+    .qa-seg.warning { background: var(--warning-bg, #fff8e1); color: var(--warning-text, #f39c12); }
+    .qa-seg.fail { background: var(--danger-bg, #fce4ec); color: var(--danger-text, #e74c3c); }
     .model-info { flex: 1; display: flex; flex-direction: column; }
     .model-name { font-weight: 600; font-size: 13px; }
     .model-meta { font-size: 11px; color: var(--clay-text-muted, #9e8e7e); }
@@ -491,6 +559,29 @@ interface Model3D {
     .empty-state mat-icon { font-size: 40px; width: 40px; height: 40px; opacity: 0.3; }
     .no-data-card mat-card-content { padding: 8px; }
 
+    /* Per-part inspection */
+    .inspect-part-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; word-break: break-all; }
+    .inspect-current { font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+    .inspect-current.pass { color: var(--success, #27ae60); }
+    .inspect-current.fail { color: var(--danger, #e74c3c); }
+    .inspect-current.warning { color: var(--warning, #f39c12); }
+    .inspect-actions { display: flex; gap: 6px; margin-bottom: 10px; }
+    .inspect-actions button { flex: 1; min-width: 0; }
+    .btn-pass { background: var(--success, #27ae60); color: #fff; }
+    .btn-warning { background: var(--warning, #f39c12); color: #fff; }
+    .btn-fail { background: var(--danger, #e74c3c); color: #fff; }
+    .inspect-hint { font-size: 12px; color: var(--clay-text-muted, #9e8e7e); font-style: italic; margin: 0; }
+    .parts-card { max-height: 320px; overflow-y: auto; }
+    .parts-list { display: flex; flex-direction: column; gap: 2px; }
+    .part-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 6px; cursor: pointer; border: 1px solid transparent;
+    }
+    .part-item:hover { background: var(--clay-bg, #faf7f2); }
+    .part-item.active { background: var(--clay-bg, #faf7f2); border-color: var(--clay-border, #e5ddd0); }
+    .part-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .entry-dot.none { background: var(--clay-border, #cfc6b8); }
+
     /* Phase 6: Trends */
     .trends-card { margin-top: 20px; padding: 16px; }
     .trends-card canvas { max-height: 300px; }
@@ -551,14 +642,24 @@ export class QualityAnalysisComponent implements OnInit {
   defectPatterns: any[] = [];
   pendingSignoffs: QualityDataEntry[] = [];
 
+  // Per-part inspection
+  allParts: string[] = [];
+  selectedPart: string | null = null;
+  inspectNote = '';
+  savingInspection = false;
+  canInspect = false;
+  qaByModel: Record<string, QualitySummary> = {};
+
   constructor(
     private api: ApiService,
     private qualityService: QualityService,
     private authService: AuthService,
     private snackBar: MatSnackBar,
+    private modelMedia: ModelMediaService,
   ) {}
 
   ngOnInit(): void {
+    this.canInspect = this.authService.hasRole('admin', 'manager', 'supervisor');
     this.loadModels();
   }
 
@@ -566,9 +667,27 @@ export class QualityAnalysisComponent implements OnInit {
     const params: Record<string, string> = {};
     if (this.filterType) params['modelType'] = this.filterType;
     this.api.get<any>('/models', params).subscribe({
-      next: (res) => this.models = res.data || res,
+      next: (res) => { this.models = res.data || res; this.loadQaBadges(); },
       error: () => this.snackBar.open('Failed to load models', 'Close', { duration: 3000 }),
     });
+  }
+
+  private loadQaBadges(): void {
+    const ids = (this.models || []).map((m) => m.id);
+    if (!ids.length) return;
+    this.qualityService.summaryBatch(ids).subscribe({
+      next: (map) => { this.qaByModel = map || {}; },
+      error: () => { /* QA badges are best-effort */ },
+    });
+  }
+
+  thumbnailUrl(model: Model3D): string {
+    return this.modelMedia.thumbnailUrl(model.id);
+  }
+
+  onThumbError(model: Model3D): void {
+    // No thumbnail available — fall back to the icon.
+    model.thumbnailPath = null;
   }
 
   selectModel(model: Model3D): void {
@@ -578,6 +697,8 @@ export class QualityAnalysisComponent implements OnInit {
     this.qualityEntries = [];
     this.selectedEntry = null;
     this.summary = null;
+    this.allParts = [];
+    this.selectedPart = null;
     this.loadQualityData(model.id);
   }
 
@@ -589,6 +710,10 @@ export class QualityAnalysisComponent implements OnInit {
           meshName: e.meshName,
           status: e.status,
         }));
+        // Keep the open detail in sync after a mark/refresh.
+        if (this.selectedPart) {
+          this.selectedEntry = entries.find(e => e.meshName === this.selectedPart) || null;
+        }
       },
     });
     this.qualityService.getSummary(modelId).subscribe({
@@ -743,13 +868,83 @@ export class QualityAnalysisComponent implements OnInit {
   }
 
   onModelLoaded(): void {
-    // Quality data already loaded in selectModel
+    // Enumerate every part/mesh in the loaded GLB so uninspected parts are listable.
+    this.allParts = (this.viewer?.getMeshNames() ?? []).filter((n) => !!n).sort();
+    this.maybeCaptureThumbnail();
+  }
+
+  /** Generate a thumbnail the first time a model is viewed (client-side capture). */
+  private maybeCaptureThumbnail(): void {
+    const model = this.selectedModel;
+    if (!model || model.thumbnailPath) return;
+    setTimeout(async () => {
+      if (this.selectedModel?.id !== model.id) return;
+      const blob = await this.viewer?.captureThumbnail();
+      if (!blob) return;
+      this.modelMedia.uploadThumbnail(model.id, blob).subscribe({
+        next: () => { model.thumbnailPath = `thumbnails/${model.id}.png`; this.loadModels(); },
+        error: () => { /* non-fatal */ },
+      });
+    }, 700);
   }
 
   onMeshClicked(meshName: string): void {
-    const entry = this.qualityEntries.find(e => e.meshName === meshName);
-    if (entry) {
-      this.selectedEntry = entry;
+    this.selectPart(meshName);
+  }
+
+  /** Select a part (from a 3D click or the parts list) for inspection. */
+  selectPart(meshName: string): void {
+    this.selectedPart = meshName;
+    this.selectedEntry = this.qualityEntries.find((e) => e.meshName === meshName) || null;
+    if (meshName && !this.allParts.includes(meshName)) {
+      this.allParts = [...this.allParts, meshName].sort();
+    }
+  }
+
+  statusOfPart(meshName: string): 'pass' | 'fail' | 'warning' | null {
+    return this.qualityEntries.find((e) => e.meshName === meshName)?.status ?? null;
+  }
+
+  get inspectedCount(): number {
+    const inspected = new Set(this.qualityEntries.map((e) => e.meshName));
+    return this.allParts.filter((p) => inspected.has(p)).length;
+  }
+
+  /** Record (or update) the inspection status for the selected part. */
+  markPart(status: 'pass' | 'fail' | 'warning'): void {
+    if (!this.selectedPart || !this.selectedModel || this.savingInspection) return;
+    this.savingInspection = true;
+    const user = this.authService.currentUser;
+    const inspector = user ? `${user.firstName} ${user.lastName}` : null;
+    const part = this.selectedPart;
+    const existing = this.qualityEntries.find((e) => e.meshName === part);
+    const payload: Partial<QualityDataEntry> = {
+      status,
+      notes: this.inspectNote.trim() || null,
+      inspector,
+      inspectionDate: new Date().toISOString(),
+    };
+    const done = {
+      next: () => {
+        this.snackBar.open(`Marked "${part}" as ${status.toUpperCase()}`, 'OK', { duration: 2500 });
+        this.inspectNote = '';
+        this.savingInspection = false;
+        if (this.selectedModel) this.loadQualityData(this.selectedModel.id);
+      },
+      error: (err: any) => {
+        this.savingInspection = false;
+        this.snackBar.open(err?.error?.message || 'Failed to save inspection', 'Close', { duration: 4000 });
+      },
+    };
+    if (existing) {
+      this.qualityService.update(existing.id, payload).subscribe(done);
+    } else {
+      this.qualityService.create({
+        modelId: this.selectedModel.id,
+        meshName: part,
+        regionLabel: part,
+        ...payload,
+      }).subscribe(done);
     }
   }
 }

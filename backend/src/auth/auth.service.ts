@@ -31,6 +31,7 @@ export class AuthService {
       email: user.email,
       role: user.role.name,
       employeeId: user.employeeId,
+      organizationId: user.organizationId,
     };
     return {
       accessToken: this.jwtService.sign(payload),
@@ -41,6 +42,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         employeeId: user.employeeId,
+        organizationId: user.organizationId,
         role: user.role,
       },
     };

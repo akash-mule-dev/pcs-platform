@@ -73,6 +73,35 @@ export class QualityDataService {
     };
   }
 
+  /** Pass/fail/warning counts for many models at once (for status chips on cards). */
+  async getSummaryBatch(
+    modelIds: string[],
+  ): Promise<Record<string, { total: number; pass: number; fail: number; warning: number }>> {
+    const result: Record<string, { total: number; pass: number; fail: number; warning: number }> = {};
+    if (!modelIds.length) return result;
+    for (const id of modelIds) result[id] = { total: 0, pass: 0, fail: 0, warning: 0 };
+
+    const rows = await this.repo.createQueryBuilder('qd')
+      .select('qd.model_id', 'modelId')
+      .addSelect('qd.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('qd.model_id IN (:...ids)', { ids: modelIds })
+      .andWhere('qd.is_active = :active', { active: true })
+      .groupBy('qd.model_id')
+      .addGroupBy('qd.status')
+      .getRawMany();
+
+    for (const r of rows) {
+      const bucket = result[r.modelId] || (result[r.modelId] = { total: 0, pass: 0, fail: 0, warning: 0 });
+      const count = parseInt(r.count, 10) || 0;
+      if (r.status === 'pass' || r.status === 'fail' || r.status === 'warning') {
+        bucket[r.status as 'pass' | 'fail' | 'warning'] += count;
+      }
+      bucket.total += count;
+    }
+    return result;
+  }
+
   /** Phase 6: Trend tracking — quality status over time grouped by inspection date */
   async getTrends(modelId: string): Promise<any[]> {
     return this.repo.createQueryBuilder('qd')

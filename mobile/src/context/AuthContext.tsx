@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User } from '../types';
 import { authService } from '../services/auth.service';
+import { socketService } from '../services/socket.service';
 import { loadPermissions } from '../config/permissions';
 
 interface AuthContextValue {
@@ -28,6 +29,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = authService.subscribe((auth, u) => {
       setIsAuthenticated(auth);
       setUser(u);
+      // Drive the real-time connection from auth state: connect on login /
+      // restored session, tear down on logout.
+      if (auth && u) {
+        void socketService.connect(u.id);
+      } else {
+        socketService.disconnect();
+      }
     });
 
     authService.init()

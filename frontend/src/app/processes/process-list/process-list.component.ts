@@ -235,7 +235,7 @@ export class ProcessListComponent implements OnInit, AfterViewInit {
   }
 
   openForm(process?: any): void {
-    const ref = this.dialog.open(ProcessFormComponent, { width: process ? '500px' : '640px', data: process || null });
+    const ref = this.dialog.open(ProcessFormComponent, { width: process ? '500px' : '680px', maxWidth: '94vw', data: process || null });
     ref.afterClosed().subscribe(result => { if (result) this.load(); });
   }
 
