@@ -22,6 +22,7 @@ const ITEMS: MenuItem[] = [
   { key: 'NcrList', label: 'Quality / NCRs', subtitle: 'Non-conformance reports', icon: 'alert-circle', feature: 'ncr' },
   { key: 'EquipmentList', label: 'Equipment', subtitle: 'Machines & current status', icon: 'construct', feature: 'equipment' },
   { key: 'MaterialList', label: 'Materials', subtitle: 'Inventory & parts master', icon: 'layers', feature: 'materials' },
+  { key: 'WorkforceList', label: 'Workforce', subtitle: 'Skills & certifications', icon: 'people', feature: 'workforce' },
 ];
 
 export function MoreMenuScreen() {

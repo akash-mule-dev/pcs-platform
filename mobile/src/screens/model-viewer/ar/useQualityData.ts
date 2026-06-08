@@ -3,9 +3,18 @@
 //   GET  /quality-data/by-model/:modelId
 //   POST /quality-data                       (auto-fails if measurement is out of tolerance)
 //   PATCH /quality-data/:id/signoff
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../../services/api.service';
 import { QualityEntry } from '../../../types';
+import { offlineService } from '../../../services/offline.service';
+import {
+  createQuality,
+  createNcr,
+  uploadEvidence as apiUploadEvidence,
+  CreateNcrInput,
+  CreatedNcr,
+} from './qaApi';
+import { qaOfflineQueue } from './qaOfflineQueue';
 
 export type QualityStatus = 'pass' | 'fail' | 'warning';
 
@@ -47,10 +56,32 @@ export function summarize(entries: ARQualityEntry[]): QualitySummary {
   };
 }
 
+/** Build an optimistic local entry shown immediately while a create is queued offline. */
+function optimisticEntry(input: CreateQualityInput): ARQualityEntry {
+  return {
+    id: `pending-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+    modelId: input.modelId,
+    meshName: input.meshName,
+    status: input.status,
+    inspectorId: '',
+    defectType: input.defectType ?? null,
+    severity: input.severity ?? null,
+    measurement: input.measurementValue ?? null,
+    toleranceMin: input.toleranceMin ?? null,
+    toleranceMax: input.toleranceMax ?? null,
+    notes: input.notes ?? null,
+    createdAt: new Date().toISOString(),
+    regionLabel: input.regionLabel ?? null,
+    signoffStatus: 'pending',
+  };
+}
+
 export function useQualityData(modelId: string | null) {
   const [entries, setEntries] = useState<ARQualityEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const prevPendingRef = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!modelId) return;
@@ -70,13 +101,50 @@ export function useQualityData(modelId: string | null) {
     refresh();
   }, [refresh]);
 
+  // Track the offline queue; when it drains (count drops) the queued entries
+  // have synced, so pull the authoritative list from the server.
+  useEffect(() => {
+    const unsub = qaOfflineQueue.subscribe((count) => {
+      if (count < prevPendingRef.current) void refresh();
+      prevPendingRef.current = count;
+      setPendingCount(count);
+    });
+    // In case connectivity was restored while this model wasn't open.
+    void qaOfflineQueue.flush();
+    return unsub;
+  }, [refresh]);
+
   const create = useCallback(
-    async (input: CreateQualityInput) => {
-      const created = await api.post<ARQualityEntry>('/quality-data', input);
+    async (input: CreateQualityInput, evidenceUri?: string): Promise<ARQualityEntry> => {
+      if (!offlineService.isOnline) {
+        await qaOfflineQueue.enqueue(input, evidenceUri);
+        const optimistic = optimisticEntry(input);
+        setEntries((prev) => [optimistic, ...prev]);
+        return optimistic;
+      }
+      const created = await createQuality(input);
+      if (evidenceUri) {
+        // Entry is saved even if the image upload fails — it can be re-attached.
+        try { await apiUploadEvidence(created.id, evidenceUri); } catch { /* retryable */ }
+      }
       await refresh();
       return created;
     },
     [refresh],
+  );
+
+  const uploadEvidence = useCallback(
+    async (entryId: string, fileUri: string): Promise<ARQualityEntry> => {
+      const updated = await apiUploadEvidence(entryId, fileUri);
+      await refresh();
+      return updated;
+    },
+    [refresh],
+  );
+
+  const raiseNcr = useCallback(
+    async (input: CreateNcrInput): Promise<CreatedNcr> => createNcr(input),
+    [],
   );
 
   const signoff = useCallback(
@@ -87,5 +155,15 @@ export function useQualityData(modelId: string | null) {
     [refresh],
   );
 
-  return { entries, loading, error, refresh, create, signoff };
+  return {
+    entries,
+    loading,
+    error,
+    pendingCount,
+    refresh,
+    create,
+    uploadEvidence,
+    raiseNcr,
+    signoff,
+  };
 }

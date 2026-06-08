@@ -9,6 +9,12 @@ interface MeasurementPanelProps {
   dimensions: ModelDimensions | null;
   onChange: (patch: Partial<MeasurementState>) => void;
   onClearRulers: () => void;
+  /** Log the current model↔real deviation as a QA measurement (out-of-tolerance auto-fails). */
+  onLogDeviation?: () => void;
+}
+
+function dist(a: [number, number, number], b: [number, number, number]): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
 export default function MeasurementPanel({
@@ -16,7 +22,12 @@ export default function MeasurementPanel({
   dimensions,
   onChange,
   onClearRulers,
+  onLogDeviation,
 }: MeasurementPanelProps) {
+  const deviationMeters =
+    measurements.deviationModelPoint && measurements.deviationRealPoint
+      ? dist(measurements.deviationModelPoint, measurements.deviationRealPoint)
+      : null;
   const toggle = (label: string, active: boolean, onPress: () => void) => (
     <TouchableOpacity
       style={[styles.toggle, active && styles.toggleActive]}
@@ -63,6 +74,7 @@ export default function MeasurementPanel({
           onChange({
             modelRulerActive: !measurements.modelRulerActive,
             realRulerActive: false,
+            deviationActive: false,
           })
       )}
 
@@ -73,17 +85,32 @@ export default function MeasurementPanel({
           onChange({
             realRulerActive: !measurements.realRulerActive,
             modelRulerActive: false,
+            deviationActive: false,
+          })
+      )}
+
+      {toggle(
+        `Deviation probe ${measurements.deviationActive ? 'ON' : 'OFF'}`,
+        measurements.deviationActive,
+        () =>
+          onChange({
+            deviationActive: !measurements.deviationActive,
+            modelRulerActive: false,
+            realRulerActive: false,
+            deviationModelPoint: null,
+            deviationRealPoint: null,
           })
       )}
 
       {(measurements.modelRulerPoints.length > 0 ||
-        measurements.realRulerPoints.length > 0) && (
+        measurements.realRulerPoints.length > 0 ||
+        measurements.deviationModelPoint != null) && (
         <TouchableOpacity
           style={styles.clearBtn}
           onPress={onClearRulers}
           activeOpacity={0.7}
         >
-          <Text style={styles.clearBtnText}>Clear ruler points</Text>
+          <Text style={styles.clearBtnText}>Clear points</Text>
         </TouchableOpacity>
       )}
 
@@ -92,6 +119,23 @@ export default function MeasurementPanel({
           Tap two points to measure.{'\n'}
           Tap a third to reset and start again.
         </Text>
+      )}
+
+      {measurements.deviationActive && (
+        <Text style={styles.hint}>
+          Tap the model, then the matching point on the real part.
+        </Text>
+      )}
+
+      {deviationMeters != null && (
+        <View style={styles.deviationBox}>
+          <Text style={styles.deviationValue}>Δ {formatMeters(deviationMeters)}</Text>
+          {onLogDeviation && (
+            <TouchableOpacity style={styles.logDeviationBtn} onPress={onLogDeviation} activeOpacity={0.7}>
+              <Text style={styles.logDeviationText}>Log as QA</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
     </View>
   );
@@ -158,5 +202,29 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 14,
     textAlign: 'center',
+  },
+  deviationBox: {
+    marginTop: 8,
+    backgroundColor: 'rgba(34, 211, 238, 0.15)',
+    borderRadius: 10,
+    padding: 8,
+    alignItems: 'center',
+    gap: 6,
+  },
+  deviationValue: {
+    color: '#22d3ee',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  logDeviationBtn: {
+    backgroundColor: 'rgba(34, 211, 238, 0.9)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  logDeviationText: {
+    color: '#062b30',
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

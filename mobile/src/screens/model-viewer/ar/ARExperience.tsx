@@ -6,7 +6,7 @@
 // All interaction logic (placement, lock, render-mode cycle, measurement
 // rulers, align d-pad / scale / tilt / joystick) is unchanged from glb-viewer.
 import React, { useRef, useCallback, useState, useEffect } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform } from 'react-native';
 import ARModelScene from './ARModelScene';
 import ToolBar from './ToolBar';
 import MeasurementPanel from './MeasurementPanel';
@@ -16,6 +16,7 @@ import TiltControls from './TiltControls';
 import QualityPanel from './QualityPanel';
 import LogInspectionForm, { InspectionFormResult } from './LogInspectionForm';
 import { useModelState } from './useModelState';
+import { useDeviceCapabilities } from './useDeviceCapabilities';
 import { useQualityData, ARQualityEntry } from './useQualityData';
 import { useAuth } from '../../../context/AuthContext';
 import {
@@ -26,6 +27,8 @@ import {
   DEFAULT_MEASUREMENTS,
 } from './types';
 import { ModelDimensions } from './dimensionExtractor';
+import { captureSnapshot } from './arSnapshot';
+import { loadRegistration, saveRegistration } from './arRegistration';
 
 // Lazy-load the Viro navigator — static import crashes in Expo Go.
 let ViroARSceneNavigator: any = null;
@@ -71,6 +74,7 @@ export default function ARExperience({
     setPlaced,
     setWireframeUri,
     cycleRenderMode,
+    setRenderMode,
     toggleEdgesMode,
     reset,
     handlePinch,
@@ -85,6 +89,16 @@ export default function ARExperience({
   const [trackingStatus, setTrackingStatus] = useState<string>('normal');
   const [measurements, setMeasurements] = useState<MeasurementState>(DEFAULT_MEASUREMENTS);
 
+  // Ref to the Viro navigator so we can imperatively reset the AR session
+  // (clear anchors + tracking) during recovery.
+  const navigatorRef = useRef<any>(null);
+  // Depth-sensing capability of the running device (LiDAR vs none).
+  const caps = useDeviceCapabilities();
+  const [capWarningDismissed, setCapWarningDismissed] = useState(false);
+  // True once tracking has degraded after the model was placed: the overlay
+  // may no longer be aligned with the real object.
+  const [driftSuspected, setDriftSuspected] = useState(false);
+
   // ── QA capture ──
   const { user } = useAuth();
   const inspectorName =
@@ -92,12 +106,42 @@ export default function ARExperience({
   const {
     entries: qualityEntries,
     loading: qualityLoading,
+    pendingCount,
     create: createQuality,
+    uploadEvidence,
+    raiseNcr,
     signoff: signoffQuality,
   } = useQualityData(modelId);
   const [qaPanelOpen, setQaPanelOpen] = useState(false);
   const [logFormOpen, setLogFormOpen] = useState(false);
   const [savingInspection, setSavingInspection] = useState(false);
+
+  // ── AR visualization / inspection modes ──
+  // QA overlay: 'off' | 'heatmap' (status-colored part volumes) | 'parts'
+  // (the same volumes, but tappable to log a per-part result).
+  const [qaOverlay, setQaOverlay] = useState<'off' | 'heatmap' | 'parts'>('off');
+  const [focusMeshName, setFocusMeshName] = useState<string | null>(null);
+  // Depth occlusion — only meaningful on LiDAR devices in solid mode.
+  const [occlusionOn, setOcclusionOn] = useState(false);
+
+  // Capture confidence: LiDAR + normal tracking = high; no LiDAR = medium;
+  // degraded tracking = low. Used to gate/annotate measurements.
+  const confidence: 'high' | 'medium' | 'low' | null = !state.placed
+    ? null
+    : trackingStatus !== 'normal'
+      ? 'low'
+      : caps.hasDepthSensor
+        ? 'high'
+        : 'medium';
+
+  // A note suffix that records why a measurement may be unreliable, so
+  // visual-estimate data is distinguishable from LiDAR-grade data in the record.
+  const confidenceTag = useCallback((): string => {
+    const flags: string[] = [];
+    if (!caps.hasDepthSensor) flags.push('no-LiDAR');
+    if (trackingStatus !== 'normal') flags.push(`tracking-${trackingStatus}`);
+    return flags.length ? ` [low-confidence: ${flags.join(', ')}]` : '';
+  }, [caps.hasDepthSensor, trackingStatus]);
   const partNames = dimensions ? dimensions.parts.map((p) => p.name) : [];
   const lastRulerMeters =
     measurements.modelRulerPoints.length === 2
@@ -153,6 +197,30 @@ export default function ARExperience({
     positionRef.current = state.position;
   }, [state.position]);
 
+  // Tracking-loss recovery. Once the model is placed, any drop to LIMITED or
+  // UNAVAILABLE means the overlay may have shifted relative to the real object.
+  useEffect(() => {
+    if (!state.placed) return;
+    if (trackingStatus === 'limited' || trackingStatus === 'unavailable') {
+      setDriftSuspected(true);
+    }
+  }, [trackingStatus, state.placed]);
+
+  // Plane- and image-anchored content re-localizes itself once ARKit regains
+  // normal tracking, so clear the drift flag automatically for those modes.
+  // World mode has no anchor — its drift is permanent until the user re-places,
+  // so the flag is kept until they act on it.
+  useEffect(() => {
+    if (trackingMode !== 'world' && trackingStatus === 'normal') {
+      setDriftSuspected(false);
+    }
+  }, [trackingMode, trackingStatus]);
+
+  // A new model clears any pending drift state.
+  useEffect(() => {
+    setDriftSuspected(false);
+  }, [modelUri]);
+
   const updateMeasurements = useCallback(
     (patch: Partial<MeasurementState>) => {
       setMeasurements((m) => ({ ...m, ...patch }));
@@ -175,7 +243,21 @@ export default function ARExperience({
   }, []);
 
   const clearRulers = useCallback(() => {
-    setMeasurements((m) => ({ ...m, modelRulerPoints: [], realRulerPoints: [] }));
+    setMeasurements((m) => ({
+      ...m,
+      modelRulerPoints: [],
+      realRulerPoints: [],
+      deviationModelPoint: null,
+      deviationRealPoint: null,
+    }));
+  }, []);
+
+  const addDeviationModelPoint = useCallback((p: Vec3) => {
+    setMeasurements((m) => ({ ...m, deviationModelPoint: p, deviationRealPoint: null }));
+  }, []);
+
+  const addDeviationRealPoint = useCallback((p: Vec3) => {
+    setMeasurements((m) => ({ ...m, deviationRealPoint: p }));
   }, []);
 
   const handlePlace = useCallback(
@@ -258,9 +340,165 @@ export default function ARExperience({
   }, [state.locked, precisionMode, stopJoystickDrive]);
   useEffect(() => stopJoystickDrive, [stopJoystickDrive]);
 
+  // ── Per-part inspection (tap a part box in 'parts' overlay mode) ──
+  const logPart = useCallback(
+    async (meshName: string, status: 'pass' | 'fail' | 'warning') => {
+      try {
+        await createQuality({
+          modelId,
+          meshName,
+          status,
+          inspector: inspectorName,
+          notes: `AR per-part inspection${confidenceTag()}`,
+        });
+      } catch (e) {
+        Alert.alert('Could not save', e instanceof Error ? e.message : 'Failed to save result');
+      }
+    },
+    [createQuality, modelId, inspectorName, confidenceTag],
+  );
+
+  const handlePartTap = useCallback(
+    (meshName: string) => {
+      Alert.alert(meshName, 'Inspection result for this part?', [
+        { text: 'Pass', onPress: () => void logPart(meshName, 'pass') },
+        { text: 'Warning', onPress: () => void logPart(meshName, 'warning') },
+        { text: 'Fail', style: 'destructive', onPress: () => void logPart(meshName, 'fail') },
+        {
+          text: focusMeshName === meshName ? 'Unfocus' : 'Focus',
+          onPress: () => setFocusMeshName((f) => (f === meshName ? null : meshName)),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    },
+    [logPart, focusMeshName],
+  );
+
+  // ── Deviation probe → QA measurement (backend auto-fails out-of-tolerance) ──
+  const handleLogDeviation = useCallback(async () => {
+    const a = measurements.deviationModelPoint;
+    const b = measurements.deviationRealPoint;
+    if (!a || !b) return;
+    const mm = Math.round(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) * 1000 * 10) / 10;
+    try {
+      await createQuality({
+        modelId,
+        meshName: focusMeshName ?? 'deviation-probe',
+        status: 'warning',
+        inspector: inspectorName,
+        measurementValue: mm,
+        measurementUnit: 'mm',
+        notes: `AR deviation probe${confidenceTag()}`,
+      });
+      setMeasurements((m) => ({ ...m, deviationModelPoint: null, deviationRealPoint: null }));
+      Alert.alert('Logged', `Deviation of ${mm} mm recorded.`);
+    } catch (e) {
+      Alert.alert('Could not save', e instanceof Error ? e.message : 'Failed to save deviation');
+    }
+  }, [measurements.deviationModelPoint, measurements.deviationRealPoint, createQuality, modelId, focusMeshName, inspectorName, confidenceTag]);
+
+  // ── Evidence: capture the live AR view and attach it to a QA entry ──
+  const handleCaptureEvidence = useCallback(
+    async (entry: ARQualityEntry) => {
+      const snap = await captureSnapshot(navigatorRef);
+      if (!snap) {
+        Alert.alert('Capture unavailable', 'Could not capture the AR view on this device.');
+        return;
+      }
+      try {
+        await uploadEvidence(entry.id, snap.uri);
+        Alert.alert('Evidence attached', 'AR snapshot saved to the inspection.');
+      } catch (e) {
+        Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload evidence');
+      }
+    },
+    [uploadEvidence],
+  );
+
+  // ── Raise an NCR from a failed inspection ──
+  const handleRaiseNcr = useCallback(
+    (entry: ARQualityEntry) => {
+      Alert.alert('Raise NCR', `Create a non-conformance report for "${entry.meshName}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Raise',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const ncr = await raiseNcr({
+                title: `AR QA: ${entry.meshName} failed inspection`,
+                description: entry.notes ?? undefined,
+                severity: (entry.severity as any) ?? 'medium',
+                dataJson: {
+                  source: 'ar-inspection',
+                  modelId,
+                  meshName: entry.meshName,
+                  qualityEntryId: entry.id,
+                  measurement: entry.measurement,
+                  defectType: entry.defectType,
+                },
+              });
+              Alert.alert('NCR raised', `${ncr.number} created.`);
+            } catch (e) {
+              Alert.alert('Could not raise NCR', e instanceof Error ? e.message : 'Failed to raise NCR');
+            }
+          },
+        },
+      ]);
+    },
+    [raiseNcr, modelId],
+  );
+
+  // ── Persisted registration: restore the model's last scale/rotation/render
+  // mode for this modelId on open; position is intentionally not restored. ──
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    restoredRef.current = false;
+  }, [modelId]);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    (async () => {
+      const reg = await loadRegistration(modelId);
+      if (!reg) return;
+      baseScaleRef.current = reg.scale;
+      setScale(reg.scale);
+      baseRotationRef.current = reg.rotation;
+      setRotation(reg.rotation);
+      setRenderMode(reg.renderMode); // reducer ignores 'wireframe' if none available
+    })();
+  }, [modelId, baseScaleRef, setScale, setRotation, setRenderMode]);
+
+  // Save registration whenever the placed model's transform / render mode change.
+  useEffect(() => {
+    if (!state.placed) return;
+    void saveRegistration(modelId, {
+      scale: state.scale,
+      rotation: state.rotation,
+      renderMode: state.renderMode,
+      trackingMode,
+    });
+  }, [state.placed, state.scale, state.rotation, state.renderMode, trackingMode, modelId]);
+
+  // World-mode recovery: drop the placement so the user can re-tap to re-drop
+  // the model at the current (re-localized) camera position. Scale, rotation
+  // and render mode are preserved. Only reachable while unlocked.
+  const handleReplace = useCallback(() => {
+    setPlaced(false);
+    setDriftSuspected(false);
+  }, [setPlaced]);
+
   const handleReset = () => {
     baseScaleRef.current = [0.2, 0.2, 0.2];
     baseRotationRef.current = [0, 0, 0];
+    setDriftSuspected(false);
+    // Also clear ARKit's anchors and tracking so a wedged session recovers,
+    // not just the model transform.
+    try {
+      navigatorRef.current?._resetARSession?.(true, true);
+    } catch (err) {
+      if (__DEV__) console.warn('resetARSession failed:', err);
+    }
     reset();
   };
 
@@ -310,12 +548,18 @@ export default function ARExperience({
 
       {/* AR Scene */}
       <ViroARSceneNavigator
+        ref={navigatorRef}
         autofocus={true}
         videoQuality="High"
         depthEnabled={true}
         hdrEnabled={true}
         pbrEnabled={true}
         shadowsEnabled={true}
+        occlusionMode={
+          occlusionOn && caps.hasDepthSensor && state.renderMode === 'solid'
+            ? 'depthBased'
+            : 'disabled'
+        }
         initialScene={{
           scene: ARModelScene as any,
         }}
@@ -339,18 +583,141 @@ export default function ARExperience({
           onTrackingUpdated: handleTrackingUpdated,
           onAddModelRulerPoint: addModelRulerPoint,
           onAddRealRulerPoint: addRealRulerPoint,
+          onAddDeviationModelPoint: addDeviationModelPoint,
+          onAddDeviationRealPoint: addDeviationRealPoint,
+          qaOverlayVisible: qaOverlay !== 'off',
+          qaSelectable: qaOverlay === 'parts',
+          focusMeshName,
+          onPartTap: handlePartTap,
         }}
         style={styles.arView}
       />
 
-      {/* Tracking-state banner */}
-      {!state.locked && trackingStatus !== 'normal' && (
-        <View style={styles.trackingBanner}>
-          <Text style={styles.trackingBannerText}>
-            {trackingStatus === 'limited'
-              ? 'Tracking limited — move phone side-to-side in well-lit area'
-              : 'Tracking unavailable — check lighting and camera view'}
-          </Text>
+      {/* Banner stack: device-capability notice, live tracking state, and
+          drift recovery. Rendered as a single column so notices never overlap. */}
+      {!state.locked && (
+        <View style={styles.bannerStack} pointerEvents="box-none">
+          {/* No-LiDAR notice (iOS only). Dismissible. */}
+          {Platform.OS === 'ios' &&
+            caps.checked &&
+            !caps.hasDepthSensor &&
+            !capWarningDismissed && (
+              <View style={[styles.banner, styles.bannerWarn]}>
+                <Text style={styles.bannerText}>
+                  No LiDAR depth sensor on this device. For a stable overlay use
+                  Image-Marker mode in good lighting; real-world measurements are
+                  approximate.
+                </Text>
+                <TouchableOpacity
+                  style={styles.bannerDismiss}
+                  onPress={() => setCapWarningDismissed(true)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.bannerDismissText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+          {/* Live tracking-state banner (transient). */}
+          {trackingStatus !== 'normal' && (
+            <View style={[styles.banner, styles.bannerWarn]}>
+              <Text style={styles.bannerText}>
+                {trackingStatus === 'limited'
+                  ? 'Tracking limited — move device slowly side-to-side in a well-lit area'
+                  : 'Tracking unavailable — check lighting and keep the camera on textured surroundings'}
+              </Text>
+            </View>
+          )}
+
+          {/* Drift recovery (world mode, after tracking has recovered). Anchored
+              modes self-relocalize, so this only appears for unanchored world mode. */}
+          {driftSuspected &&
+            state.placed &&
+            trackingMode === 'world' &&
+            trackingStatus === 'normal' && (
+              <View style={[styles.banner, styles.bannerInfo]}>
+                <Text style={[styles.bannerText, styles.bannerTextOnInfo]}>
+                  Tracking was interrupted — the model may have drifted out of
+                  alignment.
+                </Text>
+                <TouchableOpacity
+                  style={styles.bannerAction}
+                  onPress={handleReplace}
+                >
+                  <Text style={styles.bannerActionText}>Re-place</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+        </View>
+      )}
+
+      {/* AR-QA visualization rail — overlay mode, focus, and (LiDAR) occlusion. */}
+      {state.placed && !state.locked && (
+        <View style={styles.vizRail} pointerEvents="box-none">
+          <TouchableOpacity
+            style={[styles.vizButton, qaOverlay !== 'off' && styles.vizButtonActive]}
+            onPress={() =>
+              setQaOverlay((m) => (m === 'off' ? 'heatmap' : m === 'heatmap' ? 'parts' : 'off'))
+            }
+            activeOpacity={0.7}
+          >
+            <Text style={styles.vizButtonText}>
+              {qaOverlay === 'off' ? 'QA Map' : qaOverlay === 'heatmap' ? 'Heatmap' : 'Tap-QA'}
+            </Text>
+          </TouchableOpacity>
+
+          {focusMeshName && (
+            <TouchableOpacity
+              style={[styles.vizButton, styles.vizButtonActive]}
+              onPress={() => setFocusMeshName(null)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.vizButtonText}>Unfocus</Text>
+            </TouchableOpacity>
+          )}
+
+          {caps.hasDepthSensor && (
+            <TouchableOpacity
+              style={[styles.vizButton, occlusionOn && styles.vizButtonActive]}
+              onPress={() => setOcclusionOn((o) => !o)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.vizButtonText}>{occlusionOn ? 'Occlude On' : 'Occlude'}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Capture-confidence badge + offline-queue chip (bottom-center). */}
+      {!state.locked && (confidence || pendingCount > 0) && (
+        <View style={styles.bottomCenter} pointerEvents="none">
+          {confidence && (
+            <View
+              style={[
+                styles.confidenceBadge,
+                confidence === 'high'
+                  ? styles.confHigh
+                  : confidence === 'medium'
+                    ? styles.confMedium
+                    : styles.confLow,
+              ]}
+            >
+              <Text
+                style={[styles.confidenceText, confidence === 'low' && styles.confTextLight]}
+              >
+                {confidence === 'high'
+                  ? 'LiDAR · high accuracy'
+                  : confidence === 'medium'
+                    ? 'No LiDAR · approximate'
+                    : 'Tracking poor · hold steady'}
+              </Text>
+            </View>
+          )}
+          {pendingCount > 0 && (
+            <View style={styles.queueChip}>
+              <Text style={styles.queueChipText}>{pendingCount} queued offline</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -387,6 +754,7 @@ export default function ARExperience({
           dimensions={dimensions}
           onChange={updateMeasurements}
           onClearRulers={clearRulers}
+          onLogDeviation={handleLogDeviation}
         />
       )}
 
@@ -441,6 +809,8 @@ export default function ARExperience({
           onClose={() => setQaPanelOpen(false)}
           onLogNew={() => setLogFormOpen(true)}
           onSignoff={handleSignoff}
+          onCaptureEvidence={handleCaptureEvidence}
+          onRaiseNcr={handleRaiseNcr}
         />
       )}
 
@@ -521,22 +891,58 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  trackingBanner: {
+  // Notices stack below the top button row (QA / Lock at top: 96) so they
+  // don't sit underneath those controls.
+  bannerStack: {
     position: 'absolute',
-    top: 96,
+    top: 140,
     left: 16,
     right: 16,
-    backgroundColor: 'rgba(234, 179, 8, 0.92)',
+    zIndex: 15,
+    gap: 8,
+  },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 12,
-    zIndex: 15,
   },
-  trackingBannerText: {
+  bannerWarn: {
+    backgroundColor: 'rgba(234, 179, 8, 0.92)',
+  },
+  bannerInfo: {
+    backgroundColor: 'rgba(59, 130, 246, 0.95)',
+  },
+  bannerText: {
+    flex: 1,
     color: '#1f2937',
     fontSize: 13,
     fontWeight: '600',
-    textAlign: 'center',
+  },
+  bannerTextOnInfo: {
+    color: '#ffffff',
+  },
+  bannerDismiss: {
+    marginLeft: 10,
+    paddingHorizontal: 4,
+  },
+  bannerDismissText: {
+    color: '#1f2937',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  bannerAction: {
+    marginLeft: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+  },
+  bannerActionText: {
+    color: '#1d4ed8',
+    fontSize: 13,
+    fontWeight: '800',
   },
   tiltContainer: {
     position: 'absolute',
@@ -584,6 +990,65 @@ const styles = StyleSheet.create({
   qaButtonText: {
     color: '#ffffff',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  vizRail: {
+    position: 'absolute',
+    left: 12,
+    top: 184,
+    gap: 8,
+    zIndex: 18,
+  },
+  vizButton: {
+    backgroundColor: 'rgba(13, 17, 23, 0.85)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    minWidth: 104,
+    alignItems: 'center',
+  },
+  vizButtonActive: {
+    backgroundColor: 'rgba(14, 165, 233, 0.92)',
+  },
+  vizButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  bottomCenter: {
+    position: 'absolute',
+    bottom: 92,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    gap: 6,
+    zIndex: 15,
+  },
+  confidenceBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+  },
+  confHigh: { backgroundColor: 'rgba(16, 185, 129, 0.92)' },
+  confMedium: { backgroundColor: 'rgba(245, 158, 11, 0.92)' },
+  confLow: { backgroundColor: 'rgba(239, 68, 68, 0.92)' },
+  confidenceText: {
+    color: '#0b1220',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  confTextLight: {
+    color: '#ffffff',
+  },
+  queueChip: {
+    backgroundColor: 'rgba(13, 17, 23, 0.85)',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  queueChipText: {
+    color: '#facc15',
+    fontSize: 11,
     fontWeight: '700',
   },
 });

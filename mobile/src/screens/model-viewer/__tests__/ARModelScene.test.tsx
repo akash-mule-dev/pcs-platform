@@ -57,6 +57,9 @@ const DEFAULT_MEASUREMENTS = {
   realRulerActive: false,
   modelRulerPoints: [],
   realRulerPoints: [],
+  deviationActive: false,
+  deviationModelPoint: null,
+  deviationRealPoint: null,
 };
 
 function makeProps(overrides: Record<string, any> = {}) {

@@ -14,6 +14,11 @@ export interface MeasurementState {
   realRulerActive: boolean;
   modelRulerPoints: Vec3[]; // up to 2 points, in model-local space
   realRulerPoints: Vec3[]; // up to 2 points, in world space
+  // Deviation probe: pair a point on the virtual model with the matching point
+  // on the real part to measure how far the as-built deviates from the model.
+  deviationActive: boolean;
+  deviationModelPoint: Vec3 | null; // first tap, on the model
+  deviationRealPoint: Vec3 | null; // second tap, on the real surface
 }
 
 export const DEFAULT_MEASUREMENTS: MeasurementState = {
@@ -23,6 +28,9 @@ export const DEFAULT_MEASUREMENTS: MeasurementState = {
   realRulerActive: false,
   modelRulerPoints: [],
   realRulerPoints: [],
+  deviationActive: false,
+  deviationModelPoint: null,
+  deviationRealPoint: null,
 };
 
 export const TRACKING_MODE_INFO: Record<

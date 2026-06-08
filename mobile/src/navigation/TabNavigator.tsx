@@ -23,6 +23,9 @@ import { MoreMenuScreen } from '../screens/more/MoreMenuScreen';
 import { NcrListScreen } from '../screens/more/NcrListScreen';
 import { EquipmentListScreen } from '../screens/more/EquipmentListScreen';
 import { MaterialListScreen } from '../screens/more/MaterialListScreen';
+import { NcrCreateScreen } from '../screens/more/NcrCreateScreen';
+import { NcrDetailScreen } from '../screens/more/NcrDetailScreen';
+import { WorkforceListScreen } from '../screens/more/WorkforceListScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -69,8 +72,11 @@ function MoreStackNav() {
     <MoreStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
       <MoreStack.Screen name="MoreMenu" component={MoreMenuScreen} options={{ title: 'More' }} />
       <MoreStack.Screen name="NcrList" component={NcrListScreen} options={{ title: 'Quality / NCRs' }} />
+      <MoreStack.Screen name="NcrCreate" component={NcrCreateScreen} options={{ title: 'Raise NCR' }} />
+      <MoreStack.Screen name="NcrDetail" component={NcrDetailScreen} options={{ title: 'NCR' }} />
       <MoreStack.Screen name="EquipmentList" component={EquipmentListScreen} options={{ title: 'Equipment' }} />
       <MoreStack.Screen name="MaterialList" component={MaterialListScreen} options={{ title: 'Materials' }} />
+      <MoreStack.Screen name="WorkforceList" component={WorkforceListScreen} options={{ title: 'Workforce' }} />
     </MoreStack.Navigator>
   );
 }

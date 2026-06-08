@@ -12,6 +12,7 @@ import {
   RulerOverlay,
 } from './MeasurementOverlays';
 import { QualityStatusOverlay } from './QualityStatusOverlay';
+import { QaPartsOverlay } from './QaPartsOverlay';
 import { ARQualityEntry } from './useQualityData';
 
 // Lazy-load Viro — static imports crash in Expo Go.
@@ -90,6 +91,14 @@ interface SceneProps {
       onTrackingUpdated?: (state: string) => void;
       onAddModelRulerPoint: (p: Vec3) => void;
       onAddRealRulerPoint: (p: Vec3) => void;
+      // Deviation probe (optional): pair a model point with a real point.
+      onAddDeviationModelPoint?: (p: Vec3) => void;
+      onAddDeviationRealPoint?: (p: Vec3) => void;
+      // Per-part QA overlay (optional): heat-map / focus / tap-to-inspect.
+      qaOverlayVisible?: boolean;
+      qaSelectable?: boolean;
+      focusMeshName?: string | null;
+      onPartTap?: (meshName: string) => void;
     };
   };
 }
@@ -115,6 +124,12 @@ function ARModelScene(props: SceneProps) {
     onTrackingUpdated,
     onAddModelRulerPoint,
     onAddRealRulerPoint,
+    onAddDeviationModelPoint,
+    onAddDeviationRealPoint,
+    qaOverlayVisible,
+    qaSelectable,
+    focusMeshName,
+    onPartTap,
   } = props.sceneNavigator.viroAppProps;
 
   const [imageMarkerFound, setImageMarkerFound] = useState(false);
@@ -122,7 +137,9 @@ function ARModelScene(props: SceneProps) {
   const sceneRef = useRef<any>(null);
 
   const rulerActive =
-    measurements.modelRulerActive || measurements.realRulerActive;
+    measurements.modelRulerActive ||
+    measurements.realRulerActive ||
+    !!measurements.deviationActive;
 
   const placeInFrontOfCamera = (fallback: number[]) => {
     const scene = sceneRef.current;
@@ -148,21 +165,39 @@ function ARModelScene(props: SceneProps) {
   };
 
   const handleSceneTap = (tapPosition: number[]) => {
+    const p: Vec3 = [tapPosition[0], tapPosition[1], tapPosition[2]];
+    // Deviation probe: once the model point is set, the next scene tap is the
+    // matching point on the real surface.
+    if (
+      measurements.deviationActive &&
+      placed &&
+      measurements.deviationModelPoint &&
+      !measurements.deviationRealPoint
+    ) {
+      onAddDeviationRealPoint?.(p);
+      return;
+    }
     // Real-world ruler consumes taps anywhere
     if (measurements.realRulerActive && placed) {
-      onAddRealRulerPoint([tapPosition[0], tapPosition[1], tapPosition[2]]);
+      onAddRealRulerPoint(p);
       return;
     }
     // Placement (world mode only) when not yet placed
     if (trackingMode !== 'world') return;
     if (placed || placingRef.current) return;
     placingRef.current = true;
-    placeInFrontOfCamera(tapPosition);
+    placeInFrontOfCamera(p);
   };
 
   const handleModelTap = (tapPosition: number[]) => {
+    const p: Vec3 = [tapPosition[0], tapPosition[1], tapPosition[2]];
+    // Deviation probe: the first tap lands on the virtual model.
+    if (measurements.deviationActive && placed && !measurements.deviationModelPoint) {
+      onAddDeviationModelPoint?.(p);
+      return;
+    }
     if (measurements.modelRulerActive && placed) {
-      onAddModelRulerPoint([tapPosition[0], tapPosition[1], tapPosition[2]]);
+      onAddModelRulerPoint(p);
     }
   };
 
@@ -246,6 +281,15 @@ function ARModelScene(props: SceneProps) {
       {qualityEntries && qualityEntries.length > 0 && (
         <QualityStatusOverlay entries={qualityEntries} dimensions={dimensions} />
       )}
+      {qaOverlayVisible && (
+        <QaPartsOverlay
+          dimensions={dimensions}
+          entries={qualityEntries}
+          selectable={qaSelectable}
+          onPartTap={onPartTap}
+          focusMeshName={focusMeshName}
+        />
+      )}
     </ViroNode>
   );
 
@@ -261,6 +305,12 @@ function ARModelScene(props: SceneProps) {
       )}
       {measurements.realRulerPoints.length > 0 && (
         <RulerOverlay points={measurements.realRulerPoints} colorKey="blue" />
+      )}
+      {measurements.deviationModelPoint && measurements.deviationRealPoint && (
+        <RulerOverlay
+          points={[measurements.deviationModelPoint, measurements.deviationRealPoint]}
+          colorKey="green"
+        />
       )}
     </>
   );

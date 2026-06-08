@@ -35,8 +35,11 @@ export type ModelsStackParamList = {
 export type MoreStackParamList = {
   MoreMenu: undefined;
   NcrList: undefined;
+  NcrCreate: undefined;
+  NcrDetail: { id: string };
   EquipmentList: undefined;
   MaterialList: undefined;
+  WorkforceList: undefined;
 };
 
 // ── Root Navigator ──

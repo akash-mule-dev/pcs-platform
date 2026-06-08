@@ -1,8 +1,9 @@
 import { api } from './api.service';
 
-// Lightweight types for the read-only mobile views of the newer back-office
-// modules. Field sets mirror the backend list responses (see /materials, /ncr,
-// /equipment). Kept local to this service to avoid touching the shared types file.
+// Lightweight types for the mobile views of the newer back-office modules.
+// Field sets mirror the backend list responses (see /materials, /ncr,
+// /equipment, /skills). Kept local to this service to avoid touching the shared
+// types file.
 export interface Material {
   id: string;
   code: string;
@@ -36,6 +37,21 @@ export interface Equipment {
   stationId?: string | null;
 }
 
+export interface Skill {
+  id: string;
+  code: string;
+  name: string;
+  category?: string | null;
+  description?: string | null;
+}
+
+/** Payload for raising an NCR from the floor (POST /ncr). */
+export interface CreateNcrInput {
+  title: string;
+  description?: string;
+  severity?: string; // low | medium | high | critical
+}
+
 export const materialsService = {
   getAll(params?: Record<string, string | number>): Promise<Material[]> {
     return api.getList<Material>('/materials', params);
@@ -46,10 +62,22 @@ export const ncrService = {
   getAll(params?: Record<string, string | number>): Promise<Ncr[]> {
     return api.getList<Ncr>('/ncr', params);
   },
+  getOne(id: string): Promise<Ncr> {
+    return api.get<Ncr>(`/ncr/${id}`);
+  },
+  create(body: CreateNcrInput): Promise<Ncr> {
+    return api.post<Ncr>('/ncr', body);
+  },
 };
 
 export const equipmentService = {
   getAll(params?: Record<string, string | number>): Promise<Equipment[]> {
     return api.getList<Equipment>('/equipment', params);
+  },
+};
+
+export const skillsService = {
+  getAll(): Promise<Skill[]> {
+    return api.getList<Skill>('/skills');
   },
 };

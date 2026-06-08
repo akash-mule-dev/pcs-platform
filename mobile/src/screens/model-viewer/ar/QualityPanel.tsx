@@ -11,6 +11,10 @@ interface Props {
   onClose: () => void;
   onLogNew: () => void;
   onSignoff: (entry: ARQualityEntry) => void;
+  /** Capture an AR snapshot and attach it to this entry as evidence. */
+  onCaptureEvidence?: (entry: ARQualityEntry) => void;
+  /** Raise an NCR from this (failed) entry. */
+  onRaiseNcr?: (entry: ARQualityEntry) => void;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -19,7 +23,15 @@ const STATUS_COLOR: Record<string, string> = {
   warning: Colors.warning,
 };
 
-export default function QualityPanel({ entries, loading, onClose, onLogNew, onSignoff }: Props) {
+export default function QualityPanel({
+  entries,
+  loading,
+  onClose,
+  onLogNew,
+  onSignoff,
+  onCaptureEvidence,
+  onRaiseNcr,
+}: Props) {
   const s = summarize(entries);
 
   return (
@@ -54,6 +66,29 @@ export default function QualityPanel({ entries, loading, onClose, onLogNew, onSi
                 {e.defectType ? ` · ${e.defectType}` : ''}
                 {e.severity ? ` · ${e.severity}` : ''}
               </Text>
+              {(onCaptureEvidence || (onRaiseNcr && e.status === 'fail')) &&
+                !e.id.startsWith('pending-') && (
+                  <View style={styles.actionRow}>
+                    {onCaptureEvidence && (
+                      <TouchableOpacity
+                        style={styles.actionChip}
+                        onPress={() => onCaptureEvidence(e)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Text style={styles.actionChipText}>📷 Evidence</Text>
+                      </TouchableOpacity>
+                    )}
+                    {onRaiseNcr && e.status === 'fail' && (
+                      <TouchableOpacity
+                        style={[styles.actionChip, styles.ncrChip]}
+                        onPress={() => onRaiseNcr(e)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Text style={[styles.actionChipText, styles.ncrChipText]}>⚑ NCR</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
             </View>
             {e.signoffStatus && e.signoffStatus !== 'pending' && (
               <Text
@@ -130,6 +165,16 @@ const styles = StyleSheet.create({
   entryBody: { flex: 1 },
   entryMesh: { color: '#fff', fontSize: 13, fontWeight: '600' },
   entryMeta: { color: '#8892b0', fontSize: 11, marginTop: 2 },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  actionChip: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  actionChipText: { color: '#cbd5e1', fontSize: 11, fontWeight: '700' },
+  ncrChip: { backgroundColor: 'rgba(239,68,68,0.22)' },
+  ncrChipText: { color: '#fca5a5' },
   signoffBadge: { fontSize: 16, fontWeight: '700', marginLeft: 6 },
   empty: { color: '#8892b0', fontSize: 12, textAlign: 'center', marginTop: 16, lineHeight: 18 },
 });
