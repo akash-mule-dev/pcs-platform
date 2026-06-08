@@ -17,7 +17,7 @@ The `*-git-dev-*.vercel.app` URLs are **stable** — Vercel re-points them to th
 
 **Backend (Vercel project `backend`)**
 - `backend/vercel.json` Ignored Build Step builds **only** for `VERCEL_ENV=production` **or** the `dev` branch; every other branch's preview is skipped (so no stray preview can boot against a DB). See [[project_backend_preview_db_guard]].
-- `DATABASE_URL` is **branch-scoped** in Vercel: Production → `pcs-db`; **Preview/`dev` branch → `pcs-dev-db`**. Production's value is never touched by dev work.
+- **DB selection is code-based** in `database.module.ts`: when `VERCEL_ENV !== 'production'` (any preview / the dev branch) it uses `dev_DATABASE_URL` (the `pcs-dev-db` connection the Neon integration injected); production uses `DATABASE_URL` (`pcs-db`). This is deterministic — a Vercel *branch-scoped* `DATABASE_URL` override was tried first and did **not** win over the env-wide value, so we don't rely on env-var precedence. (`pcs-dev-db` is reachable via either Neon pooler host `ep-red-hall-…` or `ep-steep-cherry-…` — same database.)
 - `backend/src/database/database.module.ts` logs the redacted DB host on boot; `GET /api/health` also returns `{ environment, database.host }` — use it to confirm which DB a deployment is on.
 
 **Frontend (Vercel project `frontend`)**
