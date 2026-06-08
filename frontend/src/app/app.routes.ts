@@ -109,6 +109,11 @@ export const routes: Routes = [
         loadComponent: () => import('./rbac/rbac.component').then(m => m.RbacComponent)
       },
       {
+        path: 'organizations',
+        canActivate: [featureGuard('organizations')],
+        loadComponent: () => import('./organizations/organizations.component').then(m => m.OrganizationsComponent)
+      },
+      {
         path: 'costing',
         canActivate: [featureGuard('costing')],
         loadComponent: () => import('./costing/costing.component').then(m => m.CostingComponent)

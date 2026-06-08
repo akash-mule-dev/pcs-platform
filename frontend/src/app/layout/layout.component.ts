@@ -516,6 +516,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
       { label: 'Audit Log', icon: 'history', route: '/audit', feature: 'audit' },
     ] },
     { label: 'Administration', icon: 'settings', expanded: false, items: [
+      { label: 'Organizations', icon: 'corporate_fare', route: '/organizations', feature: 'organizations' },
       { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
       { label: 'Roles & Access', icon: 'admin_panel_settings', route: '/rbac', feature: 'rbac' },
       { label: 'Templates', icon: 'dynamic_form', route: '/templates', feature: 'templates' },
