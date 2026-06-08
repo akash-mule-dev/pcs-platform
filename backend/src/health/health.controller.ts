@@ -29,12 +29,24 @@ export class HealthController {
       // DB query failed
     }
 
+    // Redacted DB host + environment, so it's obvious which env/DB a deployment
+    // is actually wired to (e.g. dev preview -> pcs-dev-db, not prod).
+    const opts = this.dataSource.options as { url?: string; host?: string };
+    let dbHost = 'unknown';
+    try {
+      dbHost = opts.url ? new URL(opts.url).host : opts.host || 'unknown';
+    } catch {
+      dbHost = 'unparseable';
+    }
+
     return {
       status: dbOk ? 'healthy' : 'unhealthy',
       timestamp: new Date().toISOString(),
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'local',
       uptime: process.uptime(),
       database: {
         connected: dbOk,
+        host: dbHost,
         latencyMs: dbLatency,
       },
       memory: {

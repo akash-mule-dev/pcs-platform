@@ -21,10 +21,15 @@ async function bootstrap() {
   // Security headers
   app.use(helmet());
 
-  // CORS
+  // CORS — an explicit CORS_ORIGIN list always wins (production sets it). With no
+  // explicit list, production falls back to localhost; non-production (dev/preview)
+  // reflects any origin so branch-preview URLs work without per-URL configuration.
+  const isVercelProd = process.env.VERCEL_ENV === 'production';
   const corsOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
-    : ['http://localhost:4200', 'http://localhost:8100'];
+    : isVercelProd
+      ? ['http://localhost:4200', 'http://localhost:8100']
+      : true;
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
