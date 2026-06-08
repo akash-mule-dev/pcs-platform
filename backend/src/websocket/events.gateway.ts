@@ -2,6 +2,40 @@ import { WebSocketGateway, WebSocketServer, OnGatewayInit, OnGatewayConnection, 
 import { Server, Socket } from 'socket.io';
 import { Injectable, Logger } from '@nestjs/common';
 
+/**
+ * Keys stripped from every socket payload. WebSocket emits do NOT pass through
+ * the HTTP TransformInterceptor, so entity payloads (e.g. a time entry with its
+ * `user` relation) would otherwise broadcast `user.passwordHash` to all clients.
+ */
+const SENSITIVE_KEYS = new Set(['passwordHash', 'password_hash', 'password']);
+
+/**
+ * Recursively strip sensitive keys from a payload, preserving shape (so socket
+ * consumers still receive user.firstName etc.). Mirrors the HTTP interceptor's
+ * sanitizer: Dates/Buffers pass through, arrays/objects recurse, and an
+ * ancestors-in-path set breaks cycles without dropping shared sibling refs.
+ */
+function sanitize(value: any, ancestors = new WeakSet<object>()): any {
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Date) return value;
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) return value;
+  if (ancestors.has(value)) return undefined;
+
+  ancestors.add(value);
+  let result: any;
+  if (Array.isArray(value)) {
+    result = value.map((v) => sanitize(v, ancestors));
+  } else {
+    result = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (SENSITIVE_KEYS.has(k)) continue;
+      result[k] = sanitize(v, ancestors);
+    }
+  }
+  ancestors.delete(value);
+  return result;
+}
+
 @Injectable()
 @WebSocketGateway({
   cors: {
@@ -52,23 +86,23 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     client.leave(`conversion:${jobId}`);
   }
 
-  // --- Existing events ---
+  // --- Existing events (payloads sanitized before broadcast) ---
 
   emitTimeEntryUpdate(data: any) {
     if (this.server) {
-      this.server.emit('time-entry-update', data);
+      this.server.emit('time-entry-update', sanitize(data));
     }
   }
 
   emitStageUpdate(data: any) {
     if (this.server) {
-      this.server.emit('stage-update', data);
+      this.server.emit('stage-update', sanitize(data));
     }
   }
 
   emitDashboardRefresh(data?: any) {
     if (this.server) {
-      this.server.emit('dashboard-refresh', data || { timestamp: new Date().toISOString() });
+      this.server.emit('dashboard-refresh', sanitize(data) || { timestamp: new Date().toISOString() });
     }
   }
 
@@ -77,7 +111,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   /** Send notification to a specific user */
   emitNotification(userId: string, notification: any) {
     if (this.server) {
-      this.server.to(`user:${userId}`).emit('notification', notification);
+      this.server.to(`user:${userId}`).emit('notification', sanitize(notification));
       this.server.to(`user:${userId}`).emit('unread-count-update', { userId });
     }
   }
@@ -85,21 +119,21 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   /** Broadcast work order status change */
   emitWorkOrderUpdate(data: any) {
     if (this.server) {
-      this.server.emit('work-order-update', data);
+      this.server.emit('work-order-update', sanitize(data));
     }
   }
 
   /** Broadcast quality alert */
   emitQualityAlert(data: any) {
     if (this.server) {
-      this.server.emit('quality-alert', data);
+      this.server.emit('quality-alert', sanitize(data));
     }
   }
 
   /** Broadcast alert to all connected clients */
   emitAlert(data: { type: string; title: string; message: string; priority: string }) {
     if (this.server) {
-      this.server.emit('alert', data);
+      this.server.emit('alert', sanitize(data));
     }
   }
 
@@ -111,8 +145,8 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     [key: string]: any;
   }) {
     if (this.server) {
-      this.server.emit('conversion:progress', data);
-      this.server.to(`conversion:${data.jobId}`).emit('conversion:progress', data);
+      this.server.emit('conversion:progress', sanitize(data));
+      this.server.to(`conversion:${data.jobId}`).emit('conversion:progress', sanitize(data));
     }
   }
 }

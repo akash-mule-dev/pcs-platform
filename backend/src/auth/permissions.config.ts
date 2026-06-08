@@ -27,6 +27,7 @@ export const PERMISSIONS: Record<string, FeaturePermission> = {
   'quality-analysis': { view: ['admin', 'manager', 'supervisor'], manage: ['admin', 'manager', 'supervisor'] },
   reports:            { view: ['admin', 'manager', 'supervisor'] },
   audit:              { view: ['admin', 'manager'] },
+  organizations:      { view: ['admin'] },
 };
 
 /** Check if a role can view a feature */

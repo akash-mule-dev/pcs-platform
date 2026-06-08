@@ -1,16 +1,24 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
 import { QualityData } from './quality-data.entity.js';
 import { CreateQualityDataDto } from './dto/create-quality-data.dto.js';
 import { UpdateQualityDataDto } from './dto/update-quality-data.dto.js';
 import { BulkCreateQualityDataDto } from './dto/bulk-create-quality-data.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import type { StorageProvider } from '../storage/storage.interface.js';
+import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
 
 @Injectable()
 export class QualityDataService {
-  constructor(@InjectRepository(QualityData) private readonly repo: Repository<QualityData>) {}
+  constructor(
+    @InjectRepository(QualityData) private readonly repo: Repository<QualityData>,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+  ) {}
 
   async findAll(pageOptions: PageOptionsDto, modelId?: string): Promise<PageDto<QualityData>> {
     const qb = this.repo.createQueryBuilder('qd')
@@ -165,5 +173,32 @@ export class QualityDataService {
     const where: any = { signoffStatus: 'pending', status: 'fail', isActive: true };
     if (modelId) where.modelId = modelId;
     return this.repo.find({ where, relations: ['model'], order: { createdAt: 'DESC' } });
+  }
+
+  /**
+   * Attach a client-captured evidence image (e.g. an AR snapshot of the overlay
+   * on the real part) to a quality entry. Stored via the shared storage
+   * provider; its key is appended to the entry's `attachments` array.
+   */
+  async addEvidence(id: string, file: Express.Multer.File): Promise<QualityData> {
+    const item = await this.findOne(id);
+    const ext = (path.extname(file.originalname) || '.jpg').toLowerCase();
+    const key = `quality-evidence/${item.id}/${crypto.randomUUID()}${ext}`;
+    await this.storage.upload(file.path, key, file.mimetype || 'image/jpeg');
+    try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
+    item.attachments = [...(item.attachments ?? []), key];
+    return this.repo.save(item);
+  }
+
+  /** Stream a stored evidence attachment by its index in the entry. */
+  async getEvidenceStream(
+    id: string,
+    index: number,
+  ): Promise<{ stream: NodeJS.ReadableStream; key: string }> {
+    const item = await this.findOne(id);
+    const key = item.attachments?.[index];
+    if (!key) throw new NotFoundException('Evidence not found');
+    const stream = await this.storage.download(key);
+    return { stream, key };
   }
 }

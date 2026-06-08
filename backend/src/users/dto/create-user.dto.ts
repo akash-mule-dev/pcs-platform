@@ -9,4 +9,5 @@ export class CreateUserDto {
   @ApiProperty() @IsString() @IsNotEmpty() firstName: string;
   @ApiProperty() @IsString() @IsNotEmpty() lastName: string;
   @ApiProperty() @IsUUID() roleId: string;
+  @ApiPropertyOptional({ description: "Tenant the user belongs to. Defaults to the creator's organization." }) @IsOptional() @IsUUID() organizationId?: string;
 }

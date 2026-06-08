@@ -66,6 +66,9 @@ export class UsersService {
       firstName: dto.firstName,
       lastName: dto.lastName,
       roleId: dto.roleId,
+      // Explicit org wins (platform operator provisioning into a tenant);
+      // when omitted, TenantSubscriber stamps the creator's org.
+      organizationId: dto.organizationId,
     });
     const saved = await this.userRepo.save(user);
     return this.findOne(saved.id);
