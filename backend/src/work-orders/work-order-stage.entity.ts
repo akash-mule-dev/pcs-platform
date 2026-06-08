@@ -3,6 +3,7 @@ import { WorkOrder } from './work-order.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { User } from '../auth/entities/user.entity.js';
 import { Station } from '../stations/station.entity.js';
+import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 export enum WorkOrderStageStatus {
   PENDING = 'pending',
@@ -12,7 +13,7 @@ export enum WorkOrderStageStatus {
 }
 
 @Entity('work_order_stages')
-export class WorkOrderStage {
+export class WorkOrderStage extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

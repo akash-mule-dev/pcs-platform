@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, Jo
 import { User } from '../auth/entities/user.entity.js';
 import { WorkOrderStage } from '../work-orders/work-order-stage.entity.js';
 import { Station } from '../stations/station.entity.js';
+import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 export enum InputMethod {
   WEB = 'web',
@@ -11,7 +12,7 @@ export enum InputMethod {
 }
 
 @Entity('time_entries')
-export class TimeEntry {
+export class TimeEntry extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

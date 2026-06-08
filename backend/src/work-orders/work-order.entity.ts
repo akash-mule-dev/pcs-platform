@@ -3,6 +3,7 @@ import { Product } from '../products/product.entity.js';
 import { Process } from '../processes/process.entity.js';
 import { Line } from '../lines/line.entity.js';
 import { WorkOrderStage } from './work-order-stage.entity.js';
+import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 export enum WorkOrderStatus {
   DRAFT = 'draft',
@@ -20,7 +21,7 @@ export enum WorkOrderPriority {
 }
 
 @Entity('work_orders')
-export class WorkOrder {
+export class WorkOrder extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

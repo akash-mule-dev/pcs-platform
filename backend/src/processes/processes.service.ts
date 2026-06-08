@@ -6,6 +6,7 @@ import { Stage } from '../stages/stage.entity.js';
 import { CreateProcessDto } from './dto/create-process.dto.js';
 import { UpdateProcessDto } from './dto/update-process.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class ProcessesService {
@@ -16,6 +17,7 @@ export class ProcessesService {
 
   async findAll(pageOptions: PageOptionsDto): Promise<PageDto<Process>> {
     const [items, count] = await this.repo.findAndCount({
+      where: { organizationId: TenantContext.getOrganizationId() ?? undefined },
       relations: ['stages', 'product'],
       order: { createdAt: pageOptions.order },
       skip: pageOptions.skip,
@@ -25,7 +27,7 @@ export class ProcessesService {
   }
 
   async findOne(id: string): Promise<Process> {
-    const item = await this.repo.findOne({ where: { id }, relations: ['stages', 'product'] });
+    const item = await this.repo.findOne({ where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined }, relations: ['stages', 'product'] });
     if (!item) throw new NotFoundException('Process not found');
     return item;
   }

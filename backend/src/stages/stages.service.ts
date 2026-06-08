@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Stage } from './stage.entity.js';
 import { CreateStageDto } from './dto/create-stage.dto.js';
 import { UpdateStageDto } from './dto/update-stage.dto.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class StagesService {
@@ -15,7 +16,7 @@ export class StagesService {
   }
 
   async findOne(id: string): Promise<Stage> {
-    const stage = await this.repo.findOne({ where: { id }, relations: ['process'] });
+    const stage = await this.repo.findOne({ where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined }, relations: ['process'] });
     if (!stage) throw new NotFoundException('Stage not found');
     return stage;
   }
@@ -40,6 +41,6 @@ export class StagesService {
     for (let i = 0; i < stageIds.length; i++) {
       await this.repo.update(stageIds[i], { sequence: i + 1 });
     }
-    return this.repo.find({ where: { processId }, order: { sequence: 'ASC' } });
+    return this.repo.find({ where: { processId, organizationId: TenantContext.getOrganizationId() ?? undefined }, order: { sequence: 'ASC' } });
   }
 }

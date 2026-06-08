@@ -5,6 +5,7 @@ import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
 import { TimeEntry } from '../time-tracking/time-entry.entity.js';
 import { QualityData } from '../quality-data/quality-data.entity.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class DashboardService {
@@ -30,20 +31,22 @@ export class DashboardService {
     // Each KPI is computed independently and defensively: a single failing
     // query degrades that metric to a safe default instead of returning a 500
     // for the entire dashboard.
+    const org = TenantContext.getOrganizationId();
     let workOrdersByStatus: Array<{ status: string; count: string }> = [];
     try {
-      workOrdersByStatus = await this.woRepo.createQueryBuilder('wo')
+      const woQb = this.woRepo.createQueryBuilder('wo')
         .select('wo.status', 'status')
         .addSelect('COUNT(*)', 'count')
-        .groupBy('wo.status')
-        .getRawMany();
+        .groupBy('wo.status');
+      if (org) woQb.where('wo.organization_id = :org', { org });
+      workOrdersByStatus = await woQb.getRawMany();
     } catch (err) {
       this.logger.error(`getSummary.workOrdersByStatus failed: ${(err as Error).message}`);
     }
 
     let activeOperators = 0;
     try {
-      activeOperators = await this.teRepo.count({ where: { endTime: IsNull() } });
+      activeOperators = await this.teRepo.count({ where: { endTime: IsNull(), organizationId: org ?? undefined } });
     } catch (err) {
       this.logger.error(`getSummary.activeOperators failed: ${(err as Error).message}`);
     }
@@ -53,7 +56,7 @@ export class DashboardService {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       todayCompletedStages = await this.wosRepo.count({
-        where: { status: WorkOrderStageStatus.COMPLETED, completedAt: MoreThanOrEqual(today) },
+        where: { status: WorkOrderStageStatus.COMPLETED, completedAt: MoreThanOrEqual(today), organizationId: org ?? undefined },
       });
     } catch (err) {
       this.logger.error(`getSummary.todayCompletedStages failed: ${(err as Error).message}`);
@@ -61,12 +64,13 @@ export class DashboardService {
 
     let avgEfficiency: number | null = null;
     try {
-      const effResult = await this.teRepo.createQueryBuilder('te')
+      const effQb = this.teRepo.createQueryBuilder('te')
         .leftJoin('te.workOrderStage', 'wos')
         .leftJoin('wos.stage', 'stage')
         .select('AVG(CASE WHEN te.duration_seconds > 0 AND stage.target_time_seconds > 0 THEN LEAST((stage.target_time_seconds::float / te.duration_seconds) * 100, 100) ELSE NULL END)', 'avgEfficiency')
-        .where('te.end_time IS NOT NULL')
-        .getRawOne();
+        .where('te.end_time IS NOT NULL');
+      if (org) effQb.andWhere('te.organization_id = :org', { org });
+      const effResult = await effQb.getRawOne();
       avgEfficiency = effResult?.avgEfficiency ? parseFloat(parseFloat(effResult.avgEfficiency).toFixed(1)) : null;
     } catch (err) {
       this.logger.error(`getSummary.avgEfficiency failed: ${(err as Error).message}`);
@@ -89,7 +93,7 @@ export class DashboardService {
     // Defensive try/catch mirrors getSummary: a query failure degrades to an
     // empty list rather than a 500 for the whole widget.
     try {
-      const rows = await this.teRepo.createQueryBuilder('te')
+      const qb = this.teRepo.createQueryBuilder('te')
         .leftJoin('te.user', 'user')
         .leftJoin('te.station', 'station')
         .leftJoin('te.workOrderStage', 'wos')
@@ -102,8 +106,10 @@ export class DashboardService {
         .addSelect('station.name', 'stationName')
         .addSelect('stage.name', 'stageName')
         .addSelect('wo.order_number', 'orderNumber')
-        .where('te.end_time IS NULL')
-        .getRawMany();
+        .where('te.end_time IS NULL');
+      const org = TenantContext.getOrganizationId();
+      if (org) qb.andWhere('te.organization_id = :org', { org });
+      const rows = await qb.getRawMany();
 
       return rows.map((r) => ({
         id: r.id,

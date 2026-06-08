@@ -5,6 +5,7 @@ import { Line } from './line.entity.js';
 import { CreateLineDto } from './dto/create-line.dto.js';
 import { UpdateLineDto } from './dto/update-line.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class LinesService {
@@ -12,6 +13,7 @@ export class LinesService {
 
   async findAll(pageOptions: PageOptionsDto): Promise<PageDto<Line>> {
     const [items, count] = await this.repo.findAndCount({
+      where: { organizationId: TenantContext.getOrganizationId() ?? undefined },
       relations: ['stations'],
       order: { createdAt: pageOptions.order },
       skip: pageOptions.skip,
@@ -21,7 +23,7 @@ export class LinesService {
   }
 
   async findOne(id: string): Promise<Line> {
-    const item = await this.repo.findOne({ where: { id }, relations: ['stations'] });
+    const item = await this.repo.findOne({ where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined }, relations: ['stations'] });
     if (!item) throw new NotFoundException('Line not found');
     return item;
   }

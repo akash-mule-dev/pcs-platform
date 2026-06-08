@@ -6,6 +6,7 @@ import { Model3D } from '../models/model.entity.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class ProductsService {
@@ -16,6 +17,7 @@ export class ProductsService {
 
   async findAll(pageOptions: PageOptionsDto): Promise<PageDto<Product>> {
     const [items, count] = await this.repo.findAndCount({
+      where: { organizationId: TenantContext.getOrganizationId() ?? undefined },
       relations: ['models'],
       order: { createdAt: pageOptions.order },
       skip: pageOptions.skip,
@@ -25,7 +27,7 @@ export class ProductsService {
   }
 
   async findOne(id: string): Promise<Product> {
-    const item = await this.repo.findOne({ where: { id }, relations: ['models'] });
+    const item = await this.repo.findOne({ where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined }, relations: ['models'] });
     if (!item) throw new NotFoundException('Product not found');
     return item;
   }

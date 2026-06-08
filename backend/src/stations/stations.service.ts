@@ -4,17 +4,18 @@ import { Repository } from 'typeorm';
 import { Station } from './station.entity.js';
 import { CreateStationDto } from './dto/create-station.dto.js';
 import { UpdateStationDto } from './dto/update-station.dto.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class StationsService {
   constructor(@InjectRepository(Station) private readonly repo: Repository<Station>) {}
 
   async findByLine(lineId: string): Promise<Station[]> {
-    return this.repo.find({ where: { lineId }, order: { name: 'ASC' } });
+    return this.repo.find({ where: { lineId, organizationId: TenantContext.getOrganizationId() ?? undefined }, order: { name: 'ASC' } });
   }
 
   async findOne(id: string): Promise<Station> {
-    const item = await this.repo.findOne({ where: { id }, relations: ['line'] });
+    const item = await this.repo.findOne({ where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined }, relations: ['line'] });
     if (!item) throw new NotFoundException('Station not found');
     return item;
   }

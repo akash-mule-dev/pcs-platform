@@ -1,16 +1,33 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DeepPartial } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, DataSource, DeepPartial } from 'typeorm';
 import { Organization } from '../../organization/organization.entity.js';
 import { User } from '../../auth/entities/user.entity.js';
 
 /**
- * Ensures a default tenant exists and every user belongs to one — on every boot.
+ * Core tables that carry organization_id and must have pre-existing rows
+ * backfilled to the default tenant. New rows are stamped by TenantSubscriber.
+ */
+const TENANT_TABLES = [
+  'products',
+  'processes',
+  'lines',
+  'stations',
+  'stages',
+  'work_orders',
+  'work_order_stages',
+  'time_entries',
+  'quality_data',
+];
+
+/**
+ * Ensures a default tenant exists and that every existing row in the core
+ * tenant-owned tables belongs to it — on every boot. Idempotent.
  *
- * Idempotent, and replaces the need to run the TenantFoundation migration by hand
- * (the typeorm CLI can't load the TS datasource under Node's type-strip mode).
  * Runs after TypeORM has synchronized the schema, so the organizations table and
- * users.organization_id column already exist.
+ * the organization_id columns already exist. Each backfill is guarded so a
+ * missing column (e.g. on the very first boot before sync completes) never blocks
+ * startup.
  */
 @Injectable()
 export class TenantBootstrapService implements OnModuleInit {
@@ -19,6 +36,7 @@ export class TenantBootstrapService implements OnModuleInit {
   constructor(
     @InjectRepository(Organization) private readonly orgRepo: Repository<Organization>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -34,6 +52,8 @@ export class TenantBootstrapService implements OnModuleInit {
         this.logger.error('Tenant bootstrap skipped: default organization could not be resolved');
         return;
       }
+
+      // 1. Users.
       const res = await this.userRepo
         .createQueryBuilder()
         .update()
@@ -43,8 +63,22 @@ export class TenantBootstrapService implements OnModuleInit {
       if (res.affected) {
         this.logger.log(`Assigned ${res.affected} user(s) to the default organization`);
       }
+
+      // 2. Core tenant-owned tables.
+      for (const table of TENANT_TABLES) {
+        try {
+          await this.dataSource.query(
+            `UPDATE ${table} SET organization_id = $1 WHERE organization_id IS NULL`,
+            [org.id],
+          );
+        } catch (e) {
+          // Column may not exist yet on first boot before synchronize runs.
+          this.logger.warn(`Backfill skipped for ${table}: ${(e as Error).message}`);
+        }
+      }
+      this.logger.log('Tenant backfill complete for core tables');
     } catch (e) {
-      // Never block boot on this — log and move on (e.g. first run before sync).
+      // Never block boot on this — log and move on.
       this.logger.error(`Tenant bootstrap skipped: ${(e as Error).message}`);
     }
   }

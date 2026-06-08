@@ -1,8 +1,9 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { Model3D } from '../models/model.entity.js';
+import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 @Entity('products')
-export class Product {
+export class Product extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

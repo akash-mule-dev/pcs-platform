@@ -11,6 +11,7 @@ import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.d
 import { AuditService } from '../audit/audit.service.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { InventoryService } from '../materials/inventory.service.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class WorkOrdersService {
@@ -34,6 +35,8 @@ export class WorkOrdersService {
 
     if (status) qb.andWhere('wo.status = :status', { status });
     if (priority) qb.andWhere('wo.priority = :priority', { priority });
+    const org = TenantContext.getOrganizationId();
+    if (org) qb.andWhere('wo.organization_id = :org', { org });
 
     const [items, count] = await qb.getManyAndCount();
     return new PageDto(items, new PageMetaDto(pageOptions, count));
@@ -41,7 +44,7 @@ export class WorkOrdersService {
 
   async findOne(id: string): Promise<WorkOrder> {
     const wo = await this.woRepo.findOne({
-      where: { id },
+      where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined },
       relations: ['product', 'process', 'line', 'stages', 'stages.stage', 'stages.assignedUser', 'stages.station'],
     });
     if (!wo) throw new NotFoundException('Work order not found');

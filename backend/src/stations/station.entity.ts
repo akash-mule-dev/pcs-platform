@@ -1,9 +1,10 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, Unique } from 'typeorm';
 import { Line } from '../lines/line.entity.js';
+import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 @Entity('stations')
 @Unique(['name', 'lineId'])
-export class Station {
+export class Station extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

@@ -1,10 +1,11 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany, Unique } from 'typeorm';
 import { Product } from '../products/product.entity.js';
 import { Stage } from '../stages/stage.entity.js';
+import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 @Entity('processes')
 @Unique(['productId', 'version'])
-export class Process {
+export class Process extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

@@ -6,6 +6,7 @@ import { CreateQualityDataDto } from './dto/create-quality-data.dto.js';
 import { UpdateQualityDataDto } from './dto/update-quality-data.dto.js';
 import { BulkCreateQualityDataDto } from './dto/bulk-create-quality-data.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class QualityDataService {
@@ -22,6 +23,8 @@ export class QualityDataService {
       qb.where('qd.model_id = :modelId', { modelId });
     }
     qb.andWhere('qd.is_active = :active', { active: true });
+    const org = TenantContext.getOrganizationId();
+    if (org) qb.andWhere('qd.organization_id = :org', { org });
 
     const [items, count] = await qb.getManyAndCount();
     return new PageDto(items, new PageMetaDto(pageOptions, count));
@@ -35,7 +38,7 @@ export class QualityDataService {
   }
 
   async findOne(id: string): Promise<QualityData> {
-    const item = await this.repo.findOne({ where: { id }, relations: ['model'] });
+    const item = await this.repo.findOne({ where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined }, relations: ['model'] });
     if (!item) throw new NotFoundException('Quality data not found');
     return item;
   }

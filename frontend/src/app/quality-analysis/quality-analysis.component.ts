@@ -60,6 +60,13 @@ interface Model3D {
           <button mat-raised-button color="accent" (click)="cadFileInput.click()">
             <mat-icon>engineering</mat-icon> Import CAD File
           </button>
+          @if (canInspect && models.length) {
+            <button mat-stroked-button [disabled]="backfilling" (click)="backfillThumbnails()"
+                    matTooltip="Generate thumbnails for models that don't have one yet">
+              <mat-icon>image</mat-icon>
+              {{ backfilling ? 'Generating…' : 'Generate thumbnails' }}
+            </button>
+          }
           <input #fileInput type="file" hidden accept=".glb,.gltf,.obj,.fbx,.stl"
                  (change)="onFileSelected($event)">
           <input #cadFileInput type="file" hidden accept=".step,.stp,.iges,.igs"
@@ -649,6 +656,8 @@ export class QualityAnalysisComponent implements OnInit {
   savingInspection = false;
   canInspect = false;
   qaByModel: Record<string, QualitySummary> = {};
+  backfilling = false;
+  private loadedResolver: (() => void) | null = null;
 
   constructor(
     private api: ApiService,
@@ -870,7 +879,13 @@ export class QualityAnalysisComponent implements OnInit {
   onModelLoaded(): void {
     // Enumerate every part/mesh in the loaded GLB so uninspected parts are listable.
     this.allParts = (this.viewer?.getMeshNames() ?? []).filter((n) => !!n).sort();
-    this.maybeCaptureThumbnail();
+    if (this.loadedResolver) {
+      const resolve = this.loadedResolver;
+      this.loadedResolver = null;
+      resolve();
+    } else {
+      this.maybeCaptureThumbnail();
+    }
   }
 
   /** Generate a thumbnail the first time a model is viewed (client-side capture). */
@@ -886,6 +901,49 @@ export class QualityAnalysisComponent implements OnInit {
         error: () => { /* non-fatal */ },
       });
     }, 700);
+  }
+
+  /** Backfill: load each thumbnail-less model through the viewer and capture one. */
+  async backfillThumbnails(): Promise<void> {
+    const missing = (this.models || []).filter((m) => !m.thumbnailPath);
+    if (!missing.length) {
+      this.snackBar.open('All models already have thumbnails.', 'OK', { duration: 2500 });
+      return;
+    }
+    this.backfilling = true;
+    this.snackBar.open(`Generating ${missing.length} thumbnail(s)…`, '', { duration: 2000 });
+    let done = 0;
+    for (const model of missing) {
+      try {
+        await this.loadModelAndWait(model);
+        await new Promise((r) => setTimeout(r, 350)); // let a frame render
+        const blob = await this.viewer?.captureThumbnail();
+        if (blob) {
+          await this.uploadThumbnailAsync(model.id, blob);
+          model.thumbnailPath = `thumbnails/${model.id}.png`;
+          done++;
+        }
+      } catch {
+        /* skip a model that fails to load or capture */
+      }
+    }
+    this.backfilling = false;
+    this.snackBar.open(`Generated ${done} thumbnail(s).`, 'OK', { duration: 3000 });
+    this.loadModels();
+  }
+
+  private loadModelAndWait(model: Model3D): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.loadedResolver = null; reject(new Error('load timeout')); }, 15000);
+      this.loadedResolver = () => { clearTimeout(timer); resolve(); };
+      this.selectModel(model);
+    });
+  }
+
+  private uploadThumbnailAsync(id: string, blob: Blob): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.modelMedia.uploadThumbnail(id, blob).subscribe({ next: () => resolve(), error: reject });
+    });
   }
 
   onMeshClicked(meshName: string): void {

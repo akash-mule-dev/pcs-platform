@@ -1,5 +1,6 @@
 import { Module, Logger } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { TenantSubscriber } from '../common/tenant/tenant.subscriber.js';
 
 const logger = new Logger('DatabaseModule');
 const databaseUrl = process.env.DATABASE_URL;
@@ -37,6 +38,18 @@ if (synchronize && isProduction) {
   logger.warn('TypeORM synchronize is ON in production — required until DB migrations exist. Set DB_SYNCHRONIZE=false after adding migrations.');
 }
 
+// Log the target DB host (no credentials) so each environment's wiring is
+// verifiable from the boot logs — e.g. confirming previews hit the dev branch,
+// not production.
+const dbTargetHost = (() => {
+  try {
+    return databaseUrl ? new URL(databaseUrl).host : `${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`;
+  } catch {
+    return 'unparseable-DATABASE_URL';
+  }
+})();
+logger.log(`Database target: ${dbTargetHost} (env=${process.env.VERCEL_ENV || process.env.NODE_ENV || 'local'}, synchronize=${synchronize})`);
+
 @Module({
   imports: [
     TypeOrmModule.forRoot({
@@ -49,6 +62,8 @@ if (synchronize && isProduction) {
       // in the dev/Neon setup and made the cutover impossible to test.
       migrationsRun: !synchronize,
       migrations: ['dist/database/migrations/*.js'],
+      // Global tenant write-stamp (sets organization_id on insert from context).
+      subscribers: [TenantSubscriber],
       extra: {
         connectionTimeoutMillis: connectTimeoutMs,
         query_timeout: 10000,

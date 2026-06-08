@@ -8,6 +8,7 @@ import { ClockOutDto } from './dto/clock-out.dto.js';
 import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
 export class TimeTrackingService {
@@ -85,7 +86,7 @@ export class TimeTrackingService {
     // only the columns the live view renders avoids that entirely. The try/catch
     // remains as a final safety net.
     try {
-      const rows = await this.teRepo.createQueryBuilder('te')
+      const qb = this.teRepo.createQueryBuilder('te')
         .leftJoin('te.user', 'user')
         .leftJoin('te.station', 'station')
         .leftJoin('te.workOrderStage', 'wos')
@@ -100,8 +101,10 @@ export class TimeTrackingService {
         .addSelect('stage.name', 'stageName')
         .addSelect('wo.order_number', 'orderNumber')
         .where('te.end_time IS NULL')
-        .orderBy('te.start_time', 'ASC')
-        .getRawMany();
+        .orderBy('te.start_time', 'ASC');
+      const org = TenantContext.getOrganizationId();
+      if (org) qb.andWhere('te.organization_id = :org', { org });
+      const rows = await qb.getRawMany();
 
       return rows.map((r) => ({
         id: r.id,
@@ -149,6 +152,8 @@ export class TimeTrackingService {
     if (workOrderId) qb.andWhere('wos.work_order_id = :workOrderId', { workOrderId });
     if (start) qb.andWhere('te.start_time >= :startDate', { startDate: start });
     if (end) qb.andWhere('te.start_time <= :endDate', { endDate: end });
+    const histOrg = TenantContext.getOrganizationId();
+    if (histOrg) qb.andWhere('te.organization_id = :histOrg', { histOrg });
 
     const [items, count] = await qb.getManyAndCount();
     return new PageDto(items, new PageMetaDto(pageOptions, count));
@@ -156,7 +161,7 @@ export class TimeTrackingService {
 
   async getByUser(userId: string): Promise<TimeEntry[]> {
     return this.teRepo.find({
-      where: { userId },
+      where: { userId, organizationId: TenantContext.getOrganizationId() ?? undefined },
       relations: ['workOrderStage', 'workOrderStage.stage', 'station'],
       order: { startTime: 'DESC' },
     });

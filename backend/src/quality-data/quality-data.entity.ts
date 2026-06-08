@@ -8,9 +8,10 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Model3D } from '../models/model.entity.js';
+import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 @Entity('quality_data')
-export class QualityData {
+export class QualityData extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
