@@ -3,8 +3,17 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TenantSubscriber } from '../common/tenant/tenant.subscriber.js';
 
 const logger = new Logger('DatabaseModule');
-const databaseUrl = process.env.DATABASE_URL;
 const isProduction = process.env.NODE_ENV === 'production';
+
+// DB selection by environment. In any NON-production Vercel environment
+// (preview / the dev branch), prefer the dev DB that the Neon integration
+// injected as `dev_DATABASE_URL` (pcs-dev-db). This guarantees previews never
+// hit the production DB regardless of Vercel env-var precedence (branch-scoped
+// overrides proved unreliable). Production (VERCEL_ENV=production) and local
+// both use DATABASE_URL (locally that's backend/.env).
+const isVercelProd = process.env.VERCEL_ENV === 'production';
+const databaseUrl =
+  (!isVercelProd && process.env['dev_DATABASE_URL']) || process.env.DATABASE_URL;
 
 const connectionConfig = databaseUrl
   ? {
