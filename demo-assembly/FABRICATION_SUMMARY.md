@@ -1,62 +1,40 @@
-# PCS AR Demo - Steel Moment-Connection Specimen
+# PCS AR Demo - End-Plate Braced Portal Frame
 
-Portable raw-steel demonstration piece for the AR QA-overlay app. A W200 column stub with W150 beams bolted through end plates, loaded up with as many distinct fabricated part types as practical so the iPad overlay can show holes, plates and stiffeners lining up between the digital model and the steel.
+A braced portal frame you **assemble from individual parts**. Base + columns are one **welded frame**; the top beam, cross-beam and brace **bolt on** via **end-plate connections** - every bolt passes through two flat plates with head and nut in the open (nut in the open column cavity), so **no fastener is buried inside a rolled section** (checked by an exact point-in-mesh test). No pipe; sits dead flat.
 
-- **Files:** `demo_assembly.ifc` (IFC4, mm, S355) and `demo_assembly.glb` (23 named part nodes, mm)
-- **Bounding box:** 885 W x 228 D x 460 H mm (budget 1000 x 300 x 700) - fits a car trunk
-- **Mass:** 76.3 kg calc / 77.0 kg meshed (target 60-80 kg, two-person carry)
-- **Parts:** 23 pieces in 15 types; 41 bolt holes (M16=Ø18, M20=Ø22) + 2 Ø80 grip holes
-- **Profile types:** IfcArbitraryClosedProfileDef, IfcCircleHollowProfileDef, IfcIShapeProfileDef, IfcLShapeProfileDef, IfcRectangleProfileDef, IfcUShapeProfileDef
+- **Files:** `demo_assembly.ifc` · `demo_assembly.glb` (28 part nodes; AR loads this) · `demo_assembly.stl` (print)
+- **Bounding box:** 560 x 320 x 540 mm (fits a car trunk)
+- **Mass:** steel 62.6 kg · aluminium 21.5 kg · 3D-print PLA ~3.5 kg
+- **Parts:** 28 pieces in 11 types; 10x M16 fasteners
+- **Checks:** flat base PASS (0.0 mm) · bolts external PASS · interference NONE
 
 ## Part list
 
-| # | Part | Profile type | Section | Size (mm) | Qty | Holes | kg/ea | kg total |
-|---|------|--------------|---------|-----------|-----|-------|------:|---------:|
-| A | Base plate | `IfcRectangleProfileDef` | PL 10 | 700 x 220 x 10 | 1 | 4x Ø22 (M20 anchor) | 11.97 | 11.97 |
-| B | Column stub | `IfcIShapeProfileDef` | W200x46 | 203 x 203, L=440 | 1 | - | 19.93 | 19.93 |
-| C | Beams (L & R) | `IfcIShapeProfileDef` | W150x24 | 102 x 160, L=300 | 2 | - | 7.12 | 14.23 |
-| D | End plates | `IfcRectangleProfileDef` | PL 16 | 150 x 210 x 16 | 2 | 4x Ø22 (M20) | 3.77 | 7.53 |
-| E | Column cap plate | `IfcRectangleProfileDef` | PL 10 | 200 x 200 x 10 | 1 | 4x Ø18 (M16) | 3.06 | 3.06 |
-| F | Web/continuity stiffeners | `IfcRectangleProfileDef` | PL 8 | 175 x 95 x 8 | 4 | - | 1.04 | 4.18 |
-| G | Doubler plate | `IfcRectangleProfileDef` | PL 8 | 180 x 120 x 8 | 1 | 2x Ø18 (M16) | 1.32 | 1.32 |
-| H | Gusset plate | `IfcArbitraryClosedProfileDef` | PL 12 (cut) | 200 x 150 x 12 pentagon | 1 | 4x Ø22 (M20) | 2.43 | 2.43 |
-| I | Shear tab (fin plate) | `IfcRectangleProfileDef` | PL 8 | 90 x 120 x 8 | 1 | 3x Ø18 (M16) | 0.63 | 0.63 |
-| J | Web splice plates | `IfcRectangleProfileDef` | PL 8 | 160 x 110 x 8 | 2 | 4x Ø18 (M16) | 1.04 | 2.08 |
-| K | Flange cover plates | `IfcRectangleProfileDef` | PL 8 | 220 x 90 x 8 | 2 | 4x Ø18 (M16) | 1.18 | 2.36 |
-| L | Angle brace | `IfcLShapeProfileDef` | L75x75x8 | 75 x 75 x 8, L=200 | 1 | - (welded) | 1.78 | 1.78 |
-| M | Tube brace stub (CHS) | `IfcCircleHollowProfileDef` | CHS 88.9 x 5 | Ø88.9 x 5, L=150 | 1 | - (welded) | 1.55 | 1.55 |
-| N | Channel stiffener (U) | `IfcUShapeProfileDef` | C75x40 | 75 x 40, L=180 | 1 | - (welded) | 1.22 | 1.22 |
-| O | Carry handles | `IfcRectangleProfileDef` | PL 10 | 120 x 150 x 10 | 2 | 1x Ø80 grip | 1.02 | 2.04 |
-| | **TOTAL** | | | | **23** | **41 bolt + 2 grip** | | **76.3** |
+| # | Part | Section | Size (mm) | Qty | Joint | kg |
+|---|------|---------|-----------|-----|-------|---:|
+| A | Base plate | PL 10 | 560x320x10 | 1 | welded frame foot | 14.07 |
+| B | Columns I120 | I 120x70 | L=480 | 2 | welded to feet | 6.18 |
+| C | Column foot plates | PL 12 | 150x180x12 | 2 | welded to base | 2.54 |
+| D | Column conn. plates | PL 14 | 130x200x14 | 4 | end-plate bolted | 2.86 |
+| E | Brace gussets | PL 10 | ~285x90x10 | 2 | bolted (1x M16) | 2.01 |
+| F | Top portal beam | I 120x70 | L=306 | 1 | end-plate bolted | 3.94 |
+| G | Beam end plates | PL 12 | 130x200x12 | 2 | 4x M16 total | 2.45 |
+| H | Cross-beam | I 100x64 | L=306 | 1 | end-plate bolted | 3.47 |
+| I | Cross end plates | PL 12 | 120x164x12 | 2 | 4x M16 total | 1.85 |
+| J | Diagonal brace | FB 80x10 | L=326 | 1 | bolted (2x M16) | 2.04 |
+| K | Hex bolts+nuts+washers | M16 | modelled | 10 | 10x M16 | 1.30 |
+| | **TOTAL** | | | **28** | | **42.7** |
 
-## Assembly / welding sequence
+## Assembly sequence
 
-1. Cut & drill all components (NC).  Burn/drill bolt holes: Ø22 for M20, Ø18 for M16.
-    Burn the Ø80 grip holes in the two handle plates.  Cut sections to length:
-    column W200x46 L440, beams W150x24 L300, angle L75x75x8 L200, CHS 88.9x5 L150,
-    channel C75x40 L180.  Deburr all holes and edges.
-2. Set the base plate (PL12 720x230) level on the bench; mark the column footprint.
-3. Stand the W200x46 column stub on the base plate, square it both ways, and weld
-    all-around with a full fillet (column-to-base is the critical root joint).
-4. Fit the 4 continuity/web stiffeners inside the column at the beam top & bottom
-    flange levels; weld to web and flanges.  Weld the doubler plate to the web
-    panel zone (it lines up between the stiffeners).
-5. Weld the end plates (PL16) square to each beam end, full perimeter.
-6. Offer the beams up to the column flange faces and bolt through the end plates
-    with 4x M20 per side (snug-tight).  This bolted interface is the primary
-    AR-QA check - the overlay must show all 8 holes concentric.
-7. Weld the cap plate (PL10) to the top of the column.
-8. Add the demonstrator parts: weld the shear tab (fin plate) to the upper column
-    flange; bolt the two web splice plates across the left beam web (4x M16 each);
-    bolt the top & bottom flange cover plates to the right beam (4x M16 each).
-9. Build the brace node: weld the gusset plate to the column/beam, then weld the
-    L75x75x8 angle brace and the CHS 88.9x5 tube stub to it; weld the C75x40
-    channel stiffener to the column.
-10. Weld the two carry handles to the base plate, one at each end (grip holes up).
-11. Grind/wire-brush all welds.  LEAVE BARE - do not paint or galvanise.
-12. QA: confirm dims <= 1000 x 300 x 700 mm, weigh (target 60-80 kg), then verify
-    the full bolt-hole pattern against the iPad AR green-wireframe overlay.
+1. Shop-weld the FRAME = base + both columns (on foot plates) + the 4 column connection plates + the 2 brace gussets.
+2. Shop-weld an END PLATE onto each end of the top beam and the cross-beam.
+3. Demo assembly (all bolted, all bolts external):
+    1) Bolt the TOP BEAM end plates to the column connection plates (2x M16 each end, above & below the beam).
+    2) Same for the CROSS-BEAM (2x M16 each end).
+    3) Bolt the DIAGONAL BRACE to the two gusset tips (1x M16 each end).
+4. Finish bare/matte. QA against the iPad AR green-wireframe overlay.
 
 ## Finish
 
-FINISH:  Leave the physical specimen UNPAINTED / bare raw steel.  A mill-scale or lightly ground steel surface gives the best contrast for the AR app's green wireframe overlay; paint (especially gloss or light colours) reflects and washes out the projection and dulls edge detection.  If flash-rust is a concern for transport, wipe with a thin clear/matte lacquer or light oil - never a pigmented coating.
+Bare/matte for AR contrast. No gloss/light paint.
