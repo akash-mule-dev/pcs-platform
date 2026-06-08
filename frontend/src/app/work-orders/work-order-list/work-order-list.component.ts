@@ -73,13 +73,13 @@ import { merge, Subscription } from 'rxjs';
           <ng-container matColumnDef="orderNumber">
             <th mat-header-cell *matHeaderCellDef>Order</th>
             <td mat-cell *matCellDef="let wo">
-              <div class="cell-order">
-                <div class="order-icon">
+              <div class="cell-entity">
+                <div class="entity-icon">
                   <mat-icon>assignment</mat-icon>
                 </div>
-                <div class="order-info">
-                  <span class="order-num">{{ wo.orderNumber }}</span>
-                  <span class="order-product">{{ wo.product?.name || '—' }}</span>
+                <div class="entity-info">
+                  <span class="entity-name is-link">{{ wo.orderNumber }}</span>
+                  <span class="entity-sub">{{ wo.product?.name || '—' }}</span>
                 </div>
               </div>
             </td>
@@ -120,115 +120,13 @@ import { merge, Subscription } from 'rxjs';
   `,
   styles: [`
     .page-shell { max-width: 1200px; }
+    /* Page scaffold, table theme (.table-wrap/.sb-table), .cell-entity, badges
+       (.sb-badge/.badge-*), filter controls (.filter-*), .mono-val & .clickable-row
+       all come from global styles.scss. */
 
-    .page-header {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      margin-bottom: 24px;
-    }
-    .page-title {
-      margin: 0; font-size: 24px; font-weight: 700; color: var(--clay-text);
-      letter-spacing: -0.02em;
-    }
-    .page-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--clay-text-muted); }
-
-    .btn-primary {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--clay-primary); color: #fff;
-      border: none; border-radius: var(--clay-radius-sm);
-      padding: 10px 20px; font-size: 13px; font-weight: 600;
-      cursor: pointer; transition: all 0.2s; font-family: inherit;
-    }
-    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
-    .btn-primary mat-icon { font-size: 18px; width: 18px; height: 18px; }
-
-    /* Toolbar & Filters */
-    .toolbar {
-      display: flex; align-items: flex-end; justify-content: space-between;
-      margin-bottom: 16px; gap: 16px;
-    }
-    .filter-row { display: flex; gap: 12px; }
-    .filter-group { display: flex; flex-direction: column; gap: 4px; }
-    .filter-label {
-      font-size: 10px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.06em; color: var(--clay-text-muted);
-      font-family: 'Space Grotesk', sans-serif;
-    }
-    .filter-select {
-      background: var(--clay-surface); border: 1px solid var(--clay-border);
-      border-radius: var(--clay-radius-xs); padding: 7px 12px;
-      font-size: 13px; color: var(--clay-text); font-family: inherit;
-      cursor: pointer; min-width: 140px;
-      transition: border-color 0.2s;
-      -webkit-appearance: none; appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b90a0' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 10px center;
-      padding-right: 30px;
-    }
-    .filter-select:focus { border-color: var(--clay-primary); outline: none; }
-    .filter-select option { background: var(--clay-surface); color: var(--clay-text); }
-
-    .meta-count { font-size: 12px; color: var(--clay-text-muted); font-family: 'Space Grotesk', sans-serif; }
-    .count-num { font-weight: 600; color: var(--clay-text-secondary); }
-
-    /* Table */
-    .table-wrap {
-      background: var(--clay-surface); border-radius: var(--clay-radius);
-      border: 1px solid var(--clay-border); overflow: hidden;
-    }
-    .sb-table { width: 100%; }
-    ::ng-deep .sb-table .mat-mdc-header-row { background: var(--clay-bg-warm) !important; height: 44px; }
-    ::ng-deep .sb-table .mat-mdc-header-cell {
-      color: var(--clay-text-muted) !important; font-weight: 600 !important;
-      font-size: 11px !important; text-transform: uppercase;
-      letter-spacing: 0.06em; border-bottom: 1px solid var(--clay-border) !important;
-      font-family: 'Space Grotesk', sans-serif !important;
-    }
-    ::ng-deep .sb-table .mat-mdc-row {
-      border-bottom: 1px solid var(--clay-border) !important;
-      transition: background 0.15s; height: 64px;
-    }
-    ::ng-deep .sb-table .mat-mdc-row:hover { background: var(--clay-surface-hover) !important; }
-    ::ng-deep .sb-table .mat-mdc-cell {
-      color: var(--clay-text) !important; font-size: 13px; border-bottom: none !important;
-    }
-
-    /* Order cell */
-    .cell-order { display: flex; align-items: center; gap: 12px; }
-    .order-icon {
-      width: 40px; height: 40px; border-radius: var(--clay-radius-xs);
-      background: var(--kpi-blue-bg); color: var(--kpi-blue-fg);
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    .order-icon mat-icon { font-size: 20px; width: 20px; height: 20px; }
-    .order-info { display: flex; flex-direction: column; gap: 2px; }
-    .order-num {
-      font-weight: 600; font-size: 13px; color: var(--clay-primary);
-      font-family: 'Space Grotesk', sans-serif;
-    }
-    .order-product { font-size: 11px; color: var(--clay-text-muted); }
-
-    .mono-val { font-family: 'Space Grotesk', monospace; font-weight: 500; }
+    /* This page bottom-aligns its filter toolbar (vs. the global centered default). */
+    .toolbar { align-items: flex-end; }
     .mono-val.overdue { color: var(--danger); }
-
-    /* Badges */
-    .sb-badge {
-      display: inline-block; padding: 3px 10px; border-radius: 4px;
-      font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
-      text-transform: uppercase;
-      font-family: 'Space Grotesk', sans-serif;
-    }
-    .badge-draft { background: var(--badge-draft-bg); color: var(--badge-draft-text); }
-    .badge-pending { background: var(--badge-pending-bg); color: var(--badge-pending-text); }
-    .badge-in_progress { background: var(--badge-progress-bg); color: var(--badge-progress-text); }
-    .badge-completed { background: var(--badge-completed-bg); color: var(--badge-completed-text); }
-    .badge-cancelled { background: var(--badge-cancelled-bg); color: var(--badge-cancelled-text); }
-    .badge-pri-low { background: var(--success-bg); color: var(--success-text); }
-    .badge-pri-medium { background: var(--warning-bg); color: var(--warning-text); }
-    .badge-pri-high { background: var(--danger-bg); color: var(--danger-text); }
-    .badge-pri-urgent { background: var(--danger); color: #fff; }
-
-    .clickable-row { cursor: pointer; }
 
     @media (max-width: 768px) {
       .toolbar { flex-direction: column; align-items: stretch; }
@@ -269,8 +167,8 @@ export class WorkOrderListComponent implements OnInit, OnDestroy, AfterViewInit 
     const params: any = {};
     if (this.statusFilter) params.status = this.statusFilter;
     if (this.priorityFilter) params.priority = this.priorityFilter;
-    this.api.get<any>('/work-orders', params).subscribe(data => {
-      this.dataSource.data = Array.isArray(data) ? data : data.data || [];
+    this.api.getList<any>('/work-orders', params).subscribe(list => {
+      this.dataSource.data = list;
     });
   }
 

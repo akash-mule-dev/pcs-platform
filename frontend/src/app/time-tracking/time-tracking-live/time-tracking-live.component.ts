@@ -166,16 +166,15 @@ export class TimeTrackingLiveComponent implements OnInit, OnDestroy, AfterViewIn
   }
 
   loadWorkOrders(): void {
-    this.api.get<any>('/work-orders', { status: 'in_progress' }).subscribe({
-      next: data => { this.workOrders = Array.isArray(data) ? data : data.data || []; },
+    this.api.getList<any>('/work-orders', { status: 'in_progress' }).subscribe({
+      next: list => { this.workOrders = list; },
       error: () => { this.workOrders = []; },
     });
   }
 
   loadStations(): void {
-    this.api.get<any>('/lines').subscribe({
-      next: lines => {
-        const allLines = Array.isArray(lines) ? lines : lines.data || [];
+    this.api.getList<any>('/lines').subscribe({
+      next: allLines => {
         this.stations = [];
         allLines.forEach((line: any) => {
           if (line.stations && Array.isArray(line.stations)) {
@@ -185,9 +184,8 @@ export class TimeTrackingLiveComponent implements OnInit, OnDestroy, AfterViewIn
         // Fallback: if no nested stations, fetch per line
         if (this.stations.length === 0 && allLines.length > 0) {
           allLines.forEach((line: any) => {
-            this.api.get<any>(`/lines/${line.id}/stations`).subscribe({
-              next: sts => {
-                const stArr = Array.isArray(sts) ? sts : sts?.data || [];
+            this.api.getList<any>(`/lines/${line.id}/stations`).subscribe({
+              next: stArr => {
                 this.stations.push(...stArr);
               },
               error: () => { /* non-critical: station list stays as-is */ },

@@ -4,10 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { MatChipsModule } from '@angular/material/chips';
 import { HttpClient, HttpRequest, HttpEventType } from '@angular/common/http';
 import { ApiService } from '../../core/services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -18,131 +16,135 @@ import { environment } from '../../../environments/environment';
   standalone: true,
   imports: [
     CommonModule, FormsModule, MatDialogModule, MatFormFieldModule,
-    MatInputModule, MatButtonModule, MatIconModule, MatProgressBarModule, MatChipsModule,
+    MatInputModule, MatIconModule, MatProgressBarModule,
   ],
   template: `
-    <h2 mat-dialog-title>{{ data ? 'Edit' : 'Add' }} Product</h2>
-    <mat-dialog-content>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Name</mat-label>
-        <input matInput [(ngModel)]="form.name" required>
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Description</mat-label>
-        <textarea matInput [(ngModel)]="form.description" rows="3"></textarea>
-      </mat-form-field>
+    <div class="dialog-shell">
+      <div class="dialog-header has-icon">
+        <div class="header-icon tone-purple"><mat-icon>inventory_2</mat-icon></div>
+        <div class="header-text">
+          <h2>{{ data ? 'Edit' : 'Add' }} Product</h2>
+          <p class="dialog-subtitle">{{ data ? 'Update product details and 3D model' : 'Create a product and optionally attach a 3D model' }}</p>
+        </div>
+      </div>
 
-      <!-- 3D Model Upload Section -->
-      <div class="model-upload-section">
-        <div class="section-label">3D Model (for Quality Analysis)</div>
+      <div class="dialog-body">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Name</mat-label>
+          <input matInput [(ngModel)]="form.name" required>
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Description</mat-label>
+          <textarea matInput [(ngModel)]="form.description" rows="3"></textarea>
+        </mat-form-field>
 
-        <!-- Existing models (edit mode) -->
-        @if (existingModels.length > 0) {
-          <div class="existing-models">
-            @for (model of existingModels; track model.id) {
-              <div class="model-chip">
-                <mat-icon class="model-chip-icon">view_in_ar</mat-icon>
-                <div class="model-chip-info">
-                  <span class="model-chip-name">{{ model.originalName }}</span>
-                  <span class="model-chip-size">{{ (model.fileSize / 1024 / 1024).toFixed(1) }} MB</span>
+        <!-- 3D Model Upload Section -->
+        <div class="model-upload-section">
+          <div class="section-label">3D Model (for Quality Analysis)</div>
+
+          <!-- Existing models (edit mode) -->
+          @if (existingModels.length > 0) {
+            <div class="existing-models">
+              @for (model of existingModels; track model.id) {
+                <div class="model-chip">
+                  <mat-icon class="model-chip-icon">view_in_ar</mat-icon>
+                  <div class="model-chip-info">
+                    <span class="model-chip-name">{{ model.originalName }}</span>
+                    <span class="model-chip-size">{{ (model.fileSize / 1024 / 1024).toFixed(1) }} MB</span>
+                  </div>
+                  <button type="button" class="icon-btn icon-btn-danger" (click)="removeExistingModel(model.id)">
+                    <mat-icon>close</mat-icon>
+                  </button>
                 </div>
-                <button mat-icon-button class="model-chip-remove" (click)="removeExistingModel(model.id)">
+              }
+            </div>
+          }
+
+          <!-- Pending file to upload -->
+          @if (modelFile || cadFile) {
+            <div class="model-chip pending">
+              <mat-icon class="model-chip-icon">upload_file</mat-icon>
+              <div class="model-chip-info">
+                <span class="model-chip-name">{{ (modelFile || cadFile)!.name }}</span>
+                <span class="model-chip-size">
+                  {{ ((modelFile || cadFile)!.size / 1024 / 1024).toFixed(1) }} MB
+                  @if (!uploading) { · Ready to upload }
+                  @if (uploading && uploadProgress < 100) { · Uploading {{ uploadProgress }}% }
+                  @if (uploading && uploadProgress >= 100) { · Converting to 3D... }
+                </span>
+              </div>
+              @if (!uploading) {
+                <button type="button" class="icon-btn icon-btn-danger" (click)="modelFile = null; cadFile = null">
                   <mat-icon>close</mat-icon>
                 </button>
-              </div>
-            }
-          </div>
-        }
-
-        <!-- Pending file to upload -->
-        @if (modelFile || cadFile) {
-          <div class="model-chip pending">
-            <mat-icon class="model-chip-icon">upload_file</mat-icon>
-            <div class="model-chip-info">
-              <span class="model-chip-name">{{ (modelFile || cadFile)!.name }}</span>
-              <span class="model-chip-size">
-                {{ ((modelFile || cadFile)!.size / 1024 / 1024).toFixed(1) }} MB
-                @if (!uploading) { · Ready to upload }
-                @if (uploading && uploadProgress < 100) { · Uploading {{ uploadProgress }}% }
-                @if (uploading && uploadProgress >= 100) { · Converting to 3D... }
-              </span>
+              }
             </div>
-            @if (!uploading) {
-              <button mat-icon-button class="model-chip-remove" (click)="modelFile = null; cadFile = null">
-                <mat-icon>close</mat-icon>
-              </button>
-            }
-          </div>
-        }
+          }
 
-        @if (uploading) {
-          <mat-progress-bar [mode]="uploadProgress < 100 ? 'determinate' : 'indeterminate'"
-                            [value]="uploadProgress" class="upload-bar"></mat-progress-bar>
-          <div class="upload-status">
-            @if (uploadProgress < 100) {
-              Uploading... {{ uploadProgress }}%
-            } @else {
-              Server is processing the file — converting to 3D viewer format...
-            }
-          </div>
-        }
+          @if (uploading) {
+            <mat-progress-bar [mode]="uploadProgress < 100 ? 'determinate' : 'indeterminate'"
+                              [value]="uploadProgress" class="upload-bar"></mat-progress-bar>
+            <div class="upload-status">
+              @if (uploadProgress < 100) {
+                Uploading... {{ uploadProgress }}%
+              } @else {
+                Server is processing the file — converting to 3D viewer format...
+              }
+            </div>
+          }
 
-        <div class="upload-actions">
-          <button mat-stroked-button type="button" (click)="modelFileInput.click()" [disabled]="uploading">
-            <mat-icon>upload_file</mat-icon> Upload 3D Model
-          </button>
-          <button mat-stroked-button type="button" (click)="cadFileInput.click()" [disabled]="uploading">
-            <mat-icon>engineering</mat-icon> Import CAD
-          </button>
-          <input #modelFileInput type="file" hidden accept=".glb,.gltf,.obj,.fbx,.stl"
-                 (change)="onModelFileSelected($event)">
-          <input #cadFileInput type="file" hidden accept=".step,.stp,.iges,.igs,.ifc"
-                 (change)="onCadFileSelected($event)">
+          <div class="upload-actions">
+            <button type="button" class="btn-outline" (click)="modelFileInput.click()" [disabled]="uploading">
+              <mat-icon>upload_file</mat-icon> Upload 3D Model
+            </button>
+            <button type="button" class="btn-outline" (click)="cadFileInput.click()" [disabled]="uploading">
+              <mat-icon>engineering</mat-icon> Import CAD
+            </button>
+            <input #modelFileInput type="file" hidden accept=".glb,.gltf,.obj,.fbx,.stl"
+                   (change)="onModelFileSelected($event)">
+            <input #cadFileInput type="file" hidden accept=".step,.stp,.iges,.igs,.ifc"
+                   (change)="onCadFileSelected($event)">
+          </div>
+          <div class="upload-hint">Supported: GLB, GLTF, OBJ, FBX, STL, STEP, IGES, IFC (max 500MB)</div>
         </div>
-        <div class="upload-hint">Supported: GLB, GLTF, OBJ, FBX, STL, STEP, IGES, IFC (max 500MB)</div>
       </div>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button (click)="dialogRef.close()">Cancel</button>
-      <button mat-raised-button color="primary" (click)="save()" [disabled]="!form.name || saving">
-        {{ saving ? 'Saving...' : 'Save' }}
-      </button>
-    </mat-dialog-actions>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn-ghost" (click)="dialogRef.close()">Cancel</button>
+        <button type="button" class="btn-primary" (click)="save()" [disabled]="!form.name || saving">
+          {{ saving ? 'Saving…' : (data ? 'Save Changes' : 'Create Product') }}
+        </button>
+      </div>
+    </div>
   `,
   styles: [`
     .model-upload-section {
       margin-top: 4px; padding: 16px;
-      background: var(--clay-bg, #faf7f2);
-      border: 1px dashed var(--clay-border, #e5ddd0);
-      border-radius: 8px;
+      background: var(--clay-bg-warm);
+      border: 1px dashed var(--clay-border);
+      border-radius: var(--clay-radius-sm);
     }
-    .section-label {
-      font-size: 13px; font-weight: 600;
-      color: var(--clay-text, #3d3229);
-      margin-bottom: 12px;
-    }
+    /* .section-label inherited from global styles.scss */
     .existing-models { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
     .model-chip {
       display: flex; align-items: center; gap: 10px;
-      padding: 8px 12px; border-radius: 8px;
-      background: var(--clay-surface, #f5f0e8);
-      border: 1px solid var(--clay-border, #e5ddd0);
+      padding: 8px 12px; border-radius: var(--clay-radius-sm);
+      background: var(--clay-surface);
+      border: 1px solid var(--clay-border);
     }
     .model-chip.pending {
-      border-color: var(--clay-primary, #6b5ce7);
-      background: rgba(107, 92, 231, 0.06);
+      border-color: var(--clay-primary);
+      background: var(--info-bg);
     }
-    .model-chip-icon { color: var(--clay-primary, #6b5ce7); font-size: 20px; width: 20px; height: 20px; }
-    .model-chip-info { flex: 1; display: flex; flex-direction: column; }
-    .model-chip-name { font-size: 13px; font-weight: 500; }
-    .model-chip-size { font-size: 11px; color: var(--clay-text-muted, #9e8e7e); }
-    .model-chip-remove { width: 28px; height: 28px; line-height: 28px; }
-    .model-chip-remove mat-icon { font-size: 16px; width: 16px; height: 16px; }
-    .upload-actions { display: flex; gap: 8px; margin-bottom: 8px; }
-    .upload-hint { font-size: 11px; color: var(--clay-text-muted, #9e8e7e); }
+    .model-chip-icon { color: var(--clay-primary); font-size: 20px; width: 20px; height: 20px; }
+    .model-chip-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .model-chip-name { font-size: 13px; font-weight: 500; color: var(--clay-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .model-chip-size { font-size: 11px; color: var(--clay-text-muted); }
+    .upload-actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .upload-hint { font-size: 11px; color: var(--clay-text-muted); }
     .upload-bar { margin-bottom: 8px; border-radius: 4px; }
     .upload-status {
-      font-size: 12px; color: var(--clay-text-muted, #9e8e7e);
+      font-size: 12px; color: var(--clay-text-muted);
       text-align: center; margin-bottom: 12px;
     }
   `]
@@ -170,9 +172,9 @@ export class ProductFormComponent {
   }
 
   loadExistingModels(productId: string): void {
-    this.api.get<any>(`/products/${productId}/models`).subscribe({
-      next: (models) => {
-        this.existingModels = Array.isArray(models) ? models : models.data || [];
+    this.api.getList<any>(`/products/${productId}/models`).subscribe({
+      next: (list) => {
+        this.existingModels = list;
       },
     });
   }

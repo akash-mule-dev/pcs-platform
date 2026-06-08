@@ -70,8 +70,8 @@ export class CostingComponent implements OnInit {
   constructor(private api: ApiService) {}
 
   ngOnInit(): void {
-    this.api.get<any>('/work-orders').subscribe({
-      next: (d) => { this.workOrders = Array.isArray(d) ? d : (d?.data || []); },
+    this.api.getList<any>('/work-orders').subscribe({
+      next: (list) => { this.workOrders = list; },
       error: () => {},
     });
   }

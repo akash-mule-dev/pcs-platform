@@ -290,8 +290,8 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.load();
-    this.api.get<any>('/users').subscribe(data => {
-      this.users = Array.isArray(data) ? data : data.data || [];
+    this.api.getList<any>('/users').subscribe(list => {
+      this.users = list;
     });
     this.listenForUpdates();
   }
@@ -328,9 +328,9 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
   private loadProductModels(): void {
     if (!this.wo?.productId && !this.wo?.product?.id) return;
     const productId = this.wo.productId || this.wo.product?.id;
-    this.api.get<any>(`/products/${productId}/models`).subscribe({
+    this.api.getList<any>(`/products/${productId}/models`).subscribe({
       next: (models) => {
-        this.productModels = Array.isArray(models) ? models : models.data || [];
+        this.productModels = models;
         if (this.productModels.length > 0) {
           this.selectedModelId = this.productModels[0].id;
           this.onModelSelected();
@@ -348,9 +348,8 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
     this.clickedMeshEntry = null;
 
     // Load quality data for this model
-    this.api.get<any>(`/quality-data?modelId=${model.id}`).subscribe({
-      next: (res) => {
-        const entries = Array.isArray(res) ? res : res.data || [];
+    this.api.getList<any>(`/quality-data?modelId=${model.id}`).subscribe({
+      next: (entries) => {
         this.qualityEntries = entries;
         this.qualityOverlay = entries.map((e: any) => ({
           meshName: e.meshName,

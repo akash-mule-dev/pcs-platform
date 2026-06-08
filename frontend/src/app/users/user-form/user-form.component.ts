@@ -5,7 +5,7 @@ import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/materia
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../../core/services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { LoadingService } from '../../core/services/loading.service';
@@ -13,73 +13,85 @@ import { LoadingService } from '../../core/services/loading.service';
 @Component({
   selector: 'app-user-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatButtonModule],
+  imports: [CommonModule, FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatIconModule],
   template: `
-    <h2 mat-dialog-title>{{ data ? 'Edit' : 'Add' }} User</h2>
-    <mat-dialog-content>
-      <form #userForm="ngForm">
-      <div class="form-row">
-        <mat-form-field appearance="outline">
-          <mat-label>First Name</mat-label>
-          <input matInput [(ngModel)]="form.firstName" name="firstName" required #firstName="ngModel">
-          @if (firstName.invalid && submitted) {
-            <mat-error>First name is required</mat-error>
-          }
-        </mat-form-field>
-        <mat-form-field appearance="outline">
-          <mat-label>Last Name</mat-label>
-          <input matInput [(ngModel)]="form.lastName" name="lastName" required #lastName="ngModel">
-          @if (lastName.invalid && submitted) {
-            <mat-error>Last name is required</mat-error>
-          }
-        </mat-form-field>
+    <div class="dialog-shell">
+      <div class="dialog-header has-icon">
+        <div class="header-icon tone-green"><mat-icon>person</mat-icon></div>
+        <div class="header-text">
+          <h2>{{ data ? 'Edit' : 'Add' }} User</h2>
+          <p class="dialog-subtitle">{{ data ? 'Update account details and role' : 'Create a new user account' }}</p>
+        </div>
       </div>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Mobile No</mat-label>
-        <input matInput type="tel" [(ngModel)]="form.mobileNo" name="mobileNo" required #mobileNo="ngModel">
-        @if (mobileNo.invalid && submitted) {
-          <mat-error>Mobile number is required</mat-error>
-        }
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Email</mat-label>
-        <input matInput type="email" [(ngModel)]="form.email" name="email">
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Employee ID</mat-label>
-        <input matInput [(ngModel)]="form.employeeId" name="employeeId" required #employeeId="ngModel">
-        @if (employeeId.invalid && submitted) {
-          <mat-error>Employee ID is required</mat-error>
-        }
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Role</mat-label>
-        <mat-select [(ngModel)]="form.roleId" name="roleId" required #roleId="ngModel">
-          @for (r of roles; track r.id) {
-            <mat-option [value]="r.id">{{ r.name | uppercase }}</mat-option>
+
+      <div class="dialog-body">
+        <form #userForm="ngForm">
+          <div class="form-row">
+            <mat-form-field appearance="outline">
+              <mat-label>First Name</mat-label>
+              <input matInput [(ngModel)]="form.firstName" name="firstName" required #firstName="ngModel">
+              @if (firstName.invalid && submitted) {
+                <mat-error>First name is required</mat-error>
+              }
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Last Name</mat-label>
+              <input matInput [(ngModel)]="form.lastName" name="lastName" required #lastName="ngModel">
+              @if (lastName.invalid && submitted) {
+                <mat-error>Last name is required</mat-error>
+              }
+            </mat-form-field>
+          </div>
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Mobile No</mat-label>
+            <input matInput type="tel" [(ngModel)]="form.mobileNo" name="mobileNo" required #mobileNo="ngModel">
+            @if (mobileNo.invalid && submitted) {
+              <mat-error>Mobile number is required</mat-error>
+            }
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Email</mat-label>
+            <input matInput type="email" [(ngModel)]="form.email" name="email">
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Employee ID</mat-label>
+            <input matInput [(ngModel)]="form.employeeId" name="employeeId" required #employeeId="ngModel">
+            @if (employeeId.invalid && submitted) {
+              <mat-error>Employee ID is required</mat-error>
+            }
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Role</mat-label>
+            <mat-select [(ngModel)]="form.roleId" name="roleId" required #roleId="ngModel">
+              @for (r of roles; track r.id) {
+                <mat-option [value]="r.id">{{ r.name | uppercase }}</mat-option>
+              }
+            </mat-select>
+            @if (roleId.invalid && submitted) {
+              <mat-error>Role is required</mat-error>
+            }
+          </mat-form-field>
+          @if (!data) {
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Password</mat-label>
+              <input matInput type="password" [(ngModel)]="form.password" name="password" required #password="ngModel">
+              @if (password.invalid && submitted) {
+                <mat-error>Password is required</mat-error>
+              }
+            </mat-form-field>
           }
-        </mat-select>
-        @if (roleId.invalid && submitted) {
-          <mat-error>Role is required</mat-error>
-        }
-      </mat-form-field>
-      @if (!data) {
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Password</mat-label>
-          <input matInput type="password" [(ngModel)]="form.password" name="password" required #password="ngModel">
-          @if (password.invalid && submitted) {
-            <mat-error>Password is required</mat-error>
-          }
-        </mat-form-field>
-      }
-      </form>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button (click)="dialogRef.close()">Cancel</button>
-      <button mat-raised-button color="primary" (click)="save()">Save</button>
-    </mat-dialog-actions>
+        </form>
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn-ghost" (click)="dialogRef.close()">Cancel</button>
+        <button type="button" class="btn-primary" (click)="save()">{{ data ? 'Save Changes' : 'Create User' }}</button>
+      </div>
+    </div>
   `,
-  styles: []
+  styles: [`
+    form { display: flex; flex-direction: column; }
+  `]
 })
 export class UserFormComponent implements OnInit {
   @ViewChild('userForm') userForm!: NgForm;
@@ -109,8 +121,7 @@ export class UserFormComponent implements OnInit {
 
   ngOnInit(): void {
     // Load roles - try dedicated endpoint first, fallback to extracting from users
-    this.api.get<any[]>('/users').subscribe(data => {
-      const users = Array.isArray(data) ? data : (data as any).data || [];
+    this.api.getList<any>('/users').subscribe(users => {
       const roleMap = new Map<string, any>();
       users.forEach((u: any) => {
         if (u.role && !roleMap.has(u.role.id)) roleMap.set(u.role.id, u.role);

@@ -27,14 +27,14 @@ import { environment } from '../../environments/environment';
   ],
   template: `
     <div class="page-header">
-      <div>
-        <h1>Coordination Packages</h1>
-        <p class="subtitle">Upload and manage IFC coordination views with linked drawings</p>
+      <div class="header-left">
+        <h1 class="page-title">Coordination Packages</h1>
+        <p class="page-subtitle">Upload and manage IFC coordination views with linked drawings</p>
       </div>
       @if (canEdit) {
-        <button mat-raised-button color="primary" (click)="showUploadPanel = !showUploadPanel">
+        <button class="btn-primary" (click)="showUploadPanel = !showUploadPanel">
           <mat-icon>cloud_upload</mat-icon>
-          Upload Package
+          <span>Upload Package</span>
         </button>
       }
     </div>
@@ -152,12 +152,8 @@ import { environment } from '../../environments/environment';
     </div>
   `,
   styles: [`
-    .page-header {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      margin-bottom: 24px;
-    }
-    .page-header h1 { margin: 0; color: var(--clay-text); }
-    .subtitle { color: var(--clay-text-muted); margin: 4px 0 0; font-size: 14px; }
+    /* page-header, page-title/subtitle & btn-primary inherited from global styles.scss.
+       .clay-card is overridden locally below (no padding — mat-card-content provides it). */
     .clay-card {
       background: var(--clay-surface); border-radius: var(--clay-radius);
       box-shadow: var(--clay-shadow-raised); border: 1px solid var(--clay-border);
@@ -165,7 +161,6 @@ import { environment } from '../../environments/environment';
     .upload-panel { margin-bottom: 24px; }
     .upload-panel h3 { margin: 0 0 4px; }
     .hint { color: var(--clay-text-muted); font-size: 13px; margin-bottom: 16px; }
-    .full-width { width: 100%; }
     .drop-zone {
       border: 2px dashed var(--clay-border); border-radius: var(--clay-radius-sm);
       padding: 40px; text-align: center; cursor: pointer;
@@ -202,12 +197,7 @@ import { environment } from '../../environments/environment';
       padding-top: 8px; border-top: 1px solid var(--clay-border);
       font-size: 12px; color: var(--clay-text-muted);
     }
-    .empty-state {
-      grid-column: 1 / -1; text-align: center; padding: 60px 20px;
-      color: var(--clay-text-muted);
-    }
-    .empty-state mat-icon { font-size: 64px; width: 64px; height: 64px; }
-    .empty-state h3 { margin: 16px 0 8px; color: var(--clay-text); }
+    .empty-state { grid-column: 1 / -1; }  /* base empty-state styles from global styles.scss */
   `]
 })
 export class CoordinationListComponent implements OnInit {

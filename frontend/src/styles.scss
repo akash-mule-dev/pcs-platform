@@ -731,20 +731,49 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
     0 0 24px rgba(173, 198, 255, 0.04) !important;
 }
 
-// Custom dialog shell (process-form, stage-dialog)
-.dialog-shell { padding: 24px; }
-.dialog-shell .dialog-header { margin-bottom: 20px; }
+// Custom dialog shell (clay design system — process/stage/user/product/work-order forms, confirm dialog)
+// Bounded flex column: header & footer stay pinned, only the body scrolls — so actions are always
+// reachable regardless of content height (fixes tall dialogs pushing the footer off-screen).
+.dialog-shell {
+  display: flex; flex-direction: column;
+  max-height: 86vh;
+  border-radius: var(--clay-radius-lg);
+  overflow: hidden;
+}
+.dialog-shell .dialog-header {
+  flex: 0 0 auto;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--clay-border);
+}
+// Optional leading icon chip: add `class="dialog-header has-icon"` and wrap the title in `.header-text`.
+.dialog-shell .dialog-header.has-icon { display: flex; align-items: center; gap: 14px; }
+.dialog-shell .header-icon {
+  width: 44px; height: 44px; border-radius: var(--clay-radius-sm);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  background: var(--kpi-blue-bg); color: var(--kpi-blue-fg);
+}
+.dialog-shell .header-icon mat-icon { font-size: 24px; width: 24px; height: 24px; }
+.dialog-shell .header-icon.tone-purple { background: var(--kpi-purple-bg); color: var(--kpi-purple-fg); }
+.dialog-shell .header-icon.tone-green  { background: var(--kpi-green-bg);  color: var(--kpi-green-fg); }
+.dialog-shell .header-icon.tone-orange { background: var(--kpi-orange-bg); color: var(--kpi-orange-fg); }
+.dialog-shell .header-icon.tone-danger { background: var(--danger-bg);     color: var(--danger); }
 .dialog-shell .dialog-header h2 {
-  margin: 0; font-size: 18px; font-weight: 700;
+  margin: 0; font-size: 18px; font-weight: 700; line-height: 1.25;
   color: var(--clay-text); letter-spacing: -0.01em;
   font-family: 'Space Grotesk', 'Inter', sans-serif;
 }
-.dialog-shell .dialog-subtitle { margin: 4px 0 0; font-size: 12px; color: var(--clay-text-muted); }
-.dialog-shell .dialog-body { display: flex; flex-direction: column; }
+.dialog-shell .dialog-subtitle { margin: 2px 0 0; font-size: 12px; color: var(--clay-text-muted); }
+.dialog-shell .dialog-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column;
+  padding: 18px 24px;
+}
 .dialog-shell .dialog-footer {
-  display: flex; justify-content: flex-end; gap: 8px;
-  margin-top: 16px; padding-top: 16px;
+  flex: 0 0 auto;
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  margin-top: 0; padding: 14px 24px;
   border-top: 1px solid var(--clay-border);
+  background: var(--clay-surface);
 }
 
 // Dialog buttons
@@ -755,8 +784,9 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
   padding: 10px 24px; font-size: 13px; font-weight: 600;
   cursor: pointer; transition: all 0.2s; font-family: inherit;
 }
-.btn-primary:hover { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+.btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; filter: none; transform: none; }
+.btn-primary mat-icon { font-size: 18px; width: 18px; height: 18px; }
 
 .btn-ghost {
   background: transparent; color: var(--clay-text-secondary);
@@ -766,6 +796,16 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
 }
 .btn-ghost:hover { background: var(--clay-surface-hover); }
 
+.btn-danger {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--danger); color: #fff;
+  border: none; border-radius: var(--clay-radius-sm);
+  padding: 10px 24px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; font-family: inherit;
+}
+.btn-danger:hover { filter: brightness(1.05); }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
 .btn-outline {
   display: inline-flex; align-items: center; gap: 4px;
   background: transparent; color: var(--clay-primary);
@@ -774,6 +814,8 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
   cursor: pointer; transition: all 0.2s; font-family: inherit;
 }
 .btn-outline:hover { border-color: var(--clay-primary); background: var(--info-bg); }
+.btn-outline:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-outline:disabled:hover { border-color: var(--clay-border); background: transparent; }
 .btn-outline mat-icon { font-size: 16px; width: 16px; height: 16px; }
 
 .icon-btn {
@@ -783,7 +825,165 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
   color: var(--clay-text-muted); transition: all 0.15s;
 }
 .icon-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
+.icon-btn:hover { background: var(--clay-surface-hover); color: var(--clay-text); }
+.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.icon-btn:disabled:hover { background: transparent; color: var(--clay-text-muted); }
 .icon-btn.icon-btn-danger:hover { color: var(--danger); background: var(--danger-bg); }
+
+// ============================================
+// PAGE SCAFFOLD (list / feature pages)
+// Canonical header + toolbar used across list pages. Components inherit these
+// unless they declare a local override (component styles win on specificity).
+// ============================================
+.page-shell { max-width: 1200px; }
+.page-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 24px; gap: 16px;
+}
+.page-header .header-left { min-width: 0; }
+.page-title {
+  margin: 0; font-size: 24px; font-weight: 700; color: var(--clay-text);
+  letter-spacing: -0.02em;
+}
+.page-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--clay-text-muted); }
+
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; gap: 16px;
+}
+.search-box {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--clay-surface); border: 1px solid var(--clay-border);
+  border-radius: var(--clay-radius-sm); padding: 8px 14px;
+  width: 320px; transition: border-color 0.2s;
+}
+.search-box:focus-within { border-color: var(--clay-primary); }
+.search-box .search-ico { font-size: 18px; width: 18px; height: 18px; color: var(--clay-text-muted); }
+.search-box input {
+  border: none; outline: none; background: transparent;
+  font-size: 13px; color: var(--clay-text); width: 100%; font-family: inherit;
+}
+.search-box input::placeholder { color: var(--clay-text-muted); }
+.meta-count { font-size: 12px; color: var(--clay-text-muted); font-family: 'Space Grotesk', 'Inter', sans-serif; }
+.count-num { font-weight: 600; color: var(--clay-text-secondary); }
+
+@media (max-width: 768px) {
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .search-box { width: 100%; }
+}
+
+// ============================================
+// DATA TABLE (list pages — themed Material table)
+// Global, non-encapsulated, so no ::ng-deep needed. Apply `class="sb-table"`
+// to a mat-table and wrap it in `.table-wrap`.
+// ============================================
+.table-wrap {
+  background: var(--clay-surface); border-radius: var(--clay-radius);
+  border: 1px solid var(--clay-border); overflow: hidden;
+}
+.sb-table { width: 100%; }
+.sb-table .mat-mdc-header-row { background: var(--clay-bg-warm) !important; height: 44px; }
+.sb-table .mat-mdc-header-cell {
+  color: var(--clay-text-muted) !important; font-weight: 600 !important;
+  font-size: 11px !important; text-transform: uppercase;
+  letter-spacing: 0.06em; border-bottom: 1px solid var(--clay-border) !important;
+  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+}
+.sb-table .mat-mdc-row {
+  border-bottom: 1px solid var(--clay-border) !important;
+  transition: background 0.15s; height: 64px;
+}
+.sb-table .mat-mdc-row:hover { background: var(--clay-surface-hover) !important; }
+.sb-table .mat-mdc-cell {
+  color: var(--clay-text) !important; font-size: 13px; border-bottom: none !important;
+}
+.clickable-row { cursor: pointer; }
+.mono-val { font-family: 'Space Grotesk', monospace; font-weight: 500; }
+
+// Row action button cluster (pairs with global .icon-btn)
+.row-actions { display: flex; gap: 2px; }
+
+// ============================================
+// ENTITY CELL ("media object": icon chip + name/sub) for table rows
+// ============================================
+.cell-entity { display: flex; align-items: center; gap: 12px; }
+.entity-icon {
+  width: 40px; height: 40px; border-radius: var(--clay-radius-xs);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  background: var(--kpi-blue-bg); color: var(--kpi-blue-fg);
+}
+.entity-icon mat-icon { font-size: 20px; width: 20px; height: 20px; }
+.entity-icon.tone-purple { background: var(--kpi-purple-bg); color: var(--kpi-purple-fg); }
+.entity-icon.tone-green  { background: var(--kpi-green-bg);  color: var(--kpi-green-fg); }
+.entity-icon.tone-orange { background: var(--kpi-orange-bg); color: var(--kpi-orange-fg); }
+.entity-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.entity-name { font-weight: 600; font-size: 13px; color: var(--clay-text); }
+.entity-name.is-link { color: var(--clay-primary); font-family: 'Space Grotesk', 'Inter', sans-serif; }
+.entity-sub {
+  font-size: 11px; color: var(--clay-text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
+}
+
+// ============================================
+// STATUS / PRIORITY BADGES
+// ============================================
+.sb-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; font-family: 'Space Grotesk', 'Inter', sans-serif;
+}
+.badge-draft       { background: var(--badge-draft-bg);     color: var(--badge-draft-text); }
+.badge-pending     { background: var(--badge-pending-bg);   color: var(--badge-pending-text); }
+.badge-in_progress { background: var(--badge-progress-bg);  color: var(--badge-progress-text); }
+.badge-completed   { background: var(--badge-completed-bg); color: var(--badge-completed-text); }
+.badge-cancelled   { background: var(--badge-cancelled-bg); color: var(--badge-cancelled-text); }
+.badge-pri-low     { background: var(--success-bg); color: var(--success-text); }
+.badge-pri-medium  { background: var(--warning-bg); color: var(--warning-text); }
+.badge-pri-high    { background: var(--danger-bg);  color: var(--danger-text); }
+.badge-pri-urgent  { background: var(--danger); color: #fff; }
+
+// ============================================
+// FILTER CONTROLS (native select styled to match)
+// ============================================
+.filter-row { display: flex; gap: 12px; }
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--clay-text-muted);
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+}
+.filter-select {
+  background: var(--clay-surface); border: 1px solid var(--clay-border);
+  border-radius: var(--clay-radius-xs); padding: 7px 30px 7px 12px;
+  font-size: 13px; color: var(--clay-text); font-family: inherit;
+  cursor: pointer; min-width: 140px; transition: border-color 0.2s;
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b90a0' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+.filter-select:focus { border-color: var(--clay-primary); outline: none; }
+.filter-select option { background: var(--clay-surface); color: var(--clay-text); }
+
+// ============================================
+// SECTION LABEL (small-caps group heading)
+// ============================================
+.section-label {
+  display: block;
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 11px; font-weight: 600; color: var(--clay-text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+// ============================================
+// EMPTY STATE (centered placeholder for grids/lists)
+// ============================================
+.empty-state {
+  text-align: center; padding: 60px 20px; color: var(--clay-text-muted);
+}
+.empty-state mat-icon { font-size: 64px; width: 64px; height: 64px; }
+.empty-state h3 { margin: 16px 0 8px; color: var(--clay-text); }
+.empty-state p { margin: 0; font-size: 13px; }
 
 // Form layout helpers (dialogs & shared)
 .full-width { width: 100%; }

@@ -82,11 +82,10 @@ export class TraceabilityComponent implements OnInit {
   constructor(private api: ApiService, private snack: MatSnackBar) {}
 
   ngOnInit(): void { this.load(); }
-  private arr(d: any): any[] { return Array.isArray(d) ? d : (d?.data || []); }
 
   load(): void {
-    this.api.get('/traceability/lots').subscribe({ next: (d) => this.lots = this.arr(d), error: () => {} });
-    this.api.get('/traceability/serials').subscribe({ next: (d) => this.serials = this.arr(d), error: () => {} });
+    this.api.getList('/traceability/lots').subscribe({ next: (list) => this.lots = list, error: () => {} });
+    this.api.getList('/traceability/serials').subscribe({ next: (list) => this.serials = list, error: () => {} });
   }
 
   addLot(): void {

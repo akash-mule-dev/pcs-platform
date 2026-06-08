@@ -229,13 +229,7 @@ interface StageDraft {
       padding: 18px 24px;
     }
 
-    .section-label {
-      display: block;
-      font-family: 'Space Grotesk', 'Inter', sans-serif;
-      font-size: 11px; font-weight: 600; color: var(--clay-text-muted);
-      text-transform: uppercase; letter-spacing: 0.08em;
-      margin-bottom: 10px;
-    }
+    /* .section-label inherited from global styles.scss */
 
     .hint-text {
       display: flex; align-items: center; gap: 6px;
@@ -403,8 +397,8 @@ export class ProcessFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.api.get<any>('/products').subscribe(data => {
-      this.products = Array.isArray(data) ? data : data.data || [];
+    this.api.getList<any>('/products').subscribe(list => {
+      this.products = list;
     });
   }
 

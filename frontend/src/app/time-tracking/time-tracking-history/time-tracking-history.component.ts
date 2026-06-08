@@ -121,8 +121,8 @@ export class TimeTrackingHistoryComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
-    this.api.get<any>('/users').subscribe(data => {
-      this.users = Array.isArray(data) ? data : data.data || [];
+    this.api.getList<any>('/users').subscribe(list => {
+      this.users = list;
     });
   }
 

@@ -53,13 +53,13 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
             <th mat-header-cell *matHeaderCellDef>Process</th>
             <td mat-cell *matCellDef="let p">
               <a [routerLink]="['/processes', p.id]" class="cell-link">
-                <div class="cell-process">
-                  <div class="process-icon">
+                <div class="cell-entity">
+                  <div class="entity-icon tone-purple">
                     <mat-icon>account_tree</mat-icon>
                   </div>
-                  <div class="process-info">
-                    <span class="process-name">{{ p.name }}</span>
-                    <span class="process-product">{{ p.product?.name || 'No product' }}</span>
+                  <div class="entity-info">
+                    <span class="entity-name">{{ p.name }}</span>
+                    <span class="entity-sub">{{ p.product?.name || 'No product' }}</span>
                   </div>
                 </div>
               </a>
@@ -102,82 +102,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
   `,
   styles: [`
     .page-shell { max-width: 1200px; }
+    /* page-header/title/subtitle, btn-primary, toolbar, search-box & meta-count are inherited from global styles.scss */
 
-    .page-header {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      margin-bottom: 24px;
-    }
-    .page-title {
-      margin: 0; font-size: 24px; font-weight: 700; color: var(--clay-text);
-      letter-spacing: -0.02em;
-    }
-    .page-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--clay-text-muted); }
-
-    .btn-primary {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--clay-primary); color: #fff;
-      border: none; border-radius: var(--clay-radius-sm);
-      padding: 10px 20px; font-size: 13px; font-weight: 600;
-      cursor: pointer; transition: all 0.2s; font-family: inherit;
-    }
-    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
-    .btn-primary mat-icon { font-size: 18px; width: 18px; height: 18px; }
-
-    /* Toolbar */
-    .toolbar {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 16px; gap: 16px;
-    }
-    .search-box {
-      display: flex; align-items: center; gap: 8px;
-      background: var(--clay-surface); border: 1px solid var(--clay-border);
-      border-radius: var(--clay-radius-sm); padding: 8px 14px;
-      width: 320px; transition: border-color 0.2s;
-    }
-    .search-box:focus-within { border-color: var(--clay-primary); }
-    .search-ico { font-size: 18px; width: 18px; height: 18px; color: var(--clay-text-muted); }
-    .search-box input {
-      border: none; outline: none; background: transparent;
-      font-size: 13px; color: var(--clay-text); width: 100%; font-family: inherit;
-    }
-    .search-box input::placeholder { color: var(--clay-text-muted); }
-    .meta-count { font-size: 12px; color: var(--clay-text-muted); font-family: 'Space Grotesk', sans-serif; }
-    .count-num { font-weight: 600; color: var(--clay-text-secondary); }
-
-    /* Table */
-    .table-wrap {
-      background: var(--clay-surface); border-radius: var(--clay-radius);
-      border: 1px solid var(--clay-border); overflow: hidden;
-    }
-    .sb-table { width: 100%; }
-    ::ng-deep .sb-table .mat-mdc-header-row { background: var(--clay-bg-warm) !important; height: 44px; }
-    ::ng-deep .sb-table .mat-mdc-header-cell {
-      color: var(--clay-text-muted) !important; font-weight: 600 !important;
-      font-size: 11px !important; text-transform: uppercase;
-      letter-spacing: 0.06em; border-bottom: 1px solid var(--clay-border) !important;
-      font-family: 'Space Grotesk', sans-serif !important;
-    }
-    ::ng-deep .sb-table .mat-mdc-row {
-      border-bottom: 1px solid var(--clay-border) !important;
-      transition: background 0.15s; height: 60px;
-    }
-    ::ng-deep .sb-table .mat-mdc-row:hover { background: var(--clay-surface-hover) !important; }
-    ::ng-deep .sb-table .mat-mdc-cell {
-      color: var(--clay-text) !important; font-size: 13px; border-bottom: none !important;
-    }
-
-    /* Process cell */
+    /* Table theme, .table-wrap, .cell-entity & .row-actions inherited from global styles.scss */
     .cell-link { text-decoration: none; color: inherit; }
-    .cell-process { display: flex; align-items: center; gap: 12px; }
-    .process-icon {
-      width: 40px; height: 40px; border-radius: var(--clay-radius-xs);
-      background: var(--kpi-purple-bg); color: var(--kpi-purple-fg);
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    .process-icon mat-icon { font-size: 20px; width: 20px; height: 20px; }
-    .process-info { display: flex; flex-direction: column; gap: 2px; }
-    .process-name { font-weight: 600; font-size: 13px; color: var(--clay-text); }
-    .process-product { font-size: 11px; color: var(--clay-text-muted); }
 
     .version-tag {
       font-family: 'Space Grotesk', monospace; font-size: 12px;
@@ -188,23 +116,6 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     .stage-count {
       font-family: 'Space Grotesk', monospace; font-size: 14px;
       font-weight: 600; color: var(--clay-text);
-    }
-
-    /* Row actions */
-    .row-actions { display: flex; gap: 2px; }
-    .icon-btn {
-      width: 32px; height: 32px; border-radius: var(--clay-radius-xs);
-      border: none; background: transparent; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      color: var(--clay-text-muted); transition: all 0.15s;
-    }
-    .icon-btn:hover { background: var(--clay-surface-hover); color: var(--clay-text); }
-    .icon-btn-danger:hover { color: var(--danger); background: var(--danger-bg); }
-    .icon-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
-
-    @media (max-width: 768px) {
-      .toolbar { flex-direction: column; align-items: stretch; }
-      .search-box { width: 100%; }
     }
   `]
 })
@@ -225,8 +136,8 @@ export class ProcessListComponent implements OnInit, AfterViewInit {
   ngAfterViewInit(): void { this.dataSource.paginator = this.paginator; }
 
   load(): void {
-    this.api.get<any>('/processes').subscribe(data => {
-      this.dataSource.data = Array.isArray(data) ? data : data.data || [];
+    this.api.getList<any>('/processes').subscribe(list => {
+      this.dataSource.data = list;
     });
   }
 

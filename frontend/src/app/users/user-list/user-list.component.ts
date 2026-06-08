@@ -23,10 +23,14 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
   imports: [CommonModule, FormsModule, MatTableModule, MatPaginatorModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatSelectModule, MatChipsModule, MatTooltipModule],
   template: `
     <div class="page-header">
-      <h2>Users</h2>
+      <div class="header-left">
+        <h1 class="page-title">Users</h1>
+        <p class="page-subtitle">Manage accounts, roles and access</p>
+      </div>
       @if (canEdit) {
-        <button mat-raised-button color="primary" (click)="openForm()">
-          <mat-icon>person_add</mat-icon> Add User
+        <button class="btn-primary" (click)="openForm()">
+          <mat-icon>person_add</mat-icon>
+          <span>Add User</span>
         </button>
       }
     </div>
@@ -99,10 +103,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
   `,
   styles: [`
-    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    h2 { margin: 0; color: var(--clay-text); }
+    /* page-header, page-title/subtitle, btn-primary & full-width inherited from global styles.scss */
     .filter-field { margin-bottom: 16px; }
-    .full-width { width: 100%; }
     .role-chip { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; }
     .role-admin { background: var(--info-bg); color: var(--info-text); box-shadow: var(--clay-shadow-soft); }
     .role-manager { background: var(--info-bg); color: var(--info-text); box-shadow: var(--clay-shadow-soft); }
@@ -136,9 +138,9 @@ export class UserListComponent implements OnInit, AfterViewInit {
 
   load(): void {
     this.loading.show();
-    this.api.get<any>('/users', { status: this.statusFilter }).subscribe({
-      next: (data) => {
-        this.users = Array.isArray(data) ? data : data.data || [];
+    this.api.getList<any>('/users', { status: this.statusFilter }).subscribe({
+      next: (list) => {
+        this.users = list;
         this.applyFilter();
         this.loading.hide();
       },

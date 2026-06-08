@@ -130,8 +130,8 @@ export class StationManagementComponent implements OnInit {
   ngOnInit(): void { this.loadLines(); }
 
   loadLines(): void {
-    this.api.get<any>('/lines').subscribe(data => {
-      this.lines = Array.isArray(data) ? data : data.data || [];
+    this.api.getList<any>('/lines').subscribe(list => {
+      this.lines = list;
     });
   }
 
@@ -142,8 +142,8 @@ export class StationManagementComponent implements OnInit {
 
   loadStations(): void {
     if (!this.selectedLine) return;
-    this.api.get<any>(`/lines/${this.selectedLine.id}/stations`).subscribe(data => {
-      this.stations = Array.isArray(data) ? data : data.data || [];
+    this.api.getList<any>(`/lines/${this.selectedLine.id}/stations`).subscribe(list => {
+      this.stations = list;
     });
   }
 
