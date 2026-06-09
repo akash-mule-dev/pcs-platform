@@ -39,6 +39,8 @@ import { QualityNcrModule } from './quality-ncr/quality-ncr.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
 import { SpcModule } from './spc/spc.module.js';
+import { ProjectsModule } from './projects/projects.module.js';
+import { ShippingModule } from './shipping/shipping.module.js';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
 
 @Module({
@@ -87,6 +89,8 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
     SchedulingModule,
     RbacModule,
     SpcModule,
+    ProjectsModule,
+    ShippingModule,
   ],
   providers: [
     {

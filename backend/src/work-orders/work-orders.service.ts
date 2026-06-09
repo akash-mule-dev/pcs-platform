@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { WorkOrder, WorkOrderStatus } from './work-order.entity.js';
@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { InventoryService } from '../materials/inventory.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import { StatusRollupService } from '../projects/status-rollup.service.js';
 
 @Injectable()
 export class WorkOrdersService {
@@ -22,7 +23,13 @@ export class WorkOrdersService {
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
     private readonly inventoryService: InventoryService,
+    @Inject(forwardRef(() => StatusRollupService)) private readonly rollup: StatusRollupService,
   ) {}
+
+  /** Best-effort: refresh the assembly/project status roll-up after a work-order stage change. */
+  private async recomputeRollup(workOrderId: string): Promise<void> {
+    try { await this.rollup.recomputeForWorkOrder(workOrderId); } catch { /* non-fatal */ }
+  }
 
   async findAll(pageOptions: PageOptionsDto, status?: string, priority?: string): Promise<PageDto<WorkOrder>> {
     const qb = this.woRepo.createQueryBuilder('wo')
@@ -172,6 +179,7 @@ export class WorkOrdersService {
       newValues: { status: newStatus },
     });
 
+    await this.recomputeRollup(id);
     const updated = await this.findOne(id);
     this.eventsGateway.emitWorkOrderUpdate(updated);
     this.eventsGateway.emitDashboardRefresh();
@@ -230,6 +238,7 @@ export class WorkOrdersService {
       newValues: { status: newStatus },
     });
 
+    await this.recomputeRollup(workOrderId);
     const updated = await this.findOne(workOrderId);
     this.eventsGateway.emitWorkOrderUpdate(updated);
     return updated;

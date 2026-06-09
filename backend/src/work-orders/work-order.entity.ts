@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { Product } from '../products/product.entity.js';
 import { Process } from '../processes/process.entity.js';
 import { Line } from '../lines/line.entity.js';
+import { AssemblyNode } from '../projects/assembly-node.entity.js';
 import { WorkOrderStage } from './work-order-stage.entity.js';
 import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
@@ -48,6 +49,16 @@ export class WorkOrder extends TenantOwnedEntity {
   @ManyToOne(() => Line, { nullable: true, eager: true })
   @JoinColumn({ name: 'line_id' })
   line: Line | null;
+
+  // Fabrication: a work order can target an assembly / subassembly node so the
+  // existing stage engine drives each piece mark through its stages. Nullable
+  // and additive — existing product-based work orders are unaffected.
+  @Column({ name: 'assembly_node_id', type: 'uuid', nullable: true })
+  assemblyNodeId: string | null;
+
+  @ManyToOne(() => AssemblyNode, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'assembly_node_id' })
+  assemblyNode: AssemblyNode | null;
 
   @Column({ type: 'integer' })
   quantity: number;

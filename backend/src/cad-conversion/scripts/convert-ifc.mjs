@@ -185,7 +185,11 @@ async function main() {
     let name = `ifc_${expressID}`;
     try {
       const line = ifcApi.GetLine(modelID, expressID);
-      if (line && line.Name && line.Name.value) {
+      // Name GLB nodes by GlobalId so the structure tree (assembly_nodes.ifcGuid)
+      // can address/highlight a specific mesh; fall back to Name.
+      if (line && line.GlobalId && line.GlobalId.value) {
+        name = line.GlobalId.value;
+      } else if (line && line.Name && line.Name.value) {
         name = line.Name.value;
       }
     } catch { /* skip name lookup errors */ }

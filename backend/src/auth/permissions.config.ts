@@ -17,6 +17,7 @@ export interface FeaturePermission {
 export const PERMISSIONS: Record<string, FeaturePermission> = {
   dashboard:          { view: ['admin', 'manager', 'supervisor', 'operator'] },
   products:           { view: ['admin', 'manager', 'supervisor'], manage: ['admin', 'manager'] },
+  projects:           { view: ['admin', 'manager', 'supervisor'], manage: ['admin', 'manager'] },
   processes:          { view: ['admin', 'manager', 'supervisor'], manage: ['admin', 'manager'] },
   'work-orders':      { view: ['admin', 'manager', 'supervisor', 'operator'], manage: ['admin', 'manager', 'supervisor'] },
   kanban:             { view: ['admin', 'manager', 'supervisor', 'operator'] },

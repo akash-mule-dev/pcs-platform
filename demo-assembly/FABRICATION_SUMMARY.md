@@ -1,39 +1,32 @@
-# PCS AR Demo - End-Plate Braced Portal Frame
+# PCS AR Demo - Two-Column Drop-On Portal
 
-A braced portal frame you **assemble from individual parts**. Base + columns are one **welded frame**; the top beam, cross-beam and brace **bolt on** via **end-plate connections** - every bolt passes through two flat plates with head and nut in the open (nut in the open column cavity), so **no fastener is buried inside a rolled section** (checked by an exact point-in-mesh test). No pipe; sits dead flat.
+A two-column portal built for a **live on-the-spot demo**: a welded STAND (base + 2 columns, each with an erection seat + fin plate) that stands flat on its own, and **one loose beam** that **drops onto both seats** (gravity holds it, the webs self-align to the fins, all 4 holes line up) and is fixed with **4 bolts** (2 per end) whose head and nut are **both in open air** - one spanner, ~30 s, nothing held mid-air, no nuts inside cavities. Exported **Y-up** so it stands upright in model-viewer and the AR app.
 
-- **Files:** `demo_assembly.ifc` · `demo_assembly.glb` (28 part nodes; AR loads this) · `demo_assembly.stl` (print)
-- **Bounding box:** 560 x 320 x 540 mm (fits a car trunk)
-- **Mass:** steel 62.6 kg · aluminium 21.5 kg · 3D-print PLA ~3.5 kg
-- **Parts:** 28 pieces in 11 types; 10x M16 fasteners
-- **Checks:** flat base PASS (0.0 mm) · bolts external PASS · interference NONE
+- **Files:** `demo_assembly.ifc` (IFC, Z-up) · `demo_assembly.glb` (12 nodes, **Y-up**; AR loads this) · `demo_assembly.stl` (Y-up, print)
+- **Bounding box:** 580 x 280 x 412 mm (fits a car trunk)
+- **Mass:** steel 40.8 kg · aluminium 14.0 kg · 3D-print PLA ~2.3 kg
+- **Parts:** 12 pieces in 6 types; 4x M16; **1 loose part (the beam)**
+- **Checks:** stands flat PASS (0.0 mm) · Y-up PASS · fasteners in open air PASS · interference NONE
 
 ## Part list
 
 | # | Part | Section | Size (mm) | Qty | Joint | kg |
 |---|------|---------|-----------|-----|-------|---:|
-| A | Base plate | PL 10 | 560x320x10 | 1 | welded frame foot | 14.07 |
-| B | Columns I120 | I 120x70 | L=480 | 2 | welded to feet | 6.18 |
-| C | Column foot plates | PL 12 | 150x180x12 | 2 | welded to base | 2.54 |
-| D | Column conn. plates | PL 14 | 130x200x14 | 4 | end-plate bolted | 2.86 |
-| E | Brace gussets | PL 10 | ~285x90x10 | 2 | bolted (1x M16) | 2.01 |
-| F | Top portal beam | I 120x70 | L=306 | 1 | end-plate bolted | 3.94 |
-| G | Beam end plates | PL 12 | 130x200x12 | 2 | 4x M16 total | 2.45 |
-| H | Cross-beam | I 100x64 | L=306 | 1 | end-plate bolted | 3.47 |
-| I | Cross end plates | PL 12 | 120x164x12 | 2 | 4x M16 total | 1.85 |
-| J | Diagonal brace | FB 80x10 | L=326 | 1 | bolted (2x M16) | 2.04 |
-| K | Hex bolts+nuts+washers | M16 | modelled | 10 | 10x M16 | 1.30 |
-| | **TOTAL** | | | **28** | | **42.7** |
+| A | Base plate | PL 12 | 580x280x12 | 1 | welded stand | 15.30 |
+| B | Columns (x2) | I 150x90 | L=400 | 2 | welded to base | 7.57 |
+| C | Erection seats | PL 12 | 120x140x12 | 2 | welded to columns | 1.58 |
+| D | Fin plates | PL 10 | 90x120x10 | 2 | welded; 2x Ø18 (M16) | 0.85 |
+| E | Beam (loose) | I 150x90 | L=246 | 1 | drops on 2 seats + 4x M16 | 4.66 |
+| F | Hex bolts+nuts+washers | M16 | modelled | 4 | 4x M16 | 0.52 |
+| | **TOTAL** | | | **12** | | **30.5** |
 
 ## Assembly sequence
 
-1. Shop-weld the FRAME = base + both columns (on foot plates) + the 4 column connection plates + the 2 brace gussets.
-2. Shop-weld an END PLATE onto each end of the top beam and the cross-beam.
-3. Demo assembly (all bolted, all bolts external):
-    1) Bolt the TOP BEAM end plates to the column connection plates (2x M16 each end, above & below the beam).
-    2) Same for the CROSS-BEAM (2x M16 each end).
-    3) Bolt the DIAGONAL BRACE to the two gusset tips (1x M16 each end).
-4. Finish bare/matte. QA against the iPad AR green-wireframe overlay.
+1. Shop-weld the STAND = base plate + 2 columns + an erection seat & fin plate on each. It stands flat on its own.
+2. On the spot (~30 s, one spanner):
+    1) Lower the BEAM onto the two erection seats - it lands on both, the webs sit beside the fins, and all 4 holes line up.
+    2) Push 2x M16 through each fin + web (4 total) and spin the nuts on (head one side, nut the other, both in the open).
+3. Finish bare/matte. QA against the iPad AR green-wireframe overlay.
 
 ## Finish
 

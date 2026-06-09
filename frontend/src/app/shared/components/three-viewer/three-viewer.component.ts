@@ -101,6 +101,12 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   @Output() modelLoaded = new EventEmitter<void>();
   @Output() meshClicked = new EventEmitter<string>(); // emits meshName on click
 
+  /** GLB node names (== IFC GlobalIds) to spotlight; all other meshes dim. Empty = off. */
+  @Input() set highlightNames(names: string[]) {
+    this._highlight = new Set(names || []);
+    this.applyHighlight();
+  }
+
   loading = false;
   loadProgress = 0;
   error: string | null = null;
@@ -117,6 +123,8 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   private mouse = new THREE.Vector2();
   private edgeLines: THREE.LineSegments[] = [];
   private originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+  private _highlight = new Set<string>();
+  private _highlightActive = false;
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -254,6 +262,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
 
         this.applyQualityOverlay();
         this.applyRenderMode();
+        if (this._highlight.size > 0) this.applyHighlight();
         this.loadProgress = 0;
         this.loading = false;
         this.modelLoaded.emit();
@@ -292,6 +301,31 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
             roughness: 0.5,
           });
         }
+      }
+    });
+  }
+
+  /** Spotlight highlighted meshes (orange) and dim the rest; restore base styling when cleared. */
+  private applyHighlight(): void {
+    if (!this.currentModel) return;
+    if (this._highlight.size === 0) {
+      if (this._highlightActive) {
+        this.currentModel.traverse((c) => {
+          if (c instanceof THREE.Mesh) { const o = this.originalMaterials.get(c); if (o) c.material = o; }
+        });
+        this._highlightActive = false;
+        this.applyQualityOverlay();
+        this.applyRenderMode();
+      }
+      return;
+    }
+    this._highlightActive = true;
+    this.currentModel.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      if (this._highlight.has(child.name)) {
+        child.material = new THREE.MeshStandardMaterial({ color: 0xff8c00, emissive: 0x4a2600, roughness: 0.45, metalness: 0.1 });
+      } else {
+        child.material = new THREE.MeshStandardMaterial({ color: 0xbfb8ab, transparent: true, opacity: 0.15, depthWrite: false });
       }
     });
   }
