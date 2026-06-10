@@ -3,95 +3,73 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, A
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Colors, StatusColors } from '../../theme/colors';
+import { Colors } from '../../theme/colors';
 import { ProjectsStackParamList } from '../../navigation/types';
-import { projectsService, MNode, MNodeStages, MNodeStage, MQualityEntry, ProdStatusColors, ProdStatusLabels } from '../../services/projects.service';
+import { ordersService, projectsService, MNode, MOrderNodeStages, MOrderNodeStage, MQualityEntry } from '../../services/projects.service';
 import { useAuth } from '../../context/AuthContext';
 
 type Rt = RouteProp<ProjectsStackParamList, 'AssemblyDetail'>;
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'AssemblyDetail'>;
 
 const QA_COLORS: Record<string, string> = { pass: '#2e7d32', warning: '#f9a825', fail: '#c62828' };
-// A stage's status is INDEPENDENT — set any stage, any time, in any order.
-const STAGE_OPTS: { key: string; label: string; color: string }[] = [
-  { key: 'pending', label: 'Not started', color: '#9ca3af' },
-  { key: 'in_progress', label: 'In progress', color: '#f9a825' },
-  { key: 'completed', label: 'Complete', color: '#2e7d32' },
+const ND_COLOR: Record<string, string> = { not_started: '#9ca3af', in_progress: '#f9a825', completed: '#2e7d32' };
+const ND_LABEL: Record<string, string> = { not_started: 'Not started', in_progress: 'In progress', completed: 'Complete' };
+const STAGE_COLOR: Record<string, string> = { pending: '#9ca3af', in_progress: '#f9a825', completed: '#2e7d32', skipped: '#9ca3af' };
+const STAGE_OPTS: { key: string; label: string }[] = [
+  { key: 'pending', label: 'Not started' },
+  { key: 'in_progress', label: 'In progress' },
+  { key: 'completed', label: 'Complete' },
 ];
 
 export function AssemblyDetailScreen() {
   const route = useRoute<Rt>();
   const navigation = useNavigation<Nav>();
-  const { projectId, nodeId, mark } = route.params;
+  const { orderId, projectId, nodeId, mark } = route.params;
   const { user } = useAuth();
   const inspector = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || undefined;
 
-  const [data, setData] = useState<MNodeStages | null>(null);
+  const [data, setData] = useState<MOrderNodeStages | null>(null);
   const [node, setNode] = useState<MNode | null>(null);
+  const [qa, setQa] = useState<MQualityEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [qa, setQa] = useState<MQualityEntry[]>([]);
   const [qaBusy, setQaBusy] = useState(false);
   const [measureOpen, setMeasureOpen] = useState(false);
   const [meas, setMeas] = useState({ value: '', unit: 'mm', min: '', max: '', notes: '' });
 
-  useLayoutEffect(() => {
-    navigation.setOptions({ title: mark || 'Assembly' });
-  }, [navigation, mark]);
+  useLayoutEffect(() => { navigation.setOptions({ title: mark || 'Assembly' }); }, [navigation, mark]);
 
   const load = useCallback(async () => {
     try {
-      const [stages, n, q] = await Promise.all([
-        projectsService.getNodeStages(projectId, nodeId),
+      const [d, n, q] = await Promise.all([
+        ordersService.nodeStages(orderId, nodeId),
         projectsService.getNode(projectId, nodeId).catch(() => null),
         projectsService.getNodeQuality(projectId, nodeId).catch(() => [] as MQualityEntry[]),
       ]);
-      setData(stages);
-      setNode(n);
-      setQa(q);
+      setData(d); setNode(n); setQa(q);
     } catch {
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [projectId, nodeId]);
+  }, [orderId, projectId, nodeId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
+  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
-
-  // Set ONE stage's status directly — no cascade, no forced order.
-  const setStage = async (st: MNodeStage, status: string) => {
-    if (!st.id || st.status === status) return;
-    setBusy(st.stageId);
-    try {
-      await projectsService.setNodeStage(projectId, nodeId, st.id, status);
-      await load();
-    } catch {
-      /* ignore */
-    } finally {
-      setBusy(null);
-    }
+  // Update one stage independently — quantity stepper (qtyDone) or qty=1 status.
+  const setStage = async (s: MOrderNodeStage, body: { qtyDone?: number; status?: string }) => {
+    setBusy(s.id);
+    try { await ordersService.setStage(orderId, s.id, body); await load(); }
+    catch { /* ignore */ } finally { setBusy(null); }
   };
 
   const openViewer = () => {
     if (!node?.modelId) return;
     navigation.navigate('PartViewer', {
-      projectId,
-      nodeId,
-      modelId: node.modelId,
-      title: mark,
-      profile: node.profile,
-      materialGrade: node.materialGrade,
-      lengthMm: node.lengthMm,
-      weightKg: node.weightKg,
+      projectId, nodeId, modelId: node.modelId, title: mark,
+      profile: node.profile, materialGrade: node.materialGrade, lengthMm: node.lengthMm, weightKg: node.weightKg,
     });
   };
 
@@ -106,32 +84,16 @@ export function AssemblyDetailScreen() {
     setQaBusy(true);
     try {
       await projectsService.recordNodeQuality(projectId, nodeId, {
-        status: 'pass',
-        measurementValue: value,
-        measurementUnit: meas.unit || undefined,
-        toleranceMin: meas.min ? parseFloat(meas.min) : undefined,
-        toleranceMax: meas.max ? parseFloat(meas.max) : undefined,
-        notes: meas.notes || undefined,
-        inspector,
+        status: 'pass', measurementValue: value, measurementUnit: meas.unit || undefined,
+        toleranceMin: meas.min ? parseFloat(meas.min) : undefined, toleranceMax: meas.max ? parseFloat(meas.max) : undefined,
+        notes: meas.notes || undefined, inspector,
       });
       setMeas({ value: '', unit: 'mm', min: '', max: '', notes: '' });
-      setMeasureOpen(false);
-      await load();
+      setMeasureOpen(false); await load();
     } catch { /* ignore */ } finally { setQaBusy(false); }
   };
-  const openNcr = () => {
-    (navigation.getParent() as any)?.navigate('More', {
-      screen: 'NcrCreate',
-      params: { projectId, nodeId, title: `${mark} — quality non-conformance`, severity: 'medium' },
-    });
-  };
-  const openNcrFor = (q: MQualityEntry) => {
-    (navigation.getParent() as any)?.navigate('More', {
-      screen: 'NcrCreate',
-      params: { projectId, nodeId, title: `${mark} — ${q.defectType || 'failed inspection'}`, severity: q.severity || 'medium', description: q.notes || undefined, qualityDataId: q.id },
-    });
-  };
-
+  const openNcr = () => (navigation.getParent() as any)?.navigate('More', { screen: 'NcrCreate', params: { projectId, nodeId, title: `${mark} — quality non-conformance`, severity: 'medium' } });
+  const openNcrFor = (q: MQualityEntry) => (navigation.getParent() as any)?.navigate('More', { screen: 'NcrCreate', params: { projectId, nodeId, title: `${mark} — ${q.defectType || 'failed inspection'}`, severity: q.severity || 'medium', description: q.notes || undefined, qualityDataId: q.id } });
 
   const specRows = (): { k: string; v: string }[] => {
     const out: { k: string; v: string }[] = [];
@@ -139,38 +101,22 @@ export function AssemblyDetailScreen() {
     if (node?.materialGrade) out.push({ k: 'Material / grade', v: node.materialGrade });
     if (node?.lengthMm) out.push({ k: 'Length', v: `${Math.round(node.lengthMm)} mm` });
     if (node?.weightKg) out.push({ k: 'Weight', v: `${Math.round(node.weightKg * 10) / 10} kg` });
-    if (node && node.quantity > 1) out.push({ k: 'Quantity', v: `×${node.quantity}` });
-    const props = node?.properties ? Object.entries(node.properties) : [];
-    for (const [k, v] of props) {
-      if (v == null || v === '') continue;
-      if (out.some((r) => r.k === k)) continue;
-      out.push({ k, v: String(v) });
-    }
+    if (node && node.quantity > 1) out.push({ k: 'Qty in design', v: `×${node.quantity}` });
     return out;
   };
 
-  if (loading) {
-    return <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>;
-  }
-  if (!data) {
-    return <View style={styles.center}><Text style={styles.muted}>Assembly not found.</Text></View>;
-  }
+  if (loading) return <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>;
+  if (!data) return <View style={styles.center}><Text style={styles.muted}>Assembly not found.</Text></View>;
 
   const pct = Math.round(data.percentComplete || 0);
-  const statusColor = ProdStatusColors[data.nodeStatus] || Colors.medium;
+  const ndColor = ND_COLOR[data.nodeStatus] || Colors.medium;
   const rows = specRows();
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-    >
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}>
       <View style={styles.hero}>
         <Text style={styles.mark}>{mark}</Text>
-        <View style={[styles.chip, { backgroundColor: statusColor }]}>
-          <Text style={styles.chipTxt}>{ProdStatusLabels[data.nodeStatus] || data.nodeStatus}</Text>
-        </View>
+        <View style={[styles.chip, { backgroundColor: ndColor }]}><Text style={styles.chipTxt}>{ND_LABEL[data.nodeStatus] || data.nodeStatus}</Text></View>
       </View>
 
       <View style={styles.progRow}>
@@ -184,7 +130,7 @@ export function AssemblyDetailScreen() {
           <Text style={styles.view3dTxt}>View in 3D</Text>
         </TouchableOpacity>
       ) : (
-        <Text style={styles.muted}>3D model not ready for this project yet (still converting, or not imported).</Text>
+        <Text style={styles.muted}>3D model not ready for this project yet.</Text>
       )}
 
       <Text style={styles.sectionTitle}>Spec &amp; dimensions</Text>
@@ -242,45 +188,43 @@ export function AssemblyDetailScreen() {
       )}
 
       <Text style={styles.sectionTitle}>Stages — set each independently</Text>
-      {data.stages.length === 0 && <Text style={styles.muted}>No stages yet — attach a process / generate work orders first.</Text>}
-      {data.stages.map((s, i) => {
-        const sc = StatusColors[s.status] || Colors.medium;
+      {data.stages.length === 0 && <Text style={styles.muted}>No stages for this assembly in this work order.</Text>}
+      {data.stages.map((s) => {
+        const sc = STAGE_COLOR[s.status] || Colors.medium;
+        const total = s.qtyTotal || 0;
+        const busyThis = busy === s.id;
         return (
-          <View key={s.stageId} style={styles.stage}>
-            <View style={[styles.seq, { backgroundColor: sc }]}><Text style={styles.seqTxt}>{i + 1}</Text></View>
+          <View key={s.id} style={styles.stage}>
+            <View style={[styles.seq, { backgroundColor: sc }]} />
             <View style={styles.stageBody}>
-              <Text style={styles.stageName}>{s.name}</Text>
-              {data.workOrderId && s.id ? (
+              <View style={styles.stageHead}>
+                <Text style={styles.stageName}>{s.name}</Text>
+                {total > 1 && <Text style={styles.count}>{s.qtyDone}/{total}</Text>}
+                {busyThis && <ActivityIndicator size="small" color={Colors.primary} />}
+              </View>
+              {total > 1 ? (
+                <View style={styles.stepRow}>
+                  <TouchableOpacity style={styles.stepBtn} disabled={busyThis || s.qtyDone <= 0} onPress={() => setStage(s, { qtyDone: s.qtyDone - 1 })}><Text style={styles.stepTxt}>−</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.stepBtn} disabled={busyThis || s.qtyDone >= total} onPress={() => setStage(s, { qtyDone: s.qtyDone + 1 })}><Text style={styles.stepTxt}>+</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.miniBtn, styles.allBtn]} disabled={busyThis} onPress={() => setStage(s, { status: 'completed' })}><Text style={styles.allTxt}>All</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.miniBtn} disabled={busyThis} onPress={() => setStage(s, { status: 'pending' })}><Text style={styles.miniTxt}>Reset</Text></TouchableOpacity>
+                </View>
+              ) : (
                 <View style={styles.segRow}>
                   {STAGE_OPTS.map((o) => {
                     const on = s.status === o.key;
                     return (
-                      <TouchableOpacity
-                        key={o.key}
-                        disabled={busy === s.stageId}
-                        style={[styles.seg, on && { backgroundColor: o.color, borderColor: o.color }]}
-                        onPress={() => setStage(s, o.key)}
-                      >
-                        {busy === s.stageId && on ? (
-                          <ActivityIndicator size="small" color={Colors.white} />
-                        ) : (
-                          <Text style={[styles.segTxt, on && styles.segTxtOn]}>{o.label}</Text>
-                        )}
+                      <TouchableOpacity key={o.key} disabled={busyThis} style={[styles.seg, on && { backgroundColor: STAGE_COLOR[o.key], borderColor: STAGE_COLOR[o.key] }]} onPress={() => setStage(s, { status: o.key })}>
+                        <Text style={[styles.segTxt, on && styles.segTxtOn]}>{o.label}</Text>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
-              ) : (
-                <Text style={[styles.stageStatus, { color: sc }]}>{s.status.replace('_', ' ')}</Text>
               )}
             </View>
           </View>
         );
       })}
-
-      {!data.workOrderId && data.stages.length > 0 && (
-        <Text style={styles.muted}>This assembly has no work order yet — generate work orders (web) to track and update its stages.</Text>
-      )}
     </ScrollView>
   );
 }
@@ -305,16 +249,6 @@ const styles = StyleSheet.create({
   specRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border, gap: 12 },
   specK: { color: Colors.textSecondary, fontSize: 13, flexShrink: 1 },
   specV: { color: Colors.text, fontSize: 13, fontWeight: '600', maxWidth: '60%' },
-  stage: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: Colors.card, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, padding: 12, marginBottom: 10 },
-  seq: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  seqTxt: { color: Colors.white, fontWeight: '700' },
-  stageBody: { flex: 1 },
-  stageName: { fontSize: 15, fontWeight: '600', color: Colors.text },
-  stageStatus: { fontSize: 12, marginTop: 2, textTransform: 'capitalize' },
-  segRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  seg: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: Colors.background, minWidth: 92, alignItems: 'center' },
-  segTxt: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' },
-  segTxtOn: { color: Colors.white },
   qaActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   qbtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: Colors.card },
   qbtnT: { color: Colors.text, fontWeight: '600', fontSize: 13 },
@@ -334,4 +268,21 @@ const styles = StyleSheet.create({
   qaStatus: { textTransform: 'capitalize', color: Colors.text, fontWeight: '600', fontSize: 13 },
   qaMeta: { color: Colors.textSecondary, fontSize: 12 },
   qaNcrLink: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  stage: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: Colors.card, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, padding: 12, marginBottom: 10 },
+  seq: { width: 12, height: 12, borderRadius: 6, marginRight: 12, marginTop: 4 },
+  stageBody: { flex: 1 },
+  stageHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stageName: { fontSize: 15, fontWeight: '600', color: Colors.text, flex: 1 },
+  count: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  stepBtn: { width: 40, height: 36, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.background },
+  stepTxt: { fontSize: 20, fontWeight: '700', color: Colors.text },
+  miniBtn: { paddingHorizontal: 12, height: 36, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.background },
+  miniTxt: { color: Colors.textSecondary, fontWeight: '600', fontSize: 13 },
+  allBtn: { borderColor: '#2e7d32' },
+  allTxt: { color: '#2e7d32', fontWeight: '700', fontSize: 13 },
+  segRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  seg: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: Colors.background, minWidth: 92, alignItems: 'center' },
+  segTxt: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  segTxtOn: { color: Colors.white },
 });

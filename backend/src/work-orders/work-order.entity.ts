@@ -60,6 +60,10 @@ export class WorkOrder extends TenantOwnedEntity {
   @JoinColumn({ name: 'assembly_node_id' })
   assemblyNode: AssemblyNode | null;
 
+  // Multi-order: the production order (customer/run) this per-assembly work order belongs to.
+  @Column({ name: 'production_order_id', type: 'uuid', nullable: true })
+  productionOrderId: string | null;
+
   @Column({ type: 'integer' })
   quantity: number;
 

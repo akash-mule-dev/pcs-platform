@@ -78,7 +78,7 @@ import { ShippingService, Shipment, ShipmentStatus } from '../core/services/ship
           <div class="col-head"><h2><mat-icon>checklist</mat-icon>Ready to ship</h2><span class="count">{{ readyToShip().length }}</span></div>
           <p class="hint">Assemblies whose stages are all complete. Select a load on the left, then add.</p>
           @if (heldCount() > 0) {
-            <p class="banner warn"><mat-icon>warning</mat-icon>{{ heldCount() }} ready item(s) have a quality hold (failed QC or open NCR). You can still ship — review first.</p>
+            <p class="banner warn"><mat-icon>warning</mat-icon>{{ heldCount() }} ready item(s) have a quality hold (failed QC or open NCR). Items with open NCRs are blocked from shipping until resolved.</p>
           }
           @if (readyToShip().length === 0) {
             <div class="empty-state slim"><mat-icon>check_circle</mat-icon><p>Nothing ready yet. Complete an assembly's stages to see it here.</p></div>

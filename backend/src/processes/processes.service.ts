@@ -32,6 +32,31 @@ export class ProcessesService {
     return item;
   }
 
+  /** The default fabrication routing, created on demand (idempotent per organization). */
+  static readonly STANDARD_NAME = 'Standard Fabrication';
+  private static readonly STANDARD_STAGES = [
+    { name: 'Cutting', targetTimeSeconds: 1800, description: 'Cut raw stock to size' },
+    { name: 'Fit-Up', targetTimeSeconds: 3600, description: 'Assemble and tack the parts' },
+    { name: 'Welding', targetTimeSeconds: 7200, description: 'Full welds per WPS' },
+    { name: 'Quality Check', targetTimeSeconds: 1800, description: 'Visual + dimensional inspection — blocked while NCRs are open' },
+    { name: 'Painting', targetTimeSeconds: 3600, description: 'Surface prep and coating' },
+  ];
+
+  /** Get-or-create the organization's "Standard Fabrication" process (Cut → Fit → Weld → QC → Paint). */
+  async ensureStandard(): Promise<Process> {
+    const organizationId = TenantContext.requireOrganizationId();
+    const existing = await this.repo.findOne({
+      where: { name: ProcessesService.STANDARD_NAME, organizationId },
+      relations: ['stages'],
+    });
+    if (existing) return existing;
+    const saved = await this.repo.save(this.repo.create({ name: ProcessesService.STANDARD_NAME, version: 1 }));
+    await this.stageRepo.save(
+      ProcessesService.STANDARD_STAGES.map((s, i) => this.stageRepo.create({ ...s, sequence: i + 1, processId: saved.id })),
+    );
+    return this.findOne(saved.id);
+  }
+
   async create(dto: CreateProcessDto): Promise<Process> {
     // Processes are standalone workflow templates — not tied to a product.
     const entity = this.repo.create({ name: dto.name, version: dto.version ?? 1 });

@@ -17,10 +17,11 @@ import { ProjectsService, Project, ProjectStatus } from '../core/services/projec
 interface WorkspaceTab { path: string; label: string; icon: string; }
 
 /**
- * Project workspace shell: a sticky identity header + live stat strip + tab bar,
- * hosting the per-project tabs (Overview / Assemblies / Progress / Shipping /
- * Quality) in a router-outlet. All tabs share the route-scoped
- * ProjectWorkspaceStore, so the header stays live as you act inside a tab.
+ * Project workspace shell — the project is a PURE design container: identity
+ * header + design stat strip + tabs (Overview / Assemblies & 3D / Work Orders)
+ * in a router-outlet. Production tracking (board, progress, quality, shipping)
+ * lives inside each work order at orders/:orderId. All tabs share the
+ * route-scoped ProjectWorkspaceStore.
  */
 @Component({
   selector: 'app-project-workspace',
@@ -82,32 +83,24 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
           }
           @if (store.importError()) { <p class="import-err">{{ store.importError() }}</p> }
 
-          <!-- Live stat strip -->
+          <!-- Design stat strip (production tracking lives inside each work order) -->
           <div class="stat-strip">
-            <div class="stat progress-stat">
-              <div class="stat-top"><span class="stat-num">{{ store.progress()?.percentComplete ?? 0 }}%</span><span class="stat-lbl">Complete</span></div>
-              <div class="mini-bar"><div class="mini-fill" [style.width.%]="store.progress()?.percentComplete ?? 0"></div></div>
-            </div>
-            <div class="divider"></div>
-            <div class="stat">
-              <span class="stat-num">{{ tonnes(store.progress()?.tonnage?.processedKg) }}<em>/{{ tonnes(store.progress()?.tonnage?.totalKg) }} t</em></span>
-              <span class="stat-lbl">Processed</span>
-            </div>
             <div class="stat">
               <span class="stat-num">{{ store.progress()?.nodes?.assembly ?? 0 }}<em>+{{ store.progress()?.nodes?.subassembly ?? 0 }}</em></span>
               <span class="stat-lbl">Assemblies</span>
             </div>
             <div class="stat">
+              <span class="stat-num">{{ store.progress()?.nodes?.part ?? 0 }}</span>
+              <span class="stat-lbl">Parts</span>
+            </div>
+            <div class="divider"></div>
+            <div class="stat">
+              <span class="stat-num">{{ tonnes(store.progress()?.tonnage?.totalKg) }}<em> t</em></span>
+              <span class="stat-lbl">Total weight</span>
+            </div>
+            <div class="stat">
               <span class="stat-num">{{ store.progress()?.workOrders ?? 0 }}</span>
               <span class="stat-lbl">Work orders</span>
-            </div>
-            <div class="stat" [class.good]="store.readyToShip() > 0">
-              <span class="stat-num">{{ store.readyToShip() }}</span>
-              <span class="stat-lbl">Ready to ship</span>
-            </div>
-            <div class="stat" [class.bad]="store.openNcr() > 0">
-              <span class="stat-num">{{ store.openNcr() }}</span>
-              <span class="stat-lbl">Open NCRs</span>
             </div>
           </div>
         } @else if (store.loading()) {
@@ -120,7 +113,7 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
             <a class="tab" [routerLink]="['/projects', store.id(), t.path]" routerLinkActive="active">
               <mat-icon>{{ t.icon }}</mat-icon>
               <span>{{ t.label }}</span>
-              @if (tabBadge(t.path); as b) { <span class="tab-badge" [class.bad]="t.path === 'quality' && store.openNcr() > 0">{{ b }}</span> }
+              @if (tabBadge(t.path); as b) { <span class="tab-badge">{{ b }}</span> }
             </a>
           }
         </nav>
@@ -231,13 +224,6 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
     .stat-num { font-size: 18px; font-weight: 700; color: var(--clay-text); font-family: 'Space Grotesk','Inter',sans-serif; line-height: 1.1; }
     .stat-num em { font-style: normal; font-size: 12px; font-weight: 500; color: var(--clay-text-muted); margin-left: 1px; }
     .stat-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); }
-    .stat.good .stat-num { color: var(--success); }
-    .stat.bad .stat-num { color: var(--danger); }
-    .progress-stat { min-width: 140px; }
-    .progress-stat .stat-top { display: flex; align-items: baseline; gap: 6px; }
-    .progress-stat .stat-lbl { align-self: flex-end; }
-    .mini-bar { height: 6px; border-radius: 4px; background: var(--clay-bg-warm); overflow: hidden; margin-top: 5px; }
-    .mini-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--clay-primary), var(--clay-primary-light)); transition: width .5s ease; }
     .divider { width: 1px; background: var(--clay-border); align-self: stretch; }
 
     /* ── Tab bar ───────────────────────────────────────────────────── */
@@ -261,7 +247,6 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
       border-radius: 999px; padding: 1px 7px; font-size: 11px; font-weight: 700; min-width: 18px; text-align: center;
     }
     .tab.active .tab-badge { background: var(--info-bg); color: var(--clay-primary); }
-    .tab-badge.bad { background: var(--danger-bg); color: var(--danger-text); }
 
     .ws-body { min-height: 200px; }
 
@@ -286,9 +271,7 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
   readonly tabs: WorkspaceTab[] = [
     { path: 'overview', label: 'Overview', icon: 'dashboard' },
     { path: 'assemblies', label: 'Assemblies & 3D', icon: 'account_tree' },
-    { path: 'progress', label: 'Progress', icon: 'insights' },
-    { path: 'shipping', label: 'Shipping', icon: 'local_shipping' },
-    { path: 'quality', label: 'Quality', icon: 'verified' },
+    { path: 'orders', label: 'Work Orders', icon: 'receipt_long' },
   ];
 
   ngOnInit(): void {
@@ -303,8 +286,7 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
 
   tabBadge(path: string): number | null {
     if (path === 'assemblies') { const c = this.store.nodes().length; return c > 0 ? c : null; }
-    if (path === 'shipping') { const c = this.store.readyToShip(); return c > 0 ? c : null; }
-    if (path === 'quality') { const c = this.store.openNcr(); return c > 0 ? c : null; }
+    if (path === 'orders') { const c = this.store.progress()?.workOrders ?? 0; return c > 0 ? c : null; }
     return null;
   }
 

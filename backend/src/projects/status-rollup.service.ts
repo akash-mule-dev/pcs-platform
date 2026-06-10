@@ -33,10 +33,11 @@ export class StatusRollupService {
   async recomputeBranchForNode(nodeId: string, organizationId = TenantContext.requireOrganizationId()): Promise<void> {
     const node = await this.nodeRepo.findOne({ where: { id: nodeId, organizationId } });
     if (!node) return;
-    const wo = await this.woRepo.findOne({ where: { organizationId, assemblyNodeId: nodeId } });
-    if (!wo) return;
+    // A node can carry several WOs (one per production order) — aggregate ALL their stages.
+    const nodeWos = await this.woRepo.find({ where: { organizationId, assemblyNodeId: nodeId } });
+    if (!nodeWos.length) return;
 
-    const stageRows = await this.wosRepo.find({ where: { workOrderId: wo.id } });
+    const stageRows = await this.wosRepo.find({ where: { workOrderId: In(nodeWos.map((w) => w.id)) } });
     const changedLeaf = leafFromStages(
       stageRows.map((srow) => ({ status: srow.status as unknown as StageStatus, stageId: srow.stageId, sequence: srow.stage?.sequence })),
       node.qtyShipped ?? 0,
@@ -109,8 +110,14 @@ export class StatusRollupService {
     if (!nodes.length) return { updated: 0, projectStatus: null };
 
     const wos = await this.woRepo.find({ where: { organizationId, assemblyNodeId: In(nodes.map((n) => n.id)) } });
-    const woByNode = new Map<string, WorkOrder>();
-    for (const w of wos) if (w.assemblyNodeId) woByNode.set(w.assemblyNodeId, w);
+    // A node can carry several WOs (one per production order) — aggregate ALL their stages.
+    const wosByNode = new Map<string, WorkOrder[]>();
+    for (const w of wos) {
+      if (!w.assemblyNodeId) continue;
+      const a = wosByNode.get(w.assemblyNodeId) ?? [];
+      a.push(w);
+      wosByNode.set(w.assemblyNodeId, a);
+    }
     const woIds = wos.map((w) => w.id);
     const stageRows = woIds.length ? await this.wosRepo.find({ where: { workOrderId: In(woIds) } }) : [];
     const stagesByWo = new Map<string, WorkOrderStage[]>();
@@ -118,13 +125,15 @@ export class StatusRollupService {
 
     const leaf = new Map<string, Rollup>();
     for (const node of nodes) {
-      const wo = woByNode.get(node.id);
-      if (!wo) continue;
-      const stages = (stagesByWo.get(wo.id) ?? []).map((s) => ({
-        status: s.status as unknown as StageStatus,
-        stageId: s.stageId,
-        sequence: s.stage?.sequence,
-      }));
+      const nodeWos = wosByNode.get(node.id);
+      if (!nodeWos?.length) continue;
+      const stages = nodeWos
+        .flatMap((w) => stagesByWo.get(w.id) ?? [])
+        .map((s) => ({
+          status: s.status as unknown as StageStatus,
+          stageId: s.stageId,
+          sequence: s.stage?.sequence,
+        }));
       leaf.set(node.id, leafFromStages(stages, node.qtyShipped ?? 0, node.quantity ?? 1));
     }
 

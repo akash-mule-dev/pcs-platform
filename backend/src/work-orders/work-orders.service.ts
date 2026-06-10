@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Not } from 'typeorm';
 import { WorkOrder, WorkOrderStatus } from './work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from './work-order-stage.entity.js';
 import { Stage } from '../stages/stage.entity.js';
+import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
+import { isQualityStageName, qcGateMessage } from './qc-gate.js';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto.js';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto.js';
 import { AssignWorkOrderDto } from './dto/assign-work-order.dto.js';
@@ -20,6 +22,7 @@ export class WorkOrdersService {
     @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
+    @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
     private readonly inventoryService: InventoryService,
@@ -29,6 +32,27 @@ export class WorkOrdersService {
   /** Best-effort: refresh the assembly/project status roll-up after a work-order stage change. */
   private async recomputeRollup(workOrderId: string): Promise<void> {
     try { await this.rollup.recomputeForWorkOrder(workOrderId); } catch { /* non-fatal */ }
+  }
+
+  /** Open NCRs linked to a fabricated assembly (anything not closed/cancelled blocks the quality gate). */
+  private countOpenNcrs(assemblyNodeId: string): Promise<number> {
+    return this.ncrRepo.count({
+      where: {
+        assemblyNodeId,
+        status: Not(In([NcrStatus.CLOSED, NcrStatus.CANCELLED])),
+        organizationId: TenantContext.getOrganizationId() ?? undefined,
+      },
+    });
+  }
+
+  /**
+   * Quality gate: a quality stage of a fabrication work order cannot be
+   * completed while the assembly still has open NCRs. Throws 400 when blocked.
+   */
+  private async assertQualityGate(wo: WorkOrder | null, stageName: string | null | undefined): Promise<void> {
+    if (!wo?.assemblyNodeId || !isQualityStageName(stageName)) return;
+    const open = await this.countOpenNcrs(wo.assemblyNodeId);
+    if (open > 0) throw new BadRequestException(qcGateMessage(wo.orderNumber, open));
   }
 
   async findAll(pageOptions: PageOptionsDto, status?: string, priority?: string): Promise<PageDto<WorkOrder>> {
@@ -143,6 +167,13 @@ export class WorkOrdersService {
       }
     }
 
+    // Quality gate: completing the whole WO cascades every stage (incl. quality)
+    // to completed — blocked while the fabricated assembly has open NCRs.
+    if (newStatus === WorkOrderStatus.COMPLETED && wo.assemblyNodeId) {
+      const open = await this.countOpenNcrs(wo.assemblyNodeId);
+      if (open > 0) throw new BadRequestException(qcGateMessage(wo.orderNumber, open));
+    }
+
     const oldStatus = wo.status;
     wo.status = newStatus;
     const now = new Date();
@@ -209,8 +240,14 @@ export class WorkOrdersService {
   }
 
   async updateStageStatus(workOrderId: string, stageId: string, newStatus: WorkOrderStageStatus): Promise<WorkOrder> {
-    const wos = await this.wosRepo.findOne({ where: { id: stageId, workOrderId } });
+    const wos = await this.wosRepo.findOne({ where: { id: stageId, workOrderId }, relations: ['stage'] });
     if (!wos) throw new NotFoundException('Work order stage not found');
+
+    // Quality gate: a quality stage can't be completed while the assembly has open NCRs.
+    if (newStatus === WorkOrderStageStatus.COMPLETED && wos.status !== WorkOrderStageStatus.COMPLETED) {
+      const wo = await this.woRepo.findOne({ where: { id: workOrderId } });
+      await this.assertQualityGate(wo, wos.stage?.name);
+    }
 
     const now = new Date();
     wos.status = newStatus;

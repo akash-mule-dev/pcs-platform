@@ -144,6 +144,16 @@ export interface ProjectQualitySummary {
   totals: { inspected: number; failed: number; openNcr: number };
 }
 
+export type OrderStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled';
+export interface ProductionOrder {
+  id: string; number: string; projectId: string; customerName: string | null;
+  quantity: number; processId: string | null; status: OrderStatus; dueDate: string | null; createdAt: string;
+}
+export interface OrderStageRow { stageId: string; workOrderStageId: string; status: string; qtyDone: number; qtyTotal: number; sequence: number; }
+export interface OrderBoardItem { nodeId: string; mark: string; nodeType: string; stages: OrderStageRow[]; }
+export interface OrderBoard { order: ProductionOrder; stages: { id: string; name: string; sequence: number }[]; items: OrderBoardItem[]; }
+export interface CreateOrder { processId: string; customerName?: string; quantity?: number; dueDate?: string; notes?: string; }
+
 @Injectable({ providedIn: 'root' })
 export class ProjectsService {
   private readonly base = `${environment.apiUrl}/projects`;
@@ -197,6 +207,11 @@ export class ProjectsService {
     );
   }
 
+  /** Get-or-create the org's "Standard Fabrication" process (Cut → Fit → Weld → QC → Paint). */
+  ensureStandardProcess(): Observable<{ id: string; name: string }> {
+    return this.http.post<{ id: string; name: string }>(`${environment.apiUrl}/processes/standard`, {});
+  }
+
   generateWorkOrders(projectId: string, processId: string): Observable<{ created: number; skipped: number }> {
     return this.http.post<{ created: number; skipped: number }>(`${this.base}/${projectId}/generate-work-orders`, { processId });
   }
@@ -248,5 +263,23 @@ export class ProjectsService {
   /** Per-node quality status + open-NCR map for the project (badges + ship gate). */
   qualitySummary(projectId: string): Observable<ProjectQualitySummary> {
     return this.http.get<ProjectQualitySummary>(`${this.base}/${projectId}/quality-summary`);
+  }
+
+  // ── Production orders (per-customer/run instances; their own process + quantity) ──
+  listOrders(projectId: string): Observable<ProductionOrder[]> {
+    return this.http.get<ProductionOrder[]>(`${this.base}/${projectId}/orders`);
+  }
+  createOrder(projectId: string, body: CreateOrder): Observable<ProductionOrder> {
+    return this.http.post<ProductionOrder>(`${this.base}/${projectId}/orders`, body);
+  }
+  getOrder(orderId: string): Observable<ProductionOrder> {
+    return this.http.get<ProductionOrder>(`${environment.apiUrl}/orders/${orderId}`);
+  }
+  orderBoard(orderId: string): Observable<OrderBoard> {
+    return this.http.get<OrderBoard>(`${environment.apiUrl}/orders/${orderId}/stage-board`);
+  }
+  /** Update a stage: qtyDone stepper, or status for qty=1 / skip. */
+  setOrderStage(orderId: string, wosId: string, body: { qtyDone?: number; status?: string }): Observable<unknown> {
+    return this.http.patch(`${environment.apiUrl}/orders/${orderId}/stages/${wosId}`, body);
   }
 }

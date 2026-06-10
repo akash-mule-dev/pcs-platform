@@ -48,6 +48,13 @@ export class WorkOrderStage extends TenantOwnedEntity {
   @Column({ type: 'enum', enum: WorkOrderStageStatus, default: WorkOrderStageStatus.PENDING })
   status: WorkOrderStageStatus;
 
+  // Count-based quantity tracking: units done out of total (= node qty x order qty).
+  @Column({ name: 'qty_total', type: 'integer', nullable: true })
+  qtyTotal: number | null;
+
+  @Column({ name: 'qty_done', type: 'integer', default: 0 })
+  qtyDone: number;
+
   @Column({ name: 'started_at', type: 'timestamp', nullable: true })
   startedAt: Date | null;
 

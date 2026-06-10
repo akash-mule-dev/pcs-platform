@@ -29,6 +29,13 @@ export class ProcessesController {
     return this.service.findOne(id);
   }
 
+  @Post('standard')
+  @Roles('admin', 'manager')
+  @ApiOperation({ summary: 'Get-or-create the "Standard Fabrication" process (Cut → Fit → Weld → QC → Paint)' })
+  ensureStandard() {
+    return this.service.ensureStandard();
+  }
+
   @Post()
   @Roles('admin', 'manager')
   @ApiOperation({ summary: 'Create process' })

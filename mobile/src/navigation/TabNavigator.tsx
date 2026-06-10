@@ -30,6 +30,7 @@ import { ProjectListScreen } from '../screens/projects/ProjectListScreen';
 import { ProjectDetailScreen } from '../screens/projects/ProjectDetailScreen';
 import { AssemblyDetailScreen } from '../screens/projects/AssemblyDetailScreen';
 import { PartViewerScreen } from '../screens/projects/PartViewerScreen';
+import { OrderBoardScreen } from '../screens/projects/OrderBoardScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -92,6 +93,7 @@ function ProjectsStack() {
     <PStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
       <PStack.Screen name="ProjectList" component={ProjectListScreen} options={{ title: 'Projects' }} />
       <PStack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: 'Project' }} />
+      <PStack.Screen name="OrderBoard" component={OrderBoardScreen} options={{ title: 'Work Order' }} />
       <PStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />
       <PStack.Screen name="PartViewer" component={PartViewerScreen} options={{ title: '3D Viewer' }} />
     </PStack.Navigator>

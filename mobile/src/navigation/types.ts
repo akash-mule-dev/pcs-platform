@@ -21,7 +21,8 @@ export type WorkOrdersStackParamList = {
 export type ProjectsStackParamList = {
   ProjectList: undefined;
   ProjectDetail: { projectId: string; name: string };
-  AssemblyDetail: { projectId: string; nodeId: string; mark: string };
+  OrderBoard: { orderId: string; projectId: string; orderNumber: string };
+  AssemblyDetail: { orderId: string; projectId: string; nodeId: string; mark: string };
   PartViewer: {
     projectId: string;
     nodeId: string;

@@ -63,6 +63,11 @@ export interface MRecordQuality {
 export interface MRaiseNcr { title?: string; description?: string; severity?: string; qualityDataId?: string }
 export interface MNcrRef { id: string; number: string; title: string; status: string; severity: string }
 
+// Kanban / per-stage board: each item carries its INDEPENDENT status at every stage.
+export interface MStageBoardStage { stageId: string; workOrderStageId: string; status: string; sequence: number }
+export interface MStageBoardItem { nodeId: string; mark: string; nodeType: string; productionStatus: string; percentComplete: number; stages: MStageBoardStage[] }
+export interface MStageBoard { stages: MStage[]; items: MStageBoardItem[] }
+
 export const projectsService = {
   list: () => api.getList<MProject>('/projects'),
   getNodes: (projectId: string) => api.getList<MNode>(`/projects/${projectId}/nodes`),
@@ -79,6 +84,7 @@ export const projectsService = {
     api.post<MQualityEntry>(`/projects/${projectId}/nodes/${nodeId}/quality`, body),
   raiseNodeNcr: (projectId: string, nodeId: string, body: MRaiseNcr) =>
     api.post<MNcrRef>(`/projects/${projectId}/nodes/${nodeId}/ncr`, body),
+  getStageBoard: (projectId: string) => api.get<MStageBoard>(`/projects/${projectId}/stage-board`),
 };
 
 /** Production-status colors/labels for assembly chips. */
@@ -95,4 +101,35 @@ export const ProdStatusLabels: Record<string, string> = {
   ready_to_ship: 'Ready to ship',
   shipped: 'Shipped',
   on_hold: 'On hold',
+};
+
+// ── Production orders (per-customer/run instances of a project) ──
+export interface MOrder {
+  id: string; number: string; projectId: string; customerName?: string | null;
+  quantity: number; processId?: string | null; status: string; dueDate?: string | null; createdAt?: string;
+}
+export interface MOrderStageRow { stageId: string; workOrderStageId: string; status: string; qtyDone: number; qtyTotal: number; sequence: number }
+export interface MOrderBoardItem { nodeId: string; mark: string; nodeType: string; stages: MOrderStageRow[] }
+export interface MOrderBoard { order: MOrder; stages: MStage[]; items: MOrderBoardItem[] }
+export interface MOrderNodeStage { id: string; stageId: string; name: string; sequence: number; status: string; qtyDone: number; qtyTotal: number }
+export interface MOrderNodeStages { orderId: string; workOrderId: string | null; nodeStatus: string; percentComplete: number; stages: MOrderNodeStage[] }
+export interface MProcess { id: string; name: string }
+export interface MCreateOrder { processId: string; customerName?: string; quantity?: number; dueDate?: string; notes?: string }
+
+export const ordersService = {
+  listByProject: (projectId: string) => api.getList<MOrder>(`/projects/${projectId}/orders`),
+  create: (projectId: string, body: MCreateOrder) => api.post<MOrder>(`/projects/${projectId}/orders`, body),
+  get: (orderId: string) => api.get<MOrder>(`/orders/${orderId}`),
+  board: (orderId: string) => api.get<MOrderBoard>(`/orders/${orderId}/stage-board`),
+  nodeStages: (orderId: string, nodeId: string) => api.get<MOrderNodeStages>(`/orders/${orderId}/nodes/${nodeId}/stages`),
+  setStage: (orderId: string, workOrderStageId: string, body: { qtyDone?: number; status?: string }) =>
+    api.patch<MOrderNodeStage>(`/orders/${orderId}/stages/${workOrderStageId}`, body),
+  processes: () => api.getList<MProcess>('/processes'),
+};
+
+export const OrderStatusColors: Record<string, string> = {
+  planned: '#9ca3af', in_progress: '#f9a825', completed: '#2e7d32', cancelled: '#c62828',
+};
+export const OrderStatusLabels: Record<string, string> = {
+  planned: 'Planned', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled',
 };
