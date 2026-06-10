@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Project } from './project.entity.js';
 import { AssemblyNode } from './assembly-node.entity.js';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
@@ -10,6 +10,9 @@ import { WorkOrdersService } from '../work-orders/work-orders.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 
 export interface NodeStageRow { id: string | null; stageId: string; name: string; sequence: number; status: string }
+export interface StageBoardStageRow { stageId: string; workOrderStageId: string; status: string; sequence: number }
+export interface StageBoardItem { nodeId: string; mark: string; nodeType: string; productionStatus: string; percentComplete: number; stages: StageBoardStageRow[] }
+export interface StageBoard { stages: { id: string; name: string; sequence: number; targetTimeSeconds: number }[]; items: StageBoardItem[] }
 
 @Injectable()
 export class ProjectStageService {
@@ -54,6 +57,49 @@ export class ProjectStageService {
       percentComplete: Number(node.percentComplete) || 0,
       stages: pipeline.map((s) => ({ id: null, stageId: s.id, name: s.name, sequence: s.sequence, status: 'pending' })),
     };
+  }
+
+  /**
+   * Kanban board data: the project's stage pipeline + every work-order item
+   * (assembly/subassembly) with its INDEPENDENT per-stage statuses. The client
+   * places each item in the column of its active stage and can move it to any
+   * stage (statuses are independent — no forced sequence).
+   */
+  async getStageBoard(projectId: string): Promise<StageBoard> {
+    const organizationId = TenantContext.requireOrganizationId();
+    const project = await this.projectRepo.findOne({ where: { id: projectId, organizationId } });
+    if (!project) throw new NotFoundException('Project not found');
+    const stages = await this.getProjectStages(projectId);
+    const nodes = await this.nodeRepo.find({ where: { projectId, organizationId } });
+    const woNodeIds = nodes.filter((n) => { const t = String(n.nodeType); return t === 'assembly' || t === 'subassembly'; }).map((n) => n.id);
+    if (!woNodeIds.length) return { stages, items: [] };
+    const wos = await this.woRepo.find({ where: { organizationId, assemblyNodeId: In(woNodeIds) } });
+    if (!wos.length) return { stages, items: [] };
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const woById = new Map(wos.map((w) => [w.id, w]));
+    const rows = await this.wosRepo.find({ where: { workOrderId: In(wos.map((w) => w.id)) }, relations: ['stage'] });
+    const byNode = new Map<string, StageBoardItem>();
+    for (const r of rows) {
+      const wo = woById.get(r.workOrderId);
+      const node = wo?.assemblyNodeId ? nodeById.get(wo.assemblyNodeId) : undefined;
+      if (!node) continue;
+      let it = byNode.get(node.id);
+      if (!it) {
+        it = {
+          nodeId: node.id,
+          mark: node.mark || node.name,
+          nodeType: String(node.nodeType),
+          productionStatus: String(node.productionStatus),
+          percentComplete: Number(node.percentComplete) || 0,
+          stages: [],
+        };
+        byNode.set(node.id, it);
+      }
+      it.stages.push({ stageId: r.stageId, workOrderStageId: r.id, status: String(r.status), sequence: r.stage?.sequence ?? 0 });
+    }
+    const items = [...byNode.values()];
+    for (const it of items) it.stages.sort((a, b) => a.sequence - b.sequence);
+    return { stages, items };
   }
 
   /** Set a node's work-order stage status. Delegates to WorkOrdersService → live roll-up + audit + websocket. */

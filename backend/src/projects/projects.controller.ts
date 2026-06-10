@@ -20,6 +20,13 @@ export class ProjectsController {
     return this.service.findAll();
   }
 
+  // NOTE: must precede `@Get(':id')` so the literal path isn't matched as an id.
+  @Get('summary')
+  @ApiOperation({ summary: 'List projects with production rollup (portfolio dashboard)' })
+  findAllWithMetrics() {
+    return this.service.findAllWithMetrics();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get project by ID' })
   findOne(@Param('id') id: string) {

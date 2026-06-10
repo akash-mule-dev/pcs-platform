@@ -11,9 +11,13 @@ import { useAuth } from '../../context/AuthContext';
 type Rt = RouteProp<ProjectsStackParamList, 'AssemblyDetail'>;
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'AssemblyDetail'>;
 
-const NEXT: Record<string, string> = { pending: 'in_progress', in_progress: 'completed', completed: 'pending', skipped: 'pending' };
-const ACTION: Record<string, string> = { pending: 'Start', in_progress: 'Complete', completed: 'Reset', skipped: 'Reset' };
 const QA_COLORS: Record<string, string> = { pass: '#2e7d32', warning: '#f9a825', fail: '#c62828' };
+// A stage's status is INDEPENDENT — set any stage, any time, in any order.
+const STAGE_OPTS: { key: string; label: string; color: string }[] = [
+  { key: 'pending', label: 'Not started', color: '#9ca3af' },
+  { key: 'in_progress', label: 'In progress', color: '#f9a825' },
+  { key: 'completed', label: 'Complete', color: '#2e7d32' },
+];
 
 export function AssemblyDetailScreen() {
   const route = useRoute<Rt>();
@@ -63,11 +67,12 @@ export function AssemblyDetailScreen() {
     setRefreshing(false);
   };
 
-  const advance = async (st: MNodeStage) => {
-    if (!st.id) return;
-    setBusy(st.id);
+  // Set ONE stage's status directly — no cascade, no forced order.
+  const setStage = async (st: MNodeStage, status: string) => {
+    if (!st.id || st.status === status) return;
+    setBusy(st.stageId);
     try {
-      await projectsService.setNodeStage(projectId, nodeId, st.id, NEXT[st.status] || 'in_progress');
+      await projectsService.setNodeStage(projectId, nodeId, st.id, status);
       await load();
     } catch {
       /* ignore */
@@ -127,6 +132,7 @@ export function AssemblyDetailScreen() {
     });
   };
 
+
   const specRows = (): { k: string; v: string }[] => {
     const out: { k: string; v: string }[] = [];
     if (node?.profile) out.push({ k: 'Profile / section', v: node.profile });
@@ -152,7 +158,6 @@ export function AssemblyDetailScreen() {
 
   const pct = Math.round(data.percentComplete || 0);
   const statusColor = ProdStatusColors[data.nodeStatus] || Colors.medium;
-  const currentIdx = data.stages.findIndex((s) => s.status !== 'completed' && s.status !== 'skipped');
   const rows = specRows();
 
   return (
@@ -236,23 +241,39 @@ export function AssemblyDetailScreen() {
         </View>
       )}
 
-      <Text style={styles.sectionTitle}>Stages</Text>
+      <Text style={styles.sectionTitle}>Stages — set each independently</Text>
       {data.stages.length === 0 && <Text style={styles.muted}>No stages yet — attach a process / generate work orders first.</Text>}
       {data.stages.map((s, i) => {
         const sc = StatusColors[s.status] || Colors.medium;
-        const isCurrent = i === currentIdx;
         return (
-          <View key={s.stageId} style={[styles.stage, isCurrent && styles.stageCurrent]}>
+          <View key={s.stageId} style={styles.stage}>
             <View style={[styles.seq, { backgroundColor: sc }]}><Text style={styles.seqTxt}>{i + 1}</Text></View>
             <View style={styles.stageBody}>
               <Text style={styles.stageName}>{s.name}</Text>
-              <Text style={[styles.stageStatus, { color: sc }]}>{s.status.replace('_', ' ')}</Text>
+              {data.workOrderId && s.id ? (
+                <View style={styles.segRow}>
+                  {STAGE_OPTS.map((o) => {
+                    const on = s.status === o.key;
+                    return (
+                      <TouchableOpacity
+                        key={o.key}
+                        disabled={busy === s.stageId}
+                        style={[styles.seg, on && { backgroundColor: o.color, borderColor: o.color }]}
+                        onPress={() => setStage(s, o.key)}
+                      >
+                        {busy === s.stageId && on ? (
+                          <ActivityIndicator size="small" color={Colors.white} />
+                        ) : (
+                          <Text style={[styles.segTxt, on && styles.segTxtOn]}>{o.label}</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : (
+                <Text style={[styles.stageStatus, { color: sc }]}>{s.status.replace('_', ' ')}</Text>
+              )}
             </View>
-            {data.workOrderId && s.id ? (
-              <TouchableOpacity style={styles.actionBtn} disabled={busy === s.id} onPress={() => advance(s)}>
-                {busy === s.id ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={styles.actionTxt}>{ACTION[s.status] || 'Start'}</Text>}
-              </TouchableOpacity>
-            ) : null}
           </View>
         );
       })}
@@ -284,15 +305,16 @@ const styles = StyleSheet.create({
   specRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border, gap: 12 },
   specK: { color: Colors.textSecondary, fontSize: 13, flexShrink: 1 },
   specV: { color: Colors.text, fontSize: 13, fontWeight: '600', maxWidth: '60%' },
-  stage: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, padding: 12, marginBottom: 10 },
-  stageCurrent: { borderColor: Colors.primary, borderWidth: 2 },
+  stage: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: Colors.card, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, padding: 12, marginBottom: 10 },
   seq: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   seqTxt: { color: Colors.white, fontWeight: '700' },
   stageBody: { flex: 1 },
   stageName: { fontSize: 15, fontWeight: '600', color: Colors.text },
   stageStatus: { fontSize: 12, marginTop: 2, textTransform: 'capitalize' },
-  actionBtn: { backgroundColor: Colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, minWidth: 84, alignItems: 'center' },
-  actionTxt: { color: Colors.white, fontWeight: '700' },
+  segRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  seg: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: Colors.background, minWidth: 92, alignItems: 'center' },
+  segTxt: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  segTxtOn: { color: Colors.white },
   qaActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   qbtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: Colors.card },
   qbtnT: { color: Colors.text, fontWeight: '600', fontSize: 13 },

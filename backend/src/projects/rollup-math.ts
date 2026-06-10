@@ -20,12 +20,15 @@ export function leafFromStages(
   const done = ordered.filter((s) => isDone(s.status)).length;
   const anyProg = ordered.some((s) => s.status === 'in_progress');
   const percent = Math.round((done / total) * 10000) / 100;
-  const pending = ordered.find((s) => !isDone(s.status));
+  // "Active" stage = where work is happening now: the first in-progress stage,
+  // else the first not-yet-done stage. Order-independent — stages can be worked
+  // out of sequence, so this is a hint, not a constraint.
+  const active = ordered.find((s) => s.status === 'in_progress') ?? ordered.find((s) => !isDone(s.status));
   let status: ProdStatus;
   if (done === total) status = qtyShipped >= quantity && quantity > 0 ? 'shipped' : 'ready_to_ship';
   else if (done > 0 || anyProg) status = 'in_progress';
   else status = 'not_started';
-  return { status, percentComplete: percent, currentStageId: pending ? pending.stageId : null };
+  return { status, percentComplete: percent, currentStageId: active ? active.stageId : null };
 }
 
 /** Combine child statuses into a parent/group status. */

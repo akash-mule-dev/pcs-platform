@@ -24,24 +24,12 @@ export const routes: Routes = [
         loadComponent: () => import('./products/product-list/product-list.component').then(m => m.ProductListComponent)
       },
       {
+        // Projects feature (portfolio list + per-project workspace with tabbed
+        // child routes). Lazily loaded so the workspace shell + store stay out of
+        // the main bundle.
         path: 'projects',
         canActivate: [featureGuard('projects')],
-        loadComponent: () => import('./projects/project-list.component').then(m => m.ProjectListComponent)
-      },
-      {
-        path: 'projects/:id',
-        canActivate: [featureGuard('projects')],
-        loadComponent: () => import('./projects/project-detail.component').then(m => m.ProjectDetailComponent)
-      },
-      {
-        path: 'projects/:id/shipping',
-        canActivate: [featureGuard('projects')],
-        loadComponent: () => import('./projects/project-shipping.component').then(m => m.ProjectShippingComponent)
-      },
-      {
-        path: 'projects/:id/progress',
-        canActivate: [featureGuard('projects')],
-        loadComponent: () => import('./projects/project-progress.component').then(m => m.ProjectProgressComponent)
+        loadChildren: () => import('./projects/projects.routes').then(m => m.PROJECTS_ROUTES),
       },
       {
         path: 'processes',

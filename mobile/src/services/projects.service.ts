@@ -22,6 +22,7 @@ export interface MNode {
   profile?: string | null;
   materialGrade?: string | null;
   productionStatus: string;
+  currentStageId?: string | null;
   percentComplete: number;
   modelId?: string | null;
   ifcGuid?: string | null;

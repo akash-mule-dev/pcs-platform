@@ -50,6 +50,17 @@ export interface AssemblyNode {
   properties: Record<string, unknown> | null;
 }
 
+export interface ProjectMetrics {
+  nodeCount: number;
+  partCount: number;
+  assemblyCount: number;
+  percentComplete: number;
+  tonnage: { totalKg: number; processedKg: number; shippedKg: number };
+  readyToShip: number;
+  inProgress: number;
+}
+export type ProjectSummary = Project & { metrics: ProjectMetrics };
+
 export interface CreateProject {
   name: string;
   processId?: string | null;
@@ -141,6 +152,11 @@ export class ProjectsService {
 
   list(): Observable<Project[]> {
     return this.http.get<Project[]>(this.base);
+  }
+
+  /** Portfolio list: each project plus its production rollup, in one request. */
+  summary(): Observable<ProjectSummary[]> {
+    return this.http.get<ProjectSummary[]>(`${this.base}/summary`);
   }
 
   get(id: string): Observable<Project> {

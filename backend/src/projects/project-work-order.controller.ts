@@ -49,6 +49,13 @@ export class ProjectWorkOrderController {
     return this.stageService.getProjectStages(id);
   }
 
+  @Get(':id/stage-board')
+  @Roles('admin', 'manager', 'supervisor', 'operator')
+  @ApiOperation({ summary: 'Kanban board: stages + each work-order item with its per-stage statuses' })
+  stageBoard(@Param('id') id: string) {
+    return this.stageService.getStageBoard(id);
+  }
+
   @Get(':id/nodes/:nodeId/stages')
   @Roles('admin', 'manager', 'supervisor', 'operator')
   @ApiOperation({ summary: "An assembly's per-stage status (from its work order)" })
