@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ShippingService } from './shipping.service.js';
+import { ShipmentStatus } from './shipment.entity.js';
 import { CreateShipmentDto } from './dto/create-shipment.dto.js';
 import { AddShipmentItemDto } from './dto/add-shipment-item.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -38,6 +39,21 @@ export class ShippingController {
   @ApiOperation({ summary: 'Add an assembly to a shipment' })
   addItem(@Param('id') id: string, @Body() dto: AddShipmentItemDto) {
     return this.service.addItem(id, dto);
+  }
+
+  @Delete(':id/items/:itemId')
+  @Roles('admin', 'manager')
+  @ApiOperation({ summary: 'Remove an assembly from a shipment' })
+  removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
+    return this.service.removeItem(id, itemId);
+  }
+
+  @Patch(':id/status')
+  @Roles('admin', 'manager')
+  @ApiOperation({ summary: 'Set shipment status (shipping advances the assemblies)' })
+  setStatus(@Param('id') id: string, @Body() body: { status?: ShipmentStatus }) {
+    if (!body?.status) throw new BadRequestException('status is required');
+    return this.service.setStatus(id, body.status);
   }
 
   @Patch(':id')

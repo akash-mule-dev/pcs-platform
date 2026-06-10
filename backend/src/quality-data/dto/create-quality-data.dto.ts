@@ -17,4 +17,6 @@ export class CreateQualityDataDto {
   @ApiPropertyOptional() @IsString() @IsOptional() measurementUnit?: string;
   @ApiPropertyOptional() @IsNumber() @IsOptional() toleranceMin?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() toleranceMax?: number;
+  @ApiPropertyOptional() @IsUUID() @IsOptional() assemblyNodeId?: string;
+  @ApiPropertyOptional() @IsUUID() @IsOptional() projectId?: string;
 }

@@ -38,12 +38,17 @@ try {
 export function ARViewScreen() {
   const route = useRoute<Route>();
   const navigation = useNavigation<Nav>();
-  const { modelId, fileUrl } = route.params;
+  const { modelId, fileUrl, meshNames, partLabel } = route.params;
 
   const [pickerVisible, setPickerVisible] = useState(false);
   const [trackingMode, setTrackingMode] = useState<TrackingMode | null>(null);
 
-  const { model, loading, error, progress } = useRemoteModel(fileUrl, modelId);
+  const { model, loading, error, progress } = useRemoteModel(
+    fileUrl,
+    modelId,
+    partLabel || undefined,
+    meshNames && meshNames.length ? meshNames : undefined,
+  );
 
   const startSession = useCallback(() => setPickerVisible(true), []);
   const handleModeSelected = useCallback((mode: TrackingMode) => {
@@ -134,10 +139,12 @@ export function ARViewScreen() {
   return (
     <View style={styles.container}>
       <Ionicons name="glasses-outline" size={64} color={Colors.primary} />
-      <Text style={styles.titleText}>AR QA Inspector</Text>
+      <Text style={styles.titleText}>{partLabel ? `AR · ${partLabel}` : 'AR QA Inspector'}</Text>
       <Text style={styles.descText}>
-        Overlay the model on your real product and walk around to inspect it.{'\n'}
-        Toggle wireframe edges, then measure against the physical part.
+        {partLabel
+          ? `Only ${partLabel} is shown — overlay it on the real part and walk around to inspect it.`
+          : 'Overlay the model on your real product and walk around to inspect it.'}
+        {'\n'}Toggle wireframe edges, then measure against the physical part.
       </Text>
 
       <TouchableOpacity style={styles.primaryButton} onPress={startSession}>

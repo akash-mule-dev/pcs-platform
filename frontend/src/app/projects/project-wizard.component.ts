@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpEventType } from '@angular/common/http';
@@ -8,6 +8,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
 import { MatStepper, MatStepperModule } from '@angular/material/stepper';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { ProjectsService, Project, CreateProject, ImportResult } from '../core/services/projects.service';
@@ -17,7 +18,7 @@ import { ProjectsService, Project, CreateProject, ImportResult } from '../core/s
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule, MatDialogModule, MatButtonModule, MatIconModule,
-    MatFormFieldModule, MatInputModule, MatStepperModule, MatProgressBarModule,
+    MatFormFieldModule, MatInputModule, MatSelectModule, MatStepperModule, MatProgressBarModule,
   ],
   template: `
     <h2 mat-dialog-title>New project</h2>
@@ -43,6 +44,13 @@ import { ProjectsService, Project, CreateProject, ImportResult } from '../core/s
             <mat-form-field appearance="outline">
               <mat-label>Due date</mat-label>
               <input matInput type="date" formControlName="dueDate">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Process (stage routing)</mat-label>
+              <mat-select formControlName="processId">
+                <mat-option [value]="''">— none —</mat-option>
+                @for (p of processes; track p.id) { <mat-option [value]="p.id">{{ p.name }}</mat-option> }
+              </mat-select>
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Description</mat-label>
@@ -129,7 +137,7 @@ import { ProjectsService, Project, CreateProject, ImportResult } from '../core/s
     .chip { padding: 3px 10px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: .8rem; font-weight: 600; text-transform: capitalize; }
   `],
 })
-export class ProjectWizardComponent {
+export class ProjectWizardComponent implements OnInit {
   private fb = inject(FormBuilder);
   private svc = inject(ProjectsService);
   private dialogRef = inject(MatDialogRef<ProjectWizardComponent>);
@@ -140,7 +148,14 @@ export class ProjectWizardComponent {
     clientName: [''],
     dueDate: [''],
     description: [''],
+    processId: [''],
   });
+
+  processes: { id: string; name: string }[] = [];
+
+  ngOnInit(): void {
+    this.svc.listProcesses().subscribe({ next: (p) => (this.processes = p), error: () => {} });
+  }
 
   selectedFile: File | null = null;
   importing = false;
@@ -161,6 +176,7 @@ export class ProjectWizardComponent {
     if (v.clientName) dto.clientName = v.clientName;
     if (v.dueDate) dto.dueDate = v.dueDate;
     if (v.description) dto.description = v.description;
+    if (v.processId) dto.processId = v.processId;
     return dto;
   }
 

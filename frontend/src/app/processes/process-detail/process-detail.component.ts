@@ -32,10 +32,6 @@ import { StageDialogComponent } from './stage-dialog.component';
           </div>
         </div>
         <div class="topbar-meta" *ngIf="process">
-          <div class="meta-chip">
-            <mat-icon>inventory_2</mat-icon>
-            <span>{{ process.product?.name }}</span>
-          </div>
           <div class="meta-chip mono">
             <span>v{{ process.version }}</span>
           </div>

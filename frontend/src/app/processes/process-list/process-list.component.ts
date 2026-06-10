@@ -59,7 +59,6 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
                   </div>
                   <div class="entity-info">
                     <span class="entity-name">{{ p.name }}</span>
-                    <span class="entity-sub">{{ p.product?.name || 'No product' }}</span>
                   </div>
                 </div>
               </a>

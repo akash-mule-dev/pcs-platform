@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Process } from './process.entity.js';
@@ -18,7 +18,7 @@ export class ProcessesService {
   async findAll(pageOptions: PageOptionsDto): Promise<PageDto<Process>> {
     const [items, count] = await this.repo.findAndCount({
       where: { organizationId: TenantContext.getOrganizationId() ?? undefined },
-      relations: ['stages', 'product'],
+      relations: ['stages'],
       order: { createdAt: pageOptions.order },
       skip: pageOptions.skip,
       take: pageOptions.limit,
@@ -27,37 +27,22 @@ export class ProcessesService {
   }
 
   async findOne(id: string): Promise<Process> {
-    const item = await this.repo.findOne({ where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined }, relations: ['stages', 'product'] });
+    const item = await this.repo.findOne({ where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined }, relations: ['stages'] });
     if (!item) throw new NotFoundException('Process not found');
     return item;
   }
 
   async create(dto: CreateProcessDto): Promise<Process> {
-    let version = dto.version;
-    if (version == null) {
-      const result = await this.repo
-        .createQueryBuilder('p')
-        .select('COALESCE(MAX(p.version), 0)', 'maxVersion')
-        .where('p.product_id = :productId', { productId: dto.productId })
-        .getRawOne();
-      version = (result?.maxVersion ?? 0) + 1;
+    // Processes are standalone workflow templates — not tied to a product.
+    const entity = this.repo.create({ name: dto.name, version: dto.version ?? 1 });
+    const saved = await this.repo.save(entity);
+    if (dto.stages?.length) {
+      const stageEntities = dto.stages.map((s, i) =>
+        this.stageRepo.create({ ...s, sequence: i + 1, processId: saved.id }),
+      );
+      await this.stageRepo.save(stageEntities);
     }
-    const entity = this.repo.create({ name: dto.name, version, productId: dto.productId });
-    try {
-      const saved = await this.repo.save(entity);
-      if (dto.stages?.length) {
-        const stageEntities = dto.stages.map((s, i) =>
-          this.stageRepo.create({ ...s, sequence: i + 1, processId: saved.id }),
-        );
-        await this.stageRepo.save(stageEntities);
-      }
-      return this.findOne(saved.id);
-    } catch (err: any) {
-      if (err.code === '23505' || err.code === 'SQLITE_CONSTRAINT') {
-        throw new ConflictException(`A process for this product with version ${version} already exists`);
-      }
-      throw err;
-    }
+    return this.findOne(saved.id);
   }
 
   async update(id: string, dto: UpdateProcessDto): Promise<Process> {

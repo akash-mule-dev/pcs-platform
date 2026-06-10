@@ -21,6 +21,11 @@ export class Ncr extends TenantOwnedEntity {
   @Column({ name: 'material_id', type: 'uuid', nullable: true }) materialId: string | null;
   @Column({ name: 'serial_id', type: 'uuid', nullable: true }) serialId: string | null;
 
+  // Fabrication linkage
+  @Column({ name: 'assembly_node_id', type: 'uuid', nullable: true }) assemblyNodeId: string | null;
+  @Column({ name: 'project_id', type: 'uuid', nullable: true }) projectId: string | null;
+  @Column({ name: 'quality_data_id', type: 'uuid', nullable: true }) qualityDataId: string | null;
+
   @Column({ name: 'template_id', type: 'uuid', nullable: true }) templateId: string | null;
   @Column({ name: 'data_json', type: 'jsonb', nullable: true }) dataJson: Record<string, any> | null;
 

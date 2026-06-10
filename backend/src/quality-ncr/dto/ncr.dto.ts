@@ -13,6 +13,9 @@ export class CreateNcrDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() templateId?: string;
   @ApiPropertyOptional({ type: Object, description: 'Form data captured against the template' }) @IsOptional() @IsObject() dataJson?: Record<string, any>;
   @ApiPropertyOptional() @IsOptional() @IsUUID() assignedTo?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() assemblyNodeId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() projectId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() qualityDataId?: string;
 }
 
 export class UpdateNcrDto {

@@ -6,7 +6,7 @@ import { AssemblyNode, NodeProductionStatus } from './assembly-node.entity.js';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage } from '../work-orders/work-order-stage.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
-import { aggregateStatus, aggregateTree, leafFromStages, Rollup, StageStatus } from './rollup-math.js';
+import { aggregateStatus, aggregateTree, branchRollup, leafFromStages, ProdStatus, Rollup, StageStatus } from './rollup-math.js';
 
 @Injectable()
 export class StatusRollupService {
@@ -18,20 +18,88 @@ export class StatusRollupService {
   ) {}
 
   /**
-   * Resolve the project that a work order's assembly node belongs to and
-   * recompute it. Called automatically when a work-order stage changes.
-   * No-ops for product (non-fabrication) work orders.
+   * Called automatically when a work-order stage changes. Recomputes only the
+   * AFFECTED BRANCH (the work order's node, its inheriting part-descendants, and
+   * its ancestor chain) rather than the whole project. No-ops for product WOs.
    */
   async recomputeForWorkOrder(workOrderId: string): Promise<void> {
     const organizationId = TenantContext.requireOrganizationId();
     const wo = await this.woRepo.findOne({ where: { id: workOrderId, organizationId } });
     if (!wo || !wo.assemblyNodeId) return;
-    const node = await this.nodeRepo.findOne({ where: { id: wo.assemblyNodeId, organizationId } });
-    if (!node) return;
-    await this.recomputeProject(node.projectId);
+    await this.recomputeBranchForNode(wo.assemblyNodeId, organizationId);
   }
 
-  /** Recompute every node's status/percent from its work-order stages and roll up the tree. */
+  /** Recompute one node from its stages, push to inheriting descendants, and re-roll its ancestors. */
+  async recomputeBranchForNode(nodeId: string, organizationId = TenantContext.requireOrganizationId()): Promise<void> {
+    const node = await this.nodeRepo.findOne({ where: { id: nodeId, organizationId } });
+    if (!node) return;
+    const wo = await this.woRepo.findOne({ where: { organizationId, assemblyNodeId: nodeId } });
+    if (!wo) return;
+
+    const stageRows = await this.wosRepo.find({ where: { workOrderId: wo.id } });
+    const changedLeaf = leafFromStages(
+      stageRows.map((srow) => ({ status: srow.status as unknown as StageStatus, stageId: srow.stageId, sequence: srow.stage?.sequence })),
+      node.qtyShipped ?? 0,
+      node.quantity ?? 1,
+    );
+
+    // Gather the affected branch: descendants (+ which carry their own WO) and the ancestor chain.
+    const subtree = await this.loadSubtree(organizationId, nodeId);
+    const descendants = subtree.map((n) => ({ id: n.id, parentId: n.parentId as string }));
+    const woNodeIds = new Set(
+      (await this.woRepo.find({ where: { organizationId, assemblyNodeId: In(subtree.map((n) => n.id).concat(nodeId)) } }))
+        .map((w) => w.assemblyNodeId as string),
+    );
+
+    const ancestors: { id: string; hasWo: boolean; childIds: string[] }[] = [];
+    const current = new Map<string, Rollup>();
+    let parentId = node.parentId;
+    while (parentId) {
+      const anc = await this.nodeRepo.findOne({ where: { id: parentId, organizationId } });
+      if (!anc) break;
+      const ancWo = await this.woRepo.findOne({ where: { organizationId, assemblyNodeId: anc.id } });
+      const kids = await this.nodeRepo.find({ where: { organizationId, parentId: anc.id } });
+      for (const k of kids) {
+        current.set(k.id, { status: k.productionStatus as unknown as ProdStatus, percentComplete: Number(k.percentComplete), currentStageId: k.currentStageId ?? null });
+      }
+      ancestors.push({ id: anc.id, hasWo: !!ancWo, childIds: kids.map((k) => k.id) });
+      parentId = anc.parentId;
+    }
+
+    const updates = branchRollup({ changedNodeId: nodeId, changedLeaf, descendants, woNodeIds, ancestors, current });
+
+    // Persist only the changed branch nodes.
+    const entities = await this.nodeRepo.find({ where: { id: In([...updates.keys()]), organizationId } });
+    for (const e of entities) {
+      const r = updates.get(e.id);
+      if (r) await this.applyIfChanged(e, r.status, r.percentComplete, r.currentStageId);
+    }
+  }
+
+  private async applyIfChanged(node: AssemblyNode, status: ProdStatus, percent: number, currentStageId: string | null): Promise<void> {
+    const st = status as unknown as NodeProductionStatus;
+    if (node.productionStatus !== st || Number(node.percentComplete) !== percent || (node.currentStageId ?? null) !== (currentStageId ?? null)) {
+      node.productionStatus = st;
+      node.percentComplete = percent;
+      node.currentStageId = currentStageId ?? null;
+      await this.nodeRepo.save(node);
+    }
+  }
+
+  /** All descendants of a node (BFS by parent_id). */
+  private async loadSubtree(organizationId: string, rootId: string): Promise<AssemblyNode[]> {
+    const all: AssemblyNode[] = [];
+    let frontier = [rootId];
+    while (frontier.length) {
+      const kids = await this.nodeRepo.find({ where: { organizationId, parentId: In(frontier) } });
+      if (!kids.length) break;
+      all.push(...kids);
+      frontier = kids.map((k) => k.id);
+    }
+    return all;
+  }
+
+  /** Full-project recompute (manual "Refresh status" / after import or generation). */
   async recomputeProject(projectId: string): Promise<{ updated: number; projectStatus: string | null }> {
     const organizationId = TenantContext.requireOrganizationId();
     const project = await this.projectRepo.findOne({ where: { id: projectId, organizationId } });

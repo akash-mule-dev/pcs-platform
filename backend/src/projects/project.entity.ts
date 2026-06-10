@@ -5,11 +5,14 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
   Index,
 } from 'typeorm';
 import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 import { AssemblyNode } from './assembly-node.entity.js';
 import { ImportFile } from './import-file.entity.js';
+import { Process } from '../processes/process.entity.js';
 
 export enum ProjectStatus {
   PLANNING = 'planning',
@@ -44,6 +47,14 @@ export class Project extends TenantOwnedEntity {
 
   @Column({ type: 'enum', enum: ProjectStatus, default: ProjectStatus.PLANNING })
   status: ProjectStatus;
+
+  /** The fabrication process (stage routing) attached to this project. */
+  @Column({ name: 'process_id', type: 'uuid', nullable: true })
+  processId: string | null;
+
+  @ManyToOne(() => Process, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'process_id' })
+  process: Process | null;
 
   @Column({ name: 'due_date', type: 'timestamp', nullable: true })
   dueDate: Date | null;

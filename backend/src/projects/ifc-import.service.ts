@@ -10,8 +10,7 @@ import { Project } from './project.entity.js';
 import { AssemblyNode, AssemblyNodeType } from './assembly-node.entity.js';
 import { ImportFile, ImportFileStatus } from './import-file.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
-import { CadConversionService } from '../cad-conversion/cad-conversion.service.js';
-import { ModelsService } from '../models/models.service.js';
+import { ConversionService } from '../conversion/conversion.service.js';
 
 /** One node as emitted by extract-ifc-structure.mjs (the normalized intermediate). */
 interface ExtractedNode {
@@ -40,10 +39,6 @@ interface ExtractResult {
   nodes: ExtractedNode[];
 }
 
-// Above this size we skip the synchronous GLB build (do those via the async
-// conversion pipeline); the structure tree is still imported.
-const GLB_MAX_BYTES = 80 * 1024 * 1024;
-
 @Injectable()
 export class IfcImportService {
   private readonly logger = new Logger(IfcImportService.name);
@@ -54,20 +49,20 @@ export class IfcImportService {
     @InjectRepository(Project) private readonly projectRepo: Repository<Project>,
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
     @InjectRepository(ImportFile) private readonly importRepo: Repository<ImportFile>,
-    private readonly cadService: CadConversionService,
-    private readonly modelsService: ModelsService,
+    private readonly conversionService: ConversionService,
   ) {}
 
   /**
-   * Import an IFC file into a project: extract its structure into `assembly_nodes`
-   * (idempotent by ifc_guid) and, best-effort, also build a GLB so the tree can be
-   * viewed/highlighted in 3D (GLB nodes are named by GlobalId == ifc_guid).
+   * Import an IFC into a project: extract its structure into `assembly_nodes`
+   * (idempotent by ifc_guid) and ALWAYS queue the IFC->GLB conversion on the
+   * async pipeline. The model is linked back to the tree by linkPendingModels()
+   * once the conversion completes (a dedupe hit links immediately).
    */
   async importIfc(
     projectId: string,
     originalName: string,
     data: Buffer,
-  ): Promise<{ importFileId: string; nodeCount: number; counts: Record<string, number>; modelId: string | null }> {
+  ): Promise<{ importFileId: string; nodeCount: number; counts: Record<string, number>; modelId: string | null; glbQueued: boolean }> {
     const organizationId = TenantContext.requireOrganizationId();
     const project = await this.projectRepo.findOne({ where: { id: projectId, organizationId } });
     if (!project) throw new NotFoundException('Project not found');
@@ -91,25 +86,22 @@ export class IfcImportService {
     fs.writeFileSync(inPath, data);
 
     let modelId: string | null = null;
+    let glbQueued = false;
     try {
       await this.runExtractor(inPath, outPath);
       const result = JSON.parse(fs.readFileSync(outPath, 'utf8')) as ExtractResult;
       const nodeCount = await this.persistTree(organizationId, projectId, importFile.id, format, result.nodes);
 
-      // Best-effort GLB build + link (skipped for very large files).
-      if (data.length <= GLB_MAX_BYTES) {
-        modelId = await this.buildAndLinkGlb(inPath, originalName, project.name, organizationId, projectId, importFile.id);
-      } else {
-        this.logger.log(`Skipped synchronous GLB for large file ${originalName} (${data.length} bytes)`);
-      }
+      modelId = await this.enqueueGlb(inPath, originalName, project.name, organizationId, projectId, importFile);
+      glbQueued = !modelId && !!importFile.conversionJobId;
 
       importFile.status = ImportFileStatus.COMPLETED;
       importFile.nodeCount = nodeCount;
       importFile.modelId = modelId;
       await this.importRepo.save(importFile);
 
-      this.logger.log(`Imported ${nodeCount} nodes from ${originalName} into project ${projectId} (model=${modelId ?? 'none'})`);
-      return { importFileId: importFile.id, nodeCount, counts: result.counts, modelId };
+      this.logger.log(`Imported ${nodeCount} nodes from ${originalName} (model=${modelId ?? (glbQueued ? 'queued' : 'none')})`);
+      return { importFileId: importFile.id, nodeCount, counts: result.counts, modelId, glbQueued };
     } catch (err) {
       importFile.status = ImportFileStatus.FAILED;
       importFile.error = String(err instanceof Error ? err.message : err);
@@ -121,57 +113,83 @@ export class IfcImportService {
     }
   }
 
-  /** Convert IFC -> GLB, store it as a Model3D, and stamp modelId on the import's nodes. */
-  private async buildAndLinkGlb(
+  /**
+   * Link models produced by queued conversions back to their import's nodes.
+   * Called when a project is opened so GLBs appear once the worker finishes.
+   */
+  async linkPendingModels(projectId: string): Promise<{ linked: number; pending: number; failed: number }> {
+    const organizationId = TenantContext.requireOrganizationId();
+    const imports = await this.importRepo.find({ where: { organizationId, projectId } });
+    let linked = 0;
+    let pending = 0;
+    let failed = 0;
+    for (const imp of imports) {
+      if (imp.modelId || !imp.conversionJobId) continue;
+      let job;
+      try { job = await this.conversionService.findOne(imp.conversionJobId); } catch { continue; }
+      if (job.status === 'completed' && job.modelId) {
+        imp.modelId = job.modelId;
+        await this.importRepo.save(imp);
+        await this.nodeRepo.update({ organizationId, projectId, importFileId: imp.id }, { modelId: job.modelId });
+        linked++;
+      } else if (job.status === 'failed') {
+        failed++;
+      } else {
+        pending++;
+      }
+    }
+    return { linked, pending, failed };
+  }
+
+  /** Queue an async IFC->GLB conversion on the BullMQ pipeline; link immediately on a dedupe hit. */
+  private async enqueueGlb(
     ifcPath: string,
     originalName: string,
     projectName: string,
     organizationId: string,
     projectId: string,
-    importFileId: string,
+    importFile: ImportFile,
   ): Promise<string | null> {
     try {
-      const glb = await this.cadService.convert(ifcPath, originalName);
-      if (!glb.success || !glb.outputPath) {
-        this.logger.warn(`GLB build skipped for ${originalName}: ${glb.error ?? 'no output'}`);
-        return null;
-      }
-      const stats = fs.statSync(glb.outputPath);
+      const stats = fs.statSync(ifcPath);
       const base = path.basename(originalName, path.extname(originalName));
-      const file = {
-        fieldname: 'file',
-        originalname: `${base}.glb`,
-        encoding: '7bit',
-        mimetype: 'model/gltf-binary',
-        size: stats.size,
-        destination: path.dirname(glb.outputPath),
-        filename: `${crypto.randomUUID()}.glb`,
-        path: glb.outputPath,
-        buffer: Buffer.alloc(0),
-        stream: fs.createReadStream(glb.outputPath),
-      } as Express.Multer.File;
-
-      const model = await this.modelsService.create(
+      const file = this.asMulterFile(ifcPath, originalName, stats.size, 'application/octet-stream');
+      const job = await this.conversionService.createJob(
         { name: projectName || base, description: `Imported from ${originalName}`, modelType: 'assembly' },
         file,
       );
-      await this.nodeRepo.update(
-        { organizationId, projectId, importFileId },
-        { modelId: model.id },
-      );
-      this.cadService.cleanup(glb.outputPath);
-      return model.id;
+      importFile.conversionJobId = job.id;
+      if (job.status === 'completed' && job.modelId) {
+        await this.nodeRepo.update({ organizationId, projectId, importFileId: importFile.id }, { modelId: job.modelId });
+        return job.modelId;
+      }
+      this.logger.log(`Queued GLB conversion job ${job.id} for ${originalName}`);
+      return null;
     } catch (e) {
-      this.logger.warn(`GLB generation failed for ${originalName} (structure still imported): ${e instanceof Error ? e.message : e}`);
+      this.logger.warn(`Could not queue GLB conversion for ${originalName}: ${e instanceof Error ? e.message : e}`);
       return null;
     }
   }
 
+  private asMulterFile(filePath: string, originalname: string, size: number, mimetype: string): Express.Multer.File {
+    return {
+      fieldname: 'file',
+      originalname,
+      encoding: '7bit',
+      mimetype,
+      size,
+      destination: path.dirname(filePath),
+      filename: `${crypto.randomUUID()}${path.extname(filePath)}`,
+      path: filePath,
+      buffer: Buffer.alloc(0),
+      stream: fs.createReadStream(filePath),
+    } as Express.Multer.File;
+  }
+
   /**
-   * Upsert the extracted nodes. They arrive in DFS pre-order, so a parent is
-   * always persisted before its children and its DB id is available for the
-   * child's parent_id. Idempotent: an existing node (same ifc_guid in the
-   * project) is updated in place, so re-importing a revised IFC won't duplicate.
+   * Upsert the extracted nodes (DFS pre-order so a parent persists before its
+   * children). Idempotent by ifc_guid so re-importing a revised IFC updates
+   * rather than duplicates.
    */
   private async persistTree(
     organizationId: string,
@@ -182,11 +200,8 @@ export class IfcImportService {
   ): Promise<number> {
     const idByExternal = new Map<string, string>();
     let count = 0;
-
     for (const n of nodes) {
-      const existing = await this.nodeRepo.findOne({
-        where: { organizationId, projectId, ifcGuid: n.externalId },
-      });
+      const existing = await this.nodeRepo.findOne({ where: { organizationId, projectId, ifcGuid: n.externalId } });
       const entity = existing ?? this.nodeRepo.create();
       Object.assign(entity, {
         organizationId,
@@ -219,7 +234,7 @@ export class IfcImportService {
   private runExtractor(inputPath: string, outputPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = spawn('node', ['--max-old-space-size=4096', this.scriptPath, inputPath, outputPath], {
-        timeout: 300_000, // 5 min for large models
+        timeout: 300_000,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let stderr = '';

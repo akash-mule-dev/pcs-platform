@@ -1,28 +1,43 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
 import { ncrService } from '../../services/factory.service';
+import { projectsService } from '../../services/projects.service';
 import { MoreStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<MoreStackParamList, 'NcrCreate'>;
+type Rt = RouteProp<MoreStackParamList, 'NcrCreate'>;
 const SEVERITIES = ['low', 'medium', 'high', 'critical'];
 
 export function NcrCreateScreen() {
   const navigation = useNavigation<Nav>();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [severity, setSeverity] = useState('medium');
+  const params = (useRoute<Rt>().params ?? {}) as NonNullable<Rt['params']>;
+  const [title, setTitle] = useState(params.title ?? '');
+  const [description, setDescription] = useState(params.description ?? '');
+  const [severity, setSeverity] = useState(params.severity ?? 'medium');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // When opened from a fabrication node, raise via the node endpoint so the NCR
+  // is linked to that node/project/work order (and any failing inspection).
+  const linked = !!(params.projectId && params.nodeId);
 
   const submit = async () => {
     if (!title.trim()) { setError('A title is required.'); return; }
     setSaving(true);
     setError('');
     try {
-      await ncrService.create({ title: title.trim(), description: description.trim() || undefined, severity });
+      if (linked) {
+        await projectsService.raiseNodeNcr(params.projectId!, params.nodeId!, {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          severity,
+          qualityDataId: params.qualityDataId,
+        });
+      } else {
+        await ncrService.create({ title: title.trim(), description: description.trim() || undefined, severity });
+      }
       navigation.goBack();
     } catch (e: any) {
       setError(e?.message || 'Failed to raise NCR.');

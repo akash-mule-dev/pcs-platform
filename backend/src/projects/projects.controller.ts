@@ -32,6 +32,18 @@ export class ProjectsController {
     return this.service.findNodes(id);
   }
 
+  @Get(':id/nodes/:nodeId')
+  @ApiOperation({ summary: 'Get one assembly node (dimensions, properties, model link)' })
+  findNode(@Param('id') id: string, @Param('nodeId') nodeId: string) {
+    return this.service.findNode(id, nodeId);
+  }
+
+  @Get(':id/nodes/:nodeId/meshes')
+  @ApiOperation({ summary: 'GLB mesh names for a node + descendants (for 3D isolation)' })
+  nodeMeshes(@Param('id') id: string, @Param('nodeId') nodeId: string) {
+    return this.service.nodeMeshNames(id, nodeId);
+  }
+
   @Post()
   @Roles('admin', 'manager')
   @ApiOperation({ summary: 'Create project' })

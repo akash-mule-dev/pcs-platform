@@ -1,10 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany, Unique } from 'typeorm';
-import { Product } from '../products/product.entity.js';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { Stage } from '../stages/stage.entity.js';
 import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 @Entity('processes')
-@Unique(['productId', 'version'])
 export class Process extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -14,13 +12,6 @@ export class Process extends TenantOwnedEntity {
 
   @Column({ type: 'integer', default: 1 })
   version: number;
-
-  @Column({ name: 'product_id', type: 'uuid' })
-  productId: string;
-
-  @ManyToOne(() => Product, { eager: true })
-  @JoinColumn({ name: 'product_id' })
-  product: Product;
 
   @OneToMany(() => Stage, (stage) => stage.process, { cascade: true })
   stages: Stage[];

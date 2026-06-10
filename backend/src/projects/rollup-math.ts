@@ -61,3 +61,47 @@ export function aggregateTree(nodes: TreeNode[], leaf: Map<string, Rollup>): Map
   }
   return result;
 }
+
+export interface BranchInput {
+  changedNodeId: string;
+  changedLeaf: Rollup;
+  /** Subtree under the changed node (each with its parentId). */
+  descendants: { id: string; parentId: string }[];
+  /** Nodes (in the subtree) that carry their own work order — inheritance stops there. */
+  woNodeIds: Set<string>;
+  /** Ancestor chain, parent -> root, with whether each has its own WO + its direct child ids. */
+  ancestors: { id: string; hasWo: boolean; childIds: string[] }[];
+  /** Current stored rollups for ancestors' (sibling) children. */
+  current: Map<string, Rollup>;
+}
+
+/**
+ * Compute status updates for ONLY the branch affected by a changed work order:
+ * the changed node, the part-descendants that inherit it (stopping at any node
+ * with its own WO), and the non-WO ancestors re-aggregated from their children.
+ * Pure + unit-testable; the service supplies the gathered branch data.
+ */
+export function branchRollup(input: BranchInput): Map<string, Rollup> {
+  const { changedNodeId, changedLeaf, descendants, woNodeIds, ancestors, current } = input;
+  const out = new Map<string, Rollup>();
+  out.set(changedNodeId, changedLeaf);
+
+  const childrenByParent = new Map<string, string[]>();
+  for (const d of descendants) { const a = childrenByParent.get(d.parentId) ?? []; a.push(d.id); childrenByParent.set(d.parentId, a); }
+  const queue = [...(childrenByParent.get(changedNodeId) ?? [])];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (woNodeIds.has(id)) continue; // independent fabricated branch
+    out.set(id, { status: changedLeaf.status, percentComplete: changedLeaf.percentComplete, currentStageId: null });
+    queue.push(...(childrenByParent.get(id) ?? []));
+  }
+
+  for (const a of ancestors) {
+    if (a.hasWo) continue; // a fabricated assembly's status is its own, not its children's
+    const kids = a.childIds.map((id) => out.get(id) ?? current.get(id)).filter(Boolean) as Rollup[];
+    const status = aggregateStatus(kids.map((k) => k.status)) ?? 'not_started';
+    const percent = kids.length ? Math.round((kids.reduce((s, k) => s + k.percentComplete, 0) / kids.length) * 100) / 100 : 0;
+    out.set(a.id, { status, percentComplete: percent, currentStageId: null });
+  }
+  return out;
+}

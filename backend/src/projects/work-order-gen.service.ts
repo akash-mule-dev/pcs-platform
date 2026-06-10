@@ -33,6 +33,9 @@ export class WorkOrderGenService {
     const stages = await this.stageRepo.find({ where: { processId, organizationId }, order: { sequence: 'ASC' } });
     if (!stages.length) throw new BadRequestException('Chosen process has no stages (or is not in this organization)');
 
+    // Attach the chosen process to the project so its stage pipeline shows in the app.
+    if (project.processId !== processId) { project.processId = processId; await this.projectRepo.save(project); }
+
     // Work orders require a product; one stand-in product represents the project.
     let product = await this.productRepo.findOne({ where: { organizationId, name: project.name } });
     if (!product) {

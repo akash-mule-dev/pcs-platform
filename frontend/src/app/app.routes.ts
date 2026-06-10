@@ -34,6 +34,16 @@ export const routes: Routes = [
         loadComponent: () => import('./projects/project-detail.component').then(m => m.ProjectDetailComponent)
       },
       {
+        path: 'projects/:id/shipping',
+        canActivate: [featureGuard('projects')],
+        loadComponent: () => import('./projects/project-shipping.component').then(m => m.ProjectShippingComponent)
+      },
+      {
+        path: 'projects/:id/progress',
+        canActivate: [featureGuard('projects')],
+        loadComponent: () => import('./projects/project-progress.component').then(m => m.ProjectProgressComponent)
+      },
+      {
         path: 'processes',
         canActivate: [featureGuard('processes')],
         loadComponent: () => import('./processes/process-list/process-list.component').then(m => m.ProcessListComponent)

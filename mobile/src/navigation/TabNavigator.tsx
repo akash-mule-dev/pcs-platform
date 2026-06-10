@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
-import { TabParamList, WorkOrdersStackParamList, TimeTrackingStackParamList, ModelsStackParamList, MoreStackParamList } from './types';
+import { TabParamList, WorkOrdersStackParamList, TimeTrackingStackParamList, ModelsStackParamList, MoreStackParamList, ProjectsStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 import { canViewTab, TabKey } from '../config/permissions';
 
@@ -26,6 +26,10 @@ import { MaterialListScreen } from '../screens/more/MaterialListScreen';
 import { NcrCreateScreen } from '../screens/more/NcrCreateScreen';
 import { NcrDetailScreen } from '../screens/more/NcrDetailScreen';
 import { WorkforceListScreen } from '../screens/more/WorkforceListScreen';
+import { ProjectListScreen } from '../screens/projects/ProjectListScreen';
+import { ProjectDetailScreen } from '../screens/projects/ProjectDetailScreen';
+import { AssemblyDetailScreen } from '../screens/projects/AssemblyDetailScreen';
+import { PartViewerScreen } from '../screens/projects/PartViewerScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -81,9 +85,23 @@ function MoreStackNav() {
   );
 }
 
+// ── Projects Stack ──
+const PStack = createNativeStackNavigator<ProjectsStackParamList>();
+function ProjectsStack() {
+  return (
+    <PStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
+      <PStack.Screen name="ProjectList" component={ProjectListScreen} options={{ title: 'Projects' }} />
+      <PStack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: 'Project' }} />
+      <PStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />
+      <PStack.Screen name="PartViewer" component={PartViewerScreen} options={{ title: '3D Viewer' }} />
+    </PStack.Navigator>
+  );
+}
+
 // ── Tab config ──
 const TAB_CONFIG: { name: TabKey; component: React.ComponentType<any>; title: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { name: 'Dashboard', component: DashboardScreen, title: 'Home', icon: 'home' },
+  { name: 'Projects', component: ProjectsStack, title: 'Projects', icon: 'folder' },
   { name: 'WorkOrders', component: WorkOrdersStack, title: 'Orders', icon: 'clipboard' },
   { name: 'Timer', component: TimeTrackingStack, title: 'Timer', icon: 'timer' },
   { name: 'Models', component: ModelsStack, title: '3D/AR', icon: 'cube' },

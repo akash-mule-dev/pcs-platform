@@ -20,9 +20,15 @@ export class ProjectImportController {
   @UseInterceptors(FileInterceptor('file'))
   async importIfc(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file uploaded');
-    // multer may use memory (buffer) or disk (path) storage depending on config.
     const data = file.buffer ?? (file.path ? await import('fs').then((fs) => fs.readFileSync(file.path)) : null);
     if (!data) throw new BadRequestException('Uploaded file could not be read');
     return this.importService.importIfc(id, file.originalname, data);
+  }
+
+  @Post(':id/resolve-models')
+  @Roles('admin', 'manager', 'supervisor')
+  @ApiOperation({ summary: 'Link GLBs produced by queued conversions back to the project tree' })
+  resolveModels(@Param('id') id: string) {
+    return this.importService.linkPendingModels(id);
   }
 }

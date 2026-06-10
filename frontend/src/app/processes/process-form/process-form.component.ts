@@ -1,10 +1,9 @@
-import { Component, ElementRef, Inject, OnInit } from '@angular/core';
+import { Component, ElementRef, Inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -26,7 +25,7 @@ interface StageDraft {
   standalone: true,
   imports: [
     CommonModule, FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule,
-    MatSelectModule, MatButtonModule, MatIconModule, MatTooltipModule, DragDropModule, DurationPipe,
+    MatButtonModule, MatIconModule, MatTooltipModule, DragDropModule, DurationPipe,
   ],
   template: `
     <div class="proc-dialog">
@@ -51,15 +50,6 @@ interface StageDraft {
               <mat-label>Name</mat-label>
               <input matInput [(ngModel)]="form.name" required maxlength="255" placeholder="e.g. Assembly Line A">
             </mat-form-field>
-
-            <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Product</mat-label>
-              <mat-select [(ngModel)]="form.productId" required>
-                @for (p of products; track p.id) {
-                  <mat-option [value]="p.id">{{ p.name }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
           </div>
 
           @if (data) {
@@ -70,7 +60,7 @@ interface StageDraft {
           } @else {
             <p class="hint-text">
               <mat-icon class="inline-ico">info</mat-icon>
-              Version is assigned automatically — the first process for a product becomes v1.
+              New processes start at version 1 — you can change it later.
             </p>
           }
         </section>
@@ -184,7 +174,7 @@ interface StageDraft {
         }
         <div class="footer-actions">
           <button type="button" class="btn-ghost" (click)="dialogRef.close()">Cancel</button>
-          <button type="button" class="btn-primary" (click)="save()" [disabled]="!form.name || !form.productId || saving">
+          <button type="button" class="btn-primary" (click)="save()" [disabled]="!form.name || saving">
             {{ saving ? 'Saving…' : (data ? 'Save Changes' : 'Create Process') }}
           </button>
         </div>
@@ -377,9 +367,8 @@ interface StageDraft {
     }
   `]
 })
-export class ProcessFormComponent implements OnInit {
-  form: any = { name: '', productId: '', version: 1 };
-  products: any[] = [];
+export class ProcessFormComponent {
+  form: any = { name: '', version: 1 };
   stages: StageDraft[] = [];
   saving = false;
   private _seq = 0;
@@ -392,14 +381,8 @@ export class ProcessFormComponent implements OnInit {
     private el: ElementRef<HTMLElement>,
   ) {
     if (data) {
-      this.form = { name: data.name, productId: data.product?.id || data.productId, version: data.version || 1 };
+      this.form = { name: data.name, version: data.version || 1 };
     }
-  }
-
-  ngOnInit(): void {
-    this.api.getList<any>('/products').subscribe(list => {
-      this.products = list;
-    });
   }
 
   get totalTargetSeconds(): number {
@@ -434,7 +417,7 @@ export class ProcessFormComponent implements OnInit {
 
   save(): void {
     this.saving = true;
-    const body: any = { name: this.form.name.trim(), productId: this.form.productId };
+    const body: any = { name: this.form.name.trim() };
     if (this.data) {
       body.version = this.form.version;
     } else {

@@ -58,6 +58,13 @@ export class QualityData extends TenantOwnedEntity {
   @Column({ name: 'tolerance_max', type: 'decimal', precision: 10, scale: 4, nullable: true })
   toleranceMax: number;
 
+  // Fabrication linkage — ties a quality record to the assembly node it was taken on.
+  @Column({ name: 'assembly_node_id', type: 'uuid', nullable: true })
+  assemblyNodeId: string | null;
+
+  @Column({ name: 'project_id', type: 'uuid', nullable: true })
+  projectId: string | null;
+
   // Phase 6: Sign-off workflow
   @Column({ name: 'signoff_status', type: 'varchar', length: 20, default: 'pending' })
   signoffStatus: string; // 'pending' | 'approved' | 'rejected'
