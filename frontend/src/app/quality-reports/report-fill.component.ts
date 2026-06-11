@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef, NgZone, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Location } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -25,6 +26,9 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
     <div class="fill-shell">
       <header class="bar">
         <div class="bar-id">
+          <button class="btn-back" type="button" (click)="goBack()" title="Back">
+            <mat-icon>arrow_back</mat-icon>
+          </button>
           <mat-icon class="logo">fact_check</mat-icon>
           <div class="titles">
             <h1>{{ report?.templateName || 'QC Report' }}</h1>
@@ -63,6 +67,9 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
     .fill-shell { max-width: 900px; margin: 0 auto; padding: 16px 16px 48px; }
     .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px; background: var(--clay-surface, #fff); border: 1px solid var(--clay-border, #e2e8f0); border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.06); position: sticky; top: 10px; z-index: 20; }
     .bar-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .btn-back { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 9px; border: 1px solid var(--clay-border, #e2e8f0); background: var(--clay-surface, #fff); color: var(--clay-text-secondary, #475569); cursor: pointer; flex-shrink: 0; }
+    .btn-back:hover { border-color: var(--clay-primary, #2563eb); color: var(--clay-primary, #2563eb); }
+    .btn-back mat-icon { font-size: 20px; width: 20px; height: 20px; }
     .logo { color: var(--clay-primary, #2563eb); font-size: 28px; width: 28px; height: 28px; }
     .titles h1 { margin: 0; font-size: 17px; font-weight: 700; color: var(--clay-text, #0f172a); }
     .ctx { margin: 2px 0 0; font-size: 12px; color: var(--clay-text-muted, #64748b); display: flex; gap: 6px; flex-wrap: wrap; }
@@ -135,6 +142,7 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
 export class ReportFillComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  private location = inject(Location);
   private svc = inject(QualityReportsService);
   private zone = inject(NgZone);
 
@@ -171,6 +179,13 @@ export class ReportFillComponent implements OnInit, OnDestroy {
           : (e?.error?.message || 'Could not load this report.');
       },
     });
+  }
+
+  /** In-app navigation → go back in history; opened directly (new tab / QR
+   *  scan / mobile hand-off) → there is no history, fall back to the list. */
+  goBack(): void {
+    if (window.history.length > 1) this.location.back();
+    else this.router.navigateByUrl('/quality-reports');
   }
 
   ngOnDestroy(): void {

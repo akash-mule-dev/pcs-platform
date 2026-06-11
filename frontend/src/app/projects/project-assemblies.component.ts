@@ -8,8 +8,13 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
 import { ProjectWorkspaceStore } from './project-workspace.store';
 import { ProjectsService, AssemblyNode, NodeType } from '../core/services/projects.service';
 
-/** Assemblies & 3D tab: the assembly tree (left) with a synced 3D viewer (right).
- *  Pure design view — production tracking and quality live inside each work order. */
+/** Dimension-like IFC property keys surfaced in the detail panel. */
+const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius', 'length', 'weight', 'area', 'volume', 'perimeter', 'elevation'];
+
+/** Assemblies & 3D tab: the assembly tree (left, internally scrolled so the
+ *  search bar never leaves the screen) with a synced 3D viewer + selected-part
+ *  detail panel (right). Pure design view — production tracking and quality
+ *  live inside each work order. */
 @Component({
   selector: 'app-project-assemblies',
   standalone: true,
@@ -26,29 +31,27 @@ import { ProjectsService, AssemblyNode, NodeType } from '../core/services/projec
         <button class="cta" (click)="fileInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>{{ store.importing() ? 'Importing…' : 'Import IFC file' }}</button>
       </div>
     } @else {
-      <!-- Action bar -->
-      <div class="actionbar">
-        <div class="tree-search">
-          <mat-icon>search</mat-icon>
-          <input type="text" placeholder="Search mark, name or profile…" [(ngModel)]="treeQuery">
-          @if (treeQuery) { <button class="clear" (click)="treeQuery = ''">×</button> }
-        </div>
-        <span class="spacer"></span>
-        <div class="tree-tools">
-          <button class="link-btn" (click)="expandAll()">Expand all</button>
-          <span class="sep">·</span>
-          <button class="link-btn" (click)="collapseAll()">Collapse all</button>
-        </div>
-      </div>
-      @if (treeQuery) { <p class="search-info">{{ matchCount() }} matching item(s) — showing as a flat list.</p> }
-
       <div class="layout">
-        <!-- Tree -->
-        <div class="tree-pane">
-          <div class="tree">
+        <!-- Tree card: fixed header (search + tools), internally scrolling list -->
+        <section class="tree-pane">
+          <div class="tree-head">
+            <div class="tree-search">
+              <mat-icon>search</mat-icon>
+              <input type="text" placeholder="Search mark, name or profile…" [(ngModel)]="treeQuery">
+              @if (treeQuery) { <button class="clear" (click)="treeQuery = ''">×</button> }
+            </div>
+            <span class="spacer"></span>
+            <div class="tree-tools">
+              <button class="link-btn" (click)="expandAll()">Expand all</button>
+              <span class="sep">·</span>
+              <button class="link-btn" (click)="collapseAll()">Collapse all</button>
+            </div>
+          </div>
+          @if (treeQuery) { <p class="search-info">{{ matchCount() }} matching item(s) — showing as a flat list.</p> }
+          <div class="tree-scroll">
             @for (n of store.nodes(); track n.id) {
               @if (treeQuery ? matches(n) : visible(n)) {
-                <div class="node" [class.sel]="selectedGuid() === n.ifcGuid && !!n.ifcGuid" [style.padding-left.px]="treeQuery ? 10 : 10 + n.depth * 18" (click)="onNodeClick(n)">
+                <div class="node" [class.sel]="selectedNodeId() === n.id" [style.padding-left.px]="treeQuery ? 10 : 10 + n.depth * 18" (click)="onNodeClick(n)">
                   @if (!treeQuery && hasChildren(n)) {
                     <button class="caret" (click)="toggle(n); $event.stopPropagation()"><mat-icon>{{ collapsed.has(n.id) ? 'chevron_right' : 'expand_more' }}</mat-icon></button>
                   } @else { <span class="caret-spacer"></span> }
@@ -56,17 +59,17 @@ import { ProjectsService, AssemblyNode, NodeType } from '../core/services/projec
                   <span class="nname">{{ displayName(n) }}</span>
                   @if (n.mark) { <span class="mark">{{ n.mark }}</span> }
                   @if (n.quantity > 1) { <span class="qty">×{{ n.quantity }}</span> }
-                  @if (n.profile) { <span class="meta">{{ n.profile }}</span> }
-                  @if (n.materialGrade) { <span class="meta grade">{{ n.materialGrade }}</span> }
+                  @if (defined(n.profile); as p) { <span class="meta">{{ p }}</span> }
+                  @if (defined(n.materialGrade); as g) { <span class="meta grade">{{ g }}</span> }
                   @if (n.lengthMm) { <span class="meta">{{ n.lengthMm | number:'1.0-0' }}mm</span> }
                 </div>
               }
             }
           </div>
-        </div>
+        </section>
 
-        <!-- Viewer + QA -->
-        <div class="viewer-pane">
+        <!-- Viewer + selected-part details -->
+        <aside class="viewer-pane">
           @if (modelUrl(); as url) {
             <div class="viewer-tools">
               <span class="vt-hint">{{ isolate() ? 'Isolated view' : 'Click a part to highlight' }}</span>
@@ -83,67 +86,117 @@ import { ProjectsService, AssemblyNode, NodeType } from '../core/services/projec
             </div>
           }
 
-          @if (!selectedNodeId()) {
-            <p class="select-hint"><mat-icon>touch_app</mat-icon>Select an item in the tree to highlight it in 3D.</p>
+          @if (selectedNode(); as n) {
+            <div class="detail-card">
+              <div class="d-head">
+                <mat-icon class="ntype t-{{ n.nodeType }}">{{ typeIcon(n.nodeType) }}</mat-icon>
+                <span class="d-name" [title]="displayName(n)">{{ displayName(n) }}</span>
+                @if (n.mark) { <span class="mark">{{ n.mark }}</span> }
+                <span class="d-type">{{ n.nodeType }}</span>
+              </div>
+              @if (selectedFacts().length) {
+                <div class="d-grid">
+                  @for (f of selectedFacts(); track f.label) {
+                    <div class="d-fact"><span class="d-lbl">{{ f.label }}</span><span class="d-val">{{ f.value }}</span></div>
+                  }
+                </div>
+              } @else {
+                <p class="d-empty">No dimension data was found for this item in the IFC file.</p>
+              }
+            </div>
+          } @else {
+            <div class="detail-card hint">
+              <mat-icon>touch_app</mat-icon>
+              <p>Select an item in the tree — or click a part in the 3D view — to see its measurements here.</p>
+            </div>
           }
-        </div>
+        </aside>
       </div>
     }
   `,
   styles: [`
+    :host { display: block; }
     .center { display: flex; justify-content: center; padding: 56px 0; }
     .cta { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: var(--clay-primary); color: #fff; padding: 10px 18px; border-radius: var(--clay-radius-sm); font-size: 13px; font-weight: 600; border: none; cursor: pointer; }
     .cta mat-icon { font-size: 18px; width: 18px; height: 18px; }
     .cta:disabled { opacity: .6; cursor: default; }
 
-    /* Action bar */
-    .actionbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    /* Two-pane layout sized to the viewport so the tree scrolls internally
+       (search bar + viewer always stay on screen). */
+    .layout { display: flex; gap: 16px; align-items: stretch; height: calc(100vh - 332px); min-height: 480px; }
+
+    /* ── Tree card ── */
+    .tree-pane {
+      flex: 1; min-width: 0; display: flex; flex-direction: column;
+      background: var(--clay-surface); border: 1px solid var(--clay-border);
+      border-radius: var(--clay-radius); box-shadow: var(--clay-shadow-soft); overflow: hidden;
+    }
+    .tree-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--clay-border); flex-shrink: 0; }
     .spacer { flex: 1; }
-    .tree-search { display: flex; align-items: center; gap: 5px; background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 5px 9px; }
+    .tree-search { display: flex; align-items: center; gap: 5px; background: var(--clay-bg); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 5px 9px; }
     .tree-search mat-icon { font-size: 17px; width: 17px; height: 17px; color: var(--clay-text-muted); }
     .tree-search input { border: none; outline: none; background: transparent; font-size: 13px; color: var(--clay-text); font-family: inherit; width: 200px; }
     .tree-search .clear { background: none; border: none; color: var(--clay-text-muted); cursor: pointer; font-size: 15px; font-weight: 700; padding: 0 2px; }
-    .search-info { margin: 0 0 10px; font-size: 12px; color: var(--clay-text-muted); }
-    .tree-tools { font-size: 12px; color: var(--clay-text-muted); }
+    .search-info { margin: 0; padding: 7px 14px; font-size: 12px; color: var(--clay-text-muted); border-bottom: 1px solid var(--clay-border); flex-shrink: 0; }
+    .tree-tools { font-size: 12px; color: var(--clay-text-muted); white-space: nowrap; }
     .link-btn { background: none; border: none; color: var(--clay-primary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; padding: 0; }
     .tree-tools .sep { margin: 0 4px; }
 
-    .layout { display: flex; gap: 16px; align-items: flex-start; }
-    .tree-pane { flex: 1; min-width: 0; }
-    .tree { background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); overflow: hidden; box-shadow: var(--clay-shadow-soft); }
-    .node { display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 10px; border-bottom: 1px solid var(--clay-border); font-size: 13px; cursor: pointer; transition: background .12s; }
+    .tree-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+    .node { display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 10px; border-bottom: 1px solid var(--clay-border); font-size: 13px; cursor: pointer; transition: background .12s; min-width: 0; }
     .node:last-child { border-bottom: none; }
     .node:hover { background: var(--clay-surface-hover); }
     .node.sel { background: var(--info-bg); box-shadow: inset 3px 0 0 var(--clay-primary); }
-    .caret { background: none; border: none; cursor: pointer; padding: 0; display: flex; color: var(--clay-text-muted); }
+    .caret { background: none; border: none; cursor: pointer; padding: 0; display: flex; color: var(--clay-text-muted); flex-shrink: 0; }
     .caret mat-icon { font-size: 20px; width: 20px; height: 20px; }
     .caret-spacer { width: 20px; display: inline-block; flex-shrink: 0; }
     .ntype { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
     .t-group { color: var(--clay-text-muted); } .t-assembly { color: var(--clay-primary); }
     .t-subassembly { color: var(--kpi-purple-fg); } .t-part { color: var(--clay-text-secondary); }
-    .nname { font-weight: 500; color: var(--clay-text); white-space: nowrap; }
-    .mark { background: var(--clay-bg-warm); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-xs); padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--clay-text-secondary); font-family: 'Space Grotesk', monospace; }
-    .qty { color: var(--clay-text-muted); font-size: 12px; }
-    .meta { color: var(--clay-text-muted); font-size: 12px; white-space: nowrap; } .meta.grade { color: var(--success-text); }
-    .spacer { flex: 1; }
+    .nname { font-weight: 500; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 48px; flex: 0 1 auto; }
+    .mark { background: var(--clay-bg-warm); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-xs); padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--clay-text-secondary); font-family: 'Space Grotesk', monospace; flex-shrink: 0; }
+    .qty { color: var(--clay-text-muted); font-size: 12px; flex-shrink: 0; }
+    .meta { color: var(--clay-text-muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; } .meta.grade { color: var(--success-text); }
 
-    /* Viewer */
-    .viewer-pane { width: 480px; flex-shrink: 0; position: sticky; top: 200px; }
-    .viewer-tools { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    /* ── Viewer + details column ── */
+    .viewer-pane { width: 480px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+    .viewer-tools { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
     .vt-hint { font-size: 12px; color: var(--clay-text-muted); }
-    .viewer-box { height: 460px; }
+    .viewer-box { flex: 1 1 auto; min-height: 240px; }
     .viewer-box app-three-viewer { display: block; height: 100%; }
     .iso-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--clay-primary); background: var(--clay-surface); color: var(--clay-primary); border-radius: var(--clay-radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
     .iso-btn:hover:not(:disabled) { background: var(--info-bg); }
     .iso-btn.on { background: var(--clay-primary); color: #fff; }
     .iso-btn:disabled { opacity: .5; cursor: default; border-color: var(--clay-border); color: var(--clay-text-muted); }
     .iso-btn mat-icon { font-size: 17px; width: 17px; height: 17px; }
-    .noviewer { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 48px 16px; color: var(--clay-text-muted); background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); text-align: center; height: 460px; justify-content: center; }
+    .noviewer { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 16px; color: var(--clay-text-muted); background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); text-align: center; flex: 1; justify-content: center; min-height: 240px; }
     .noviewer mat-icon { font-size: 40px; width: 40px; height: 40px; opacity: .5; }
-    .select-hint { display: flex; align-items: center; gap: 6px; margin-top: 12px; color: var(--clay-text-muted); font-size: 13px; }
-    .select-hint mat-icon { font-size: 18px; width: 18px; height: 18px; }
 
-    @media (max-width: 960px) { .layout { flex-direction: column; } .viewer-pane { width: 100%; position: static; } }
+    /* Selected-part detail panel */
+    .detail-card {
+      flex-shrink: 0; max-height: 42%; overflow-y: auto;
+      background: var(--clay-surface); border: 1px solid var(--clay-border);
+      border-radius: var(--clay-radius); box-shadow: var(--clay-shadow-soft); padding: 12px 14px;
+    }
+    .detail-card.hint { display: flex; align-items: center; gap: 10px; color: var(--clay-text-muted); }
+    .detail-card.hint mat-icon { font-size: 22px; width: 22px; height: 22px; flex-shrink: 0; }
+    .detail-card.hint p { margin: 0; font-size: 13px; }
+    .d-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .d-name { font-size: 14px; font-weight: 600; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .d-type { margin-left: auto; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); background: var(--clay-bg-warm); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
+    .d-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 12px; }
+    .d-fact { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .d-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); }
+    .d-val { font-size: 13px; font-weight: 600; color: var(--clay-text); font-family: 'Space Grotesk', 'Inter', sans-serif; overflow-wrap: anywhere; }
+    .d-empty { margin: 10px 0 0; font-size: 12px; color: var(--clay-text-muted); }
+
+    @media (max-width: 960px) {
+      .layout { flex-direction: column; height: auto; }
+      .tree-pane { height: 440px; flex: none; }
+      .viewer-pane { width: 100%; }
+      .viewer-box { flex: none; height: 320px; }
+      .detail-card { max-height: none; }
+    }
   `],
 })
 export class ProjectAssembliesComponent implements OnInit {
@@ -168,6 +221,45 @@ export class ProjectAssembliesComponent implements OnInit {
   highlightGuids = signal<string[]>([]);
   isolate = signal(false);
 
+  selectedNode = computed(() => {
+    const id = this.selectedNodeId();
+    return id ? this.byId().get(id) ?? null : null;
+  });
+
+  /** Measurements & identity facts for the detail panel: promoted fab columns
+   *  first, then dimension-like entries from the raw IFC property bag. */
+  selectedFacts = computed<{ label: string; value: string }[]>(() => {
+    const n = this.selectedNode();
+    if (!n) return [];
+    const facts: { label: string; value: string }[] = [];
+    const profile = this.defined(n.profile);
+    const grade = this.defined(n.materialGrade);
+    if (profile) facts.push({ label: 'Profile', value: profile });
+    if (grade) facts.push({ label: 'Material grade', value: grade });
+    if (n.lengthMm != null) facts.push({ label: 'Length', value: `${this.fmtNum(n.lengthMm)} mm` });
+    if (n.weightKg != null) facts.push({ label: 'Weight', value: `${this.fmtNum(n.weightKg)} kg` });
+    if (n.quantity > 1) facts.push({ label: 'Quantity', value: `${n.quantity}` });
+    if (n.ifcClass) facts.push({ label: 'IFC class', value: n.ifcClass });
+
+    const seen = new Set(facts.map((f) => f.label.toLowerCase()));
+    for (const [key, raw] of Object.entries(n.properties ?? {})) {
+      if (key.includes('.')) continue; // namespaced duplicate of a plain key
+      const norm = key.replace(/[^a-z]/gi, '').toLowerCase();
+      if (!DIM_KEYS.some((k) => norm.includes(k))) continue;
+      if (n.lengthMm != null && norm === 'length') continue;
+      if (n.weightKg != null && norm.includes('weight')) continue;
+      const num = typeof raw === 'number' ? raw
+        : typeof raw === 'string' && raw.trim() !== '' && !isNaN(+raw) ? +raw : null;
+      if (num == null) continue;
+      const label = this.prettyKey(key);
+      if (seen.has(label.toLowerCase())) continue;
+      seen.add(label.toLowerCase());
+      facts.push({ label, value: this.fmtNum(num) });
+      if (facts.length >= 18) break;
+    }
+    return facts;
+  });
+
   private pendingFocus: string | null = null;
   private focusApplied = false;
 
@@ -177,7 +269,7 @@ export class ProjectAssembliesComponent implements OnInit {
       const nodes = this.store.nodes();
       if (!this.focusApplied && this.pendingFocus && nodes.length) {
         const node = nodes.find((n) => n.id === this.pendingFocus);
-        if (node) { this.select(node); this.focusApplied = true; }
+        if (node) { this.select(node); this.focusApplied = true; this.scrollSelectedIntoView(); }
       }
     });
   }
@@ -233,7 +325,11 @@ export class ProjectAssembliesComponent implements OnInit {
       this.selectedNodeId.set(node.id);
       let p = node.parentId; const byId = this.byId();
       while (p) { this.collapsed.delete(p); p = byId.get(p)?.parentId ?? null; }
+      this.scrollSelectedIntoView();
     }
+  }
+  private scrollSelectedIntoView(): void {
+    setTimeout(() => document.querySelector('.tree-scroll .node.sel')?.scrollIntoView({ block: 'nearest' }));
   }
   private descendantGuids(n: AssemblyNode): string[] {
     const out: string[] = []; const stack = [n]; const kids = this.childrenByParent();
@@ -262,4 +358,19 @@ export class ProjectAssembliesComponent implements OnInit {
   }
 
   typeIcon(t: NodeType): string { return { group: 'folder', assembly: 'widgets', subassembly: 'account_tree', part: 'square_foot' }[t] ?? 'circle'; }
+
+  /** IFC exporters write the literal string "Undefined" for missing values — hide it. */
+  defined(v: string | null): string | null {
+    const t = (v ?? '').trim();
+    return t && t.toLowerCase() !== 'undefined' ? t : null;
+  }
+
+  private fmtNum(v: number): string {
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(v);
+  }
+  /** "NetWeight" / "bottom_elevation" → "Net Weight" / "Bottom elevation". */
+  private prettyKey(key: string): string {
+    const spaced = key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+  }
 }

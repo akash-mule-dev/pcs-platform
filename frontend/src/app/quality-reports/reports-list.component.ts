@@ -77,7 +77,7 @@ import { ProjectsService, DashboardOrderRow } from '../core/services/projects.se
             <span>Report</span><span>Template</span><span>Work order</span><span>Project</span><span>Item</span><span>Status</span><span>Date</span><span></span>
           </div>
           @for (r of filtered(); track r.id) {
-            <a class="trow" [routerLink]="['/qr', r.id]">
+            <a class="trow" [routerLink]="['/qr', r.id]" target="_blank">
               <span class="t-num">{{ r.number }}</span>
               <span class="t-tpl">{{ r.templateName }}</span>
               <span class="t-wo">{{ r.orderNumber || '—' }}</span>

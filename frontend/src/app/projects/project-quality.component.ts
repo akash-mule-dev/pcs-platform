@@ -287,7 +287,7 @@ export class ProjectQualityComponent implements OnInit {
     });
   }
 
-  openReport(r: QualityReport): void { this.router.navigate(['/qr', r.id]); }
+  openReport(r: QualityReport): void { window.open(this.reportsSvc.fillUrl(r.id), '_blank'); }
 
   // ── Record-a-check panel ──
   q = signal('');
