@@ -197,7 +197,7 @@ import { environment } from '../../../environments/environment';
   `]
 })
 export class ProductViewerComponent {
-  @ViewChild('viewer') viewer!: ThreeViewerComponent;
+  @ViewChild('viewer') viewer?: ThreeViewerComponent;
 
   models: any[] = [];
   selectedModelId: string | null = null;

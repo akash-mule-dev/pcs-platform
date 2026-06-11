@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service.js';
+import { ProjectProgressService } from './project-progress.service.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -12,7 +13,10 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('api/projects')
 export class ProjectsController {
-  constructor(private readonly service: ProjectsService) {}
+  constructor(
+    private readonly service: ProjectsService,
+    private readonly progressService: ProjectProgressService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List projects' })
@@ -43,6 +47,12 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Get one assembly node (dimensions, properties, model link)' })
   findNode(@Param('id') id: string, @Param('nodeId') nodeId: string) {
     return this.service.findNode(id, nodeId);
+  }
+
+  @Get(':id/progress')
+  @ApiOperation({ summary: 'Design summary: node composition, total tonnage, work-order item count' })
+  progress(@Param('id') id: string) {
+    return this.progressService.getProgress(id);
   }
 
   @Get(':id/nodes/:nodeId/meshes')

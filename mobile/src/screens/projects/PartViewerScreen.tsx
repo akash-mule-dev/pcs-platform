@@ -21,7 +21,7 @@ const VIEWER_HTML = `<!DOCTYPE html>
 <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
 <style>
   * { margin: 0; padding: 0; }
-  body { background: #1a1a2e; overflow: hidden; }
+  body { background: #eaf4fc; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   #loading { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(26,26,46,0.95); color: #fff; font-family: sans-serif; }
   #bar { width: 60%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; margin-top: 12px; }
@@ -40,7 +40,26 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 window._iso = __ISO_SET__;
 
 var scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
+scene.background = new THREE.Color(0xeaf4fc);
+// Skybox: gradient sky dome — azure overhead, bright horizon, soft ground.
+function addSky(target) {
+  var mat = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor: { value: new THREE.Color(0x73b8ec) },
+      horizonColor: { value: new THREE.Color(0xeaf4fc) },
+      bottomColor: { value: new THREE.Color(0xe6ebf0) },
+      exponent: { value: 0.7 }
+    },
+    side: THREE.BackSide,
+    depthWrite: false,
+    vertexShader: 'varying vec3 vWorldPosition; void main(){ vec4 wp = modelMatrix * vec4(position,1.0); vWorldPosition = wp.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: 'uniform vec3 topColor; uniform vec3 horizonColor; uniform vec3 bottomColor; uniform float exponent; varying vec3 vWorldPosition; void main(){ float h = normalize(vWorldPosition).y; vec3 sky = mix(horizonColor, topColor, pow(max(h,0.0), exponent)); vec3 ground = mix(horizonColor, bottomColor, pow(max(-h,0.0), 0.45)); gl_FragColor = vec4(h >= 0.0 ? sky : ground, 1.0); }'
+  });
+  var dome = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), mat);
+  dome.renderOrder = -1;
+  target.add(dome);
+}
+addSky(scene);
 var camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.01, 1000);
 camera.position.set(2.4, 1.8, 2.8);
 var renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -52,7 +71,7 @@ controls.enableDamping = true;
 scene.add(new THREE.AmbientLight(0xffffff, 0.7));
 var dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(5, 10, 7); scene.add(dir);
 var dir2 = new THREE.DirectionalLight(0xffffff, 0.3); dir2.position.set(-5, 2, -5); scene.add(dir2);
-var grid = new THREE.GridHelper(10, 20, 0x39395a, 0x2a2a44); scene.add(grid);
+var grid = new THREE.GridHelper(10, 20, 0xb9cbdc, 0xd9e5f0); scene.add(grid);
 
 function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
 animate();

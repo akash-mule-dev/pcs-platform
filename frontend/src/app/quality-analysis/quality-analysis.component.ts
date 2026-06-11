@@ -110,12 +110,14 @@ interface Model3D {
                         {{ model.product?.name || 'No product' }} &middot;
                         {{ (model.fileSize / 1024 / 1024).toFixed(1) }}MB
                       </span>
-                      @if (qaByModel[model.id]?.total) {
-                        <span class="qa-mini">
-                          <span class="qa-seg pass">{{ qaByModel[model.id].pass }}</span>
-                          <span class="qa-seg warning">{{ qaByModel[model.id].warning }}</span>
-                          <span class="qa-seg fail">{{ qaByModel[model.id].fail }}</span>
-                        </span>
+                      @if (qaByModel[model.id]; as qa) {
+                        @if (qa.total) {
+                          <span class="qa-mini">
+                            <span class="qa-seg pass">{{ qa.pass }}</span>
+                            <span class="qa-seg warning">{{ qa.warning }}</span>
+                            <span class="qa-seg fail">{{ qa.fail }}</span>
+                          </span>
+                        }
                       }
                     </div>
                     <mat-icon class="type-chip" [class]="model.modelType">

@@ -64,6 +64,10 @@ const CAPA_STATUSES = ['open', 'in_progress', 'verified', 'closed'];
             <td mat-cell *matCellDef="let n">{{ n.number }}</td></ng-container>
           <ng-container matColumnDef="title"><th mat-header-cell *matHeaderCellDef>Title</th>
             <td mat-cell *matCellDef="let n">{{ n.title }}</td></ng-container>
+          <ng-container matColumnDef="project"><th mat-header-cell *matHeaderCellDef>Project</th>
+            <td mat-cell *matCellDef="let n">{{ n.projectName || '—' }}</td></ng-container>
+          <ng-container matColumnDef="item"><th mat-header-cell *matHeaderCellDef>Item</th>
+            <td mat-cell *matCellDef="let n"><span class="mark">{{ n.itemMark || '—' }}</span></td></ng-container>
           <ng-container matColumnDef="severity"><th mat-header-cell *matHeaderCellDef>Severity</th>
             <td mat-cell *matCellDef="let n"><span class="chip sev-{{n.severity}}">{{ n.severity }}</span></td></ng-container>
           <ng-container matColumnDef="status"><th mat-header-cell *matHeaderCellDef>Status</th>
@@ -139,6 +143,7 @@ const CAPA_STATUSES = ['open', 'in_progress', 'verified', 'closed'];
     .panel-actions { display: flex; justify-content: flex-end; gap: 8px; }
     table.full { width: 100%; }
     .chip { padding: 2px 8px; border-radius: 10px; font-size: 12px; text-transform: capitalize; }
+    .mark { font-family: 'Space Grotesk', monospace; font-weight: 600; }
     .sev-low { background: #e2e8f0; } .sev-medium { background: #fde68a; } .sev-high { background: #fdba74; } .sev-critical { background: #fca5a5; }
     .capa-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-top: 1px solid var(--clay-border, #eee); }
     .status-sel { width: 150px; }
@@ -152,7 +157,7 @@ export class NcrComponent implements OnInit {
   readonly dispositions = DISPOSITIONS;
   readonly capaTypes = CAPA_TYPES;
   readonly capaStatuses = CAPA_STATUSES;
-  columns = ['number', 'title', 'severity', 'status', 'actions'];
+  columns = ['number', 'title', 'project', 'item', 'severity', 'status', 'actions'];
 
   loading = true;
   ncrs: any[] = [];

@@ -1,119 +1,183 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MatTableModule } from '@angular/material/table';
-import { MatButtonModule } from '@angular/material/button';
-import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatIconModule } from '@angular/material/icon';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TemplatesApiService } from './templates.service';
 
-const TYPES = ['ncr', 'inspection', 'checklist', 'capa', 'other'];
-// Form.io standalone bundle — loaded on demand from the CDN, so no npm install
-// or build-time dependency is required. The CSS is attached only while the
-// builder is open (see attachCss/detachCss) so its Bootstrap base styles don't
-// bleed into the rest of the Material UI.
+const TYPES = ['inspection', 'checklist', 'ncr', 'capa', 'other'];
+const TYPE_LABEL: Record<string, string> = {
+  inspection: 'Inspection', checklist: 'Checklist', ncr: 'NCR', capa: 'CAPA', other: 'Other',
+};
+
+// Form.io standalone bundle + the Bootstrap 4 base its templates are built on.
+// Both stylesheets are attached ONLY while the editor is open (and the app's
+// body font is pinned via an inline style so nothing visibly bleeds).
+const BOOTSTRAP_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.2/css/bootstrap.min.css';
 const FORMIO_CSS = 'https://cdn.form.io/formiojs/formio.full.min.css';
 const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
 
+/**
+ * Report templates — per-customer drag-drop forms (Form.io builder) that drive
+ * QC reports, NCR forms and checklists. The visual builder is the default;
+ * JSON mode is there for advanced edits and copy/paste between environments.
+ */
 @Component({
   selector: 'app-templates',
   standalone: true,
-  imports: [
-    CommonModule, FormsModule, MatTableModule, MatButtonModule, MatButtonToggleModule,
-    MatIconModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatProgressSpinnerModule,
-  ],
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule],
   template: `
-    <div class="page-shell">
-      <div class="page-header">
+    <div class="page">
+      <div class="head">
         <div>
-          <h1 class="page-title">Form &amp; Report Templates</h1>
-          <p class="page-subtitle">Per-customer configurable forms (NCR, inspections, checklists…)</p>
+          <h1>Report Templates</h1>
+          <p class="sub">Drag-drop forms, customized per customer — they drive QC reports, NCR forms and checklists.</p>
         </div>
-        <button mat-raised-button color="primary" (click)="startNew()"><mat-icon>add</mat-icon> New Template</button>
-      </div>
-
-      <div class="note">
-        <mat-icon>info</mat-icon>
-        <span>Build forms visually by dragging fields from the palette. Each template is stored per customer and
-          drives the matching NCR / inspection / checklist form. Switch to <strong>JSON</strong> for advanced edits.</span>
+        <button class="primary" (click)="editing ? cancel() : startNew()">
+          <mat-icon>{{ editing ? 'close' : 'add' }}</mat-icon>{{ editing ? 'Cancel' : 'New template' }}
+        </button>
       </div>
 
       @if (editing) {
-        <div class="panel">
-          <div class="panel-head">
-            <h3>{{ editing.id ? 'Edit' : 'New' }} template</h3>
-            <mat-button-toggle-group [value]="mode" (change)="setMode($event.value)" class="mode-toggle" aria-label="Editor mode">
-              <mat-button-toggle value="visual"><mat-icon>dashboard_customize</mat-icon> Visual</mat-button-toggle>
-              <mat-button-toggle value="json"><mat-icon>data_object</mat-icon> JSON</mat-button-toggle>
-            </mat-button-toggle-group>
+        <section class="card editor">
+          <div class="ed-head">
+            <h3>{{ editing.id ? 'Edit template' : 'New template' }}</h3>
+            <div class="mode">
+              <button class="mode-btn" [class.on]="mode === 'visual'" (click)="setMode('visual')"><mat-icon>dashboard_customize</mat-icon>Visual</button>
+              <button class="mode-btn" [class.on]="mode === 'json'" (click)="setMode('json')"><mat-icon>data_object</mat-icon>JSON</button>
+            </div>
           </div>
 
-          <div class="form-row">
-            <mat-form-field appearance="outline" class="grow"><mat-label>Name</mat-label><input matInput [(ngModel)]="editing.name"></mat-form-field>
-            <mat-form-field appearance="outline"><mat-label>Type</mat-label>
-              <mat-select [(ngModel)]="editing.type">@for (t of types; track t) { <mat-option [value]="t">{{ t }}</mat-option> }</mat-select></mat-form-field>
+          <div class="ed-meta">
+            <label class="grow">Template name
+              <input type="text" placeholder="e.g. Weld Inspection Report — Acme Steel" [(ngModel)]="editing.name">
+            </label>
+            <label>Type
+              <select [(ngModel)]="editing.type">
+                @for (t of types; track t) { <option [value]="t">{{ typeLabel(t) }}</option> }
+              </select>
+            </label>
           </div>
 
           @if (mode === 'visual') {
             @if (builderLoading) {
-              <div class="builder-loading"><mat-progress-spinner mode="indeterminate" diameter="28"></mat-progress-spinner><span>Loading builder…</span></div>
+              <div class="builder-loading"><mat-spinner diameter="26"></mat-spinner><span>Loading the drag-drop builder…</span></div>
             }
+            <p class="builder-hint"><mat-icon>info</mat-icon>Drag fields from the left palette onto the form. Click a placed field to set its label, required flag, values and validation.</p>
             <div #builderHost class="formio-host"></div>
-            @if (builderError) { <p class="builder-error"><mat-icon>warning</mat-icon> {{ builderError }}</p> }
+            @if (builderError) { <p class="builder-error"><mat-icon>warning</mat-icon>{{ builderError }}</p> }
           } @else {
-            <mat-form-field appearance="outline" class="full">
-              <mat-label>Schema (Form.io / JSON)</mat-label>
-              <textarea matInput rows="14" [(ngModel)]="schemaText" placeholder='{ "components": [ { "type": "textfield", "key": "defectDescription", "label": "Defect" } ] }'></textarea>
-            </mat-form-field>
+            <label class="json-label">Schema (Form.io JSON)
+              <textarea rows="16" [(ngModel)]="schemaText" spellcheck="false"
+                placeholder='{ "components": [ { "type": "textfield", "key": "inspector", "label": "Inspector" } ] }'></textarea>
+            </label>
           }
 
-          <div class="panel-actions">
-            <button mat-button (click)="cancel()">Cancel</button>
-            <button mat-raised-button color="primary" [disabled]="!editing.name" (click)="save()">Save</button>
+          <div class="ed-actions">
+            <button class="ghost" (click)="cancel()">Cancel</button>
+            <button class="primary" [disabled]="!editing.name" (click)="save()"><mat-icon>save</mat-icon>Save template</button>
           </div>
-        </div>
+        </section>
       }
 
-      <table mat-table [dataSource]="templates" class="full mat-elevation-z1">
-        <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Name</th><td mat-cell *matCellDef="let t">{{ t.name }}</td></ng-container>
-        <ng-container matColumnDef="type"><th mat-header-cell *matHeaderCellDef>Type</th><td mat-cell *matCellDef="let t">{{ t.type }}</td></ng-container>
-        <ng-container matColumnDef="version"><th mat-header-cell *matHeaderCellDef>Version</th><td mat-cell *matCellDef="let t">v{{ t.version }}</td></ng-container>
-        <ng-container matColumnDef="fields"><th mat-header-cell *matHeaderCellDef>Fields</th><td mat-cell *matCellDef="let t">{{ (t.schema?.components?.length) || 0 }}</td></ng-container>
-        <ng-container matColumnDef="actions"><th mat-header-cell *matHeaderCellDef></th>
-          <td mat-cell *matCellDef="let t">
-            <button mat-button color="primary" (click)="edit(t)">Edit</button>
-            <button mat-icon-button (click)="remove(t)"><mat-icon>delete</mat-icon></button>
-          </td></ng-container>
-        <tr mat-header-row *matHeaderRowDef="cols"></tr><tr mat-row *matRowDef="let r; columns: cols"></tr>
-      </table>
-      @if (!templates.length) { <p class="empty">No templates yet. Create one to drive a configurable NCR/inspection form.</p> }
+      <section class="card list-card">
+        @if (templates.length === 0 && !editing) {
+          <div class="none">
+            <mat-icon>dashboard_customize</mat-icon>
+            <h3>No templates yet</h3>
+            <p>Create your first one — drag fields together for a customer's QC report, then it appears in every "Start report" dropdown.</p>
+            <button class="primary" (click)="startNew()"><mat-icon>add</mat-icon>New template</button>
+          </div>
+        } @else if (templates.length > 0) {
+          <div class="thead"><span>Name</span><span>Type</span><span>Version</span><span>Fields</span><span></span></div>
+          @for (t of templates; track t.id) {
+            <div class="trow">
+              <span class="t-name">{{ t.name }}</span>
+              <span><span class="type-chip tt-{{ t.type }}">{{ typeLabel(t.type) }}</span></span>
+              <span class="t-ver">v{{ t.version }}</span>
+              <span class="t-fields">{{ (t.schema?.components?.length) || 0 }} fields</span>
+              <span class="t-actions">
+                <button class="link" (click)="edit(t)"><mat-icon>edit</mat-icon>Edit</button>
+                <button class="link danger" (click)="remove(t)"><mat-icon>delete</mat-icon></button>
+              </span>
+            </div>
+          }
+        }
+      </section>
     </div>
   `,
   styles: [`
-    .page-shell { padding:24px; } .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .page-title { margin:0; font-size:22px; } .page-subtitle { margin:2px 0 0; color: var(--clay-text-muted,#64748b); font-size:13px; }
-    .note { display:flex; gap:8px; align-items:flex-start; background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a5f; border-radius:8px; padding:10px 12px; margin-bottom:16px; font-size:13px; }
-    .note mat-icon { font-size:18px; width:18px; height:18px; }
-    .panel { background: var(--clay-surface,#fff); border:1px solid var(--clay-border,#e2e8f0); border-radius:10px; padding:16px; margin-bottom:16px; }
-    .panel-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:0 0 12px; }
-    .panel-head h3 { margin:0; font-size:15px; } .mode-toggle { transform: scale(0.85); transform-origin:right center; }
-    .form-row { display:flex; flex-wrap:wrap; gap:12px; } .grow { flex:1; min-width:200px; } .full { width:100%; }
-    .panel-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
-    .formio-host { width:100%; min-height:460px; border:1px dashed var(--clay-border,#e2e8f0); border-radius:8px; padding:8px; }
-    .builder-loading { display:flex; align-items:center; gap:10px; color: var(--clay-text-muted,#64748b); font-size:13px; padding:8px 0; }
-    .builder-error { display:flex; align-items:center; gap:6px; color:#b91c1c; font-size:13px; }
-    .builder-error mat-icon { font-size:18px; width:18px; height:18px; }
-    table.full { width:100%; } .empty { text-align:center; color: var(--clay-text-muted,#64748b); padding:24px; }
+    .page { max-width: 1320px; margin: 0 auto; }
+    .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+    .head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--clay-text); }
+    .sub { margin: 4px 0 0; font-size: 13px; color: var(--clay-text-muted); }
+    .primary, .ghost { display: inline-flex; align-items: center; gap: 6px; border-radius: var(--clay-radius-sm); padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .primary { background: var(--clay-primary); color: #fff; border: none; }
+    .primary:disabled { opacity: .55; cursor: default; }
+    .ghost { background: var(--clay-surface); color: var(--clay-text-secondary); border: 1px solid var(--clay-border); }
+    .primary mat-icon, .ghost mat-icon { font-size: 18px; width: 18px; height: 18px; }
+
+    .card { background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); box-shadow: var(--clay-shadow-soft); }
+    .editor { padding: 16px 18px; margin-bottom: 16px; }
+    .ed-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .ed-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--clay-text); }
+    .mode { display: flex; border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); overflow: hidden; }
+    .mode-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; font-size: 12px; font-weight: 600; background: var(--clay-surface); color: var(--clay-text-secondary); border: none; cursor: pointer; font-family: inherit; }
+    .mode-btn.on { background: var(--clay-primary); color: #fff; }
+    .mode-btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
+
+    .ed-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .ed-meta label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--clay-text-secondary); min-width: 180px; }
+    .ed-meta .grow { flex: 1; }
+    .ed-meta input, .ed-meta select { border: 1px solid var(--clay-border); border-radius: var(--clay-radius-xs); background: var(--clay-surface); color: var(--clay-text); padding: 9px 11px; font-size: 14px; font-family: inherit; }
+    .ed-meta input:focus, .ed-meta select:focus { outline: 2px solid color-mix(in srgb, var(--clay-primary) 35%, transparent); border-color: var(--clay-primary); }
+
+    .builder-hint { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--clay-text-muted); margin: 0 0 10px; }
+    .builder-hint mat-icon { font-size: 16px; width: 16px; height: 16px; color: var(--clay-primary); }
+    .formio-host { width: 100%; min-height: 480px; border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 12px; background: #fff; }
+    .builder-loading { display: flex; align-items: center; gap: 10px; color: var(--clay-text-muted); font-size: 13px; padding: 8px 0; }
+    .builder-error { display: flex; align-items: center; gap: 6px; color: var(--danger-text); font-size: 13px; }
+    .builder-error mat-icon { font-size: 18px; width: 18px; height: 18px; }
+
+    .json-label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--clay-text-secondary); }
+    .json-label textarea { border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); background: var(--clay-bg-warm); color: var(--clay-text); padding: 12px; font-size: 12.5px; font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; line-height: 1.5; resize: vertical; }
+    .ed-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+
+    .list-card { overflow: hidden; }
+    .thead, .trow { display: grid; grid-template-columns: 2fr 130px 80px 110px 140px; gap: 12px; align-items: center; padding: 11px 16px; }
+    .thead { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); border-bottom: 1px solid var(--clay-border); background: var(--clay-bg-warm); }
+    .trow { border-bottom: 1px solid var(--clay-border); }
+    .trow:last-child { border-bottom: none; }
+    .trow:hover { background: var(--clay-surface-hover); }
+    .t-name { font-size: 13px; font-weight: 600; color: var(--clay-text); }
+    .type-chip { padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .tt-inspection { background: var(--info-bg); color: var(--clay-primary); }
+    .tt-checklist { background: var(--success-bg); color: var(--success-text); }
+    .tt-ncr { background: var(--danger-bg); color: var(--danger-text); }
+    .tt-capa { background: var(--warning-bg); color: var(--warning-text); }
+    .tt-other { background: var(--badge-draft-bg); color: var(--badge-draft-text); }
+    .t-ver, .t-fields { font-size: 12px; color: var(--clay-text-muted); font-family: 'Space Grotesk', monospace; }
+    .t-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .link { display: inline-flex; align-items: center; gap: 3px; background: none; border: none; color: var(--clay-primary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; padding: 4px 6px; }
+    .link.danger { color: var(--clay-text-muted); }
+    .link.danger:hover { color: var(--danger); }
+    .link mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .none { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 48px 16px; text-align: center; }
+    .none mat-icon { font-size: 40px; width: 40px; height: 40px; color: var(--clay-text-muted); opacity: .5; }
+    .none h3 { margin: 0; font-size: 16px; color: var(--clay-text); }
+    .none p { margin: 0 0 10px; font-size: 13px; color: var(--clay-text-muted); max-width: 460px; }
+
+    /* Tame the Form.io builder inside its host so it blends with the app. */
+    :host ::ng-deep .formio-host { font-size: 13.5px; }
+    :host ::ng-deep .formio-host .formcomponents .formcomponent { font-size: 12px; padding: 6px 9px; border-radius: 7px; }
+    :host ::ng-deep .formio-host .drag-container { min-height: 320px; border-radius: 8px; }
+    :host ::ng-deep .formio-host .formarea { background: var(--clay-bg-warm, #f8fafc); border-radius: 8px; }
+    :host ::ng-deep .formio-host .btn-primary { background-color: var(--clay-primary, #2563eb); border-color: var(--clay-primary, #2563eb); }
   `],
 })
 export class TemplatesComponent implements OnInit, OnDestroy {
   readonly types = TYPES;
-  cols = ['name', 'type', 'version', 'fields', 'actions'];
   templates: any[] = [];
   editing: any = null;
   schemaText = '';
@@ -124,18 +188,21 @@ export class TemplatesComponent implements OnInit, OnDestroy {
   @ViewChild('builderHost') builderHost?: ElementRef<HTMLDivElement>;
   private builder: any = null;
   private static formioPromise: Promise<any> | null = null;
+  private prevBodyFont: string | null = null;
 
   constructor(private api: TemplatesApiService, private snack: MatSnackBar, private zone: NgZone) {}
 
   ngOnInit(): void { this.load(); }
   ngOnDestroy(): void { this.destroyBuilder(); this.detachCss(); }
 
+  typeLabel(t: string): string { return TYPE_LABEL[t] ?? t; }
+
   load(): void {
     this.api.list().subscribe({ next: (d) => this.templates = Array.isArray(d) ? d : (d?.data || []), error: () => {} });
   }
 
   startNew(): void {
-    this.editing = { name: '', type: 'ncr' };
+    this.editing = { name: '', type: 'inspection' };
     this.schemaText = '{\n  "components": []\n}';
     this.openEditor();
   }
@@ -240,16 +307,31 @@ export class TemplatesComponent implements OnInit, OnDestroy {
     return TemplatesComponent.formioPromise;
   }
 
+  /** Bootstrap 4 (Form.io's expected base) + Form.io CSS, attached only while
+   *  the editor is open. The app's body font is pinned with an inline style so
+   *  Bootstrap's reboot doesn't visibly change the rest of the shell. */
   private attachCss(): void {
-    if (document.getElementById('formio-css')) return;
-    const link = document.createElement('link');
-    link.id = 'formio-css';
-    link.rel = 'stylesheet';
-    link.href = FORMIO_CSS;
-    document.head.appendChild(link);
+    if (!document.getElementById('bootstrap-css')) {
+      this.prevBodyFont = getComputedStyle(document.body).fontFamily;
+      const bs = document.createElement('link');
+      bs.id = 'bootstrap-css';
+      bs.rel = 'stylesheet';
+      bs.href = BOOTSTRAP_CSS;
+      document.head.appendChild(bs);
+      document.body.style.fontFamily = this.prevBodyFont;
+    }
+    if (!document.getElementById('formio-css')) {
+      const link = document.createElement('link');
+      link.id = 'formio-css';
+      link.rel = 'stylesheet';
+      link.href = FORMIO_CSS;
+      document.head.appendChild(link);
+    }
   }
 
   private detachCss(): void {
     document.getElementById('formio-css')?.remove();
+    document.getElementById('bootstrap-css')?.remove();
+    document.body.style.removeProperty('font-family');
   }
 }

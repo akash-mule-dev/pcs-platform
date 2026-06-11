@@ -119,6 +119,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   private animationId = 0;
   private resizeObserver!: ResizeObserver;
   private currentModel: THREE.Group | null = null;
+  private sky: THREE.Mesh | null = null;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private edgeLines: THREE.LineSegments[] = [];
@@ -160,9 +161,12 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
 
-    // Scene
+    // Scene — sky-gradient dome (a real skybox: blue above, soft ground below
+    // the horizon) with the horizon color as the clear-color fallback.
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf5f0e8);
+    this.scene.background = new THREE.Color(0xeaf4fc);
+    this.sky = ThreeViewerComponent.createSkyDome();
+    this.scene.add(this.sky);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
@@ -189,8 +193,8 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     fillLight.position.set(-5, 3, -5);
     this.scene.add(fillLight);
 
-    // Grid
-    const grid = new THREE.GridHelper(10, 20, 0xd5c8b5, 0xe5ddd0);
+    // Grid — cool tones to sit on the sky dome's ground
+    const grid = new THREE.GridHelper(10, 20, 0xb9cbdc, 0xd9e5f0);
     this.scene.add(grid);
 
     // Click detection for mesh selection
@@ -407,10 +411,58 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
       }
     });
 
-    // Darker background for X-Ray to make edges pop
+    // X-Ray: hide the sky dome and go dark so the edges pop; solid: sky back on.
     if (this.scene) {
-      this.scene.background = new THREE.Color(this._renderMode === 'xray' ? 0x1a1a2e : 0xf5f0e8);
+      const xray = this._renderMode === 'xray';
+      if (this.sky) this.sky.visible = !xray;
+      this.scene.background = new THREE.Color(xray ? 0x1a1a2e : 0xeaf4fc);
     }
+  }
+
+  /**
+   * Gradient sky dome (BackSide sphere + shader): azure overhead blending to a
+   * bright horizon, with a soft light ground below — a lightweight skybox that
+   * works identically in WebGL here and in expo-gl on mobile.
+   */
+  private static createSkyDome(): THREE.Mesh {
+    const uniforms = {
+      topColor: { value: new THREE.Color(0x73b8ec) },
+      horizonColor: { value: new THREE.Color(0xeaf4fc) },
+      bottomColor: { value: new THREE.Color(0xe6ebf0) },
+      offset: { value: 0 },
+      exponent: { value: 0.7 },
+    };
+    const material = new THREE.ShaderMaterial({
+      uniforms,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      vertexShader: `
+        varying vec3 vWorldPosition;
+        void main() {
+          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPosition.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 horizonColor;
+        uniform vec3 bottomColor;
+        uniform float offset;
+        uniform float exponent;
+        varying vec3 vWorldPosition;
+        void main() {
+          float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;
+          vec3 sky = mix(horizonColor, topColor, pow(max(h, 0.0), exponent));
+          vec3 ground = mix(horizonColor, bottomColor, pow(max(-h, 0.0), 0.45));
+          gl_FragColor = vec4(h >= 0.0 ? sky : ground, 1.0);
+        }
+      `,
+    });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), material);
+    sky.renderOrder = -1;
+    return sky;
   }
 
   resetCamera(): void {

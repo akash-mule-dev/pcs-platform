@@ -42,7 +42,14 @@ export const routes: Routes = [
         loadComponent: () => import('./processes/process-detail/process-detail.component').then(m => m.ProcessDetailComponent)
       },
       {
+        // Production cockpit: KPIs, stage funnel and every production order with
+        // live progress. The legacy per-product work-order list moved to /legacy.
         path: 'work-orders',
+        canActivate: [featureGuard('work-orders')],
+        loadComponent: () => import('./work-orders/work-orders-dashboard.component').then(m => m.WorkOrdersDashboardComponent)
+      },
+      {
+        path: 'work-orders/legacy',
         canActivate: [featureGuard('work-orders')],
         loadComponent: () => import('./work-orders/work-order-list/work-order-list.component').then(m => m.WorkOrderListComponent)
       },
@@ -90,6 +97,11 @@ export const routes: Routes = [
         path: 'ncr',
         canActivate: [featureGuard('ncr')],
         loadComponent: () => import('./quality-ncr/ncr.component').then(m => m.NcrComponent)
+      },
+      {
+        path: 'quality-reports',
+        canActivate: [featureGuard('quality-reports')],
+        loadComponent: () => import('./quality-reports/reports-list.component').then(m => m.ReportsListComponent)
       },
       {
         path: 'equipment',
@@ -166,6 +178,13 @@ export const routes: Routes = [
         loadComponent: () => import('./engineering/glb-viewer/glb-viewer.component').then(m => m.GlbViewerComponent)
       }
     ]
+  },
+  {
+    // Full-screen QC report fill page — OUTSIDE the shell and auth guard so the
+    // mobile app can open it in a browser with ?token=<jwt> (stored + stripped
+    // by the component; the API itself still requires the bearer token).
+    path: 'qr/:id',
+    loadComponent: () => import('./quality-reports/report-fill.component').then(m => m.ReportFillComponent)
   },
   {
     path: '404',

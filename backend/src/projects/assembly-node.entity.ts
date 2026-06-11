@@ -13,7 +13,6 @@ import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 import { numericTransformer } from '../common/transformers/numeric.transformer.js';
 import { Project } from './project.entity.js';
 import { ImportFile } from './import-file.entity.js';
-import { Stage } from '../stages/stage.entity.js';
 import { Model3D } from '../models/model.entity.js';
 
 /**
@@ -26,15 +25,6 @@ export enum AssemblyNodeType {
   ASSEMBLY = 'assembly', // shippable assembly — top-level IfcElementAssembly
   SUBASSEMBLY = 'subassembly', // assembly nested inside another assembly
   PART = 'part', // single fabricated part: member, plate, fastener, accessory
-}
-
-/** Roll-up production state shown on the node in the tree / dashboards. */
-export enum NodeProductionStatus {
-  NOT_STARTED = 'not_started',
-  IN_PROGRESS = 'in_progress',
-  READY_TO_SHIP = 'ready_to_ship',
-  SHIPPED = 'shipped',
-  ON_HOLD = 'on_hold',
 }
 
 /**
@@ -128,26 +118,6 @@ export class AssemblyNode extends TenantOwnedEntity {
   /** Mesh/node name within the GLB (GUID-derived) used to highlight this part. */
   @Column({ name: 'mesh_name', type: 'varchar', length: 255, nullable: true })
   meshName: string | null;
-
-  // ── Roll-up status (maintained as WorkOrderStages close) ─────────────────
-  @Column({ name: 'production_status', type: 'enum', enum: NodeProductionStatus, default: NodeProductionStatus.NOT_STARTED })
-  productionStatus: NodeProductionStatus;
-
-  @Column({ name: 'current_stage_id', type: 'uuid', nullable: true })
-  currentStageId: string | null;
-
-  @ManyToOne(() => Stage, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'current_stage_id' })
-  currentStage: Stage | null;
-
-  @Column({ name: 'percent_complete', type: 'numeric', precision: 5, scale: 2, default: 0, transformer: numericTransformer })
-  percentComplete: number;
-
-  @Column({ name: 'qty_complete', type: 'integer', default: 0 })
-  qtyComplete: number;
-
-  @Column({ name: 'qty_shipped', type: 'integer', default: 0 })
-  qtyShipped: number;
 
   // ── Tree helpers (set by the importer; cheap ordering for rendering) ─────
   @Column({ type: 'integer', default: 0 })

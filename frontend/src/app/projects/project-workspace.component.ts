@@ -68,7 +68,6 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
               <button class="act-btn" (click)="editProject()"><mat-icon>edit</mat-icon><span>Edit</span></button>
               <button class="act-icon" [matMenuTriggerFor]="more" matTooltip="More actions"><mat-icon>more_vert</mat-icon></button>
               <mat-menu #more="matMenu">
-                <button mat-menu-item (click)="store.recompute()"><mat-icon>sync</mat-icon><span>Recompute status</span></button>
                 <button mat-menu-item (click)="store.reload()"><mat-icon>refresh</mat-icon><span>Reload</span></button>
                 <button mat-menu-item class="danger-item" (click)="deleteProject()"><mat-icon>delete</mat-icon><span>Delete project</span></button>
               </mat-menu>
@@ -99,8 +98,12 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
               <span class="stat-lbl">Total weight</span>
             </div>
             <div class="stat">
-              <span class="stat-num">{{ store.progress()?.workOrders ?? 0 }}</span>
+              <span class="stat-num">{{ store.ordersCount() }}</span>
               <span class="stat-lbl">Work orders</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num">{{ store.progress()?.workOrders ?? 0 }}</span>
+              <span class="stat-lbl">Items in production</span>
             </div>
           </div>
         } @else if (store.loading()) {
@@ -286,7 +289,7 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
 
   tabBadge(path: string): number | null {
     if (path === 'assemblies') { const c = this.store.nodes().length; return c > 0 ? c : null; }
-    if (path === 'orders') { const c = this.store.progress()?.workOrders ?? 0; return c > 0 ? c : null; }
+    if (path === 'orders') { const c = this.store.ordersCount(); return c > 0 ? c : null; }
     return null;
   }
 

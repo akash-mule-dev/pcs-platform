@@ -8,14 +8,12 @@ import { WorkOrderStage } from '../work-orders/work-order-stage.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { Product } from '../products/product.entity.js';
 import { Ncr } from '../quality-ncr/entities/ncr.entity.js';
-import { ProjectsModule } from './projects.module.js';
 import { ProductionOrderService } from './production-order.service.js';
 import { ProductionOrderController } from './production-order.controller.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ProductionOrder, Project, AssemblyNode, WorkOrder, WorkOrderStage, Stage, Product, Ncr]),
-    ProjectsModule, // StatusRollupService — keeps the assembly tree/3D status live as counts move
   ],
   controllers: [ProductionOrderController],
   providers: [ProductionOrderService],

@@ -185,7 +185,7 @@ interface NavGroup {
 
           @if (currentUser) {
             <span class="user-name">{{ currentUser.firstName }} {{ currentUser.lastName }}</span>
-            <span class="user-role">({{ currentUser.role?.name || currentUser.role }})</span>
+            <span class="user-role">({{ currentUser.role.name || currentUser.role }})</span>
           }
           <button mat-icon-button (click)="logout()" matTooltip="Logout">
             <mat-icon>logout</mat-icon>
@@ -503,6 +503,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
       { label: 'Traceability', icon: 'qr_code_2', route: '/traceability', feature: 'traceability' },
     ] },
     { label: 'Quality', icon: 'verified', expanded: false, items: [
+      { label: 'QC Reports', icon: 'fact_check', route: '/quality-reports', feature: 'quality-reports' },
+      { label: 'Report Templates', icon: 'dashboard_customize', route: '/templates', feature: 'templates' },
       { label: 'NCR / CAPA', icon: 'report_problem', route: '/ncr', feature: 'ncr' },
       { label: '3D Quality', icon: 'view_in_ar', route: '/quality-analysis', feature: 'quality-analysis' },
     ] },
@@ -520,7 +522,6 @@ export class LayoutComponent implements OnInit, OnDestroy {
       { label: 'Organizations', icon: 'corporate_fare', route: '/organizations', feature: 'organizations' },
       { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
       { label: 'Roles & Access', icon: 'admin_panel_settings', route: '/rbac', feature: 'rbac' },
-      { label: 'Templates', icon: 'dynamic_form', route: '/templates', feature: 'templates' },
     ] },
   ];
 

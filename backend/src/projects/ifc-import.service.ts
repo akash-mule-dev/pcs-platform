@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -92,15 +92,18 @@ export class IfcImportService {
       const result = JSON.parse(fs.readFileSync(outPath, 'utf8')) as ExtractResult;
       const nodeCount = await this.persistTree(organizationId, projectId, importFile.id, format, result.nodes);
 
-      modelId = await this.enqueueGlb(inPath, originalName, project.name, organizationId, projectId, importFile);
-      glbQueued = !modelId && !!importFile.conversionJobId;
+      // Kick the GLB conversion WITHOUT blocking the response — on the inline
+      // (no-Redis) queue it converts synchronously and can take minutes for a
+      // real model; the tree shouldn't wait for it. linkPendingModels() (polled
+      // by the project page) attaches the model once it's done.
+      glbQueued = this.enqueueGlbInBackground(inPath, originalName, project.name, organizationId, projectId, importFile.id);
+      modelId = null;
 
       importFile.status = ImportFileStatus.COMPLETED;
       importFile.nodeCount = nodeCount;
-      importFile.modelId = modelId;
       await this.importRepo.save(importFile);
 
-      this.logger.log(`Imported ${nodeCount} nodes from ${originalName} (model=${modelId ?? (glbQueued ? 'queued' : 'none')})`);
+      this.logger.log(`Imported ${nodeCount} nodes from ${originalName} (GLB ${glbQueued ? 'converting in background' : 'not queued'})`);
       return { importFileId: importFile.id, nodeCount, counts: result.counts, modelId, glbQueued };
     } catch (err) {
       importFile.status = ImportFileStatus.FAILED;
@@ -124,7 +127,12 @@ export class IfcImportService {
     let pending = 0;
     let failed = 0;
     for (const imp of imports) {
-      if (imp.modelId || !imp.conversionJobId) continue;
+      if (imp.modelId) continue;
+      if (!imp.conversionJobId) {
+        // Background conversion hasn't registered its job yet (or failed before it could).
+        if (imp.status === ImportFileStatus.COMPLETED) { imp.error ? failed++ : pending++; }
+        continue;
+      }
       let job;
       try { job = await this.conversionService.findOne(imp.conversionJobId); } catch { continue; }
       if (job.status === 'completed' && job.modelId) {
@@ -141,34 +149,63 @@ export class IfcImportService {
     return { linked, pending, failed };
   }
 
-  /** Queue an async IFC->GLB conversion on the BullMQ pipeline; link immediately on a dedupe hit. */
-  private async enqueueGlb(
+  /**
+   * Kick the IFC->GLB conversion in the BACKGROUND (fire-and-forget): on the
+   * inline (no-Redis) queue, createJob converts synchronously and can take
+   * minutes on a real model — the import response must not wait for it. Copies
+   * the source to its own temp file (the import's temp file is deleted when the
+   * request returns) and links/marks the ImportFile when the job finishes.
+   * Returns true when the background job was started.
+   */
+  private enqueueGlbInBackground(
     ifcPath: string,
     originalName: string,
     projectName: string,
     organizationId: string,
     projectId: string,
-    importFile: ImportFile,
-  ): Promise<string | null> {
+    importFileId: string,
+  ): boolean {
+    let bgPath: string;
     try {
-      const stats = fs.statSync(ifcPath);
-      const base = path.basename(originalName, path.extname(originalName));
-      const file = this.asMulterFile(ifcPath, originalName, stats.size, 'application/octet-stream');
-      const job = await this.conversionService.createJob(
-        { name: projectName || base, description: `Imported from ${originalName}`, modelType: 'assembly' },
-        file,
-      );
-      importFile.conversionJobId = job.id;
-      if (job.status === 'completed' && job.modelId) {
-        await this.nodeRepo.update({ organizationId, projectId, importFileId: importFile.id }, { modelId: job.modelId });
-        return job.modelId;
-      }
-      this.logger.log(`Queued GLB conversion job ${job.id} for ${originalName}`);
-      return null;
+      bgPath = path.join(os.tmpdir(), 'pcs-ifc-import', `${crypto.randomUUID()}.ifc`);
+      fs.copyFileSync(ifcPath, bgPath);
     } catch (e) {
-      this.logger.warn(`Could not queue GLB conversion for ${originalName}: ${e instanceof Error ? e.message : e}`);
-      return null;
+      this.logger.warn(`Could not stage GLB conversion for ${originalName}: ${e instanceof Error ? e.message : e}`);
+      return false;
     }
+    void (async () => {
+      try {
+        const stats = fs.statSync(bgPath);
+        const base = path.basename(originalName, path.extname(originalName));
+        const file = this.asMulterFile(bgPath, originalName, stats.size, 'application/octet-stream');
+        const job = await this.conversionService.createJob(
+          { name: projectName || base, description: `Imported from ${originalName}`, modelType: 'assembly' },
+          file,
+        );
+        const imp = await this.importRepo.findOne({ where: { id: importFileId } });
+        if (imp) {
+          imp.conversionJobId = job.id;
+          if (job.status === 'completed' && job.modelId) {
+            imp.modelId = job.modelId;
+            await this.nodeRepo.update({ organizationId, projectId, importFileId }, { modelId: job.modelId });
+          }
+          await this.importRepo.save(imp);
+        }
+        this.logger.log(`GLB conversion ${job.status} (job ${job.id}) for ${originalName}`);
+      } catch (e) {
+        this.logger.warn(`Background GLB conversion failed for ${originalName}: ${e instanceof Error ? e.message : e}`);
+        try {
+          const imp = await this.importRepo.findOne({ where: { id: importFileId } });
+          if (imp && !imp.modelId) {
+            imp.error = `GLB conversion failed: ${e instanceof Error ? e.message : String(e)}`;
+            await this.importRepo.save(imp);
+          }
+        } catch { /* best effort */ }
+      } finally {
+        this.safeUnlink(bgPath);
+      }
+    })();
+    return true;
   }
 
   private asMulterFile(filePath: string, originalname: string, size: number, mimetype: string): Express.Multer.File {
@@ -198,35 +235,55 @@ export class IfcImportService {
     format: string,
     nodes: ExtractedNode[],
   ): Promise<number> {
+    // BATCHED: per-node findOne+save was 2 round trips x N nodes against a
+    // remote DB (minutes for a real model). Load all existing nodes in chunks,
+    // then save level-by-level (parents before children) in chunked batches.
+    const existingByGuid = new Map<string, AssemblyNode>();
+    const guids = nodes.map((n) => n.externalId);
+    for (let i = 0; i < guids.length; i += 500) {
+      const batch = await this.nodeRepo.find({ where: { organizationId, projectId, ifcGuid: In(guids.slice(i, i + 500)) } });
+      for (const e of batch) if (e.ifcGuid) existingByGuid.set(e.ifcGuid, e);
+    }
+
+    const byDepth = new Map<number, ExtractedNode[]>();
+    for (const n of nodes) {
+      const arr = byDepth.get(n.depth) ?? [];
+      arr.push(n);
+      byDepth.set(n.depth, arr);
+    }
+
     const idByExternal = new Map<string, string>();
     let count = 0;
-    for (const n of nodes) {
-      const existing = await this.nodeRepo.findOne({ where: { organizationId, projectId, ifcGuid: n.externalId } });
-      const entity = existing ?? this.nodeRepo.create();
-      Object.assign(entity, {
-        organizationId,
-        projectId,
-        parentId: n.parentExternalId ? idByExternal.get(n.parentExternalId) ?? null : null,
-        nodeType: n.type as AssemblyNodeType,
-        name: n.name,
-        mark: n.mark,
-        quantity: n.quantity ?? 1,
-        ifcGuid: n.externalId,
-        ifcClass: n.ifcClass,
-        sourceFormat: format,
-        importFileId,
-        profile: n.profile,
-        materialGrade: n.materialGrade,
-        lengthMm: n.lengthMm,
-        weightKg: n.weightKg,
-        meshName: n.meshName,
-        properties: n.properties as Record<string, any> | null,
-        depth: n.depth,
-        sortIndex: n.sortIndex,
+    for (const depth of [...byDepth.keys()].sort((a, b) => a - b)) {
+      const level = byDepth.get(depth)!;
+      const entities = level.map((n) => {
+        const entity = existingByGuid.get(n.externalId) ?? this.nodeRepo.create();
+        Object.assign(entity, {
+          organizationId,
+          projectId,
+          parentId: n.parentExternalId ? idByExternal.get(n.parentExternalId) ?? null : null,
+          nodeType: n.type as AssemblyNodeType,
+          name: n.name,
+          mark: n.mark,
+          quantity: n.quantity ?? 1,
+          ifcGuid: n.externalId,
+          ifcClass: n.ifcClass,
+          sourceFormat: format,
+          importFileId,
+          profile: n.profile,
+          materialGrade: n.materialGrade,
+          lengthMm: n.lengthMm,
+          weightKg: n.weightKg,
+          meshName: n.meshName,
+          properties: n.properties as Record<string, any> | null,
+          depth: n.depth,
+          sortIndex: n.sortIndex,
+        });
+        return entity;
       });
-      const saved = await this.nodeRepo.save(entity);
-      idByExternal.set(n.externalId, saved.id);
-      count++;
+      const saved = await this.nodeRepo.save(entities, { chunk: 200 });
+      saved.forEach((s, i) => idByExternal.set(level[i].externalId, s.id));
+      count += saved.length;
     }
     return count;
   }

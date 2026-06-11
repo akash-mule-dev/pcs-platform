@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Not } from 'typeorm';
 import { WorkOrder, WorkOrderStatus } from './work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from './work-order-stage.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
+import { AssemblyNode } from '../projects/assembly-node.entity.js';
 import { isQualityStageName, qcGateMessage } from './qc-gate.js';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto.js';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto.js';
@@ -14,7 +15,6 @@ import { AuditService } from '../audit/audit.service.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { InventoryService } from '../materials/inventory.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
-import { StatusRollupService } from '../projects/status-rollup.service.js';
 
 @Injectable()
 export class WorkOrdersService {
@@ -23,16 +23,11 @@ export class WorkOrdersService {
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
     @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
+    @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
     private readonly inventoryService: InventoryService,
-    @Inject(forwardRef(() => StatusRollupService)) private readonly rollup: StatusRollupService,
   ) {}
-
-  /** Best-effort: refresh the assembly/project status roll-up after a work-order stage change. */
-  private async recomputeRollup(workOrderId: string): Promise<void> {
-    try { await this.rollup.recomputeForWorkOrder(workOrderId); } catch { /* non-fatal */ }
-  }
 
   /** Open NCRs linked to a fabricated assembly (anything not closed/cancelled blocks the quality gate). */
   private countOpenNcrs(assemblyNodeId: string): Promise<number> {
@@ -45,6 +40,12 @@ export class WorkOrdersService {
     });
   }
 
+  /** Shop-floor label for a gate message: the part mark, not the internal WO number. */
+  private async nodeLabel(assemblyNodeId: string, fallback: string): Promise<string> {
+    const node = await this.nodeRepo.findOne({ where: { id: assemblyNodeId } });
+    return node?.mark || node?.name || fallback;
+  }
+
   /**
    * Quality gate: a quality stage of a fabrication work order cannot be
    * completed while the assembly still has open NCRs. Throws 400 when blocked.
@@ -52,7 +53,7 @@ export class WorkOrdersService {
   private async assertQualityGate(wo: WorkOrder | null, stageName: string | null | undefined): Promise<void> {
     if (!wo?.assemblyNodeId || !isQualityStageName(stageName)) return;
     const open = await this.countOpenNcrs(wo.assemblyNodeId);
-    if (open > 0) throw new BadRequestException(qcGateMessage(wo.orderNumber, open));
+    if (open > 0) throw new BadRequestException(qcGateMessage(await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber), open));
   }
 
   async findAll(pageOptions: PageOptionsDto, status?: string, priority?: string): Promise<PageDto<WorkOrder>> {
@@ -82,14 +83,26 @@ export class WorkOrdersService {
     return wo;
   }
 
+  /** Highest numeric suffix among order numbers with the given prefix (count() drifts after deletes). */
+  private async maxWoNumberSuffix(prefix: string): Promise<number> {
+    const rows: { num: string }[] = await this.woRepo.query(
+      `SELECT order_number AS num FROM work_orders WHERE order_number LIKE $1 ORDER BY order_number DESC LIMIT 1`,
+      [`${prefix}%`],
+    );
+    const raw = rows?.[0]?.num;
+    if (!raw) return 0;
+    const n = parseInt(raw.slice(prefix.length), 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+
   async create(dto: CreateWorkOrderDto): Promise<WorkOrder> {
     const year = new Date().getFullYear();
 
     // Retry loop handles concurrent duplicate orderNumber race condition
     let saved: WorkOrder | undefined;
     for (let attempt = 0; attempt < 5; attempt++) {
-      const count = await this.woRepo.count();
-      const orderNumber = `WO-${year}-${String(count + 1).padStart(4, '0')}`;
+      const base = await this.maxWoNumberSuffix(`WO-${year}-`);
+      const orderNumber = `WO-${year}-${String(base + 1).padStart(4, '0')}`;
 
       try {
         const wo = this.woRepo.create({
@@ -171,7 +184,7 @@ export class WorkOrdersService {
     // to completed — blocked while the fabricated assembly has open NCRs.
     if (newStatus === WorkOrderStatus.COMPLETED && wo.assemblyNodeId) {
       const open = await this.countOpenNcrs(wo.assemblyNodeId);
-      if (open > 0) throw new BadRequestException(qcGateMessage(wo.orderNumber, open));
+      if (open > 0) throw new BadRequestException(qcGateMessage(await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber), open));
     }
 
     const oldStatus = wo.status;
@@ -210,7 +223,6 @@ export class WorkOrdersService {
       newValues: { status: newStatus },
     });
 
-    await this.recomputeRollup(id);
     const updated = await this.findOne(id);
     this.eventsGateway.emitWorkOrderUpdate(updated);
     this.eventsGateway.emitDashboardRefresh();
@@ -275,7 +287,6 @@ export class WorkOrdersService {
       newValues: { status: newStatus },
     });
 
-    await this.recomputeRollup(workOrderId);
     const updated = await this.findOne(workOrderId);
     this.eventsGateway.emitWorkOrderUpdate(updated);
     return updated;

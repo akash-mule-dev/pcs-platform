@@ -6,8 +6,6 @@ import { environment } from '../../../environments/environment';
 
 export type ProjectStatus = 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
 export type NodeType = 'group' | 'assembly' | 'subassembly' | 'part';
-export type NodeProductionStatus =
-  | 'not_started' | 'in_progress' | 'ready_to_ship' | 'shipped' | 'on_hold';
 
 export interface Project {
   id: string;
@@ -40,11 +38,6 @@ export interface AssemblyNode {
   weightKg: number | null;
   modelId: string | null;
   meshName: string | null;
-  productionStatus: NodeProductionStatus;
-  currentStageId: string | null;
-  percentComplete: number;
-  qtyComplete: number;
-  qtyShipped: number;
   depth: number;
   sortIndex: number;
   properties: Record<string, unknown> | null;
@@ -54,10 +47,7 @@ export interface ProjectMetrics {
   nodeCount: number;
   partCount: number;
   assemblyCount: number;
-  percentComplete: number;
-  tonnage: { totalKg: number; processedKg: number; shippedKg: number };
-  readyToShip: number;
-  inProgress: number;
+  tonnage: { totalKg: number };
 }
 export type ProjectSummary = Project & { metrics: ProjectMetrics };
 
@@ -77,14 +67,23 @@ export interface ImportResult {
   counts: Record<string, number>;
 }
 
-export interface StageBucket { name: string; sequence: number; total: number; done: number; inProgress: number; pending: number; percent: number; }
+/** Design summary — what the project IS. Production progress lives per order. */
 export interface ProjectProgress {
   nodes: { total: number; group: number; assembly: number; subassembly: number; part: number };
-  status: Record<string, number>;
-  percentComplete: number;
-  tonnage: { totalKg: number; processedKg: number; shippedKg: number };
-  stages: StageBucket[];
+  tonnage: { totalKg: number };
   workOrders: number;
+}
+
+/** Count-based progress for one work order (production run). */
+export interface OrderStageFunnel { stageId: string; name: string; sequence: number; done: number; total: number; percent: number; }
+export interface OrderProgress {
+  orderId: string;
+  status: 'not_started' | 'in_progress' | 'completed';
+  percentComplete: number;
+  unitsDone: number;
+  unitsTotal: number;
+  assemblies: number;
+  stages: OrderStageFunnel[];
 }
 
 export type QaStatus = 'pass' | 'fail' | 'warning';
@@ -154,6 +153,23 @@ export interface OrderBoardItem { nodeId: string; mark: string; nodeType: string
 export interface OrderBoard { order: ProductionOrder; stages: { id: string; name: string; sequence: number }[]; items: OrderBoardItem[]; }
 export interface CreateOrder { processId: string; customerName?: string; quantity?: number; dueDate?: string; notes?: string; }
 
+// ── Org-wide work-orders dashboard ──
+export interface DashboardOrderRow {
+  id: string; number: string; customerName: string | null; quantity: number;
+  status: OrderStatus; dueDate: string | null; createdAt: string;
+  project: { id: string; name: string; number: string | null };
+  items: number; itemsDone: number; unitsDone: number; unitsTotal: number; percent: number;
+  openNcrs: number; late: boolean;
+}
+export interface OrdersDashboard {
+  kpis: {
+    orders: number; planned: number; inProgress: number; completed: number; cancelled: number;
+    late: number; openNcrs: number; unitsDone: number; unitsTotal: number; itemsInProduction: number;
+  };
+  funnel: { name: string; sequence: number; done: number; total: number; percent: number }[];
+  orders: DashboardOrderRow[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ProjectsService {
   private readonly base = `${environment.apiUrl}/projects`;
@@ -212,14 +228,6 @@ export class ProjectsService {
     return this.http.post<{ id: string; name: string }>(`${environment.apiUrl}/processes/standard`, {});
   }
 
-  generateWorkOrders(projectId: string, processId: string): Observable<{ created: number; skipped: number }> {
-    return this.http.post<{ created: number; skipped: number }>(`${this.base}/${projectId}/generate-work-orders`, { processId });
-  }
-
-  recomputeStatus(projectId: string): Observable<{ updated: number; projectStatus: string | null }> {
-    return this.http.post<{ updated: number; projectStatus: string | null }>(`${this.base}/${projectId}/recompute-status`, {});
-  }
-
   /** Link any queued-conversion GLBs back to the project tree; reports how many are still converting. */
   resolveModels(projectId: string): Observable<{ linked: number; pending: number; failed: number }> {
     return this.http.post<{ linked: number; pending: number; failed: number }>(`${this.base}/${projectId}/resolve-models`, {});
@@ -266,6 +274,10 @@ export class ProjectsService {
   }
 
   // ── Production orders (per-customer/run instances; their own process + quantity) ──
+  /** Org-wide dashboard: KPIs + stage funnel + every order with progress, in one call. */
+  ordersDashboard(): Observable<OrdersDashboard> {
+    return this.http.get<OrdersDashboard>(`${environment.apiUrl}/orders/dashboard`);
+  }
   listOrders(projectId: string): Observable<ProductionOrder[]> {
     return this.http.get<ProductionOrder[]>(`${this.base}/${projectId}/orders`);
   }
@@ -277,6 +289,10 @@ export class ProjectsService {
   }
   orderBoard(orderId: string): Observable<OrderBoard> {
     return this.http.get<OrderBoard>(`${environment.apiUrl}/orders/${orderId}/stage-board`);
+  }
+  /** Count-based progress for one work order: overall % + per-stage funnel. */
+  orderProgress(orderId: string): Observable<OrderProgress> {
+    return this.http.get<OrderProgress>(`${environment.apiUrl}/orders/${orderId}/progress`);
   }
   /** Update a stage: qtyDone stepper, or status for qty=1 / skip. */
   setOrderStage(orderId: string, wosId: string, body: { qtyDone?: number; status?: string }): Observable<unknown> {

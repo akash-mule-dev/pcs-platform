@@ -17,4 +17,13 @@ const apiUrl =
   process.env.EXPO_PUBLIC_API_URL ??
   (isDev ? 'http://localhost:3000/api' : DEFAULT_PROD_API);
 
-export const environment = { apiUrl };
+/**
+ * Web portal base URL — used to open web pages (e.g. the full-screen QC report
+ * fill page /qr/:id) from the app, carrying the auth token. Defaults to the
+ * API host on port 4200 in dev; override with EXPO_PUBLIC_WEB_URL.
+ */
+const webUrl =
+  process.env.EXPO_PUBLIC_WEB_URL ??
+  (isDev ? apiUrl.replace(':3000/api', ':4200') : 'https://pcs.spadebloom.com');
+
+export const environment = { apiUrl, webUrl };

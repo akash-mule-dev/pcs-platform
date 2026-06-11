@@ -26,6 +26,7 @@ export const PERMISSIONS: Record<string, FeaturePermission> = {
   stations:           { view: ['admin', 'manager'], manage: ['admin', 'manager'] },
   coordination:       { view: ['admin', 'manager', 'supervisor'], manage: ['admin', 'manager'] },
   'quality-analysis': { view: ['admin', 'manager', 'supervisor'], manage: ['admin', 'manager', 'supervisor'] },
+  'quality-reports':  { view: ['admin', 'manager', 'supervisor', 'operator'], manage: ['admin', 'manager', 'supervisor', 'operator'] },
   reports:            { view: ['admin', 'manager', 'supervisor'] },
   audit:              { view: ['admin', 'manager'] },
   organizations:      { view: ['admin'] },

@@ -63,19 +63,23 @@ backend/src/
   conversion/              # async 3D→GLB pipeline: ConversionJob + queue (inline|BullMQ) + processor
   models/                  # Model3D (GLB) records + file streaming endpoints
   coordination/            # BIM coordination packages + drawings
-  projects/                # ★ fabrication: Project, AssemblyNode tree, ImportFile, IFC import, WO-gen, roll-up, progress
+  projects/                # ★ fabrication: Project, AssemblyNode tree, ImportFile, IFC import, production orders
   shipping/                # ★ fabrication: Shipment + ShipmentItem (the shipping list)
 frontend/src/app/
   core/services/           # HTTP services (projects.service.ts, shipping.service.ts, conversion.service.ts, …)
   layout/                  # shell + side-nav (navGroups define the menu)
-  projects/                # ★ project list, creation wizard, detail (tree + 3D), shipping, progress
+  projects/                # ★ project list, creation wizard, workspace (tree + 3D), per-order board/progress/quality/shipping
   shared/components/three-viewer/  # reusable three.js GLB viewer (modelUrl, highlightNames, meshClicked)
 ```
 
 ## The fabrication module (`backend/src/projects`, `backend/src/shipping`, `frontend/src/app/projects`)
 
-End-to-end flow: **create project → import IFC → assembly tree + 3D → generate work orders →
-run stages (live roll-up) → ship → progress dashboard.**
+End-to-end flow: **create project → import IFC → assembly tree + 3D → create production orders
+(per customer/run) → step stage counts on the order board → ship → per-order progress.**
+
+The **project is a pure design container** — it carries NO production status. One design can back
+many production orders, so a single per-node status would be meaningless; all tracking is
+per-order (count-based, on the order's work-order stages).
 
 Core data model (one self-referencing tree absorbs every source format):
 
@@ -83,12 +87,15 @@ Core data model (one self-referencing tree absorbs every source format):
 - `AssemblyNode` — **one self-referencing table** (`parent_id`) for the whole structure.
   `node_type` ∈ `group | assembly | subassembly | part`; carries `ifc_guid` (stable key + GLB
   mesh-node name for 3D highlight), promoted fab columns (`mark`, `profile`, `material_grade`,
-  `length_mm`, `weight_kg`), a `properties` jsonb bag, a `model_id` link, and roll-up fields
-  (`production_status`, `current_stage_id`, `percent_complete`, `qty_complete`, `qty_shipped`).
+  `length_mm`, `weight_kg`), a `properties` jsonb bag, and a `model_id` link. Design facts only —
+  no status/percent columns.
 - `ImportFile` — an uploaded source file (`conversion_job_id`, `model_id`, status, node_count).
-- `Shipment` / `ShipmentItem` — shipping loads and the assemblies on them.
-- `WorkOrder.assembly_node_id` — added so the **existing** WorkOrder/WorkOrderStage engine drives
-  each fabricated node through a Process's stages (no parallel engine).
+- `ProductionOrder` — a per-customer/per-run instance of the project: its own process, quantity
+  and status; releasing it creates one WorkOrder per assembly (`WorkOrder.production_order_id`).
+- `Shipment` / `ShipmentItem` — shipping loads and the assemblies on them; what's shipped is
+  derived from items on shipped/delivered loads (nothing written back onto the tree).
+- `WorkOrder.assembly_node_id` — the **existing** WorkOrder/WorkOrderStage engine drives each
+  fabricated node through a Process's stages (no parallel engine).
 
 Key services & flows:
 
@@ -97,19 +104,21 @@ Key services & flows:
   persisted into `assembly_nodes` **idempotently by `ifc_guid`**. The GLB is **always** built
   asynchronously via the conversion queue (`ConversionService.createJob`); `linkPendingModels` /
   `POST /api/projects/:id/resolve-models` link the finished GLB back to the nodes.
-- **Work-order generation** (`work-order-gen.service.ts`, `POST /api/projects/:id/generate-work-orders`):
-  one WorkOrder per assembly/subassembly against a chosen Process, materializing its stages
-  (uses a stand-in Product per project so `WorkOrder.product_id` stays non-null).
-- **Status roll-up** (`status-rollup.service.ts` + pure `rollup-math.ts`): a node's status/percent
-  comes from its work-order stages; parents aggregate from children; parts inherit their assembly.
-  Triggered **live** from `WorkOrdersService.updateStageStatus`/`updateStatus` (branch-scoped:
-  `recomputeBranchForNode`) and from shipping; `POST /api/projects/:id/recompute-status` does a full pass.
-- **Progress** (`project-progress.service.ts` + pure `progress-math.ts`, `GET /api/projects/:id/progress`):
-  status counts, weight-weighted % processed, tonnage (total/processed/shipped), and a per-stage funnel.
+- **Production orders** (`production-order.service.ts`, `POST /api/projects/:id/orders`,
+  `/api/orders/:id/*`): create-and-release transactionally generates per-assembly WorkOrders +
+  stages with count totals (`quantity-math.ts`: `qtyDone`/`qtyTotal` per stage). The board
+  (`GET /api/orders/:id/stage-board`) and progress (`GET /api/orders/:id/progress`) are
+  count-based roll-ups scoped to that order.
+- **Design summary** (`project-progress.service.ts` + pure `progress-math.ts`,
+  `GET /api/projects/:id/progress`): node composition + total tonnage + work-order item count —
+  feeds the workspace header and the portfolio list (`GET /api/projects/summary`).
+- **Shipping gate** (`shipping.service.ts`): an assembly can be loaded once it has
+  production-complete units (every non-skipped stage done across its work orders), no open NCRs,
+  and unallocated quantity left; shipped totals come from shipment items.
 
-Front end: `/projects`, `/projects/:id` (tree + 3D viewer with tree↔mesh highlight),
-`/projects/:id/shipping`, `/projects/:id/progress`. The detail page auto-polls `resolve-models`
-while a GLB converts so the viewer appears on its own.
+Front end: `/projects`, `/projects/:id` workspace tabs (Overview / Assemblies & 3D / Work Orders);
+production tracking lives inside each order at `/projects/:id/orders/:orderId/(board|progress|quality|shipping)`.
+The workspace auto-polls `resolve-models` while a GLB converts so the viewer appears on its own.
 
 ## Conventions (follow these)
 
@@ -128,10 +137,9 @@ while a GLB converts so the viewer appears on its own.
   the DB on boot. Migrations in `database/migrations/` are idempotent (guarded `IF NOT EXISTS` /
   `pg_type` / `pg_constraint`); once they're the source of truth, set `DB_SYNCHRONIZE=false` and rely on
   `migrationsRun`. Be deliberate about which DB you boot against (see DB note above).
-- **Module cycles:** `projects` ↔ `work-orders` reference each other — broken with `forwardRef(() => …)`
-  on both module imports + `@Inject(forwardRef(() => StatusRollupService))`. `shipping → projects`
-  and `projects → conversion` are one-way (no `forwardRef` needed). Keep new cross-module deps acyclic
-  where possible.
+- **Module cycles:** none today — `projects`, `work-orders` and `shipping` reference each other's
+  entities only (via their own `TypeOrmModule.forFeature`), not each other's modules. Keep new
+  cross-module deps acyclic where possible.
 - **Frontend:** standalone components, lazy `loadComponent` routes in `app.routes.ts`, services under
   `core/services` calling `environment.apiUrl`. Reuse `ThreeViewerComponent` for any 3D model view.
   Add new menu items to `navGroups` in `layout/layout.component.ts`.

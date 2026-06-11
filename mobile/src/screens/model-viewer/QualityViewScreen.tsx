@@ -45,6 +45,24 @@ function buildQualityViewerHtml(fileUrl: string, qualityJson: string): string {
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0d1117);
+  // Skybox (dark variant): subtle navy dome so the X-ray/quality colors keep their contrast.
+  (function addSky(target) {
+    var mat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor: { value: new THREE.Color(0x1d2a4d) },
+        horizonColor: { value: new THREE.Color(0x10141f) },
+        bottomColor: { value: new THREE.Color(0x0a0d14) },
+        exponent: { value: 0.8 }
+      },
+      side: THREE.BackSide,
+      depthWrite: false,
+      vertexShader: 'varying vec3 vWorldPosition; void main(){ vec4 wp = modelMatrix * vec4(position,1.0); vWorldPosition = wp.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: 'uniform vec3 topColor; uniform vec3 horizonColor; uniform vec3 bottomColor; uniform float exponent; varying vec3 vWorldPosition; void main(){ float h = normalize(vWorldPosition).y; vec3 sky = mix(horizonColor, topColor, pow(max(h,0.0), exponent)); vec3 ground = mix(horizonColor, bottomColor, pow(max(-h,0.0), 0.45)); gl_FragColor = vec4(h >= 0.0 ? sky : ground, 1.0); }'
+    });
+    var dome = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), mat);
+    dome.renderOrder = -1;
+    target.add(dome);
+  })(scene);
   var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
   camera.position.set(0, 1.5, 3);
   var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });

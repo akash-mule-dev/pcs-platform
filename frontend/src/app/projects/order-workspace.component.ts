@@ -38,7 +38,6 @@ interface OrderTab { path: string; label: string; icon: string; }
             <a class="tab" [routerLink]="['/projects', projectId, 'orders', orderId, t.path]" routerLinkActive="active">
               <mat-icon>{{ t.icon }}</mat-icon><span>{{ t.label }}</span>
               @if (t.path === 'quality' && store.openNcr() > 0) { <span class="tab-badge bad">{{ store.openNcr() }}</span> }
-              @if (t.path === 'shipping' && store.readyToShip() > 0) { <span class="tab-badge">{{ store.readyToShip() }}</span> }
             </a>
           }
         </nav>

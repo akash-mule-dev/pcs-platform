@@ -19,7 +19,7 @@ const VIEWER_HTML = `<!DOCTYPE html>
 <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
 <style>
   * { margin: 0; padding: 0; }
-  body { background: #1a1a2e; overflow: hidden; }
+  body { background: #eaf4fc; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   #loading { position: fixed; inset: 0; display: flex; flex-direction: column;
     justify-content: center; align-items: center; background: rgba(26,26,46,0.95); color: #fff; font-family: sans-serif; }
@@ -41,7 +41,26 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 var scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
+scene.background = new THREE.Color(0xeaf4fc);
+// Skybox: gradient sky dome — azure overhead, bright horizon, soft ground.
+function addSky(target) {
+  var mat = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor: { value: new THREE.Color(0x73b8ec) },
+      horizonColor: { value: new THREE.Color(0xeaf4fc) },
+      bottomColor: { value: new THREE.Color(0xe6ebf0) },
+      exponent: { value: 0.7 }
+    },
+    side: THREE.BackSide,
+    depthWrite: false,
+    vertexShader: 'varying vec3 vWorldPosition; void main(){ vec4 wp = modelMatrix * vec4(position,1.0); vWorldPosition = wp.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: 'uniform vec3 topColor; uniform vec3 horizonColor; uniform vec3 bottomColor; uniform float exponent; varying vec3 vWorldPosition; void main(){ float h = normalize(vWorldPosition).y; vec3 sky = mix(horizonColor, topColor, pow(max(h,0.0), exponent)); vec3 ground = mix(horizonColor, bottomColor, pow(max(-h,0.0), 0.45)); gl_FragColor = vec4(h >= 0.0 ? sky : ground, 1.0); }'
+  });
+  var dome = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), mat);
+  dome.renderOrder = -1;
+  target.add(dome);
+}
+addSky(scene);
 var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
 camera.position.set(0, 1.5, 3);
 var renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -54,7 +73,7 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 var dir = new THREE.DirectionalLight(0xffffff, 0.8);
 dir.position.set(5, 10, 7);
 scene.add(dir);
-scene.add(new THREE.GridHelper(10, 10, 0x444444, 0x333333));
+scene.add(new THREE.GridHelper(10, 10, 0xb9cbdc, 0xd9e5f0));
 
 function animate() {
   requestAnimationFrame(animate);

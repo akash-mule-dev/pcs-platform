@@ -32,7 +32,7 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
         <section class="card">
           <div class="card-head"><h3>Work orders</h3><a class="head-link" [routerLink]="['/projects', store.id(), 'orders']">Open<mat-icon>chevron_right</mat-icon></a></div>
           <div class="wo">
-            <span class="wo-num">{{ prog()?.workOrders ?? 0 }}</span>
+            <span class="wo-num">{{ store.ordersCount() }}</span>
             <p class="wo-hint">Production runs attached to this design. Each tracks its own board, progress, quality and shipping.</p>
           </div>
         </section>
@@ -64,8 +64,11 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
       <div class="empty-state">
         <mat-icon>account_tree</mat-icon>
         <h3>No assemblies yet</h3>
-        <p>Import an IFC file to build this project's assembly tree and 3D model.</p>
-        <a class="cta" [routerLink]="['/projects', store.id(), 'assemblies']"><mat-icon>upload_file</mat-icon>Go to Assemblies to import</a>
+        <p>Import an IFC file to build this project's assembly tree and 3D model — or skip the model and start tracking production right away.</p>
+        <div class="empty-ctas">
+          <a class="cta" [routerLink]="['/projects', store.id(), 'assemblies']"><mat-icon>upload_file</mat-icon>Import an IFC file</a>
+          <a class="cta secondary" [routerLink]="['/projects', store.id(), 'orders']"><mat-icon>receipt_long</mat-icon>Create a work order without a model</a>
+        </div>
       </div>
     }
   `,
@@ -108,7 +111,9 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
     .details dd.overdue { color: var(--danger-text); font-weight: 600; }
     .desc { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--clay-border); font-size: 13px; color: var(--clay-text-secondary); line-height: 1.55; }
 
+    .empty-ctas { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
     .cta { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: var(--clay-primary); color: #fff; padding: 10px 18px; border-radius: var(--clay-radius-sm); font-size: 13px; font-weight: 600; }
+    .cta.secondary { background: transparent; color: var(--clay-primary); border: 1px solid var(--clay-primary); }
     .cta mat-icon { font-size: 18px; width: 18px; height: 18px; }
 
     @media (max-width: 820px) { .ov-grid { grid-template-columns: 1fr; } .comp { grid-template-columns: repeat(2, 1fr); } }

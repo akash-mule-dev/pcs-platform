@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Modal, Linking } from 'react-native';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
 import { ProjectsStackParamList } from '../../navigation/types';
-import { ordersService, MOrderBoard, MOrderBoardItem, MOrderStageRow } from '../../services/projects.service';
+import { ordersService, qcReportsService, MOrderBoard, MOrderBoardItem, MOrderStageRow, MTemplate } from '../../services/projects.service';
+import { authService } from '../../services/auth.service';
+import { environment } from '../../config/environment';
 
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'OrderBoard'>;
 type Rt = RouteProp<ProjectsStackParamList, 'OrderBoard'>;
@@ -23,7 +25,51 @@ export function OrderBoardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useLayoutEffect(() => { navigation.setOptions({ title: orderNumber || 'Work order' }); }, [navigation, orderNumber]);
+  // QC report templates → blank report → filled on the web (opened with the auth token).
+  const [tplVisible, setTplVisible] = useState(false);
+  const [templates, setTemplates] = useState<MTemplate[]>([]);
+  const [tplLoading, setTplLoading] = useState(false);
+  const [tplBusy, setTplBusy] = useState(false);
+  const [tplError, setTplError] = useState<string | null>(null);
+
+  const openTemplates = useCallback(async () => {
+    setTplVisible(true);
+    setTplError(null);
+    if (templates.length === 0) {
+      setTplLoading(true);
+      try { setTemplates(await qcReportsService.templates()); }
+      catch { setTplError('Could not load templates.'); }
+      finally { setTplLoading(false); }
+    }
+  }, [templates.length]);
+
+  const startReport = useCallback(async (t: MTemplate) => {
+    if (tplBusy) return;
+    setTplBusy(true);
+    setTplError(null);
+    try {
+      const r = await qcReportsService.create({ templateId: t.id, productionOrderId: orderId });
+      const token = (await authService.getToken()) ?? '';
+      setTplVisible(false);
+      // Hand off to the web fill page with the auth token (stored + stripped there).
+      await Linking.openURL(`${environment.webUrl}/qr/${r.id}?token=${encodeURIComponent(token)}`);
+    } catch {
+      setTplError('Could not start the report.');
+    } finally {
+      setTplBusy(false);
+    }
+  }, [tplBusy, orderId]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: orderNumber || 'Work order',
+      headerRight: () => (
+        <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, orderNumber, openTemplates]);
 
   const load = useCallback(async () => {
     try {
@@ -118,18 +164,53 @@ export function OrderBoardScreen() {
   if (!board) return <View style={styles.center}><Text style={styles.muted}>Work order not found.</Text></View>;
 
   return (
-    <FlatList
-      style={styles.container}
-      contentContainerStyle={styles.list}
-      data={visible}
-      keyExtractor={(i) => i.nodeId}
-      numColumns={2}
-      columnWrapperStyle={styles.colWrap}
-      ListHeaderComponent={Header}
-      renderItem={renderCard}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-      ListEmptyComponent={<View style={styles.empty}><Text style={styles.muted}>Nothing {selectedStage === DONE ? 'done yet' : 'at this stage'}.</Text></View>}
-    />
+    <>
+      <FlatList
+        style={styles.container}
+        contentContainerStyle={styles.list}
+        data={visible}
+        keyExtractor={(i) => i.nodeId}
+        numColumns={2}
+        columnWrapperStyle={styles.colWrap}
+        ListHeaderComponent={Header}
+        renderItem={renderCard}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        ListEmptyComponent={<View style={styles.empty}><Text style={styles.muted}>Nothing {selectedStage === DONE ? 'done yet' : 'at this stage'}.</Text></View>}
+      />
+
+      {/* QC report template picker — pick one, a blank report opens on the web to fill */}
+      <Modal visible={tplVisible} transparent animationType="slide" onRequestClose={() => setTplVisible(false)}>
+        <View style={styles.sheetWrap}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>Start a QC report</Text>
+              <TouchableOpacity onPress={() => setTplVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.sheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.sheetSub}>Pick a template — a blank report opens in your browser to fill against {orderNumber || 'this work order'}.</Text>
+            {tplLoading ? (
+              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+            ) : templates.length === 0 ? (
+              <Text style={styles.muted}>No templates yet — create one in the web portal (Quality → Report Templates).</Text>
+            ) : (
+              <ScrollView style={styles.sheetList}>
+                {templates.map((t) => (
+                  <TouchableOpacity key={t.id} style={styles.tplRow} disabled={tplBusy} onPress={() => startReport(t)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tplName}>{t.name}</Text>
+                      <Text style={styles.tplType}>{t.type}</Text>
+                    </View>
+                    <Text style={styles.tplGo}>{tplBusy ? '…' : '›'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+            {tplError ? <Text style={styles.sheetErr}>{tplError}</Text> : null}
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -159,4 +240,17 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   astatus: { flex: 1, fontSize: 12, color: Colors.textSecondary },
   acount: { fontSize: 12, fontWeight: '700', color: Colors.text },
+  // QC report template sheet
+  sheetWrap: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: Colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 18, maxHeight: '70%' },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  sheetClose: { fontSize: 16, color: Colors.textSecondary, fontWeight: '700' },
+  sheetSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 4, marginBottom: 12 },
+  sheetList: { marginTop: 2 },
+  tplRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  tplName: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  tplType: { fontSize: 11, color: Colors.textSecondary, textTransform: 'capitalize', marginTop: 1 },
+  tplGo: { fontSize: 20, color: Colors.primary, fontWeight: '700', paddingHorizontal: 6 },
+  sheetErr: { color: '#c62828', fontSize: 12, marginTop: 10 },
 });

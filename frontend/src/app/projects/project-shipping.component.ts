@@ -1,14 +1,19 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectWorkspaceStore } from './project-workspace.store';
-import { AssemblyNode, NodeQualityStatus } from '../core/services/projects.service';
+import { ProjectsService, OrderBoardItem, NodeQualityStatus } from '../core/services/projects.service';
 import { ShippingService, Shipment, ShipmentStatus } from '../core/services/shipping.service';
 
-/** Shipping tab: build loads (shipments) and add ready-to-ship assemblies to them.
- *  Reads nodes/quality from the shared store; loads come from ShippingService. */
+/** An assembly of this work order with production-complete units available to load. */
+interface ReadyRow { nodeId: string; mark: string; readyUnits: number; weightKg: number | null; }
+
+/** Shipping tab: build loads (shipments) and add production-complete assemblies.
+ *  Readiness comes from THIS work order's stage counts (an assembly is ready
+ *  once its units have been through every stage); loads are project-wide. */
 @Component({
   selector: 'app-project-shipping',
   standalone: true,
@@ -54,7 +59,7 @@ import { ShippingService, Shipment, ShipmentStatus } from '../core/services/ship
                   @if (s.plannedDate) { <span><mat-icon>event</mat-icon>{{ s.plannedDate | date:'mediumDate' }}</span> }
                 </div>
                 <div class="lc-items">
-                  @if (s.items?.length) {
+                  @if (s.items.length) {
                     @for (it of s.items; track it.id) {
                       <div class="li">
                         <mat-icon class="li-ico">widgets</mat-icon>
@@ -75,23 +80,29 @@ import { ShippingService, Shipment, ShipmentStatus } from '../core/services/ship
 
         <!-- Ready to ship -->
         <section class="col">
-          <div class="col-head"><h2><mat-icon>checklist</mat-icon>Ready to ship</h2><span class="count">{{ readyToShip().length }}</span></div>
-          <p class="hint">Assemblies whose stages are all complete. Select a load on the left, then add.</p>
+          <div class="col-head"><h2><mat-icon>checklist</mat-icon>Ready to ship</h2><span class="count">{{ ready.length }}</span></div>
+          <p class="hint">Assemblies of this work order whose units have finished every stage. Select a load on the left, then add.</p>
           @if (heldCount() > 0) {
             <p class="banner warn"><mat-icon>warning</mat-icon>{{ heldCount() }} ready item(s) have a quality hold (failed QC or open NCR). Items with open NCRs are blocked from shipping until resolved.</p>
           }
-          @if (readyToShip().length === 0) {
-            <div class="empty-state slim"><mat-icon>check_circle</mat-icon><p>Nothing ready yet. Complete an assembly's stages to see it here.</p></div>
+          @if (loadingBoard) {
+            <div class="center"><mat-spinner diameter="28"></mat-spinner></div>
+          } @else if (ready.length === 0) {
+            <div class="empty-state slim"><mat-icon>check_circle</mat-icon><p>Nothing ready yet. Complete an assembly's stages on the board to see it here.</p></div>
           } @else {
-            @for (n of readyToShip(); track n.id) {
-              <div class="ready">
+            @for (n of ready; track n.nodeId) {
+              <div class="ready" [class.allocated]="available(n) === 0">
                 <mat-icon class="r-ico">widgets</mat-icon>
-                <span class="r-name">{{ n.mark || n.name }}</span>
-                @if (qaHold(n.id)) { <span class="qa-hold" [title]="qaHoldLabel(n.id)"><mat-icon>warning</mat-icon>{{ qaHoldLabel(n.id) }}</span> }
-                @if (remaining(n) > 1) { <span class="r-q">×{{ remaining(n) }}</span> }
-                @if (n.weightKg) { <span class="r-w">{{ n.weightKg * remaining(n) | number:'1.0-0' }} kg</span> }
+                <span class="r-name">{{ n.mark }}</span>
+                @if (qaHold(n.nodeId)) { <span class="qa-hold" [title]="qaHoldLabel(n.nodeId)"><mat-icon>warning</mat-icon>{{ qaHoldLabel(n.nodeId) }}</span> }
+                @if (available(n) > 1) { <span class="r-q">×{{ available(n) }}</span> }
+                @if (n.weightKg && available(n) > 0) { <span class="r-w">{{ n.weightKg * available(n) | number:'1.0-0' }} kg</span> }
                 <span class="spacer"></span>
-                <button class="btn outline sm" [disabled]="!selectedShipmentId || busy" (click)="addToShipment(n)"><mat-icon>add</mat-icon>Add</button>
+                @if (available(n) === 0) {
+                  <span class="on-load"><mat-icon>inventory_2</mat-icon>On a load</span>
+                } @else {
+                  <button class="btn outline sm" [disabled]="!selectedShipmentId || busy" (click)="addToShipment(n)"><mat-icon>add</mat-icon>Add</button>
+                }
               </div>
             }
           }
@@ -151,16 +162,24 @@ import { ShippingService, Shipment, ShipmentStatus } from '../core/services/ship
     .sel-hint { display: flex; align-items: center; gap: 5px; color: var(--clay-primary); font-size: 12px; font-weight: 600; margin-top: 8px; }
     .sel-hint mat-icon { font-size: 15px; width: 15px; height: 15px; }
     .ready { background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 9px 12px; margin-bottom: 8px; box-shadow: var(--clay-shadow-soft); }
+    .ready.allocated { opacity: .65; }
+    .on-load { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--clay-text-muted); background: var(--clay-bg-warm); border-radius: 999px; padding: 2px 9px; }
+    .on-load mat-icon { font-size: 14px; width: 14px; height: 14px; }
     .spacer { flex: 1; }
     @media (max-width: 860px) { .layout { flex-direction: column; } .nl-grid { grid-template-columns: 1fr; } }
   `],
 })
 export class ProjectShippingComponent implements OnInit {
   store = inject(ProjectWorkspaceStore);
+  private svc = inject(ProjectsService);
   private shippingSvc = inject(ShippingService);
+  private route = inject(ActivatedRoute);
 
+  orderId = '';
   shipments: Shipment[] = [];
+  ready: ReadyRow[] = [];
   loadingShipments = true;
+  loadingBoard = true;
   error: string | null = null;
 
   selectedShipmentId: string | null = null;
@@ -173,7 +192,15 @@ export class ProjectShippingComponent implements OnInit {
 
   readonly statuses: ShipmentStatus[] = ['planned', 'loaded', 'shipped', 'delivered', 'cancelled'];
 
-  ngOnInit(): void { this.loadShipments(); }
+  ngOnInit(): void {
+    this.orderId = this.route.parent?.snapshot.paramMap.get('orderId')
+      ?? this.route.snapshot.paramMap.get('orderId') ?? '';
+    this.loadShipments();
+    this.loadBoard();
+    // The store may predate recent inspections — refresh so QC holds are current.
+    this.store.refreshNodes();
+    this.store.refreshQuality();
+  }
 
   private loadShipments(): void {
     this.loadingShipments = true;
@@ -183,19 +210,46 @@ export class ProjectShippingComponent implements OnInit {
     });
   }
 
-  /** Refresh shipments + the shared store (shipping mutates node roll-up). */
-  private refreshAll(): void {
-    this.loadShipments();
-    this.store.refreshNodes();
-    this.store.refreshProgress();
+  /** Readiness from THIS order's stage counts: a unit is ready once it has been through every non-skipped stage. */
+  private loadBoard(): void {
+    if (!this.orderId) { this.loadingBoard = false; return; }
+    this.loadingBoard = true;
+    this.svc.orderBoard(this.orderId).subscribe({
+      next: (b) => {
+        const weightByNode = new Map(this.store.nodes().map((n) => [n.id, n.weightKg]));
+        this.ready = (b.items ?? [])
+          .map((it) => ({ nodeId: it.nodeId, mark: it.mark, readyUnits: this.readyUnits(it), weightKg: weightByNode.get(it.nodeId) ?? null }))
+          .filter((r) => r.readyUnits > 0);
+        this.loadingBoard = false;
+      },
+      error: (e) => { this.loadingBoard = false; this.error = e?.error?.message || 'Could not load the work-order board.'; },
+    });
   }
 
-  readyToShip(): AssemblyNode[] {
-    return this.store.nodes().filter(
-      (n) => (n.nodeType === 'assembly' || n.nodeType === 'subassembly') && n.productionStatus === 'ready_to_ship' && this.remaining(n) > 0,
-    );
+  private readyUnits(it: OrderBoardItem): number {
+    const active = (it.stages ?? []).filter((s) => s.status !== 'skipped');
+    if (!active.length) return 0;
+    const allDone = active.every((s) => s.status === 'completed');
+    const minDone = Math.min(...active.map((s) => Math.max(0, Math.min(s.qtyDone ?? 0, s.qtyTotal ?? 0))));
+    return allDone ? Math.max(minDone, 1) : minDone;
   }
-  remaining(n: AssemblyNode): number { return (n.quantity ?? 1) - (n.qtyShipped ?? 0); }
+
+  private refreshAll(): void {
+    this.loadShipments();
+    this.loadBoard();
+  }
+
+  /** Units of this node already on loads that are not cancelled (planned, loaded, shipped or delivered). */
+  allocated(nodeId: string): number {
+    let sum = 0;
+    for (const s of this.shipments) {
+      if (s.status === 'cancelled') continue;
+      for (const it of s.items ?? []) if (it.assemblyNode?.id === nodeId || (it as any).assemblyNodeId === nodeId) sum += it.quantity ?? 1;
+    }
+    return sum;
+  }
+  /** Units still free to put on a load. */
+  available(n: ReadyRow): number { return Math.max(0, n.readyUnits - this.allocated(n.nodeId)); }
 
   private qaEntry(nodeId: string | undefined | null): NodeQualityStatus | null {
     if (!nodeId) return null;
@@ -210,7 +264,7 @@ export class ProjectShippingComponent implements OnInit {
     if (e.status === 'fail') return 'Failed QC';
     return '';
   }
-  heldCount(): number { return this.readyToShip().filter((n) => this.qaHold(n.id)).length; }
+  heldCount(): number { return this.ready.filter((n) => this.qaHold(n.nodeId)).length; }
 
   createShipment(): void {
     if (!this.newNumber) return;
@@ -224,10 +278,10 @@ export class ProjectShippingComponent implements OnInit {
     });
   }
 
-  addToShipment(n: AssemblyNode): void {
-    if (!this.selectedShipmentId) return;
+  addToShipment(n: ReadyRow): void {
+    if (!this.selectedShipmentId || this.available(n) === 0) return;
     this.busy = true; this.error = null;
-    this.shippingSvc.addItem(this.selectedShipmentId, n.id, this.remaining(n)).subscribe({
+    this.shippingSvc.addItem(this.selectedShipmentId, n.nodeId, this.available(n)).subscribe({
       next: () => { this.busy = false; this.refreshAll(); },
       error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not add assembly'; },
     });

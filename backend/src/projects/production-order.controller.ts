@@ -27,6 +27,13 @@ export class ProductionOrderController {
     return this.service.listByProject(projectId);
   }
 
+  @Get('orders/dashboard')
+  @Roles('admin', 'manager', 'supervisor', 'operator')
+  @ApiOperation({ summary: 'Org-wide work-orders dashboard: KPIs, stage funnel and every order with its progress' })
+  dashboard() {
+    return this.service.dashboard();
+  }
+
   @Get('orders/:id')
   @Roles('admin', 'manager', 'supervisor', 'operator')
   @ApiOperation({ summary: 'Get a work order' })

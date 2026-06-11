@@ -59,7 +59,7 @@ const COLUMNS = [
           <mat-label>Work Order</mat-label>
           <mat-select [(ngModel)]="selectedWoId" (selectionChange)="loadStages()">
             @for (wo of workOrders; track wo.id) {
-              <mat-option [value]="wo.id">{{ wo.orderNumber }} — {{ wo.product?.name }}</mat-option>
+              <mat-option [value]="wo.id">{{ wo.orderNumber }} — {{ wo.product.name }}</mat-option>
             }
           </mat-select>
         </mat-form-field>

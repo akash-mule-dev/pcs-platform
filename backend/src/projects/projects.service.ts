@@ -6,21 +6,17 @@ import { AssemblyNode } from './assembly-node.entity.js';
 import { TenantScopedService } from '../common/tenant/tenant-scoped.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 
-/** Per-project rollup the portfolio list renders without N progress calls. */
+/** Per-project design summary the portfolio list renders without N progress calls. */
 export interface ProjectMetrics {
   nodeCount: number;
   partCount: number;
   assemblyCount: number;
-  percentComplete: number;
-  tonnage: { totalKg: number; processedKg: number; shippedKg: number };
-  readyToShip: number;
-  inProgress: number;
+  tonnage: { totalKg: number };
 }
 export type ProjectWithMetrics = Project & { metrics: ProjectMetrics };
 
 const EMPTY_METRICS: ProjectMetrics = {
-  nodeCount: 0, partCount: 0, assemblyCount: 0, percentComplete: 0,
-  tonnage: { totalKg: 0, processedKg: 0, shippedKg: 0 }, readyToShip: 0, inProgress: 0,
+  nodeCount: 0, partCount: 0, assemblyCount: 0, tonnage: { totalKg: 0 },
 };
 
 @Injectable()
@@ -33,11 +29,9 @@ export class ProjectsService extends TenantScopedService<Project> {
   }
 
   /**
-   * Portfolio list: every project plus its production rollup (progress, tonnage,
-   * ready-to-ship), computed in ONE grouped pass over assembly_nodes rather than
-   * a per-project progress call. The weight-weighted percent mirrors
-   * progress-math: weighted by part tonnage when weights exist, else the average
-   * assembly percent.
+   * Portfolio list: every project plus its design summary (composition, tonnage),
+   * computed in ONE grouped pass over assembly_nodes rather than a per-project
+   * progress call. Production tracking lives on each production order.
    */
   async findAllWithMetrics(): Promise<ProjectWithMetrics[]> {
     const organizationId = this.organizationId;
@@ -54,40 +48,17 @@ export class ProjectsService extends TenantScopedService<Project> {
       .addSelect(`SUM(CASE WHEN n.node_type = 'part' THEN 1 ELSE 0 END)`, 'partCount')
       .addSelect(`SUM(CASE WHEN n.node_type IN ('assembly','subassembly') THEN 1 ELSE 0 END)`, 'assemblyCount')
       .addSelect(`COALESCE(SUM(CASE WHEN n.node_type = 'part' THEN n.weight_kg * n.quantity ELSE 0 END), 0)`, 'totalKg')
-      .addSelect(`COALESCE(SUM(CASE WHEN n.node_type = 'part' THEN n.weight_kg * n.quantity * n.percent_complete / 100 ELSE 0 END), 0)`, 'processedKg')
-      .addSelect(`COALESCE(SUM(CASE WHEN n.node_type = 'part' AND n.production_status = 'shipped' THEN n.weight_kg * n.quantity ELSE 0 END), 0)`, 'shippedKg')
-      .addSelect(`COALESCE(SUM(CASE WHEN n.node_type IN ('assembly','subassembly') THEN n.percent_complete ELSE 0 END), 0)`, 'fabPctSum')
-      .addSelect(`SUM(CASE WHEN n.node_type IN ('assembly','subassembly') AND n.production_status = 'ready_to_ship' THEN 1 ELSE 0 END)`, 'readyToShip')
-      .addSelect(`SUM(CASE WHEN n.node_type IN ('assembly','subassembly') AND n.production_status = 'in_progress' THEN 1 ELSE 0 END)`, 'inProgress')
       .where('n.organization_id = :organizationId', { organizationId })
       .groupBy('n.project_id')
-      .getRawMany<{
-        projectId: string; nodeCount: string; partCount: string; assemblyCount: string;
-        totalKg: string; processedKg: string; shippedKg: string; fabPctSum: string;
-        readyToShip: string; inProgress: string;
-      }>();
+      .getRawMany<{ projectId: string; nodeCount: string; partCount: string; assemblyCount: string; totalKg: string }>();
 
     const byProject = new Map<string, ProjectMetrics>();
     for (const r of rows) {
-      const totalKg = Number(r.totalKg) || 0;
-      const processedKg = Number(r.processedKg) || 0;
-      const assemblyCount = Number(r.assemblyCount) || 0;
-      const fabPctSum = Number(r.fabPctSum) || 0;
-      const percentComplete = totalKg > 0
-        ? Math.round((processedKg / totalKg) * 1000) / 10
-        : assemblyCount > 0 ? Math.round((fabPctSum / assemblyCount) * 10) / 10 : 0;
       byProject.set(r.projectId, {
         nodeCount: Number(r.nodeCount) || 0,
         partCount: Number(r.partCount) || 0,
-        assemblyCount,
-        percentComplete,
-        tonnage: {
-          totalKg: Math.round(totalKg * 10) / 10,
-          processedKg: Math.round(processedKg * 10) / 10,
-          shippedKg: Math.round((Number(r.shippedKg) || 0) * 10) / 10,
-        },
-        readyToShip: Number(r.readyToShip) || 0,
-        inProgress: Number(r.inProgress) || 0,
+        assemblyCount: Number(r.assemblyCount) || 0,
+        tonnage: { totalKg: Math.round((Number(r.totalKg) || 0) * 10) / 10 },
       });
     }
 

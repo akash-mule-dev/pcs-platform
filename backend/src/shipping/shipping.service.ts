@@ -3,9 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import { Shipment, ShipmentStatus } from './shipment.entity.js';
 import { ShipmentItem } from './shipment-item.entity.js';
-import { AssemblyNode, NodeProductionStatus } from '../projects/assembly-node.entity.js';
+import { AssemblyNode } from '../projects/assembly-node.entity.js';
+import { WorkOrder } from '../work-orders/work-order.entity.js';
+import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
 import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
-import { StatusRollupService } from '../projects/status-rollup.service.js';
 import { TenantScopedService } from '../common/tenant/tenant-scoped.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { AddShipmentItemDto } from './dto/add-shipment-item.dto.js';
@@ -16,8 +17,9 @@ export class ShippingService extends TenantScopedService<Shipment> {
     @InjectRepository(Shipment) repo: Repository<Shipment>,
     @InjectRepository(ShipmentItem) private readonly itemRepo: Repository<ShipmentItem>,
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
+    @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
+    @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
-    private readonly rollup: StatusRollupService,
   ) {
     super(repo);
   }
@@ -31,9 +33,46 @@ export class ShippingService extends TenantScopedService<Shipment> {
   }
 
   /**
-   * Add an assembly to a load — GATED: the node must be ready_to_ship (every
-   * work-order stage complete), have no open NCRs, and have unshipped quantity
-   * left (also accounting for what's already planned on other open loads).
+   * Units of an assembly that have finished production, summed across ALL its
+   * work orders (one per production order). A unit counts as complete once it
+   * has been through every non-skipped stage; for status-only stage rows (no
+   * quantity tracking) a fully completed work order counts as its quantity.
+   */
+  private async completedUnits(nodeId: string, organizationId: string): Promise<number> {
+    const wos = await this.woRepo.find({ where: { organizationId, assemblyNodeId: nodeId } });
+    if (!wos.length) return 0;
+    const rows = await this.wosRepo.find({ where: { workOrderId: In(wos.map((w) => w.id)) } });
+    const byWo = new Map<string, WorkOrderStage[]>();
+    for (const r of rows) { const a = byWo.get(r.workOrderId) ?? []; a.push(r); byWo.set(r.workOrderId, a); }
+
+    let units = 0;
+    for (const wo of wos) {
+      const active = (byWo.get(wo.id) ?? []).filter((r) => r.status !== WorkOrderStageStatus.SKIPPED);
+      if (!active.length) continue;
+      const allDone = active.every((r) => r.status === WorkOrderStageStatus.COMPLETED);
+      const minDone = Math.min(...active.map((r) => Math.max(0, Math.min(r.qtyDone ?? 0, r.qtyTotal ?? 0))));
+      units += allDone ? Math.max(minDone, wo.quantity ?? 1) : minDone;
+    }
+    return units;
+  }
+
+  /** Units of this assembly already on shipped/delivered loads. */
+  private async shippedUnits(nodeId: string, organizationId: string): Promise<number> {
+    const row = await this.itemRepo
+      .createQueryBuilder('it')
+      .innerJoin(Shipment, 's', 's.id = it.shipment_id')
+      .where('it.assembly_node_id = :nodeId', { nodeId })
+      .andWhere('it.organization_id = :org', { org: organizationId })
+      .andWhere('s.status IN (:...done)', { done: [ShipmentStatus.SHIPPED, ShipmentStatus.DELIVERED] })
+      .select('COALESCE(SUM(it.quantity), 0)', 'sum')
+      .getRawOne<{ sum: string }>();
+    return Number(row?.sum ?? 0);
+  }
+
+  /**
+   * Add an assembly to a load — GATED: it must have production-complete units
+   * left to ship (work-order stages done, across the project's work orders),
+   * no open NCRs, and not already be fully allocated to other loads.
    */
   async addItem(shipmentId: string, dto: AddShipmentItemDto): Promise<ShipmentItem> {
     const organizationId = TenantContext.requireOrganizationId();
@@ -46,12 +85,9 @@ export class ShippingService extends TenantScopedService<Shipment> {
       throw new BadRequestException(`${label} belongs to a different project than this load`);
     }
 
-    if (node.productionStatus !== NodeProductionStatus.READY_TO_SHIP) {
-      const why =
-        node.productionStatus === NodeProductionStatus.SHIPPED
-          ? 'it has already been fully shipped'
-          : 'its production stages are not all complete yet';
-      throw new BadRequestException(`${label} cannot be shipped: ${why}.`);
+    const completed = await this.completedUnits(node.id, organizationId);
+    if (completed <= 0) {
+      throw new BadRequestException(`${label} cannot be shipped: its production stages are not complete yet.`);
     }
 
     const openNcr = await this.ncrRepo.count({
@@ -62,7 +98,7 @@ export class ShippingService extends TenantScopedService<Shipment> {
       throw new BadRequestException(`${label} has ${openNcr} open NCR${plural} — close or disposition before shipping.`);
     }
 
-    // Quantity guard: shipped so far + already planned on unshipped loads + this add ≤ node quantity.
+    // Quantity guard: shipped so far + already planned on open loads + this add ≤ completed units.
     const planned = await this.itemRepo
       .createQueryBuilder('it')
       .innerJoin(Shipment, 's', 's.id = it.shipment_id')
@@ -72,12 +108,13 @@ export class ShippingService extends TenantScopedService<Shipment> {
       .select('COALESCE(SUM(it.quantity), 0)', 'sum')
       .getRawOne<{ sum: string }>();
     const alreadyPlanned = Number(planned?.sum ?? 0);
-    const remaining = (node.quantity ?? 1) - (node.qtyShipped ?? 0) - alreadyPlanned;
+    const shipped = await this.shippedUnits(node.id, organizationId);
+    const remaining = completed - shipped - alreadyPlanned;
     const qty = dto.quantity ?? 1;
     if (qty > remaining) {
       throw new BadRequestException(
         remaining <= 0
-          ? `${label} is already fully allocated to loads.`
+          ? `${label} is already fully shipped or allocated to loads.`
           : `Only ${remaining} unit(s) of ${label} left to ship — requested ${qty}.`,
       );
     }
@@ -97,36 +134,17 @@ export class ShippingService extends TenantScopedService<Shipment> {
   }
 
   /**
-   * Set a shipment's status. On the first transition into SHIPPED, advance each
-   * item's assembly node (qty_shipped, SHIPPED when fully shipped) and recompute
-   * that node's branch so parents/project roll up live.
+   * Set a shipment's status. What's shipped is derived from the loads
+   * themselves (items on shipped/delivered shipments) — nothing is written
+   * back onto the assembly tree.
    */
   async setStatus(id: string, status: ShipmentStatus): Promise<Shipment> {
     const organizationId = TenantContext.requireOrganizationId();
-    const shipment = await this.repo.findOne({ where: { id, organizationId }, relations: ['items'] });
+    const shipment = await this.repo.findOne({ where: { id, organizationId } });
     if (!shipment) throw new NotFoundException('Shipment not found');
 
-    const wasShipped = shipment.status === ShipmentStatus.SHIPPED || shipment.status === ShipmentStatus.DELIVERED;
     shipment.status = status;
     if (status === ShipmentStatus.SHIPPED && !shipment.shippedAt) shipment.shippedAt = new Date();
-    await this.repo.save(shipment);
-
-    if (status === ShipmentStatus.SHIPPED && !wasShipped) {
-      const affected: string[] = [];
-      for (const item of shipment.items ?? []) {
-        const node = await this.nodeRepo.findOne({ where: { id: item.assemblyNodeId, organizationId } });
-        if (!node) continue;
-        const qty = node.quantity ?? 1;
-        node.qtyShipped = Math.min((node.qtyShipped ?? 0) + (item.quantity ?? 1), qty);
-        if (node.qtyShipped >= qty) node.productionStatus = NodeProductionStatus.SHIPPED;
-        await this.nodeRepo.save(node);
-        affected.push(node.id);
-      }
-      // Live roll-up: re-aggregate each shipped assembly's ancestor chain (best-effort).
-      for (const nodeId of affected) {
-        try { await this.rollup.recomputeBranchForNode(nodeId, organizationId); } catch { /* non-fatal */ }
-      }
-    }
-    return shipment;
+    return this.repo.save(shipment);
   }
 }

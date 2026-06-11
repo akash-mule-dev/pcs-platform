@@ -45,8 +45,8 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
             <div class="kpi-text"><span class="kpi-num">{{ tonnes(inFlightKg()) }} <small>t</small></span><span class="kpi-lbl">Tonnage in flight</span></div>
           </div>
           <div class="kpi">
-            <div class="kpi-icon tone-green"><mat-icon>local_shipping</mat-icon></div>
-            <div class="kpi-text"><span class="kpi-num">{{ totalReady() }}</span><span class="kpi-lbl">Ready to ship</span></div>
+            <div class="kpi-icon tone-green"><mat-icon>widgets</mat-icon></div>
+            <div class="kpi-text"><span class="kpi-num">{{ totalAssemblies() }}</span><span class="kpi-lbl">Assemblies</span></div>
           </div>
           <div class="kpi" [class.alert]="overdueCount() > 0">
             <div class="kpi-icon" [class.tone-orange]="overdueCount() === 0" [class.tone-danger]="overdueCount() > 0"><mat-icon>schedule</mat-icon></div>
@@ -92,15 +92,10 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
 
                   <div class="col-prog">
                     @if (p.metrics.nodeCount > 0) {
-                      <div class="prog-bar"><div class="prog-fill" [style.width.%]="p.metrics.percentComplete"></div></div>
-                      <span class="prog-pct">{{ p.metrics.percentComplete }}%</span>
+                      <span class="comp"><mat-icon>widgets</mat-icon>{{ p.metrics.assemblyCount }} assemblies <span class="dotsep">·</span> {{ p.metrics.partCount }} parts</span>
                     } @else {
                       <span class="no-tree"><mat-icon>upload_file</mat-icon>No model imported</span>
                     }
-                  </div>
-
-                  <div class="col-stats">
-                    @if (p.metrics.readyToShip > 0) { <span class="ready-chip" title="Ready to ship"><mat-icon>local_shipping</mat-icon>{{ p.metrics.readyToShip }} ready</span> }
                   </div>
 
                   <div class="col-due">
@@ -115,18 +110,14 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
                   <mat-icon class="chevron">chevron_right</mat-icon>
                 </div>
 
-                <!-- Insight meta line: program, composition, tonnage, age -->
+                <!-- Insight meta line: program, tonnage, age -->
                 <div class="row-meta">
                   @if (p.processId) {
-                    <span class="m program" title="Assigned fabrication process (work-order routing)"><mat-icon>account_tree</mat-icon>{{ processName(p) }}</span>
+                    <span class="m program" title="Default fabrication process for new work orders"><mat-icon>account_tree</mat-icon>{{ processName(p) }}</span>
                   } @else {
-                    <span class="m program warn" title="No process assigned — work orders can't be generated yet"><mat-icon>warning</mat-icon>No process assigned</span>
+                    <span class="m program warn" title="No process assigned — pick one when creating a work order"><mat-icon>warning</mat-icon>No process assigned</span>
                   }
-                  @if (p.metrics.assemblyCount > 0) { <span class="m"><mat-icon>widgets</mat-icon>{{ p.metrics.assemblyCount }} assemblies</span> }
-                  @if (p.metrics.partCount > 0) { <span class="m"><mat-icon>square_foot</mat-icon>{{ p.metrics.partCount }} parts</span> }
                   @if (p.metrics.tonnage.totalKg > 0) { <span class="m"><mat-icon>scale</mat-icon>{{ tonnes(p.metrics.tonnage.totalKg) }} t total</span> }
-                  @if (p.metrics.tonnage.shippedKg > 0) { <span class="m"><mat-icon>local_shipping</mat-icon>{{ tonnes(p.metrics.tonnage.shippedKg) }} t shipped</span> }
-                  @if (p.metrics.inProgress > 0) { <span class="m"><mat-icon>bolt</mat-icon>{{ p.metrics.inProgress }} in progress</span> }
                   <span class="m muted"><mat-icon>schedule</mat-icon>Created {{ p.createdAt | date:'mediumDate' }}</span>
                 </div>
               </div>
@@ -210,7 +201,7 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
     .proj-row:last-child { border-bottom: none; }
     .proj-row:hover { background: var(--clay-surface-hover); }
     .row-main {
-      display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(120px, 1.1fr) auto minmax(160px, auto) 24px;
+      display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(120px, 1.1fr) minmax(160px, auto) 24px;
       align-items: center; gap: 18px;
     }
     .col-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -226,15 +217,10 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
     .dotsep { opacity: .5; }
 
     .col-prog { display: flex; align-items: center; gap: 10px; }
-    .prog-bar { flex: 1; height: 7px; border-radius: 5px; background: var(--clay-bg-warm); overflow: hidden; min-width: 60px; }
-    .prog-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--clay-primary), var(--clay-primary-light)); transition: width .5s ease; }
-    .prog-pct { font-size: 12px; font-weight: 700; color: var(--clay-text-secondary); min-width: 34px; text-align: right; font-family: 'Space Grotesk','Inter',sans-serif; }
+    .comp { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--clay-text-secondary); white-space: nowrap; }
+    .comp mat-icon { font-size: 15px; width: 15px; height: 15px; color: var(--clay-text-muted); }
     .no-tree { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--clay-text-muted); }
     .no-tree mat-icon { font-size: 15px; width: 15px; height: 15px; }
-
-    .col-stats { display: flex; align-items: center; gap: 12px; justify-content: flex-end; }
-    .ready-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: var(--success-text); background: var(--success-bg); padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
-    .ready-chip mat-icon { font-size: 14px; width: 14px; height: 14px; }
 
     /* Insight meta line */
     .row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding-top: 10px; border-top: 1px solid var(--clay-border); }
@@ -262,7 +248,6 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
       .kpi-grid { grid-template-columns: repeat(2, 1fr); }
       .row-main { grid-template-columns: 1fr auto; row-gap: 10px; }
       .col-prog { grid-column: 1 / -1; }
-      .col-stats { grid-column: 1 / -1; justify-content: flex-start; }
       .chevron { display: none; }
     }
   `],
@@ -315,7 +300,7 @@ export class ProjectListComponent implements OnInit {
   }
 
   private emptyMetrics(): ProjectSummary['metrics'] {
-    return { nodeCount: 0, partCount: 0, assemblyCount: 0, percentComplete: 0, tonnage: { totalKg: 0, processedKg: 0, shippedKg: 0 }, readyToShip: 0, inProgress: 0 };
+    return { nodeCount: 0, partCount: 0, assemblyCount: 0, tonnage: { totalKg: 0 } };
   }
 
   filtered(): ProjectSummary[] {
@@ -335,7 +320,7 @@ export class ProjectListComponent implements OnInit {
       .filter((p) => p.status !== 'completed' && p.status !== 'archived')
       .reduce((sum, p) => sum + (p.metrics.tonnage.totalKg ?? 0), 0);
   }
-  totalReady(): number { return this.projects.reduce((s, p) => s + (p.metrics.readyToShip ?? 0), 0); }
+  totalAssemblies(): number { return this.projects.reduce((s, p) => s + (p.metrics.assemblyCount ?? 0), 0); }
   overdueCount(): number { return this.projects.filter((p) => this.isOverdue(p)).length; }
 
   isOverdue(p: ProjectSummary): boolean {

@@ -22,6 +22,7 @@ export class ProjectWorkspaceStore {
   readonly nodes = signal<AssemblyNode[]>([]);
   readonly progress = signal<ProjectProgress | null>(null);
   readonly quality = signal<ProjectQualitySummary | null>(null);
+  readonly ordersCount = signal<number>(0);
   readonly processes = signal<{ id: string; name: string }[]>([]);
   readonly loading = signal<boolean>(true);
   readonly notFound = signal<boolean>(false);
@@ -43,13 +44,6 @@ export class ProjectWorkspaceStore {
     return withModel?.modelId ? `${environment.apiUrl}/models/${withModel.modelId}/file` : null;
   });
   readonly openNcr = computed(() => this.quality()?.totals?.openNcr ?? 0);
-  readonly readyToShip = computed(
-    () => this.nodes().filter(
-      (n) => (n.nodeType === 'assembly' || n.nodeType === 'subassembly')
-        && n.productionStatus === 'ready_to_ship'
-        && ((n.quantity ?? 1) - (n.qtyShipped ?? 0)) > 0,
-    ).length,
-  );
   readonly isOverdue = computed(() => {
     const p = this.project();
     if (!p?.dueDate || p.status === 'completed' || p.status === 'archived') return false;
@@ -67,6 +61,7 @@ export class ProjectWorkspaceStore {
     this.nodes.set([]);
     this.progress.set(null);
     this.quality.set(null);
+    this.ordersCount.set(0);
     this.notFound.set(false);
     this.stopPoll();
     this.loadProcesses();
@@ -100,6 +95,7 @@ export class ProjectWorkspaceStore {
     });
     this.refreshProgress();
     this.refreshQuality();
+    this.refreshOrders();
   }
 
   refreshProgress(): void {
@@ -111,17 +107,14 @@ export class ProjectWorkspaceStore {
   refreshNodes(): void {
     this.svc.nodes(this.id()).subscribe({ next: (n) => this.nodes.set(n), error: () => {} });
   }
+  /** Production work orders (customer runs) — drives the header count and tab badge. */
+  refreshOrders(): void {
+    this.svc.listOrders(this.id()).subscribe({ next: (o) => this.ordersCount.set(o?.length ?? 0), error: () => {} });
+  }
   loadProcesses(): void {
     this.svc.listProcesses().subscribe({ next: (p) => this.processes.set(p), error: () => {} });
   }
   setProject(p: Project): void { this.project.set(p); }
-
-  /** Recompute the whole project's roll-up, then refresh derived state. */
-  recompute(): ReturnType<ProjectsService['recomputeStatus']> {
-    const obs = this.svc.recomputeStatus(this.id());
-    obs.subscribe({ next: () => this.reload(), error: () => {} });
-    return obs;
-  }
 
   /** Upload an IFC and rebuild the tree; progress is exposed via signals. */
   importIfc(file: File): void {

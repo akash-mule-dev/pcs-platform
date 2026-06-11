@@ -1,15 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, Repository } from 'typeorm';
+import { EntityManager, In, Not, Repository } from 'typeorm';
 import { ProductionOrder, ProductionOrderStatus } from './production-order.entity.js';
 import { Project } from './project.entity.js';
-import { AssemblyNode, AssemblyNodeType, NodeProductionStatus } from './assembly-node.entity.js';
+import { AssemblyNode, AssemblyNodeType } from './assembly-node.entity.js';
 import { WorkOrder, WorkOrderStatus } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { Product } from '../products/product.entity.js';
 import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
-import { StatusRollupService } from './status-rollup.service.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { isQualityStageName, qcGateMessage } from '../work-orders/qc-gate.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
@@ -34,7 +33,6 @@ export class ProductionOrderService {
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
     @InjectRepository(Product) private readonly productRepo: Repository<Product>,
     @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
-    private readonly rollup: StatusRollupService,
     private readonly events: EventsGateway,
   ) {}
 
@@ -55,28 +53,61 @@ export class ProductionOrderService {
     };
   }
 
-  /** Create an order AND release it: generate per-assembly work orders + stages (count-based totals). */
+  /**
+   * Create an order AND release it: generate per-assembly work orders + stages
+   * (count-based totals). Fully TRANSACTIONAL — either the order with ALL its
+   * work orders and stages is created, or nothing is (no half-created orders
+   * behind a 500). A unique-number race retries the whole transaction.
+   */
   async create(projectId: string, dto: CreateProductionOrderDto): Promise<ProductionOrder> {
     const org = this.org;
-    const project = await this.projectRepo.findOne({ where: { id: projectId, organizationId: org } });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const order = await this.orderRepo.manager.transaction((em) => this.createInTx(em, org, projectId, dto));
+        this.events.emitDashboardRefresh();
+        return order;
+      } catch (e: any) {
+        if (e?.code === '23505' && attempt < 4) continue; // number race — retry the whole transaction
+        throw e;
+      }
+    }
+  }
+
+  private async createInTx(em: EntityManager, org: string, projectId: string, dto: CreateProductionOrderDto): Promise<ProductionOrder> {
+    const orderRepo = em.getRepository(ProductionOrder);
+    const nodeRepo = em.getRepository(AssemblyNode);
+    const woRepo = em.getRepository(WorkOrder);
+    const wosRepo = em.getRepository(WorkOrderStage);
+
+    const project = await em.getRepository(Project).findOne({ where: { id: projectId, organizationId: org } });
     if (!project) throw new NotFoundException('Project not found');
-    const stages = await this.stageRepo.find({ where: { processId: dto.processId, organizationId: org }, order: { sequence: 'ASC' } });
+    const stages = await em.getRepository(Stage).find({ where: { processId: dto.processId, organizationId: org }, order: { sequence: 'ASC' } });
     if (!stages.length) throw new BadRequestException('Chosen process has no stages (or is not in this organization)');
 
     const quantity = dto.quantity ?? 1;
-    const order = await this.saveOrderWithNumber(org, projectId, dto, quantity);
+    const year = new Date().getFullYear();
+
+    // MAX-based numbering: count() drifts behind the highest number after deletes.
+    const ordBase = await this.maxNumberSuffix('production_orders', 'number', `ORD-${year}-`, em);
+    const order = await orderRepo.save(orderRepo.create({
+      projectId, number: `ORD-${year}-${String(ordBase + 1).padStart(4, '0')}`,
+      customerName: dto.customerName ?? null, quantity, processId: dto.processId,
+      status: ProductionOrderStatus.PLANNED, dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+      notes: dto.notes ?? null, organizationId: org,
+    }));
 
     // Work orders require a product; one stand-in product represents the project.
-    let product = await this.productRepo.findOne({ where: { organizationId: org, name: project.name } });
+    const productRepo = em.getRepository(Product);
+    let product = await productRepo.findOne({ where: { organizationId: org, name: project.name } });
     if (!product) {
-      product = await this.productRepo.save(this.productRepo.create({
+      product = await productRepo.save(productRepo.create({
         name: project.name, description: `Fabrication project ${project.projectNumber ?? ''}`.trim(), organizationId: org,
       }));
     }
 
     // Trackable production items = assemblies/subassemblies, PLUS "loose" parts
     // with no assembly/subassembly ancestor (so parts-only projects still track).
-    const allNodes = await this.nodeRepo.find({ where: { organizationId: org, projectId }, order: { depth: 'ASC', sortIndex: 'ASC' } });
+    const allNodes = await nodeRepo.find({ where: { organizationId: org, projectId }, order: { depth: 'ASC', sortIndex: 'ASC' } });
     const byId = new Map(allNodes.map((n) => [n.id, n]));
     const isAsm = (t: unknown): boolean => { const s = String(t); return s === 'assembly' || s === 'subassembly'; };
     const hasAsmAncestor = (n: AssemblyNode): boolean => {
@@ -90,7 +121,7 @@ export class ProductionOrderService {
     // A project with no imported structure is still orderable: auto-create one
     // root assembly representing the deliverable so qty-N tracking works.
     if (!nodes.length) {
-      const root = await this.nodeRepo.save(this.nodeRepo.create({
+      const root = await nodeRepo.save(nodeRepo.create({
         projectId,
         organizationId: org,
         parentId: null,
@@ -100,71 +131,52 @@ export class ProductionOrderService {
         quantity: 1,
         depth: 0,
         sortIndex: 0,
-        productionStatus: NodeProductionStatus.NOT_STARTED,
-        percentComplete: 0,
       }));
       nodes.push(root);
     }
 
-    if (nodes.length) {
-      // Batch the inserts (one save for all work orders, one for all stages) — a
-      // per-row sequential loop is far too slow against a remote DB at real scale.
-      const year = new Date().getFullYear();
-      const woBase = await this.woRepo.count();
-      const woEntities = nodes.map((node, i) => this.woRepo.create({
-        orderNumber: `WO-${year}-${String(woBase + 1 + i).padStart(4, '0')}`,
-        productId: product.id, processId: dto.processId, assemblyNodeId: node.id, productionOrderId: order.id,
-        quantity: node.quantity ?? 1, status: WorkOrderStatus.PENDING, organizationId: org,
-      }));
-      const savedWos = await this.woRepo.save(woEntities, { chunk: 200 });
-      const stageEntities: WorkOrderStage[] = [];
-      savedWos.forEach((wo, i) => {
-        const total = stageUnitsTotal(nodes[i].quantity ?? 1, quantity);
-        for (const st of stages) {
-          stageEntities.push(this.wosRepo.create({
-            workOrderId: wo.id, stageId: st.id, status: WorkOrderStageStatus.PENDING,
-            qtyTotal: total, qtyDone: 0, organizationId: org,
-          }));
-        }
-      });
-      await this.wosRepo.save(stageEntities, { chunk: 500 });
+    // Batch the inserts (one save for all work orders, one for all stages) — a
+    // per-row sequential loop is far too slow against a remote DB at real scale.
+    const woBase = await this.maxNumberSuffix('work_orders', 'order_number', `WO-${year}-`, em);
+    const woEntities = nodes.map((node, i) => woRepo.create({
+      orderNumber: `WO-${year}-${String(woBase + 1 + i).padStart(4, '0')}`,
+      productId: product.id, processId: dto.processId, assemblyNodeId: node.id, productionOrderId: order.id,
+      quantity: node.quantity ?? 1, status: WorkOrderStatus.PENDING, organizationId: org,
+    }));
+    const savedWos = await woRepo.save(woEntities, { chunk: 200 });
 
-      // Point fresh nodes at the first stage so the tree/3D show the pipeline.
-      const firstStage = stages[0];
-      const toPoint = nodes.filter((n) => !n.currentStageId);
-      if (toPoint.length) {
-        for (const n of toPoint) n.currentStageId = firstStage.id;
-        await this.nodeRepo.save(toPoint, { chunk: 200 });
+    const stageEntities: WorkOrderStage[] = [];
+    savedWos.forEach((wo, i) => {
+      const total = stageUnitsTotal(nodes[i].quantity ?? 1, quantity);
+      for (const st of stages) {
+        stageEntities.push(wosRepo.create({
+          workOrderId: wo.id, stageId: st.id, status: WorkOrderStageStatus.PENDING,
+          qtyTotal: total, qtyDone: 0, organizationId: org,
+        }));
       }
-    }
-    this.events.emitDashboardRefresh();
+    });
+    await wosRepo.save(stageEntities, { chunk: 500 });
     return order;
   }
 
-  private async saveOrderWithNumber(org: string, projectId: string, dto: CreateProductionOrderDto, quantity: number): Promise<ProductionOrder> {
-    const year = new Date().getFullYear();
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const count = await this.orderRepo.count({ where: { organizationId: org } });
-      const number = `ORD-${year}-${String(count + 1).padStart(4, '0')}`;
-      try {
-        return await this.orderRepo.save(this.orderRepo.create({
-          projectId, number, customerName: dto.customerName ?? null, quantity, processId: dto.processId,
-          status: ProductionOrderStatus.PLANNED, dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-          notes: dto.notes ?? null, organizationId: org,
-        }));
-      } catch (e: any) {
-        if (e?.code === '23505') continue;
-        throw e;
-      }
-    }
-    throw new BadRequestException('Could not allocate a unique order number');
+  /** Highest numeric suffix among numbers with the given prefix (e.g. 'WO-2026-'). 0 when none. */
+  private async maxNumberSuffix(table: string, column: string, prefix: string, em?: EntityManager): Promise<number> {
+    const runner = em ?? this.woRepo.manager;
+    const rows: { num: string }[] = await runner.query(
+      `SELECT ${column} AS num FROM ${table} WHERE ${column} LIKE $1 ORDER BY ${column} DESC LIMIT 1`,
+      [`${prefix}%`],
+    );
+    const raw = rows?.[0]?.num;
+    if (!raw) return 0;
+    const n = parseInt(raw.slice(prefix.length), 10);
+    return Number.isFinite(n) ? n : 0;
   }
 
   private async saveWoWithNumber(org: string, productId: string, processId: string, node: AssemblyNode, productionOrderId: string): Promise<WorkOrder> {
     const year = new Date().getFullYear();
     for (let attempt = 0; attempt < 5; attempt++) {
-      const count = await this.woRepo.count();
-      const orderNumber = `WO-${year}-${String(count + 1).padStart(4, '0')}`;
+      const base = await this.maxNumberSuffix('work_orders', 'order_number', `WO-${year}-`);
+      const orderNumber = `WO-${year}-${String(base + 1).padStart(4, '0')}`;
       try {
         return await this.woRepo.save(this.woRepo.create({
           orderNumber, productId, processId, assemblyNodeId: node.id, productionOrderId,
@@ -180,6 +192,115 @@ export class ProductionOrderService {
 
   listByProject(projectId: string): Promise<ProductionOrder[]> {
     return this.orderRepo.find({ where: { projectId, organizationId: this.org }, order: { createdAt: 'DESC' } });
+  }
+
+  /**
+   * Org-wide work-orders DASHBOARD: every production order (all projects) with
+   * its progress roll-up, plus KPIs and a cross-order stage funnel. Built from
+   * four aggregate queries — never N+1 per order.
+   */
+  async dashboard() {
+    const org = this.org;
+
+    const orders: any[] = await this.orderRepo.query(
+      `SELECT o.id, o.number, o.customer_name, o.quantity, o.status, o.due_date, o.created_at,
+              p.id AS project_id, p.name AS project_name, p.project_number
+         FROM production_orders o
+         JOIN projects p ON p.id = o.project_id
+        WHERE o.organization_id = $1
+        ORDER BY o.created_at DESC`,
+      [org],
+    );
+
+    // Per-order progress: items (per-assembly WOs) + count-based units.
+    const agg: any[] = await this.orderRepo.query(
+      `SELECT w.production_order_id AS oid,
+              COUNT(DISTINCT w.id)::int AS items,
+              COUNT(DISTINCT w.id) FILTER (WHERE w.status = 'completed')::int AS items_done,
+              COALESCE(SUM(s.qty_total) FILTER (WHERE s.status <> 'skipped'), 0)::int AS units_total,
+              COALESCE(SUM(LEAST(s.qty_done, s.qty_total)) FILTER (WHERE s.status <> 'skipped'), 0)::int AS units_done
+         FROM work_orders w
+         LEFT JOIN work_order_stages s ON s.work_order_id = w.id
+        WHERE w.organization_id = $1 AND w.production_order_id IS NOT NULL
+        GROUP BY w.production_order_id`,
+      [org],
+    );
+    const aggByOrder = new Map<string, any>(agg.map((a) => [a.oid, a]));
+
+    // Quality holds: open NCRs linked (via their work order) to each order.
+    const ncrAgg: any[] = await this.orderRepo.query(
+      `SELECT w.production_order_id AS oid, COUNT(n.id)::int AS open_ncrs
+         FROM ncrs n
+         JOIN work_orders w ON w.id = n.work_order_id
+        WHERE n.organization_id = $1 AND n.status NOT IN ('closed','cancelled')
+          AND w.production_order_id IS NOT NULL
+        GROUP BY w.production_order_id`,
+      [org],
+    );
+    const ncrByOrder = new Map<string, number>(ncrAgg.map((a) => [a.oid, Number(a.open_ncrs)]));
+
+    // Cross-order stage funnel (active orders only) — the bottleneck view.
+    const funnelRows: any[] = await this.orderRepo.query(
+      `SELECT st.name, st.sequence,
+              COALESCE(SUM(s.qty_total) FILTER (WHERE s.status <> 'skipped'), 0)::int AS total,
+              COALESCE(SUM(LEAST(s.qty_done, s.qty_total)) FILTER (WHERE s.status <> 'skipped'), 0)::int AS done
+         FROM work_order_stages s
+         JOIN work_orders w ON w.id = s.work_order_id
+         JOIN production_orders o ON o.id = w.production_order_id
+         JOIN stages st ON st.id = s.stage_id
+        WHERE s.organization_id = $1 AND o.status IN ('planned','in_progress')
+        GROUP BY st.name, st.sequence
+        ORDER BY st.sequence, st.name`,
+      [org],
+    );
+    const funnel = funnelRows.map((f) => ({
+      name: f.name,
+      sequence: Number(f.sequence),
+      done: Number(f.done),
+      total: Number(f.total),
+      percent: Number(f.total) > 0 ? Math.round((Number(f.done) / Number(f.total)) * 1000) / 10 : 0,
+    }));
+
+    const now = Date.now();
+    const rows = orders.map((o) => {
+      const a = aggByOrder.get(o.id) ?? { items: 0, items_done: 0, units_total: 0, units_done: 0 };
+      const unitsTotal = Number(a.units_total);
+      const unitsDone = Number(a.units_done);
+      const active = o.status === 'planned' || o.status === 'in_progress';
+      return {
+        id: o.id,
+        number: o.number,
+        customerName: o.customer_name,
+        quantity: Number(o.quantity),
+        status: o.status,
+        dueDate: o.due_date,
+        createdAt: o.created_at,
+        project: { id: o.project_id, name: o.project_name, number: o.project_number },
+        items: Number(a.items),
+        itemsDone: Number(a.items_done),
+        unitsDone,
+        unitsTotal,
+        percent: unitsTotal > 0 ? Math.round((unitsDone / unitsTotal) * 1000) / 10 : 0,
+        openNcrs: ncrByOrder.get(o.id) ?? 0,
+        late: !!o.due_date && active && new Date(o.due_date).getTime() < now,
+      };
+    });
+
+    const activeRows = rows.filter((r) => r.status === 'planned' || r.status === 'in_progress');
+    const kpis = {
+      orders: rows.length,
+      planned: rows.filter((r) => r.status === 'planned').length,
+      inProgress: rows.filter((r) => r.status === 'in_progress').length,
+      completed: rows.filter((r) => r.status === 'completed').length,
+      cancelled: rows.filter((r) => r.status === 'cancelled').length,
+      late: rows.filter((r) => r.late).length,
+      openNcrs: [...ncrByOrder.values()].reduce((a, b) => a + b, 0),
+      unitsDone: activeRows.reduce((a, r) => a + r.unitsDone, 0),
+      unitsTotal: activeRows.reduce((a, r) => a + r.unitsTotal, 0),
+      itemsInProduction: activeRows.reduce((a, r) => a + r.items, 0),
+    };
+
+    return { kpis, funnel, orders: rows };
   }
 
   async get(orderId: string): Promise<ProductionOrder> {
@@ -242,16 +363,19 @@ export class ProductionOrderService {
       const open = await this.ncrRepo.count({
         where: { assemblyNodeId: wo.assemblyNodeId, organizationId: org, status: Not(In([NcrStatus.CLOSED, NcrStatus.CANCELLED])) },
       });
-      if (open > 0) throw new BadRequestException(qcGateMessage(wo.orderNumber, open));
+      if (open > 0) {
+        // Speak in shop terms: the part mark, not the internal WO number.
+        const node = await this.nodeRepo.findOne({ where: { id: wo.assemblyNodeId, organizationId: org } });
+        throw new BadRequestException(qcGateMessage(node?.mark || node?.name || wo.orderNumber, open));
+      }
     }
 
     if (wos.status === WorkOrderStageStatus.IN_PROGRESS && !wos.startedAt) wos.startedAt = new Date();
     wos.completedAt = wos.status === WorkOrderStageStatus.COMPLETED ? (wos.completedAt ?? new Date()) : null;
     const saved = await this.wosRepo.save(wos);
 
-    // Live propagation: WO status ← its stages; assembly/3D roll-up; order status ← its WOs.
+    // Live propagation: WO status ← its stages; order status ← its WOs.
     await this.syncWorkOrderStatus(wo);
-    try { await this.rollup.recomputeForWorkOrder(wo.id); } catch { /* non-fatal */ }
     await this.syncOrderStatus(orderId);
     this.events.emitWorkOrderUpdate({ id: wo.id, productionOrderId: orderId, workOrderStageId: saved.id, status: String(saved.status) });
     this.events.emitDashboardRefresh();

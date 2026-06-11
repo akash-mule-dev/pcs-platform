@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectsService, ProductionOrder, CreateOrder } from '../core/services/projects.service';
+import { ProjectWorkspaceStore } from './project-workspace.store';
 
 /** Work orders (production instances) for a project — list + create, inside the project workspace. */
 @Component({
@@ -99,6 +100,7 @@ import { ProjectsService, ProductionOrder, CreateOrder } from '../core/services/
 export class ProjectOrdersComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private svc = inject(ProjectsService);
+  private store = inject(ProjectWorkspaceStore, { optional: true });
 
   projectId = '';
   orders: ProductionOrder[] = [];
@@ -144,7 +146,11 @@ export class ProjectOrdersComponent implements OnInit {
     this.creating = true; this.error = null;
     const body: CreateOrder = { processId: this.processId, customerName: this.customer.trim() || undefined, quantity: Math.max(1, Number(this.quantity) || 1) };
     this.svc.createOrder(this.projectId, body).subscribe({
-      next: () => { this.creating = false; this.open = false; this.customer = ''; this.quantity = 1; this.processId = ''; this.load(); },
+      next: () => {
+        this.creating = false; this.open = false; this.customer = ''; this.quantity = 1; this.processId = ''; this.load();
+        // Keep the workspace header live (order count, items in production, nodes).
+        this.store?.refreshOrders(); this.store?.refreshProgress(); this.store?.refreshNodes();
+      },
       error: (e) => { this.creating = false; this.error = e?.error?.message || 'Could not create work order.'; },
     });
   }
