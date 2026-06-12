@@ -160,7 +160,7 @@ restart, and drives the status endpoint + UI.
 | `output_size` | bigint | bytes |
 | `triangles_before` / `triangles_after` | int | optimization report |
 | `model_id` | uuid | the `Model3D` created on success |
-| `name` / `description` / `model_type` / `product_id` | — | passthrough to `Model3D` |
+| `name` / `description` / `model_type` | — | passthrough to `Model3D` |
 | `error` | text | failure detail |
 | `duration_ms` | int | wall-clock |
 | `created_by_id` | uuid | auditing |

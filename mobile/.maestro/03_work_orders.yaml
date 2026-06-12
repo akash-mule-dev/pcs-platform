@@ -35,7 +35,6 @@ name: "Work Orders Flow"
 - extendedWaitUntil:
     visible: "Stages"
     timeout: 5000
-- assertVisible: "Product"
 - assertVisible: "Quantity"
 
 # Scroll down to see more stages

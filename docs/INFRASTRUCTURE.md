@@ -336,7 +336,6 @@ postgresql://neondb_owner:<password>@ep-curly-pine-aivn3f9s-pooler.c-4.us-east-1
 
 ### Seed Data Included
 - 9 users (admin, manager, supervisors, operators)
-- 3 products (PCB-X100, MOT-200, SEN-50)
 - 3 processes with 21 stages
 - 3 production lines with 15 stations
 - 5+ work orders

@@ -40,7 +40,6 @@ export interface ConvertOptions {
   name: string;
   description?: string;
   modelType?: 'assembly' | 'quality';
-  productId?: string;
   optimize?: boolean;
   simplifyRatio?: number;
   draco?: boolean;
@@ -71,7 +70,6 @@ export class ConversionApiService {
     fd.append('name', opts.name);
     if (opts.description) fd.append('description', opts.description);
     if (opts.modelType) fd.append('modelType', opts.modelType);
-    if (opts.productId) fd.append('productId', opts.productId);
     fd.append('optimize', String(opts.optimize !== false));
     if (opts.simplifyRatio != null) fd.append('simplifyRatio', String(opts.simplifyRatio));
     fd.append('draco', String(!!opts.draco));
@@ -90,7 +88,6 @@ export class ConversionApiService {
     const fd = new FormData();
     for (const f of files) fd.append('files', f);
     if (opts.modelType) fd.append('modelType', opts.modelType);
-    if (opts.productId) fd.append('productId', opts.productId);
     fd.append('optimize', String(opts.optimize !== false));
     if (opts.simplifyRatio != null) fd.append('simplifyRatio', String(opts.simplifyRatio));
     fd.append('draco', String(!!opts.draco));

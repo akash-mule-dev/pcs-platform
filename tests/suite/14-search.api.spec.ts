@@ -1,18 +1,20 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, authHeader } from '../helpers/auth.helper';
-import { createProduct } from '../helpers/test-data.helper';
+import { createProcess, createWorkOrder } from '../helpers/test-data.helper';
 
 test.describe('Search — Global cross-entity search', () => {
   let adminToken: string;
   let operatorToken: string;
-  const searchableName = `Searchable Widget ${Date.now()}`;
+  let searchableOrderNumber: string;
 
   test.beforeAll(async ({ request }) => {
     ({ token: adminToken } = await loginAs(request, 'admin'));
     ({ token: operatorToken } = await loginAs(request, 'operator'));
 
-    // Create a product with a unique name we can search for
-    await createProduct(request, adminToken, { name: searchableName });
+    // Create a work order whose orderNumber we can search for
+    const process = await createProcess(request, adminToken);
+    const workOrder = await createWorkOrder(request, adminToken, process.id);
+    searchableOrderNumber = workOrder.orderNumber;
   });
 
   // ── Basic search ──────────────────────────────────────────────────────────
@@ -76,31 +78,31 @@ test.describe('Search — Global cross-entity search', () => {
     const result = body.data;
 
     // Search should return results from multiple entity types
-    // Structure: { workOrders: [], products: [], users: [] } or similar
+    // Structure: { workOrders: [], users: [] }
     expect(result).toBeTruthy();
-    if (result.products) {
-      expect(Array.isArray(result.products)).toBeTruthy();
-    }
     if (result.workOrders) {
       expect(Array.isArray(result.workOrders)).toBeTruthy();
+    }
+    if (result.users) {
+      expect(Array.isArray(result.users)).toBeTruthy();
     }
   });
 
   // ── Search finds created data ─────────────────────────────────────────────
 
-  test('Search finds recently created product by name', async ({ request }) => {
-    const keyword = searchableName.split(' ')[0]; // "Searchable"
-    const res = await request.get(`/api/search?q=${keyword}`, {
+  test('Search finds recently created work order by order number', async ({ request }) => {
+    test.skip(!searchableOrderNumber, 'No work order was created');
+    const res = await request.get(`/api/search?q=${encodeURIComponent(searchableOrderNumber)}`, {
       headers: authHeader(adminToken),
     });
     expect(res.status()).toBe(200);
     const body = await res.json();
     const result = body.data;
 
-    // Should find the product we created
-    if (result.products) {
-      const found = result.products.some((p: any) =>
-        p.name?.includes('Searchable'),
+    // Should find the work order we created
+    if (result.workOrders) {
+      const found = result.workOrders.some((wo: any) =>
+        wo.orderNumber?.includes(searchableOrderNumber),
       );
       expect(found).toBeTruthy();
     }

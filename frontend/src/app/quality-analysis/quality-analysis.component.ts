@@ -32,8 +32,6 @@ interface Model3D {
   originalName: string;
   fileSize: number;
   modelType: string;
-  productId: string;
-  product?: { id: string; name: string };
   thumbnailPath?: string | null;
   createdAt: string;
 }
@@ -108,7 +106,6 @@ interface Model3D {
                     <div class="model-info">
                       <span class="model-name">{{ model.name }}</span>
                       <span class="model-meta">
-                        {{ model.product?.name || 'No product' }} &middot;
                         {{ (model.fileSize / 1024 / 1024).toFixed(1) }}MB
                       </span>
                       @if (qaByModel[model.id]; as qa) {

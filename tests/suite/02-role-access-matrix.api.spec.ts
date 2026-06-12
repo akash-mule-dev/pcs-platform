@@ -31,20 +31,6 @@ const ENDPOINTS: EndpointCheck[] = [
     denied: ['manager', 'supervisor', 'operator'],
     description: 'Create user',
   },
-  // ── Products ──
-  {
-    method: 'GET', path: '/api/products',
-    allowed: ['admin', 'manager', 'supervisor', 'operator'],
-    denied: [],
-    description: 'List products',
-  },
-  {
-    method: 'POST', path: '/api/products',
-    body: { name: `Matrix Product ${Date.now()}`, description: 'role test' },
-    allowed: ['admin', 'manager'],
-    denied: ['supervisor', 'operator'],
-    description: 'Create product',
-  },
   // ── Processes ──
   {
     method: 'GET', path: '/api/processes',
@@ -192,7 +178,6 @@ test.describe('Role Access Matrix — Permission enforcement', () => {
 
   const protectedPaths = [
     '/api/users',
-    '/api/products',
     '/api/processes',
     '/api/work-orders',
     '/api/time-tracking/active',

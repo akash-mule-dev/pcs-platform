@@ -28,15 +28,6 @@ export class InventoryController {
     return this.service.getMovements(materialId);
   }
 
-  @Get('availability')
-  @RequirePermissions('materials.view')
-  @ApiOperation({ summary: 'Material availability / shortage check for a planned build' })
-  @ApiQuery({ name: 'productId', required: true })
-  @ApiQuery({ name: 'quantity', required: true })
-  availability(@Query('productId') productId: string, @Query('quantity') quantity: string) {
-    return this.service.checkAvailability(productId, parseInt(quantity, 10) || 1);
-  }
-
   @Post('receive')
   @RequirePermissions('materials.transact')
   @ApiOperation({ summary: 'Receive material into stock' })

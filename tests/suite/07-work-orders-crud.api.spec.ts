@@ -1,13 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, authHeader } from '../helpers/auth.helper';
-import { createProduct, createProcess, createLine } from '../helpers/test-data.helper';
+import { createProcess, createLine } from '../helpers/test-data.helper';
 
 test.describe('Work Orders — CRUD operations', () => {
   let adminToken: string;
   let managerToken: string;
   let supervisorToken: string;
   let operatorToken: string;
-  let productId: string;
   let processId: string;
   let lineId: string;
   let workOrderId: string;
@@ -19,9 +18,7 @@ test.describe('Work Orders — CRUD operations', () => {
     ({ token: operatorToken } = await loginAs(request, 'operator'));
 
     // Setup prerequisite data
-    const product = await createProduct(request, adminToken);
-    productId = product.id;
-    const process = await createProcess(request, adminToken, productId);
+    const process = await createProcess(request, adminToken);
     processId = process.id;
     const line = await createLine(request, adminToken);
     lineId = line.id;
@@ -33,7 +30,6 @@ test.describe('Work Orders — CRUD operations', () => {
     const res = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
       data: {
-        productId,
         processId,
         lineId,
         quantity: 50,
@@ -52,7 +48,7 @@ test.describe('Work Orders — CRUD operations', () => {
   test('POST /api/work-orders — manager can create work order', async ({ request }) => {
     const res = await request.post('/api/work-orders', {
       headers: authHeader(managerToken),
-      data: { productId, processId, quantity: 20, priority: 'low' },
+      data: { processId, quantity: 20, priority: 'low' },
     });
     expect(res.status()).toBe(201);
   });
@@ -60,7 +56,7 @@ test.describe('Work Orders — CRUD operations', () => {
   test('POST /api/work-orders — supervisor can create work order', async ({ request }) => {
     const res = await request.post('/api/work-orders', {
       headers: authHeader(supervisorToken),
-      data: { productId, processId, quantity: 5, priority: 'medium' },
+      data: { processId, quantity: 5, priority: 'medium' },
     });
     expect(res.status()).toBe(201);
   });
@@ -68,7 +64,7 @@ test.describe('Work Orders — CRUD operations', () => {
   test('POST /api/work-orders — operator cannot create work order', async ({ request }) => {
     const res = await request.post('/api/work-orders', {
       headers: authHeader(operatorToken),
-      data: { productId, processId, quantity: 1 },
+      data: { processId, quantity: 1 },
     });
     expect(res.status()).toBe(403);
   });
@@ -84,7 +80,7 @@ test.describe('Work Orders — CRUD operations', () => {
   test('POST /api/work-orders — rejects invalid priority', async ({ request }) => {
     const res = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
-      data: { productId, processId, quantity: 10, priority: 'super-urgent' },
+      data: { processId, quantity: 10, priority: 'super-urgent' },
     });
     expect([400, 201]).toContain(res.status()); // May accept or reject depending on validation
   });
@@ -145,7 +141,6 @@ test.describe('Work Orders — CRUD operations', () => {
     const wo = body.data;
     expect(wo.id).toBe(workOrderId);
     expect(wo.orderNumber).toBeTruthy();
-    expect(wo.product || wo.productId).toBeTruthy();
     expect(wo.process || wo.processId).toBeTruthy();
     expect(Array.isArray(wo.stages)).toBeTruthy();
     // Each stage should have properties
@@ -227,11 +222,11 @@ test.describe('Work Orders — CRUD operations', () => {
     // Create two work orders for batch test
     const wo1 = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
-      data: { productId, processId, quantity: 1, priority: 'low' },
+      data: { processId, quantity: 1, priority: 'low' },
     });
     const wo2 = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
-      data: { productId, processId, quantity: 1, priority: 'low' },
+      data: { processId, quantity: 1, priority: 'low' },
     });
     const id1 = (await wo1.json()).data.id;
     const id2 = (await wo2.json()).data.id;

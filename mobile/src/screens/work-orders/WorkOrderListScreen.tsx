@@ -70,7 +70,7 @@ export function WorkOrderListScreen() {
           <Text style={styles.orderNumber}>{item.orderNumber}</Text>
           <StatusBadge status={item.status} small />
         </View>
-        <Text style={styles.productName}>{item.product?.name || 'Unknown Product'}</Text>
+        <Text style={styles.processName}>{item.process?.name || '—'}</Text>
         <View style={styles.cardFooter}>
           <Text style={styles.quantity}>
             Qty: {item.completedQuantity}/{item.quantity}
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.text,
   },
-  productName: {
+  processName: {
     fontSize: 14,
     color: Colors.textSecondary,
     marginBottom: 8,

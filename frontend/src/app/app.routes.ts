@@ -19,11 +19,6 @@ export const routes: Routes = [
         loadComponent: () => import('./dashboard/dashboard.component').then(m => m.DashboardComponent)
       },
       {
-        path: 'products',
-        canActivate: [featureGuard('products')],
-        loadComponent: () => import('./products/product-list/product-list.component').then(m => m.ProductListComponent)
-      },
-      {
         // Projects feature (portfolio list + per-project workspace with tabbed
         // child routes). Lazily loaded so the workspace shell + store stay out of
         // the main bundle.
@@ -43,7 +38,7 @@ export const routes: Routes = [
       },
       {
         // Production cockpit: KPIs, stage funnel and every production order with
-        // live progress. The legacy per-product work-order list moved to /legacy.
+        // live progress. The legacy flat work-order list moved to /legacy.
         path: 'work-orders',
         canActivate: [featureGuard('work-orders')],
         loadComponent: () => import('./work-orders/work-orders-dashboard.component').then(m => m.WorkOrdersDashboardComponent)
@@ -54,7 +49,7 @@ export const routes: Routes = [
         loadComponent: () => import('./work-orders/work-order-list/work-order-list.component').then(m => m.WorkOrderListComponent)
       },
       {
-        // Legacy per-product work-order detail (the audit dashboard owns /work-orders/:id now).
+        // Legacy work-order detail (the audit dashboard owns /work-orders/:id now).
         path: 'work-orders/legacy/:id',
         canActivate: [featureGuard('work-orders')],
         loadComponent: () => import('./work-orders/work-order-detail/work-order-detail.component').then(m => m.WorkOrderDetailComponent)

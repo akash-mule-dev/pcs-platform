@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -9,24 +9,20 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatSelectModule } from '@angular/material/select';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { NgChartsModule } from 'ng2-charts';
 import { ChartConfiguration } from 'chart.js';
 import { ApiService } from '../../core/services/api.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { DurationPipe } from '../../shared/pipes/duration.pipe';
-import { ThreeViewerComponent } from '../../shared/components/three-viewer/three-viewer.component';
-import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-work-order-detail',
   standalone: true,
   imports: [
     CommonModule, FormsModule, RouterModule, MatCardModule, MatButtonModule,
-    MatIconModule, MatChipsModule, MatSelectModule, MatFormFieldModule,
-    MatProgressBarModule, MatTooltipModule, NgChartsModule, DurationPipe,
-    ThreeViewerComponent,
+    MatChipsModule, MatSelectModule, MatFormFieldModule,
+    MatProgressBarModule, NgChartsModule, DurationPipe,
   ],
   template: `
     <a routerLink="/work-orders/legacy" class="back-link">← Back to Work Orders</a>
@@ -36,7 +32,7 @@ import { environment } from '../../../environments/environment';
         <div>
           <h2>{{ wo.orderNumber }}</h2>
           <p class="subtitle">
-            {{ wo.product?.name }} · Qty: {{ wo.quantity }} · Due: {{ wo.dueDate ? (wo.dueDate | date:'mediumDate') : 'N/A' }}
+            Qty: {{ wo.quantity }} · Due: {{ wo.dueDate ? (wo.dueDate | date:'mediumDate') : 'N/A' }}
           </p>
         </div>
         <div class="header-actions">
@@ -58,87 +54,6 @@ import { environment } from '../../../environments/environment';
         }
         <button mat-button color="warn" (click)="changeStatus('cancelled')">Cancel</button>
       </div>
-
-      <!-- 3D Model Quality Analysis Section -->
-      @if (productModels.length > 0) {
-        <div class="model-section">
-          <h3>
-            <mat-icon class="section-icon">view_in_ar</mat-icon>
-            3D Model — Quality Analysis
-          </h3>
-
-          @if (productModels.length > 1) {
-            <div class="model-select-row">
-              <mat-form-field appearance="outline" class="model-select-field">
-                <mat-label>Select Model</mat-label>
-                <mat-select [(ngModel)]="selectedModelId" (selectionChange)="onModelSelected()">
-                  @for (m of productModels; track m.id) {
-                    <mat-option [value]="m.id">{{ m.originalName }} ({{ (m.fileSize / 1024 / 1024).toFixed(1) }}MB)</mat-option>
-                  }
-                </mat-select>
-              </mat-form-field>
-            </div>
-          }
-
-          <mat-card class="viewer-card">
-            <mat-card-header>
-              <mat-card-title class="viewer-title">
-                {{ selectedModelName }}
-                @if (qualitySummary) {
-                  <span class="quality-summary-inline">
-                    <span class="qs-pass">{{ qualitySummary.pass }} pass</span>
-                    <span class="qs-fail">{{ qualitySummary.fail }} fail</span>
-                    <span class="qs-warn">{{ qualitySummary.warning }} warn</span>
-                  </span>
-                }
-              </mat-card-title>
-              <div class="viewer-actions">
-                <button mat-icon-button (click)="viewer.resetCamera()" matTooltip="Reset camera">
-                  <mat-icon>center_focus_strong</mat-icon>
-                </button>
-                <a mat-icon-button routerLink="/quality-analysis" matTooltip="Open full quality analysis">
-                  <mat-icon>open_in_new</mat-icon>
-                </a>
-              </div>
-            </mat-card-header>
-            <mat-card-content class="viewer-content">
-              @if (selectedModelUrl) {
-                <app-three-viewer #viewer
-                  [modelUrl]="selectedModelUrl"
-                  [qualityData]="qualityOverlay"
-                  (meshClicked)="onMeshClicked($event)"
-                ></app-three-viewer>
-              }
-            </mat-card-content>
-          </mat-card>
-
-          <!-- Clicked mesh detail -->
-          @if (clickedMeshEntry) {
-            <mat-card class="mesh-detail-card">
-              <mat-card-content>
-                <div class="mesh-detail-status" [class]="clickedMeshEntry.status">
-                  <mat-icon>{{ clickedMeshEntry.status === 'pass' ? 'check_circle' : clickedMeshEntry.status === 'fail' ? 'cancel' : 'warning' }}</mat-icon>
-                  {{ clickedMeshEntry.regionLabel || clickedMeshEntry.meshName }} — {{ clickedMeshEntry.status | uppercase }}
-                </div>
-                @if (clickedMeshEntry.defectType) {
-                  <div class="mesh-detail-row">Defect: {{ clickedMeshEntry.defectType }} ({{ clickedMeshEntry.severity }})</div>
-                }
-                @if (clickedMeshEntry.measurementValue !== null && clickedMeshEntry.measurementValue !== undefined) {
-                  <div class="mesh-detail-row">
-                    Measurement: {{ clickedMeshEntry.measurementValue }}{{ clickedMeshEntry.measurementUnit || '' }}
-                    @if (clickedMeshEntry.toleranceMin !== null || clickedMeshEntry.toleranceMax !== null) {
-                      (tolerance: {{ clickedMeshEntry.toleranceMin ?? '—' }} – {{ clickedMeshEntry.toleranceMax ?? '—' }})
-                    }
-                  </div>
-                }
-                @if (clickedMeshEntry.notes) {
-                  <div class="mesh-detail-row notes">{{ clickedMeshEntry.notes }}</div>
-                }
-              </mat-card-content>
-            </mat-card>
-          }
-        </div>
-      }
 
       <h3>Stage Progress</h3>
       <div class="stages-grid">
@@ -206,7 +121,6 @@ import { environment } from '../../../environments/environment';
     .priority-high { background: var(--danger-bg); color: var(--danger-text); box-shadow: var(--clay-shadow-soft); } .priority-urgent { background: var(--danger); color: white; }
     .status-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 24px; padding: 12px; background: var(--clay-surface); border-radius: var(--clay-radius-xs); }
     h3 { color: var(--clay-text); margin: 24px 0 12px; display: flex; align-items: center; gap: 8px; }
-    .section-icon { font-size: 20px; width: 20px; height: 20px; color: var(--clay-primary, #6b5ce7); }
     .stages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
     .stage-progress-card { padding: 16px; }
     .stage-completed { border-left: 4px solid var(--status-completed); }
@@ -224,52 +138,12 @@ import { environment } from '../../../environments/environment';
     ::ng-deep .assign-field .mat-mdc-form-field-subscript-wrapper { display: none; }
     .time-chart-card { margin-top: 24px; padding: 20px; }
     .time-chart-card canvas { max-height: 300px; }
-
-    /* 3D Model Section */
-    .model-section { margin-bottom: 8px; }
-    .model-select-row { margin-bottom: 12px; }
-    .model-select-field { width: 320px; }
-    .viewer-card { margin-bottom: 16px; }
-    .viewer-card mat-card-header { display: flex; justify-content: space-between; align-items: center; }
-    .viewer-title { display: flex; align-items: center; gap: 12px; font-size: 14px; }
-    .viewer-actions { display: flex; gap: 4px; }
-    .viewer-content { min-height: 400px; }
-    .quality-summary-inline { display: inline-flex; gap: 10px; font-size: 12px; font-weight: 600; }
-    .qs-pass { color: var(--success); }
-    .qs-fail { color: var(--danger); }
-    .qs-warn { color: var(--warning); }
-
-    /* Mesh detail card */
-    .mesh-detail-card { margin-bottom: 16px; }
-    .mesh-detail-status {
-      display: flex; align-items: center; gap: 8px;
-      padding: 10px 14px; border-radius: 8px; margin-bottom: 8px;
-      font-weight: 600; font-size: 14px;
-    }
-    .mesh-detail-status.pass { background: var(--success-bg); color: var(--success); }
-    .mesh-detail-status.fail { background: var(--danger-bg); color: var(--danger); }
-    .mesh-detail-status.warning { background: var(--warning-bg); color: var(--warning); }
-    .mesh-detail-status mat-icon { font-size: 20px; width: 20px; height: 20px; }
-    .mesh-detail-row { font-size: 13px; color: var(--clay-text-secondary, #6b5e50); padding: 4px 0; }
-    .mesh-detail-row.notes { font-style: italic; border-top: 1px solid var(--clay-border); padding-top: 8px; margin-top: 4px; }
   `]
 })
 export class WorkOrderDetailComponent implements OnInit, OnDestroy {
-  @ViewChild('viewer') viewer!: ThreeViewerComponent;
-
   wo: any = null;
   stages: any[] = [];
   users: any[] = [];
-
-  // 3D Model / Quality
-  productModels: any[] = [];
-  selectedModelId: string | null = null;
-  selectedModelUrl: string | null = null;
-  selectedModelName = '';
-  qualityOverlay: { meshName: string; status: 'pass' | 'fail' | 'warning' }[] = [];
-  qualityEntries: any[] = [];
-  qualitySummary: { total: number; pass: number; fail: number; warning: number } | null = null;
-  clickedMeshEntry: any = null;
 
   // Phase 7: Est vs Actual chart
   timeChartData: ChartConfiguration<'bar'>['data'] | null = null;
@@ -321,49 +195,7 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
         (a: any, b: any) => (a.stage?.sequence || 0) - (b.stage?.sequence || 0)
       );
       this.buildTimeChart();
-      this.loadProductModels();
     });
-  }
-
-  private loadProductModels(): void {
-    if (!this.wo?.productId && !this.wo?.product?.id) return;
-    const productId = this.wo.productId || this.wo.product?.id;
-    this.api.getList<any>(`/products/${productId}/models`).subscribe({
-      next: (models) => {
-        this.productModels = models;
-        if (this.productModels.length > 0) {
-          this.selectedModelId = this.productModels[0].id;
-          this.onModelSelected();
-        }
-      },
-    });
-  }
-
-  onModelSelected(): void {
-    if (!this.selectedModelId) return;
-    const model = this.productModels.find(m => m.id === this.selectedModelId);
-    if (!model) return;
-    this.selectedModelName = model.originalName || model.name;
-    this.selectedModelUrl = `${environment.apiUrl}/models/${model.id}/file`;
-    this.clickedMeshEntry = null;
-
-    // Load quality data for this model
-    this.api.getList<any>(`/quality-data?modelId=${model.id}`).subscribe({
-      next: (entries) => {
-        this.qualityEntries = entries;
-        this.qualityOverlay = entries.map((e: any) => ({
-          meshName: e.meshName,
-          status: e.status,
-        }));
-      },
-    });
-    this.api.get<any>(`/quality-data/summary/${model.id}`).subscribe({
-      next: (s) => this.qualitySummary = s,
-    });
-  }
-
-  onMeshClicked(meshName: string): void {
-    this.clickedMeshEntry = this.qualityEntries.find((e: any) => e.meshName === meshName) || null;
   }
 
   changeStatus(status: string): void {

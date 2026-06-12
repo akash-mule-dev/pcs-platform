@@ -27,7 +27,7 @@ PCS Platform is a full-stack application for production coordination:
             └───────────────┘
 ```
 
-**Key features:** Work orders, product management, CAD file viewing (Three.js / OpenCascade), real-time updates (Socket.io), quality analysis, notifications, audit logging, and search.
+**Key features:** Work orders, CAD file viewing (Three.js / OpenCascade), real-time updates (Socket.io), quality analysis, notifications, audit logging, and search.
 
 ---
 
@@ -190,7 +190,7 @@ When the backend is running, interactive Swagger docs are available at:
 
 **http://localhost:3000/api/docs**
 
-This documents all REST endpoints including authentication, work orders, products, search, notifications, and more.
+This documents all REST endpoints including authentication, work orders, search, notifications, and more.
 
 ---
 

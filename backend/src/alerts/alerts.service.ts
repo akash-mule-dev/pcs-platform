@@ -30,7 +30,6 @@ export class AlertsService {
         dueDate: LessThan(now),
         status: WorkOrderStatus.IN_PROGRESS,
       },
-      relations: ['product'],
     });
 
     if (overdueOrders.length === 0) return;
@@ -48,7 +47,7 @@ export class AlertsService {
     for (const wo of overdueOrders) {
       await this.notificationsService.createForUsers(managerIds, {
         title: `Overdue: ${wo.orderNumber}`,
-        message: `Work order ${wo.orderNumber} (${wo.product?.name || 'Unknown'}) is past due date.`,
+        message: `Work order ${wo.orderNumber} is past due date.`,
         type: NotificationType.WORK_ORDER_OVERDUE,
         priority: NotificationPriority.HIGH,
         entityType: 'work_order',

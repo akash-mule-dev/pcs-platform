@@ -68,7 +68,6 @@ generic SaaS bullets. Tiers are **additive** — each includes everything to its
 | Capability | Modules | Core | Quality | Digital Twin | Enterprise |
 |---|---|:--:|:--:|:--:|:--:|
 | Work orders — list / detail / forms / **Kanban** | `work-orders` | ✓ | ✓ | ✓ | ✓ |
-| Products catalog + product viewer | `products` | ✓ | ✓ | ✓ | ✓ |
 | Process definitions | `processes` | ✓ | ✓ | ✓ | ✓ |
 | Routing: lines → stations → stages | `lines` `stations` `stages` | ✓ | ✓ | ✓ | ✓ |
 | Operations dashboard / KPIs | `dashboard` | ✓ | ✓ | ✓ | ✓ |
@@ -96,7 +95,7 @@ generic SaaS bullets. Tiers are **additive** — each includes everything to its
 | Workforce — attendance / shifts / skills | `workforce` | — | ✓ | ✓ | ✓ |
 | Production scheduling | `scheduling` | — | ✓ | ✓ | ✓ |
 | Coordination | `coordination` | — | ✓ | ✓ | ✓ |
-| Costing (job / product) | `costing` | — | ✓ | ✓ | ✓ |
+| Costing (job) | `costing` | — | ✓ | ✓ | ✓ |
 | Reports suite | `reports` | — | ✓ | ✓ | ✓ |
 | Granular RBAC | `rbac` | — | ✓ | ✓ | ✓ |
 | Mobile: raise NCR on floor | `mobile/more` | — | ◐ | ◐ | ◐ |

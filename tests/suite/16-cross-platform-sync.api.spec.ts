@@ -133,27 +133,6 @@ test.describe('Cross-Platform Data Sync — Web ↔ Mobile consistency', () => {
     });
   });
 
-  // ── Data created on web, read on mobile ───────────────────────────────────
-
-  test('Product created via web API is visible to mobile API', async ({ request }) => {
-    // "Web" admin creates a product
-    const createRes = await request.post('/api/products', {
-      headers: authHeader(adminToken),
-      data: { name: `CrossPlatform Product ${Date.now()}`, description: 'Web created' },
-    });
-    expect(createRes.status()).toBe(201);
-    const product = (await createRes.json()).data;
-
-    // "Mobile" operator can see the product
-    const getRes = await request.get(`/api/products/${product.id}`, {
-      headers: authHeader(operatorToken),
-    });
-    expect(getRes.status()).toBe(200);
-    const retrieved = (await getRes.json()).data;
-    expect(retrieved.id).toBe(product.id);
-    expect(retrieved.name).toBe(product.name);
-  });
-
   // ── Work order visible across all roles ───────────────────────────────────
 
   test('Work order is visible with same data for all roles', async ({ request }) => {

@@ -80,7 +80,7 @@ export class TimeTrackingService {
   async getActive(): Promise<any[]> {
     // Targeted projection (same approach as getHistory's QueryBuilder and the
     // dashboard live-status query). `find` with these relations auto-expands the
-    // work-order's eager graph (product/process/line) and SELECTs every column,
+    // work-order's eager graph (process/line) and SELECTs every column,
     // which throws if any of those columns is absent from the DB — so the old
     // version silently returned [] even when operators were clocked in. Selecting
     // only the columns the live view renders avoids that entirely. The try/catch

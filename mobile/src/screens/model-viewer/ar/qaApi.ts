@@ -16,7 +16,6 @@ export interface CreateNcrInput {
   description?: string;
   severity?: NcrSeverity;
   workOrderId?: string;
-  productId?: string;
   dataJson?: Record<string, any>;
 }
 

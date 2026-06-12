@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { SeedService } from './seed.service.js';
 import { Role } from '../auth/entities/role.entity.js';
 import { User } from '../auth/entities/user.entity.js';
-import { Product } from '../products/product.entity.js';
 import { Process } from '../processes/process.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { Line } from '../lines/line.entity.js';
@@ -17,7 +16,7 @@ import { Organization } from '../organization/organization.entity.js';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      Role, User, Product, Process, Stage, Line, Station,
+      Role, User, Process, Stage, Line, Station,
       WorkOrder, WorkOrderStage, TimeEntry, Model3D, Organization,
     ]),
   ],

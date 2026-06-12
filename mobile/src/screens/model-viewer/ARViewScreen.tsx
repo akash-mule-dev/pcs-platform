@@ -143,7 +143,7 @@ export function ARViewScreen() {
       <Text style={styles.descText}>
         {partLabel
           ? `Only ${partLabel} is shown — overlay it on the real part and walk around to inspect it.`
-          : 'Overlay the model on your real product and walk around to inspect it.'}
+          : 'Overlay the model on your real part and walk around to inspect it.'}
         {'\n'}Toggle wireframe edges, then measure against the physical part.
       </Text>
 

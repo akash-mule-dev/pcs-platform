@@ -40,7 +40,7 @@ export function WorkOrderHubScreen() {
             <Ionicons name="qr-code-outline" size={21} color={Colors.primary} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => navigation.navigate('WorkOrderList')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 13 }}>Product orders</Text>
+            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 13 }}>All orders</Text>
           </TouchableOpacity>
         </View>
       ),

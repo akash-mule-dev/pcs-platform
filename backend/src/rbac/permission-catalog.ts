@@ -127,15 +127,6 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
     ],
   },
   {
-    key: 'products', label: 'Products', category: 'Production',
-    actions: [
-      { action: 'view', label: 'View', description: 'Browse the product catalog', defaultRoles: MS },
-      { action: 'create', label: 'Create', description: 'Create products', defaultRoles: M },
-      { action: 'update', label: 'Edit', description: 'Edit products', defaultRoles: M },
-      { action: 'delete', label: 'Delete', description: 'Delete products', defaultRoles: NONE },
-    ],
-  },
-  {
     key: 'scheduling', label: 'Capacity & Scheduling', category: 'Production',
     actions: [
       { action: 'view', label: 'View', description: 'See capacity load and schedules', defaultRoles: MS },
@@ -189,9 +180,9 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
   {
     key: 'materials', label: 'Materials & Inventory', category: 'Materials',
     actions: [
-      { action: 'view', label: 'View', description: 'Browse materials, BOMs, stock and movements', defaultRoles: MSO },
+      { action: 'view', label: 'View', description: 'Browse materials, stock and movements', defaultRoles: MSO },
       { action: 'transact', label: 'Receive / issue', description: 'Receive, issue and scrap stock', defaultRoles: MS },
-      { action: 'manage', label: 'Manage', description: 'Create/edit materials and BOMs, adjust stock', defaultRoles: M },
+      { action: 'manage', label: 'Manage', description: 'Create/edit materials, adjust stock', defaultRoles: M },
       { action: 'delete', label: 'Delete', description: 'Delete materials', defaultRoles: NONE },
     ],
   },

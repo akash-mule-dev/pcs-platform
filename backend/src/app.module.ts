@@ -8,7 +8,6 @@ import { DatabaseModule } from './database/database.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
-import { ProductsModule } from './products/products.module.js';
 import { ProcessesModule } from './processes/processes.module.js';
 import { StagesModule } from './stages/stages.module.js';
 import { LinesModule } from './lines/lines.module.js';
@@ -61,7 +60,6 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
     WebsocketModule,
     AuthModule,
     UsersModule,
-    ProductsModule,
     ProcessesModule,
     StagesModule,
     LinesModule,

@@ -148,8 +148,8 @@ const QC_PERMS = [
   r = await req('GET', '/users', { token: qc.accessToken });
   check('DENY users.view (403)', r.status === 403, r.status);
   check('403 names the missing permission', JSON.stringify(r.raw)?.includes('users.view'), r.raw);
-  r = await req('GET', '/products', { token: qc.accessToken });
-  check('DENY products.view (403)', r.status === 403, r.status);
+  r = await req('GET', '/processes', { token: qc.accessToken });
+  check('DENY processes.view (403)', r.status === 403, r.status);
   r = await req('POST', '/rbac/roles', { token: qc.accessToken, body: { name: 'X', permissions: ['dashboard.view'] } });
   check('DENY roles.create (403)', r.status === 403, r.status);
   r = await req('POST', '/work-orders', { token: qc.accessToken, body: {} });

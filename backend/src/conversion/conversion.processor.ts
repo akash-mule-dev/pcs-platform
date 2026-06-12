@@ -137,7 +137,6 @@ export class ConversionProcessor {
         name: job.name || job.originalName,
         description: job.description || `Converted from ${job.originalName}`,
         modelType: (job.modelType as 'assembly' | 'quality') || 'assembly',
-        productId: job.productId || undefined,
       },
       file,
     );

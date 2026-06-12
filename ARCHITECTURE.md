@@ -34,7 +34,6 @@ pcs-platform/
 │   ├── src/
 │   │   ├── auth/              # JWT auth, login, guards, role decorator
 │   │   ├── users/             # User CRUD, roles, badge management
-│   │   ├── products/          # Manufactured products
 │   │   ├── processes/         # Production process templates
 │   │   ├── stages/            # Stages within processes
 │   │   ├── lines/             # Production lines
@@ -54,7 +53,6 @@ pcs-platform/
 │   │   ├── layout/            # Shell, sidebar, header
 │   │   ├── auth/              # Login page
 │   │   ├── dashboard/         # Main dashboard with KPIs
-│   │   ├── products/          # Product management
 │   │   ├── processes/         # Process & stage designer
 │   │   ├── work-orders/       # Work order management
 │   │   ├── time-tracking/     # Time tracking views (live, history)
@@ -92,7 +90,7 @@ pcs-platform/
 Role (1) ──< User (1) ──< TimeEntry (>1)
                 │                  │
                 │                  ▼
-                │         WorkOrderStage (>1) ──> Stage (>1) ──> Process (1) ──> Product (1)
+                │         WorkOrderStage (>1) ──> Stage (>1) ──> Process (1)
                 │                  │
                 └──< WorkOrder (1) ┘
                           │
@@ -124,29 +122,18 @@ Role (1) ──< User (1) ──< TimeEntry (>1)
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
 
-#### products
-| Column | Type | Notes |
-|--------|------|-------|
-| id | UUID PK | |
-| name | VARCHAR(255) | |
-| sku | VARCHAR(100) UNIQUE | |
-| description | TEXT | |
-| is_active | BOOLEAN DEFAULT true | |
-| created_at | TIMESTAMP | |
-| updated_at | TIMESTAMP | |
-
 #### processes
+
+Processes are standalone routing templates.
+
 | Column | Type | Notes |
 |--------|------|-------|
 | id | UUID PK | |
 | name | VARCHAR(255) | |
 | version | INTEGER DEFAULT 1 | |
-| product_id | UUID FK → products | |
 | is_active | BOOLEAN DEFAULT true | |
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
-
-**UNIQUE constraint on (product_id, version)**
 
 #### stages
 | Column | Type | Notes |
@@ -187,7 +174,6 @@ Role (1) ──< User (1) ──< TimeEntry (>1)
 |--------|------|-------|
 | id | UUID PK | |
 | order_number | VARCHAR(50) UNIQUE | Auto-generated WO-YYYY-NNNN |
-| product_id | UUID FK → products | |
 | process_id | UUID FK → processes | |
 | line_id | UUID FK → lines NULL | |
 | quantity | INTEGER | |
@@ -251,15 +237,6 @@ Role (1) ──< User (1) ──< TimeEntry (>1)
 | POST | /api/users | admin |
 | PATCH | /api/users/:id | admin |
 | DELETE | /api/users/:id | admin |
-
-### Products
-| Method | Endpoint | Roles |
-|--------|----------|-------|
-| GET | /api/products | all |
-| GET | /api/products/:id | all |
-| POST | /api/products | admin, manager |
-| PATCH | /api/products/:id | admin, manager |
-| DELETE | /api/products/:id | admin |
 
 ### Processes & Stages
 | Method | Endpoint | Roles |
@@ -348,14 +325,9 @@ Role (1) ──< User (1) ──< TimeEntry (>1)
 | operator4@pcs.local | operator | Lisa Johnson |
 | operator5@pcs.local | operator | Carlos Rodriguez |
 
-### Products
-- PCB-X100 (Circuit Board Assembly)
-- MOT-200 (Electric Motor Unit)
-- SEN-50 (Temperature Sensor Module)
-
 ### Processes & Stages
 
-**PCB Assembly (PCB-X100):**
+**PCB Assembly:**
 1. Component Preparation (600s target)
 2. SMT Placement (900s)
 3. Reflow Soldering (1200s)
@@ -365,7 +337,7 @@ Role (1) ──< User (1) ──< TimeEntry (>1)
 7. Quality Control (600s)
 8. Packaging (300s)
 
-**Motor Assembly (MOT-200):**
+**Motor Assembly:**
 1. Stator Winding (1800s)
 2. Rotor Assembly (1200s)
 3. Housing Preparation (600s)
@@ -374,7 +346,7 @@ Role (1) ──< User (1) ──< TimeEntry (>1)
 6. Quality Inspection (600s)
 7. Packaging (300s)
 
-**Sensor Module (SEN-50):**
+**Sensor Module:**
 1. PCB Prep (300s)
 2. Sensor Mounting (600s)
 3. Calibration (900s)
@@ -388,11 +360,11 @@ Role (1) ──< User (1) ──< TimeEntry (>1)
 - **Line 3** (Sensor Module): Stations ST-3A through ST-3D
 
 ### Work Orders (sample)
-- WO-2026-0001: PCB-X100, qty 100, in_progress, high priority
-- WO-2026-0002: MOT-200, qty 50, pending, medium priority
-- WO-2026-0003: SEN-50, qty 200, in_progress, urgent
-- WO-2026-0004: PCB-X100, qty 75, draft, low priority
-- WO-2026-0005: MOT-200, qty 30, completed, medium priority
+- WO-2026-0001: PCB Assembly, qty 100, in_progress, high priority
+- WO-2026-0002: Motor Assembly, qty 50, pending, medium priority
+- WO-2026-0003: Sensor Module, qty 200, in_progress, urgent
+- WO-2026-0004: PCB Assembly, qty 75, draft, low priority
+- WO-2026-0005: Motor Assembly, qty 30, completed, medium priority
 
 ### Sample Time Entries
 Seed ~50 time entries across operators, various stages, with realistic duration variances around target times. Include a few active (no end_time) entries for live dashboard testing.
@@ -419,7 +391,6 @@ Seed ~50 time entries across operators, various stages, with realistic duration 
 |------|-------|-------------|
 | Login | /login | Email + password |
 | Dashboard | / | KPI cards, live stage status, charts |
-| Products | /products | List, create, edit products |
 | Processes | /processes | List processes; detail view shows stages |
 | Process Detail | /processes/:id | Stage list with drag-reorder, target times |
 | Work Orders | /work-orders | List with filters (status, priority, date) |

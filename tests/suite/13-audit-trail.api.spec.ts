@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, authHeader } from '../helpers/auth.helper';
-import { createProduct } from '../helpers/test-data.helper';
 
 test.describe('Audit Trail — Logging & access control', () => {
   let adminToken: string;
@@ -13,9 +12,6 @@ test.describe('Audit Trail — Logging & access control', () => {
     ({ token: managerToken } = await loginAs(request, 'manager'));
     ({ token: supervisorToken } = await loginAs(request, 'supervisor'));
     ({ token: operatorToken } = await loginAs(request, 'operator'));
-
-    // Perform an action that should create an audit entry
-    await createProduct(request, adminToken, { name: `Audit Test Product ${Date.now()}` });
   });
 
   // ── List Audit Logs ───────────────────────────────────────────────────────
@@ -70,17 +66,6 @@ test.describe('Audit Trail — Logging & access control', () => {
 
   // ── Filtering ─────────────────────────────────────────────────────────────
 
-  test('GET /api/audit — filter by entityType', async ({ request }) => {
-    const res = await request.get('/api/audit?entityType=product', {
-      headers: authHeader(adminToken),
-    });
-    expect(res.status()).toBe(200);
-    const body = await res.json();
-    for (const log of body.data) {
-      expect(log.entityType?.toLowerCase()).toBe('product');
-    }
-  });
-
   test('GET /api/audit — filter by userId', async ({ request }) => {
     const { user: adminUser } = await loginAs(request, 'admin');
     const res = await request.get(`/api/audit?userId=${adminUser.id}`, {
@@ -100,7 +85,7 @@ test.describe('Audit Trail — Logging & access control', () => {
       const entry = body.data[0];
       expect(entry.id).toBeTruthy();
       expect(entry.action).toBeTruthy();      // create, update, delete
-      expect(entry.entityType).toBeTruthy();   // product, work_order, etc.
+      expect(entry.entityType).toBeTruthy();   // work_order, user, etc.
       expect(entry.createdAt).toBeTruthy();
     }
   });

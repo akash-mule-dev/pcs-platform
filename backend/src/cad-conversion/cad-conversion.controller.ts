@@ -41,7 +41,6 @@ export class CadConversionController {
         name: { type: 'string' },
         description: { type: 'string' },
         modelType: { type: 'string', enum: ['assembly', 'quality'] },
-        productId: { type: 'string' },
       },
       required: ['file', 'name'],
     },
@@ -68,7 +67,7 @@ export class CadConversionController {
     },
   }))
   async convertAndUpload(
-    @Body() body: { name: string; description?: string; modelType?: string; productId?: string },
+    @Body() body: { name: string; description?: string; modelType?: string },
     @UploadedFile(new ParseFilePipe({
       validators: [new MaxFileSizeValidator({ maxSize: 500 * 1024 * 1024 })], // 500MB for CAD files
     })) file: Express.Multer.File,
@@ -104,7 +103,6 @@ export class CadConversionController {
         name: body.name,
         description: body.description || `Converted from ${file.originalname}`,
         modelType: (body.modelType as 'assembly' | 'quality') || 'assembly',
-        productId: body.productId,
       },
       convertedFile,
     );

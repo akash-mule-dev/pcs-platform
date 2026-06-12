@@ -11,10 +11,10 @@ export class SearchController {
   constructor(private readonly service: SearchService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Global search across work orders, products, users' })
+  @ApiOperation({ summary: 'Global search across work orders, users' })
   @ApiQuery({ name: 'q', required: true })
   search(@Query('q') query: string) {
-    if (!query || query.trim().length < 2) return { workOrders: [], products: [], users: [] };
+    if (!query || query.trim().length < 2) return { workOrders: [], users: [] };
     return this.service.search(query.trim());
   }
 }

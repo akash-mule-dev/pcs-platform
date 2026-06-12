@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, authHeader } from '../helpers/auth.helper';
-import { createProduct, createProcess, createLine } from '../helpers/test-data.helper';
+import { createProcess } from '../helpers/test-data.helper';
 
 /**
  * Work Order State Machine.
@@ -10,14 +10,11 @@ import { createProduct, createProcess, createLine } from '../helpers/test-data.h
  */
 test.describe('Work Order — State Machine transitions', () => {
   let adminToken: string;
-  let productId: string;
   let processId: string;
 
   test.beforeAll(async ({ request }) => {
     ({ token: adminToken } = await loginAs(request, 'admin'));
-    const product = await createProduct(request, adminToken);
-    productId = product.id;
-    const process = await createProcess(request, adminToken, productId);
+    const process = await createProcess(request, adminToken);
     processId = process.id;
   });
 
@@ -26,7 +23,7 @@ test.describe('Work Order — State Machine transitions', () => {
     for (let attempt = 1; attempt <= 3; attempt++) {
       const res = await request.post('/api/work-orders', {
         headers: authHeader(adminToken),
-        data: { productId, processId, quantity: 5, priority: 'medium' },
+        data: { processId, quantity: 5, priority: 'medium' },
       });
       if (res.status() === 201) {
         return (await res.json()).data;

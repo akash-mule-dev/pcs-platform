@@ -55,7 +55,7 @@ export const api = {
    * GET a list endpoint and always return a plain array, transparently
    * unwrapping the backend's paginated `{ data, meta }` page object. Use this
    * for any endpoint the backend paginates (work-orders, time-tracking/history,
-   * models, products, users) so a page object is never mistaken for an array.
+   * models, users) so a page object is never mistaken for an array.
    */
   async getList<T>(path: string, params?: Record<string, string | number>): Promise<T[]> {
     const res = await this.get<any>(path, params);

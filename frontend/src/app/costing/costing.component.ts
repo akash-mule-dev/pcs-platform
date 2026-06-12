@@ -22,7 +22,7 @@ import { ApiService } from '../core/services/api.service';
         <mat-form-field appearance="outline" class="grow">
           <mat-label>Work order</mat-label>
           <mat-select [(ngModel)]="selectedId" (selectionChange)="loadCost()">
-            @for (w of workOrders; track w.id) { <mat-option [value]="w.id">{{ w.orderNumber }} — {{ w.product?.name || w.productId }}</mat-option> }
+            @for (w of workOrders; track w.id) { <mat-option [value]="w.id">{{ w.orderNumber }}</mat-option> }
           </mat-select>
         </mat-form-field>
       </div>

@@ -3,12 +3,11 @@
  *
  * Tests the web portal for:
  * 1. Login flow
- * 2. Product visible in products list
- * 3. Work order visible in work orders list with correct status
- * 4. Work order detail page shows stages, assignments, time data
- * 5. Time tracking live page – clock in/out with live timer accuracy
- * 6. Time tracking history shows entries
- * 7. Navigation and search
+ * 2. Work order visible in work orders list with correct status
+ * 3. Work order detail page shows stages, assignments, time data
+ * 4. Time tracking live page – clock in/out with live timer accuracy
+ * 5. Time tracking history shows entries
+ * 6. Navigation and search
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -40,10 +39,10 @@ function sleep(ms: number) {
 
 // ── shared state (set up via API before UI tests) ────────────────────────────
 
-let productId: string;
 let processId: string;
 let stageIds: string[] = [];
 let workOrderId: string;
+let workOrderNumber: string;
 let woStageIds: string[] = [];
 let lineId: string;
 let stationId: string;
@@ -57,7 +56,7 @@ test.describe.serial('Steel-Assembly-Beam UI E2E', () => {
 
   // ── Setup: Create test data via API ────────────────────────────────────────
 
-  test('0.1 – Setup: create product, process, stages, WO via API', async ({ request }) => {
+  test('0.1 – Setup: create process, stages, WO via API', async ({ request }) => {
     // Login
     const admin = await apiLogin(request, 'admin@pcs.local');
     adminToken = admin.token;
@@ -66,15 +65,9 @@ test.describe.serial('Steel-Assembly-Beam UI E2E', () => {
     operator1Id = op1.userId;
     const h = { Authorization: `Bearer ${adminToken}` };
 
-    // Product
-    const prodRes = await request.post(`${API}/api/products`, {
-      headers: h, data: { name: 'Steel-Assembly-Beam-UI', description: 'UI test product' },
-    });
-    productId = (await prodRes.json()).data.id;
-
     // Process
     const procRes = await request.post(`${API}/api/processes`, {
-      headers: h, data: { name: 'Steel Beam Fab UI', productId },
+      headers: h, data: { name: 'Steel Beam Fab UI' },
     });
     processId = (await procRes.json()).data.id;
 
@@ -97,10 +90,11 @@ test.describe.serial('Steel-Assembly-Beam UI E2E', () => {
     // Work Order
     const woRes = await request.post(`${API}/api/work-orders`, {
       headers: h,
-      data: { productId, processId, lineId, quantity: 5, priority: 'high' },
+      data: { processId, lineId, quantity: 5, priority: 'high' },
     });
     const wo = (await woRes.json()).data;
     workOrderId = wo.id;
+    workOrderNumber = wo.orderNumber;
     woStageIds = wo.stages
       .sort((a: any, b: any) => a.stage.sequence - b.stage.sequence)
       .map((s: any) => s.id);
@@ -130,28 +124,6 @@ test.describe.serial('Steel-Assembly-Beam UI E2E', () => {
     await expect(page.locator('.logo-text')).toBeVisible({ timeout: 10000 });
   });
 
-  // ── 2. Products Page ──────────────────────────────────────────────────────
-
-  test('2.1 – Products page loads and shows table', async ({ page }) => {
-    await uiLogin(page, 'admin@pcs.local');
-    await page.goto('/products');
-    await page.waitForSelector('table', { timeout: 10000 });
-
-    // Verify the products table loads with data
-    await expect(page.locator('table')).toBeVisible();
-    // There should be product rows
-    const paginator = page.locator('mat-paginator');
-    await expect(paginator).toBeVisible({ timeout: 5000 });
-
-    // Navigate to our product directly to verify it exists
-    // (search filters client-side only on current page)
-    await page.goto(`/products`);
-    await page.waitForSelector('table', { timeout: 10000 });
-    // Verify table has rows
-    const rows = page.locator('table tbody tr, mat-row');
-    await expect(rows.first()).toBeVisible({ timeout: 5000 });
-  });
-
   // ── 3. Work Orders Page ───────────────────────────────────────────────────
 
   test('3.1 – Work order visible in list with In Progress status', async ({ page }) => {
@@ -159,8 +131,8 @@ test.describe.serial('Steel-Assembly-Beam UI E2E', () => {
     await page.goto('/work-orders');
     await page.waitForSelector('table', { timeout: 10000 });
 
-    // Look for Steel-Assembly-Beam-UI product in the table (multiple WOs may use this product)
-    await expect(page.locator('text=Steel-Assembly-Beam-UI').first()).toBeVisible({ timeout: 5000 });
+    // Look for our work order's order number in the table
+    await expect(page.locator(`text=${workOrderNumber}`).first()).toBeVisible({ timeout: 5000 });
   });
 
   // ── 4. Work Order Detail ──────────────────────────────────────────────────
@@ -171,7 +143,7 @@ test.describe.serial('Steel-Assembly-Beam UI E2E', () => {
     await page.waitForLoadState('networkidle');
 
     // Verify we see the order details
-    await expect(page.locator('text=Steel-Assembly-Beam-UI')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator(`text=${workOrderNumber}`).first()).toBeVisible({ timeout: 10000 });
 
     // Verify stages are shown
     await expect(page.locator('text=Cutting')).toBeVisible();
@@ -292,10 +264,6 @@ test.describe.serial('Steel-Assembly-Beam UI E2E', () => {
 
   test('8.1 – Sidebar navigation works across pages', async ({ page }) => {
     await uiLogin(page, 'admin@pcs.local');
-
-    // Navigate to Products
-    await page.click('a[mat-list-item]:has-text("Products"), a:has-text("Products")');
-    await page.waitForURL('**/products', { timeout: 5000 });
 
     // Navigate to Work Orders
     await page.click('a[mat-list-item]:has-text("Work Orders"), a:has-text("Work Orders")');

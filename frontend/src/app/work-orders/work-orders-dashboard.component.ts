@@ -31,7 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
         </div>
         <div class="head-links">
           <a class="ghost" routerLink="/work-orders/kanban"><mat-icon>view_kanban</mat-icon>Kanban</a>
-          <a class="ghost" routerLink="/work-orders/legacy"><mat-icon>inventory</mat-icon>Product work orders</a>
+          <a class="ghost" routerLink="/work-orders/legacy"><mat-icon>inventory</mat-icon>All work orders</a>
           <a class="primary" routerLink="/projects"><mat-icon>add</mat-icon>New work order</a>
         </div>
       </div>

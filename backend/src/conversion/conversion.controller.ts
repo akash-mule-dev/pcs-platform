@@ -46,7 +46,6 @@ export class ConversionController {
         name: { type: 'string' },
         description: { type: 'string' },
         modelType: { type: 'string', enum: ['assembly', 'quality'] },
-        productId: { type: 'string' },
         optimize: { type: 'boolean', default: true },
         simplifyRatio: { type: 'number', description: '0 < r <= 1 (1 = no decimation)' },
         draco: { type: 'boolean', default: false },
@@ -82,7 +81,6 @@ export class ConversionController {
       name: body.name,
       description: body.description,
       modelType: body.modelType as 'assembly' | 'quality' | undefined,
-      productId: body.productId,
       optimize: parseBool(body.optimize, true),
       simplifyRatio: body.simplifyRatio !== undefined ? Number(body.simplifyRatio) : undefined,
       draco: parseBool(body.draco, false),
@@ -110,7 +108,6 @@ export class ConversionController {
       properties: {
         files: { type: 'array', items: { type: 'string', format: 'binary' } },
         modelType: { type: 'string', enum: ['assembly', 'quality'] },
-        productId: { type: 'string' },
         optimize: { type: 'boolean', default: true },
         simplifyRatio: { type: 'number' },
         draco: { type: 'boolean', default: false },
@@ -146,7 +143,6 @@ export class ConversionController {
     const dto: CreateConversionDto = {
       name: '',
       modelType: body.modelType as 'assembly' | 'quality' | undefined,
-      productId: body.productId,
       optimize: parseBool(body.optimize, true),
       simplifyRatio: body.simplifyRatio !== undefined ? Number(body.simplifyRatio) : undefined,
       draco: parseBool(body.draco, false),

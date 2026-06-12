@@ -10,10 +10,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatDialog } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
-import { PermissionsService } from '../../core/services/permissions.service';
-import { WorkOrderFormComponent } from '../work-order-form/work-order-form.component';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { merge, Subscription } from 'rxjs';
 
@@ -29,12 +26,6 @@ import { merge, Subscription } from 'rxjs';
           <h1 class="page-title">Work Orders</h1>
           <p class="page-subtitle">Track and manage production orders across the floor</p>
         </div>
-        @if (canEdit) {
-          <button class="btn-primary" (click)="openForm()">
-            <mat-icon>add</mat-icon>
-            <span>New Work Order</span>
-          </button>
-        }
       </div>
 
       <!-- Filters -->
@@ -79,7 +70,7 @@ import { merge, Subscription } from 'rxjs';
                 </div>
                 <div class="entity-info">
                   <span class="entity-name is-link">{{ wo.orderNumber }}</span>
-                  <span class="entity-sub">{{ wo.product?.name || '—' }}</span>
+                  <span class="entity-sub">{{ wo.process?.name || '—' }}</span>
                 </div>
               </div>
             </td>
@@ -141,12 +132,9 @@ export class WorkOrderListComponent implements OnInit, OnDestroy, AfterViewInit 
   priorityFilter = '';
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
-  canEdit = false;
   private realtimeSub?: Subscription;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private router: Router, private permissions: PermissionsService, private realtime: RealtimeService) {
-    this.canEdit = this.permissions.canManage('work-orders');
-  }
+  constructor(private api: ApiService, private router: Router, private realtime: RealtimeService) {}
 
   ngOnInit(): void {
     this.load();
@@ -181,12 +169,7 @@ export class WorkOrderListComponent implements OnInit, OnDestroy, AfterViewInit 
   }
 
   goToDetail(wo: any): void {
-    // Legacy per-product detail — /work-orders/:id is the per-order audit dashboard.
+    // Legacy detail page — /work-orders/:id is the per-order audit dashboard.
     this.router.navigate(['/work-orders/legacy', wo.id]);
-  }
-
-  openForm(): void {
-    const ref = this.dialog.open(WorkOrderFormComponent, { width: '600px' });
-    ref.afterClosed().subscribe(result => { if (result) this.load(); });
   }
 }

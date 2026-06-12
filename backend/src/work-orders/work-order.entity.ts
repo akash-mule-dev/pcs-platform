@@ -1,5 +1,4 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
-import { Product } from '../products/product.entity.js';
 import { Process } from '../processes/process.entity.js';
 import { Line } from '../lines/line.entity.js';
 import { AssemblyNode } from '../projects/assembly-node.entity.js';
@@ -29,13 +28,6 @@ export class WorkOrder extends TenantOwnedEntity {
   @Column({ name: 'order_number', type: 'varchar', length: 50, unique: true })
   orderNumber: string;
 
-  @Column({ name: 'product_id', type: 'uuid' })
-  productId: string;
-
-  @ManyToOne(() => Product, { eager: true })
-  @JoinColumn({ name: 'product_id' })
-  product: Product;
-
   @Column({ name: 'process_id', type: 'uuid' })
   processId: string;
 
@@ -50,9 +42,9 @@ export class WorkOrder extends TenantOwnedEntity {
   @JoinColumn({ name: 'line_id' })
   line: Line | null;
 
-  // Fabrication: a work order can target an assembly / subassembly node so the
-  // existing stage engine drives each piece mark through its stages. Nullable
-  // and additive — existing product-based work orders are unaffected.
+  // Fabrication: a work order targets an assembly / subassembly node so the
+  // existing stage engine drives each piece mark through its stages —
+  // assemblies are the only fabrication target.
   @Column({ name: 'assembly_node_id', type: 'uuid', nullable: true })
   assemblyNodeId: string | null;
 

@@ -144,7 +144,6 @@ export class ConversionService {
         name: nameOverride || baseName,
         description: dto.description || `Converted from ${originalName}`,
         modelType: dto.modelType || 'assembly',
-        productId: dto.productId || null,
         options,
         durationMs: 0,
         createdById: userId || null,
@@ -166,7 +165,6 @@ export class ConversionService {
       name: nameOverride || baseName,
       description: dto.description || `Converted from ${originalName}`,
       modelType: dto.modelType || 'assembly',
-      productId: dto.productId || null,
       options,
       createdById: userId || null,
     });

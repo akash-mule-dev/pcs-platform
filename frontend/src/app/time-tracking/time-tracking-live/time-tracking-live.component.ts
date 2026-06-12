@@ -38,7 +38,7 @@ import { RouterModule } from '@angular/router';
             <mat-label>Work Order</mat-label>
             <mat-select [(ngModel)]="clockInWO" (selectionChange)="onWOSelect()">
               @for (wo of workOrders; track wo.id) {
-                <mat-option [value]="wo.id">{{ wo.orderNumber }} — {{ wo.product?.name }}</mat-option>
+                <mat-option [value]="wo.id">{{ wo.orderNumber }}</mat-option>
               }
             </mat-select>
           </mat-form-field>
