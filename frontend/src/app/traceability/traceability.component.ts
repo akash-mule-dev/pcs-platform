@@ -37,8 +37,7 @@ import { ApiService } from '../core/services/api.service';
           <h3>Serials</h3>
           <div class="form-row">
             <mat-form-field appearance="outline"><mat-label>Serial #</mat-label><input matInput [(ngModel)]="newSerial.serialNumber"></mat-form-field>
-            <mat-form-field appearance="outline"><mat-label>Product ID</mat-label><input matInput [(ngModel)]="newSerial.productId"></mat-form-field>
-            <button mat-raised-button color="primary" [disabled]="!newSerial.serialNumber||!newSerial.productId" (click)="addSerial()">Add</button>
+            <button mat-raised-button color="primary" [disabled]="!newSerial.serialNumber" (click)="addSerial()">Add</button>
           </div>
           @for (s of serials; track s.id) { <div class="li">{{ s.serialNumber }} · {{ s.status }}</div> }
           @if (!serials.length) { <p class="empty">No serials recorded.</p> }
@@ -73,7 +72,7 @@ export class TraceabilityComponent implements OnInit {
   lots: any[] = [];
   serials: any[] = [];
   newLot: any = { materialId: '', lotNumber: '', receivedQuantity: 0 };
-  newSerial: any = { serialNumber: '', productId: '' };
+  newSerial: any = { serialNumber: '' };
   traceSerialId = '';
   whereLotId = '';
   traceResult: any = null;
@@ -96,7 +95,7 @@ export class TraceabilityComponent implements OnInit {
   }
   addSerial(): void {
     this.api.post('/traceability/serials', this.newSerial).subscribe({
-      next: () => { this.snack.open('Serial added', 'OK', { duration: 2000 }); this.newSerial = { serialNumber: '', productId: '' }; this.load(); },
+      next: () => { this.snack.open('Serial added', 'OK', { duration: 2000 }); this.newSerial = { serialNumber: '' }; this.load(); },
       error: (e: any) => this.snack.open(e?.error?.message || 'Failed', 'Dismiss', { duration: 4000 }),
     });
   }

@@ -11,8 +11,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *  - ncr_events: NEW append-only NCR timeline table.
  *  - capas: verified_at stamp.
  */
-export class QualityGovernance1782000000000 implements MigrationInterface {
-  name = 'QualityGovernance1782000000000';
+export class QualityGovernance1782050000000 implements MigrationInterface {
+  name = 'QualityGovernance1782050000000';
 
   public async up(q: QueryRunner): Promise<void> {
     // ── quality_data ──────────────────────────────────────────────────────────

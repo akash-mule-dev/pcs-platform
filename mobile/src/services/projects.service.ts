@@ -6,7 +6,6 @@ export interface MProject {
   projectNumber?: string | null;
   clientName?: string | null;
   description?: string | null;
-  status: string;
   processId?: string | null;
   createdAt?: string;
 }

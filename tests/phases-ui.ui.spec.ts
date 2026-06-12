@@ -164,7 +164,6 @@ test.describe('Layout UI — Navigation Items', () => {
     await loginAsAdmin(page);
     const body = await page.textContent('body');
     expect(body).toContain('Dashboard');
-    expect(body).toContain('Products');
     expect(body).toContain('Processes');
     expect(body).toContain('Work Orders');
     expect(body).toContain('Time Tracking');

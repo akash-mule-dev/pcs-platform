@@ -19,7 +19,6 @@ export class Ncr extends TenantOwnedEntity {
   @Column({ type: 'enum', enum: NcrSeverity, default: NcrSeverity.MEDIUM }) severity: NcrSeverity;
 
   @Column({ name: 'work_order_id', type: 'uuid', nullable: true }) workOrderId: string | null;
-  @Column({ name: 'product_id', type: 'uuid', nullable: true }) productId: string | null;
   @Column({ name: 'material_id', type: 'uuid', nullable: true }) materialId: string | null;
   @Column({ name: 'serial_id', type: 'uuid', nullable: true }) serialId: string | null;
 

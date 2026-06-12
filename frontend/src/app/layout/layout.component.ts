@@ -109,7 +109,7 @@ interface NavGroup {
           <!-- Global Search -->
           <div class="search-container">
             <mat-icon class="search-icon">search</mat-icon>
-            <input type="text" class="search-input" placeholder="Search orders, products, users..."
+            <input type="text" class="search-input" placeholder="Search orders, users..."
                    [(ngModel)]="searchQuery" (input)="onSearchInput()">
             @if (searchResults && searchQuery.length >= 2) {
               <div class="search-dropdown">
@@ -119,18 +119,7 @@ interface NavGroup {
                     @for (wo of searchResults.workOrders; track wo.id) {
                       <div class="search-item" (click)="navigateTo('/work-orders/legacy/' + wo.id)">
                         <mat-icon>assignment</mat-icon>
-                        <span>{{ wo.orderNumber }} — {{ wo.product?.name }}</span>
-                      </div>
-                    }
-                  </div>
-                }
-                @if (searchResults.products.length > 0) {
-                  <div class="search-group">
-                    <div class="search-group-title">Products</div>
-                    @for (p of searchResults.products; track p.id) {
-                      <div class="search-item" (click)="navigateTo('/products')">
-                        <mat-icon>inventory_2</mat-icon>
-                        <span>{{ p.name }}</span>
+                        <span>{{ wo.orderNumber }}</span>
                       </div>
                     }
                   </div>
@@ -148,7 +137,7 @@ interface NavGroup {
                 }
                 @if (searchLoading) {
                   <div class="search-empty">Searching...</div>
-                } @else if (searchResults.workOrders.length === 0 && searchResults.products.length === 0 && searchResults.users.length === 0) {
+                } @else if (searchResults.workOrders.length === 0 && searchResults.users.length === 0) {
                   <div class="search-empty">No results found for "{{ searchQuery }}"</div>
                 }
               </div>
@@ -490,7 +479,6 @@ export class LayoutComponent implements OnInit, OnDestroy {
       { label: 'Work Orders', icon: 'assignment', route: '/work-orders', feature: 'work-orders' },
       { label: 'Kanban', icon: 'view_kanban', route: '/work-orders/kanban', feature: 'kanban' },
       { label: 'Processes', icon: 'account_tree', route: '/processes', feature: 'processes' },
-      { label: 'Products', icon: 'inventory_2', route: '/products', feature: 'products' },
       { label: 'Capacity', icon: 'calendar_month', route: '/scheduling', feature: 'scheduling' },
     ] },
     { label: 'Shop Floor', icon: 'engineering', expanded: true, items: [

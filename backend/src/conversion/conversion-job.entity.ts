@@ -76,9 +76,6 @@ export class ConversionJob {
   @Column({ name: 'model_type', type: 'varchar', length: 50, default: 'assembly' })
   modelType: string;
 
-  @Column({ name: 'product_id', type: 'uuid', nullable: true })
-  productId: string | null;
-
   // ── Optimization options (snapshotted from the request) ──
   @Column({ type: 'jsonb', nullable: true })
   options: {

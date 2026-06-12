@@ -9,8 +9,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *  - quality_data.client_key + unique (org, client_key) — idempotent creates
  *    for offline/replayed mobile captures.
  */
-export class QualityOps1782200000000 implements MigrationInterface {
-  name = 'QualityOps1782200000000';
+export class QualityOps1782300000000 implements MigrationInterface {
+  name = 'QualityOps1782300000000';
 
   public async up(q: QueryRunner): Promise<void> {
     await q.query(`ALTER TABLE "stages" ADD COLUMN IF NOT EXISTS "requires_inspection" boolean NOT NULL DEFAULT false`);

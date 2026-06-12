@@ -13,7 +13,6 @@ import { chromium } from 'playwright';
 
   const menus = [
     'Dashboard',
-    'Products',
     'Processes',
     'Work Orders',
     'Time Tracking',

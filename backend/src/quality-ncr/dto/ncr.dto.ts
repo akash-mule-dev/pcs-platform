@@ -8,7 +8,6 @@ export class CreateNcrDto {
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional({ enum: NcrSeverity }) @IsOptional() @IsEnum(NcrSeverity) severity?: NcrSeverity;
   @ApiPropertyOptional() @IsOptional() @IsUUID() workOrderId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsUUID() productId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() materialId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() serialId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() templateId?: string;

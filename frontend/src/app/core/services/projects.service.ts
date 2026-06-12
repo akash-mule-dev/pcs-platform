@@ -4,18 +4,16 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 
-export type ProjectStatus = 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
 export type NodeType = 'group' | 'assembly' | 'subassembly' | 'part';
 
+/** Pure design container — lifecycle status / due dates live on each work order. */
 export interface Project {
   id: string;
   name: string;
   projectNumber: string | null;
   clientName: string | null;
   description: string | null;
-  status: ProjectStatus;
   processId: string | null;
-  dueDate: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -57,8 +55,6 @@ export interface CreateProject {
   projectNumber?: string | null;
   clientName?: string | null;
   description?: string | null;
-  status?: ProjectStatus;
-  dueDate?: string | null;
 }
 
 /** Response of POST import-ifc: the upload is stored; processing continues async. */

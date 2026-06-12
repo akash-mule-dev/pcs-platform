@@ -14,7 +14,7 @@ export type TabParamList = {
 // ── Work Orders Stack (nested in tab) ──
 // The hub lists every production work order; OrderBoard/AssemblyDetail are the
 // audit dashboard screens (also registered in the Projects stack so both tabs
-// reach the same experience). The legacy per-product list/detail stay reachable.
+// reach the same experience). The legacy flat work-order list/detail stay reachable.
 export type WorkOrdersStackParamList = {
   WorkOrderHub: undefined;
   Scan: undefined;

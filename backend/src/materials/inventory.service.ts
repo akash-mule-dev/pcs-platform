@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DeepPartial } from 'typeorm';
 import { MaterialStock } from './entities/material-stock.entity.js';
 import { StockMovement, StockMovementType } from './entities/stock-movement.entity.js';
-import { BomItem } from './entities/bom-item.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { ReceiveStockDto, IssueStockDto, AdjustStockDto, ScrapStockDto } from './dto/inventory.dto.js';
 
@@ -12,7 +11,6 @@ export class InventoryService {
   constructor(
     @InjectRepository(MaterialStock) private readonly stockRepo: Repository<MaterialStock>,
     @InjectRepository(StockMovement) private readonly moveRepo: Repository<StockMovement>,
-    @InjectRepository(BomItem) private readonly bomRepo: Repository<BomItem>,
   ) {}
 
   private get org(): string {
@@ -119,57 +117,5 @@ export class InventoryService {
       note: dto.note ?? null,
     });
     return stock;
-  }
-
-  /**
-   * Material availability for a planned build of `quantity` units of `productId`.
-   * Used as the pre-release shortage check before a work order can start.
-   */
-  async checkAvailability(productId: string, quantity: number) {
-    const bom = await this.bomRepo.find({
-      where: { organizationId: this.org, productId } as any,
-    });
-
-    const requirements: Array<{
-      materialId: string;
-      materialCode?: string;
-      materialName?: string;
-      unit?: string;
-      requiredQuantity: number;
-      availableQuantity: number;
-      shortageQuantity: number;
-      sufficient: boolean;
-    }> = [];
-    for (const item of bom) {
-      const required = Number(item.quantityPer) * quantity * (1 + Number(item.scrapPct || 0) / 100);
-      const stocks = await this.stockRepo.find({
-        where: { organizationId: this.org, materialId: item.materialId } as any,
-      });
-      const available = stocks.reduce(
-        (sum, r) => sum + (Number(r.quantityOnHand) - Number(r.quantityReserved)),
-        0,
-      );
-      const shortage = Math.max(0, required - available);
-      requirements.push({
-        materialId: item.materialId,
-        materialCode: item.material?.code,
-        materialName: item.material?.name,
-        unit: item.material?.unitOfMeasure,
-        requiredQuantity: Number(required.toFixed(4)),
-        availableQuantity: Number(available.toFixed(4)),
-        shortageQuantity: Number(shortage.toFixed(4)),
-        sufficient: shortage <= 0,
-      });
-    }
-
-    const shortages = requirements.filter((r) => !r.sufficient);
-    return {
-      productId,
-      quantity,
-      hasBom: bom.length > 0,
-      canRelease: shortages.length === 0,
-      requirements,
-      shortages,
-    };
   }
 }

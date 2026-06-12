@@ -12,9 +12,6 @@ export class CreateConversionDto {
   /** 'assembly' (default) | 'quality'. */
   modelType?: 'assembly' | 'quality';
 
-  /** Optional product to associate the resulting model with. */
-  productId?: string;
-
   /** Run the AR optimization pass (default true). */
   optimize?: boolean;
 

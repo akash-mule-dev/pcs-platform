@@ -5,7 +5,6 @@ import * as bcrypt from 'bcryptjs';
 import { Role } from '../auth/entities/role.entity.js';
 import { User } from '../auth/entities/user.entity.js';
 import { Organization } from '../organization/organization.entity.js';
-import { Product } from '../products/product.entity.js';
 import { Process } from '../processes/process.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { Line } from '../lines/line.entity.js';
@@ -23,7 +22,6 @@ export class SeedService {
     @InjectRepository(Role) private roleRepo: Repository<Role>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Organization) private orgRepo: Repository<Organization>,
-    @InjectRepository(Product) private productRepo: Repository<Product>,
     @InjectRepository(Process) private processRepo: Repository<Process>,
     @InjectRepository(Stage) private stageRepo: Repository<Stage>,
     @InjectRepository(Line) private lineRepo: Repository<Line>,
@@ -103,7 +101,7 @@ export class SeedService {
       }));
     }
 
-    this.logger.log('Seeded: 5 system roles, 13 users (incl. org-less platform@pcs.com). All business data (products, processes, lines, work orders) must be created via the web portal or mobile app.');
+    this.logger.log('Seeded: 5 system roles, 13 users (incl. org-less platform@pcs.com). All business data (processes, lines, work orders) must be created via the web portal or mobile app.');
   }
 
 }

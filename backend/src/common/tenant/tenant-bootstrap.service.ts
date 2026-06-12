@@ -9,7 +9,6 @@ import { User } from '../../auth/entities/user.entity.js';
  * backfilled to the default tenant. New rows are stamped by TenantSubscriber.
  */
 const TENANT_TABLES = [
-  'products',
   'processes',
   'lines',
   'stations',

@@ -58,9 +58,9 @@ git push origin main
 
 ## 3. Production data
 
-- [ ] Clean the production database of test data ("Test Product …", "Test Process …",
+- [ ] Clean the production database of test data ("Test Process …",
       "Security Check" / "Test User" accounts, auto-generated work orders).
-- [ ] Seed real reference data (products, processes, stages, lines, stations) or
+- [ ] Seed real reference data (processes, stages, lines, stations) or
       import the customer's.
 - [ ] Create the real admin/operator accounts with proper credentials.
 

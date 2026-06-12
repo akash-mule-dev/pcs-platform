@@ -14,7 +14,6 @@ export class CreateMaterialLotDto {
 
 export class CreateSerialDto {
   @ApiProperty() @IsString() @IsNotEmpty() serialNumber: string;
-  @ApiProperty() @IsUUID() productId: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() workOrderId?: string;
 }
 export class UpdateSerialDto {

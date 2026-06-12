@@ -15,7 +15,6 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
 interface WorkOrder {
   id: string;
   orderNumber: string;
-  product: { name: string };
   status: string;
   priority: string;
   quantity: number;
@@ -59,7 +58,7 @@ const COLUMNS = [
           <mat-label>Work Order</mat-label>
           <mat-select [(ngModel)]="selectedWoId" (selectionChange)="loadStages()">
             @for (wo of workOrders; track wo.id) {
-              <mat-option [value]="wo.id">{{ wo.orderNumber }} — {{ wo.product.name }}</mat-option>
+              <mat-option [value]="wo.id">{{ wo.orderNumber }}</mat-option>
             }
           </mat-select>
         </mat-form-field>
@@ -69,7 +68,7 @@ const COLUMNS = [
     @if (workOrders.length === 0) {
       <div class="empty-state">
         <mat-icon class="empty-icon">assignment</mat-icon>
-        <p>No work orders yet. Create products, processes, and work orders from the web portal to see them here.</p>
+        <p>No work orders yet. Release a production order from a project to see work orders here.</p>
       </div>
     }
 

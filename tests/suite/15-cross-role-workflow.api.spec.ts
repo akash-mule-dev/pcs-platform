@@ -4,7 +4,7 @@ import { loginAs, authHeader } from '../helpers/auth.helper';
 /**
  * Cross-Role End-to-End Workflow.
  * Simulates the complete production cycle across all 4 roles:
- *   1. Admin creates product, process, line, station
+ *   1. Admin creates process, line, station
  *   2. Manager creates work order
  *   3. Supervisor assigns operator to stages
  *   4. Operator clocks in, works, clocks out
@@ -22,7 +22,6 @@ test.describe('Cross-Role Workflow — Complete production cycle', () => {
   let operatorToken: string;
   let operatorUser: any;
 
-  let productId: string;
   let processId: string;
   let lineId: string;
   let stationId: string;
@@ -39,25 +38,11 @@ test.describe('Cross-Role Workflow — Complete production cycle', () => {
 
   // ── Step 1: Admin sets up infrastructure ──────────────────────────────────
 
-  test('Step 1a: Admin creates product', async ({ request }) => {
-    const res = await request.post('/api/products', {
-      headers: authHeader(adminToken),
-      data: {
-        name: `E2E Workflow Product ${Date.now()}`,
-        description: 'End-to-end workflow test product',
-      },
-    });
-    expect(res.status()).toBe(201);
-    productId = (await res.json()).data.id;
-    expect(productId).toBeTruthy();
-  });
-
-  test('Step 1b: Admin creates process with stages', async ({ request }) => {
+  test('Step 1a: Admin creates process with stages', async ({ request }) => {
     const res = await request.post('/api/processes', {
       headers: authHeader(adminToken),
       data: {
         name: `E2E Assembly Process ${Date.now()}`,
-        productId,
         stages: [
           { name: 'Material Prep', targetTimeSeconds: 600 },
           { name: 'Assembly', targetTimeSeconds: 1200 },
@@ -70,7 +55,7 @@ test.describe('Cross-Role Workflow — Complete production cycle', () => {
     expect(processId).toBeTruthy();
   });
 
-  test('Step 1c: Admin creates production line', async ({ request }) => {
+  test('Step 1b: Admin creates production line', async ({ request }) => {
     const res = await request.post('/api/lines', {
       headers: authHeader(adminToken),
       data: {
@@ -82,7 +67,7 @@ test.describe('Cross-Role Workflow — Complete production cycle', () => {
     lineId = (await res.json()).data.id;
   });
 
-  test('Step 1d: Admin creates station on line', async ({ request }) => {
+  test('Step 1c: Admin creates station on line', async ({ request }) => {
     const res = await request.post('/api/stations', {
       headers: authHeader(adminToken),
       data: { name: `E2E Station ${Date.now()}`, lineId },
@@ -100,7 +85,6 @@ test.describe('Cross-Role Workflow — Complete production cycle', () => {
       const res = await request.post('/api/work-orders', {
         headers: authHeader(managerToken),
         data: {
-          productId,
           processId,
           lineId,
           quantity: 25,

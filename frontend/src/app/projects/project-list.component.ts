@@ -5,10 +5,8 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { ProjectsService, ProjectSummary, ProjectStatus } from '../core/services/projects.service';
+import { ProjectsService, ProjectSummary } from '../core/services/projects.service';
 import { ProjectWizardComponent } from './project-wizard.component';
-
-interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
 
 @Component({
   selector: 'app-project-list',
@@ -42,36 +40,29 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
         <!-- KPI cards -->
         <div class="kpi-grid">
           <div class="kpi">
-            <div class="kpi-icon tone-blue"><mat-icon>play_circle</mat-icon></div>
-            <div class="kpi-text"><span class="kpi-num">{{ countStatus('active') }}</span><span class="kpi-lbl">Active projects</span></div>
-          </div>
-          <div class="kpi">
-            <div class="kpi-icon tone-purple"><mat-icon>scale</mat-icon></div>
-            <div class="kpi-text"><span class="kpi-num">{{ tonnes(inFlightKg()) }} <small>t</small></span><span class="kpi-lbl">Tonnage in flight</span></div>
+            <div class="kpi-icon tone-blue"><mat-icon>foundation</mat-icon></div>
+            <div class="kpi-text"><span class="kpi-num">{{ projects.length }}</span><span class="kpi-lbl">Projects</span></div>
           </div>
           <div class="kpi">
             <div class="kpi-icon tone-green"><mat-icon>widgets</mat-icon></div>
             <div class="kpi-text"><span class="kpi-num">{{ totalAssemblies() }}</span><span class="kpi-lbl">Assemblies</span></div>
           </div>
-          <div class="kpi" [class.alert]="overdueCount() > 0">
-            <div class="kpi-icon" [class.tone-orange]="overdueCount() === 0" [class.tone-danger]="overdueCount() > 0"><mat-icon>schedule</mat-icon></div>
-            <div class="kpi-text"><span class="kpi-num">{{ overdueCount() }}</span><span class="kpi-lbl">Overdue</span></div>
+          <div class="kpi">
+            <div class="kpi-icon tone-orange"><mat-icon>square_foot</mat-icon></div>
+            <div class="kpi-text"><span class="kpi-num">{{ totalParts() }}</span><span class="kpi-lbl">Parts</span></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-icon tone-purple"><mat-icon>scale</mat-icon></div>
+            <div class="kpi-text"><span class="kpi-num">{{ tonnes(totalKg()) }} <small>t</small></span><span class="kpi-lbl">Total tonnage</span></div>
           </div>
         </div>
 
-        <!-- Toolbar: search + status filter -->
+        <!-- Toolbar: search -->
         <div class="toolbar">
           <div class="search-box">
             <mat-icon class="search-ico">search</mat-icon>
             <input type="text" placeholder="Search by name, job # or client…" [(ngModel)]="search" />
             @if (search) { <mat-icon class="clear" (click)="search = ''">close</mat-icon> }
-          </div>
-          <div class="filter-chips">
-            @for (f of statusFilters; track f.value) {
-              <button class="chip" [class.active]="statusFilter === f.value" (click)="statusFilter = f.value">
-                {{ f.label }}<span class="chip-n">{{ f.value === 'all' ? projects.length : countStatus(f.value) }}</span>
-              </button>
-            }
           </div>
         </div>
 
@@ -83,7 +74,7 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
               <div class="proj-row" (click)="open(p)">
                 <div class="row-main">
                   <div class="col-id">
-                    <span class="st-dot st-{{ p.status }}" [title]="statusLabel(p.status)"></span>
+                    <mat-icon class="p-ico">foundation</mat-icon>
                     <div class="id-text">
                       <span class="p-name">{{ p.name }}</span>
                       <span class="p-sub">
@@ -103,15 +94,6 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
                     }
                   </div>
 
-                  <div class="col-due">
-                    <span class="status-pill st-{{ p.status }}">{{ statusLabel(p.status) }}</span>
-                    @if (p.dueDate) {
-                      <span class="due" [class.overdue]="isOverdue(p)">
-                        @if (isOverdue(p)) { <mat-icon>schedule</mat-icon> }
-                        {{ p.dueDate | date:'mediumDate' }}
-                      </span>
-                    } @else { <span class="due muted">No due date</span> }
-                  </div>
                   <mat-icon class="chevron">chevron_right</mat-icon>
                 </div>
 
@@ -192,17 +174,6 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
     .search-box input { border: none; outline: none; background: transparent; font-size: 13px; color: var(--clay-text); width: 100%; font-family: inherit; }
     .search-box input::placeholder { color: var(--clay-text-muted); }
     .search-box .clear { font-size: 16px; width: 16px; height: 16px; color: var(--clay-text-muted); cursor: pointer; }
-    .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-    .chip {
-      display: inline-flex; align-items: center; gap: 6px;
-      border: 1px solid var(--clay-border); background: var(--clay-surface);
-      color: var(--clay-text-secondary); border-radius: 999px; padding: 6px 12px;
-      font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s;
-    }
-    .chip:hover { border-color: var(--clay-primary); color: var(--clay-primary); }
-    .chip.active { background: var(--clay-primary); color: #fff; border-color: var(--clay-primary); }
-    .chip-n { font-size: 11px; opacity: .8; background: rgba(0,0,0,.08); padding: 0 6px; border-radius: 999px; }
-    .chip.active .chip-n { background: rgba(255,255,255,.22); }
 
     /* ── Project rows ──────────────────────────────────────── */
     .proj-list {
@@ -216,19 +187,16 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
     .proj-row:last-child { border-bottom: none; }
     .proj-row:hover { background: var(--clay-surface-hover); }
     .row-main {
-      display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(120px, 1.1fr) minmax(160px, auto) 24px;
+      display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(120px, 1.1fr) 24px;
       align-items: center; gap: 18px;
     }
     .col-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    .st-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-    .st-dot.st-planning { background: var(--info); } .st-dot.st-active { background: var(--success); }
-    .st-dot.st-on_hold { background: var(--warning); } .st-dot.st-completed { background: var(--clay-primary-light); }
-    .st-dot.st-archived { background: var(--clay-text-muted); }
+    .p-ico { font-size: 20px; width: 20px; height: 20px; color: var(--clay-primary); flex-shrink: 0; }
     .id-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .p-name { font-weight: 600; font-size: 14px; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .p-sub { font-size: 12px; color: var(--clay-text-muted); display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .p-sub .mono { font-family: 'Space Grotesk', monospace; }
-    .p-sub .muted, .due.muted { opacity: .7; }
+    .p-sub .muted { opacity: .7; }
     .dotsep { opacity: .5; }
 
     .col-prog { display: flex; align-items: center; gap: 10px; }
@@ -247,16 +215,6 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
     .m.program.warn { color: var(--warning-text); }
     .m.program.warn mat-icon { color: var(--warning); }
 
-    .col-due { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-    .status-pill { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-    .st-planning { background: var(--info-bg); color: var(--info-text); }
-    .st-active { background: var(--success-bg); color: var(--success-text); }
-    .st-on_hold { background: var(--warning-bg); color: var(--warning-text); }
-    .st-completed { background: var(--badge-progress-bg); color: var(--badge-progress-text); }
-    .st-archived { background: var(--badge-draft-bg); color: var(--badge-draft-text); }
-    .due { font-size: 12px; color: var(--clay-text-muted); display: inline-flex; align-items: center; gap: 3px; }
-    .due.overdue { color: var(--danger-text); font-weight: 700; }
-    .due mat-icon { font-size: 14px; width: 14px; height: 14px; }
     .chevron { color: var(--clay-text-muted); font-size: 20px; width: 20px; height: 20px; }
 
     @media (max-width: 920px) {
@@ -275,16 +233,6 @@ export class ProjectListComponent implements OnInit {
   projects: ProjectSummary[] = [];
   loading = true;
   search = '';
-  statusFilter: ProjectStatus | 'all' = 'all';
-
-  readonly statusFilters: StatusFilter[] = [
-    { value: 'all', label: 'All' },
-    { value: 'active', label: 'Active' },
-    { value: 'planning', label: 'Planning' },
-    { value: 'on_hold', label: 'On hold' },
-    { value: 'completed', label: 'Completed' },
-    { value: 'archived', label: 'Archived' },
-  ];
 
   /** processId → process (program) name, for the per-row "Program" insight. */
   private processNames = new Map<string, string>();
@@ -320,36 +268,19 @@ export class ProjectListComponent implements OnInit {
 
   filtered(): ProjectSummary[] {
     const q = this.search.trim().toLowerCase();
-    return this.projects.filter((p) => {
-      if (this.statusFilter !== 'all' && p.status !== this.statusFilter) return false;
-      if (!q) return true;
-      return [p.name, p.projectNumber, p.clientName].some((v) => (v ?? '').toLowerCase().includes(q));
-    });
+    if (!q) return this.projects;
+    return this.projects.filter((p) =>
+      [p.name, p.projectNumber, p.clientName].some((v) => (v ?? '').toLowerCase().includes(q)),
+    );
   }
 
-  countStatus(s: ProjectStatus): number { return this.projects.filter((p) => p.status === s).length; }
-
-  /** Tonnage on jobs that aren't finished/archived — what's currently moving through the shop. */
-  inFlightKg(): number {
-    return this.projects
-      .filter((p) => p.status !== 'completed' && p.status !== 'archived')
-      .reduce((sum, p) => sum + (p.metrics.tonnage.totalKg ?? 0), 0);
-  }
   totalAssemblies(): number { return this.projects.reduce((s, p) => s + (p.metrics.assemblyCount ?? 0), 0); }
-  overdueCount(): number { return this.projects.filter((p) => this.isOverdue(p)).length; }
-
-  isOverdue(p: ProjectSummary): boolean {
-    if (!p.dueDate || p.status === 'completed' || p.status === 'archived') return false;
-    return new Date(p.dueDate).getTime() < Date.now();
-  }
+  totalParts(): number { return this.projects.reduce((s, p) => s + (p.metrics.partCount ?? 0), 0); }
+  totalKg(): number { return this.projects.reduce((s, p) => s + (p.metrics.tonnage.totalKg ?? 0), 0); }
 
   tonnes(kg: number): string {
     const t = (kg ?? 0) / 1000;
     return t >= 100 ? Math.round(t).toString() : (Math.round(t * 10) / 10).toString();
-  }
-
-  statusLabel(s: ProjectStatus): string {
-    return { planning: 'Planning', active: 'Active', on_hold: 'On hold', completed: 'Completed', archived: 'Archived' }[s] ?? s;
   }
 
   openWizard(): void {

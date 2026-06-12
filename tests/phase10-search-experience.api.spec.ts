@@ -23,24 +23,10 @@ test.describe('Phase 10 — Global Search', () => {
     const body = await res.json();
     const data = body.data;
     expect(data).toHaveProperty('workOrders');
-    expect(data).toHaveProperty('products');
     expect(data).toHaveProperty('users');
     expect(Array.isArray(data.workOrders)).toBeTruthy();
     // Seeded WOs start with "WO-", should find matches
     expect(data.workOrders.length).toBeGreaterThan(0);
-  });
-
-  test('GET /api/search?q=PCB — should find products', async ({ request }) => {
-    const res = await request.get('/api/search?q=PCB', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(res.status()).toBe(200);
-    const body = await res.json();
-    expect(body.data.products.length).toBeGreaterThan(0);
-    // Search matches on product name or description
-    const match = body.data.products[0];
-    const searchable = `${match.name} ${match.description}`.toLowerCase();
-    expect(searchable).toContain('pcb');
   });
 
   test('GET /api/search?q=John — should find users', async ({ request }) => {
@@ -59,7 +45,6 @@ test.describe('Phase 10 — Global Search', () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.data.workOrders).toHaveLength(0);
-    expect(body.data.products).toHaveLength(0);
     expect(body.data.users).toHaveLength(0);
   });
 
@@ -70,7 +55,6 @@ test.describe('Phase 10 — Global Search', () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.data.workOrders).toHaveLength(0);
-    expect(body.data.products).toHaveLength(0);
     expect(body.data.users).toHaveLength(0);
   });
 

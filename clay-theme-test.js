@@ -43,11 +43,8 @@ function colorsClose(rgb1, rgb2) {
   ])}));
   await page.route('**/api/dashboard/operator-performance*', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ userId: 'u1', operatorName: 'John Smith', totalTime: 28800, stagesCompleted: 8, avgEfficiency: 92.3 }])}));
   await page.route('**/api/dashboard/stage-analytics*', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ stageId: 's1', stageName: 'Assembly', targetTime: 3600, avgTime: 3420, minTime: 2800, maxTime: 4200, entryCount: 45, efficiency: 95 }])}));
-  await page.route('**/api/products*', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
-    { id: 'p1', name: 'Circuit Board X200', sku: 'CBX-200', description: 'High-performance circuit board', isActive: true }
-  ])}));
   await page.route('**/api/work-orders*', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
-    { id: 'wo1', orderNumber: 'WO-2024-001', product: { name: 'Circuit Board X200', sku: 'CBX-200' }, quantity: 100, completedQuantity: 45, status: 'in_progress', priority: 'high', dueDate: '2024-04-01T00:00:00Z' }
+    { id: 'wo1', orderNumber: 'WO-2024-001', quantity: 100, completedQuantity: 45, status: 'in_progress', priority: 'high', dueDate: '2024-04-01T00:00:00Z' }
   ])}));
   await page.route('**/api/users*', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
     { id: 'u1', firstName: 'John', lastName: 'Smith', email: 'john@pcs.com', employeeId: 'EMP001', role: { name: 'operator' }, isActive: true }
@@ -56,7 +53,7 @@ function colorsClose(rgb1, rgb2) {
     { id: 'l1', name: 'Line Alpha', description: 'Main production line', isActive: true, stations: [{ id: 'st1', name: 'Station A1', lineId: 'l1', isActive: true }] }
   ])}));
   await page.route('**/api/processes*', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
-    { id: 'pr1', name: 'PCB Assembly', version: 2, product: { name: 'Circuit Board X200', sku: 'CBX-200' }, stages: [
+    { id: 'pr1', name: 'PCB Assembly', version: 2, stages: [
       { id: 's1', name: 'Assembly', sequence: 1, targetTimeSeconds: 3600, isActive: true }
     ], isActive: true }
   ])}));
@@ -193,61 +190,11 @@ function colorsClose(rgb1, rgb2) {
   await page.screenshot({ path: '/tmp/clay-test-02-dashboard.png', fullPage: true });
 
   // =============================================
-  // TEST 3: PRODUCTS PAGE
-  // =============================================
-  await page.goto('http://localhost:4200/products', { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1500);
-  console.log('\n=== TEST 3: PRODUCTS ===');
-
-  // Search input clay treatment
-  const searchFieldBg = await page.evaluate(() => {
-    const field = document.querySelector('.mdc-text-field--outlined');
-    return field ? getComputedStyle(field).backgroundColor : 'not found';
-  });
-  check('Search field has warm clay bg', searchFieldBg, 'rgb(236, 230, 218)', 'rgb-close');
-
-  const searchFieldShadow = await page.evaluate(() => {
-    const field = document.querySelector('.mdc-text-field--outlined');
-    return field ? getComputedStyle(field).boxShadow : 'not found';
-  });
-  check('Search field has inset shadow', searchFieldShadow, 'inset', 'includes');
-
-  // Table
-  const tableStyles = await page.evaluate(() => {
-    const t = document.querySelector('.mat-mdc-table');
-    if (!t) return null;
-    const s = getComputedStyle(t);
-    return { borderRadius: s.borderRadius, boxShadow: s.boxShadow, bg: s.backgroundColor };
-  });
-  check('Products table has clay surface bg', tableStyles?.bg, 'rgb(245, 240, 232)', 'rgb-close');
-  check('Products table has rounded corners', tableStyles?.borderRadius, '16px');
-  check('Products table has shadow', tableStyles?.boxShadow || '', 'rgb', 'includes');
-
-  // Active sidebar link
-  const activeLinkStyles = await page.evaluate(() => {
-    const link = document.querySelector('.active-link');
-    if (!link) return null;
-    const s = getComputedStyle(link);
-    return { boxShadow: s.boxShadow, fontWeight: s.fontWeight };
-  });
-  check('Active nav has raised shadow', activeLinkStyles?.boxShadow || '', 'rgb', 'includes');
-  check('Active nav is bold', activeLinkStyles?.fontWeight, '600');
-
-  // Add Product button
-  const addBtnColor = await page.evaluate(() => {
-    const btn = document.querySelector('[color="accent"]');
-    return btn ? getComputedStyle(btn).backgroundColor : 'not found';
-  });
-  check('Add Product button uses accent color', addBtnColor, 'rgb(232, 148, 90)', 'rgb-close');
-
-  await page.screenshot({ path: '/tmp/clay-test-03-products.png', fullPage: true });
-
-  // =============================================
-  // TEST 4: WORK ORDERS PAGE
+  // TEST 3: WORK ORDERS PAGE
   // =============================================
   await page.goto('http://localhost:4200/work-orders', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  console.log('\n=== TEST 4: WORK ORDERS ===');
+  console.log('\n=== TEST 3: WORK ORDERS ===');
 
   // Filter dropdowns - clay treatment
   const filterFieldBg = await page.evaluate(() => {
@@ -261,23 +208,23 @@ function colorsClose(rgb1, rgb2) {
   });
   check('Work Orders table has headers', woTableHeaders > 0 ? 'true' : 'false', 'true');
 
-  await page.screenshot({ path: '/tmp/clay-test-04-workorders.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/clay-test-03-workorders.png', fullPage: true });
 
   // =============================================
-  // TEST 5: USERS PAGE
+  // TEST 4: USERS PAGE
   // =============================================
   await page.goto('http://localhost:4200/users', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  console.log('\n=== TEST 5: USERS ===');
+  console.log('\n=== TEST 4: USERS ===');
 
-  await page.screenshot({ path: '/tmp/clay-test-05-users.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/clay-test-04-users.png', fullPage: true });
 
   // =============================================
-  // TEST 6: STATIONS PAGE
+  // TEST 5: STATIONS PAGE
   // =============================================
   await page.goto('http://localhost:4200/stations', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  console.log('\n=== TEST 6: STATIONS ===');
+  console.log('\n=== TEST 5: STATIONS ===');
 
   // Cards use clay styling
   const stationCardStyles = await page.evaluate(() => {
@@ -296,42 +243,42 @@ function colorsClose(rgb1, rgb2) {
   });
   check('Select prompt uses muted color', selectPromptColor, 'rgb(160, 152, 136)', 'rgb-close');
 
-  await page.screenshot({ path: '/tmp/clay-test-06-stations.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/clay-test-05-stations.png', fullPage: true });
 
   // =============================================
-  // TEST 7: REPORTS PAGE
+  // TEST 6: REPORTS PAGE
   // =============================================
   await page.goto('http://localhost:4200/reports', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  console.log('\n=== TEST 7: REPORTS ===');
+  console.log('\n=== TEST 6: REPORTS ===');
 
   const reportCards = await page.locator('mat-card').count();
   check('Reports has cards', reportCards > 0 ? 'true' : 'false', 'true');
 
-  await page.screenshot({ path: '/tmp/clay-test-07-reports.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/clay-test-06-reports.png', fullPage: true });
 
   // =============================================
-  // TEST 8: TIME TRACKING PAGE
+  // TEST 7: TIME TRACKING PAGE
   // =============================================
   await page.goto('http://localhost:4200/time-tracking', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  console.log('\n=== TEST 8: TIME TRACKING ===');
+  console.log('\n=== TEST 7: TIME TRACKING ===');
 
-  await page.screenshot({ path: '/tmp/clay-test-08-timetracking.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/clay-test-07-timetracking.png', fullPage: true });
 
   // =============================================
-  // TEST 9: PROCESSES PAGE
+  // TEST 8: PROCESSES PAGE
   // =============================================
   await page.goto('http://localhost:4200/processes', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  console.log('\n=== TEST 9: PROCESSES ===');
+  console.log('\n=== TEST 8: PROCESSES ===');
 
-  await page.screenshot({ path: '/tmp/clay-test-09-processes.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/clay-test-08-processes.png', fullPage: true });
 
   // =============================================
-  // TEST 10: GLOBAL THEME CONSISTENCY
+  // TEST 9: GLOBAL THEME CONSISTENCY
   // =============================================
-  console.log('\n=== TEST 10: GLOBAL CONSISTENCY ===');
+  console.log('\n=== TEST 9: GLOBAL CONSISTENCY ===');
 
   // Check scrollbar styling
   const scrollbarStyle = await page.evaluate(() => {

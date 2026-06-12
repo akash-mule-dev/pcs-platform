@@ -22,7 +22,7 @@
 │  ┌─────────────────────────▼─────────────────────────────────┐  │
 │  │              BACKEND (NestJS + TypeORM)                     │  │
 │  │                                                            │  │
-│  │  Auth → Users → Products → Processes → Stages              │  │
+│  │  Auth → Users → Processes → Stages                         │  │
 │  │  Lines → Stations → Work Orders → Time Tracking            │  │
 │  │  Dashboard → Seed → WebSocket                              │  │
 │  └─────────────────────────┬─────────────────────────────────┘  │
@@ -47,7 +47,7 @@
 | **TypeScript** | 5.x | Type-safe JavaScript |
 
 ### Key Features
-- **11 Pages:** Login, Dashboard, Products, Processes, Work Orders, Stations, Time Tracking (live + history), Users, Reports
+- **10 Pages:** Login, Dashboard, Processes, Work Orders, Stations, Time Tracking (live + history), Users, Reports
 - **Interceptors:** JWT auth token injection, response unwrapping (`{data:...}`)
 - **Guards:** Route protection based on authentication
 - **Environment Configs:** dev, stage, production with different API URLs
@@ -76,12 +76,11 @@
 | **class-transformer** | - | Object transformation |
 | **dotenv** | - | Environment variable loading |
 
-### API Modules (16 total)
+### API Modules (15 total)
 | Module | Endpoints | Description |
 |--------|-----------|-------------|
 | **Auth** | POST /login, GET /profile | JWT login, token validation |
 | **Users** | CRUD | User management with roles |
-| **Products** | CRUD | Product catalog (SKU, name, description) |
 | **Processes** | CRUD | Manufacturing process definitions |
 | **Stages** | CRUD | Process stages with ordering |
 | **Lines** | CRUD | Production line management |
@@ -218,7 +217,6 @@ pcs-platform/
 │   ├── src/
 │   │   ├── auth/         # JWT authentication
 │   │   ├── users/        # User management
-│   │   ├── products/     # Product CRUD
 │   │   ├── processes/    # Process definitions
 │   │   ├── stages/       # Stage management
 │   │   ├── lines/        # Production lines
@@ -236,7 +234,6 @@ pcs-platform/
 │   │   ├── app/
 │   │   │   ├── auth/
 │   │   │   ├── dashboard/
-│   │   │   ├── products/
 │   │   │   ├── processes/
 │   │   │   ├── work-orders/
 │   │   │   ├── stations/

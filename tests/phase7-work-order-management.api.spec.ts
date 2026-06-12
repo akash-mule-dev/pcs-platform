@@ -45,7 +45,6 @@ test.describe('Phase 7 — Work Order Management', () => {
     const wo = body.data;
     expect(wo.id).toBe(woId);
     expect(wo.orderNumber).toBeTruthy();
-    expect(wo.product).toBeTruthy();
     expect(wo.process).toBeTruthy();
     expect(Array.isArray(wo.stages)).toBeTruthy();
     // Stages should have stage info for kanban view

@@ -7,10 +7,9 @@ import { Ncr } from '../quality-ncr/entities/ncr.entity.js';
 import { AssemblyNode } from '../projects/assembly-node.entity.js';
 import { WorkOrdersService } from './work-orders.service.js';
 import { WorkOrdersController } from './work-orders.controller.js';
-import { MaterialsModule } from '../materials/materials.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkOrder, WorkOrderStage, Stage, Ncr, AssemblyNode]), MaterialsModule],
+  imports: [TypeOrmModule.forFeature([WorkOrder, WorkOrderStage, Stage, Ncr, AssemblyNode])],
   controllers: [WorkOrdersController],
   providers: [WorkOrdersService],
   exports: [WorkOrdersService, TypeOrmModule],

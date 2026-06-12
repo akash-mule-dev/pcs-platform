@@ -54,7 +54,7 @@ backend/src/
   database/                # TypeORM datasource, DatabaseModule, migrations/
   common/tenant/           # multi-tenancy: TenantOwnedEntity, TenantContext, TenantScopedService, interceptor, subscriber
   auth/  rbac/             # JWT auth + fine-grained RBAC: permission-catalog.ts, PermissionsGuard, roles API (system + custom roles)
-  products/ materials/     # catalog products + BOM / materials / stock
+  materials/               # materials / stock
   processes/ stages/       # a Process is an ordered list of Stages (the routing)
   work-orders/             # WorkOrder + WorkOrderStage — the stage-execution engine
   lines/ stations/ workforce/ equipment/ scheduling/ time-tracking/ traceability/ quality-* /

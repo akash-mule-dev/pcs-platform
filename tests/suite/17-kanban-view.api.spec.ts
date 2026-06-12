@@ -73,8 +73,6 @@ test.describe('Kanban View — Work Order data shape for UI', () => {
     // Top-level fields for info bar
     expect(wo.id).toBe(setup.workOrder.id);
     expect(wo.orderNumber).toBeTruthy();
-    expect(wo.product).toBeTruthy();
-    expect(wo.product.name).toBeTruthy();
     expect(wo.status).toBe('in_progress');
     expect(wo.priority).toBeTruthy();
     expect(typeof wo.quantity).toBe('number');
@@ -288,7 +286,6 @@ test.describe('Kanban View — Work Order data shape for UI', () => {
     const createRes = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
       data: {
-        productId: setup.product.id,
         processId: setup.process.id,
         quantity: 5,
         priority: 'medium',

@@ -19,7 +19,6 @@ export class ModelsService {
 
   async findAll(pageOptions: PageOptionsDto, modelType?: string): Promise<PageDto<Model3D>> {
     const qb = this.repo.createQueryBuilder('model')
-      .leftJoinAndSelect('model.product', 'product')
       .orderBy('model.createdAt', pageOptions.order)
       .skip(pageOptions.skip)
       .take(pageOptions.limit);
@@ -33,7 +32,7 @@ export class ModelsService {
   }
 
   async findOne(id: string): Promise<Model3D> {
-    const item = await this.repo.findOne({ where: { id }, relations: ['product'] });
+    const item = await this.repo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('3D Model not found');
     return item;
   }
@@ -48,7 +47,6 @@ export class ModelsService {
       name: dto.name,
       description: dto.description,
       modelType: dto.modelType || 'assembly',
-      productId: dto.productId,
       fileName: storageKey,
       originalName: file.originalname,
       filePath: storageKey, // Now stores the storage key, not a filesystem path

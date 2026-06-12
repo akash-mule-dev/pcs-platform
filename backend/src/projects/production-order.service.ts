@@ -8,7 +8,6 @@ import { WorkOrder, WorkOrderStatus } from '../work-orders/work-order.entity.js'
 import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
 import { StageEvent } from '../work-orders/stage-event.entity.js';
 import { Stage } from '../stages/stage.entity.js';
-import { Product } from '../products/product.entity.js';
 import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { inspectionGateError, isQualityStageName, qcGateMessage, InspectionSnapshot } from '../work-orders/qc-gate.js';
@@ -33,7 +32,6 @@ export class ProductionOrderService {
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(StageEvent) private readonly eventRepo: Repository<StageEvent>,
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
-    @InjectRepository(Product) private readonly productRepo: Repository<Product>,
     @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
     private readonly events: EventsGateway,
   ) {}
@@ -98,15 +96,6 @@ export class ProductionOrderService {
       notes: dto.notes ?? null, organizationId: org,
     }));
 
-    // Work orders require a product; one stand-in product represents the project.
-    const productRepo = em.getRepository(Product);
-    let product = await productRepo.findOne({ where: { organizationId: org, name: project.name } });
-    if (!product) {
-      product = await productRepo.save(productRepo.create({
-        name: project.name, description: `Fabrication project ${project.projectNumber ?? ''}`.trim(), organizationId: org,
-      }));
-    }
-
     // Trackable production items = assemblies/subassemblies, PLUS "loose" parts
     // with no assembly/subassembly ancestor (so parts-only projects still track).
     const allNodes = await nodeRepo.find({ where: { organizationId: org, projectId }, order: { depth: 'ASC', sortIndex: 'ASC' } });
@@ -142,7 +131,7 @@ export class ProductionOrderService {
     const woBase = await this.maxNumberSuffix('work_orders', 'order_number', `WO-${year}-`, em);
     const woEntities = nodes.map((node, i) => woRepo.create({
       orderNumber: `WO-${year}-${String(woBase + 1 + i).padStart(4, '0')}`,
-      productId: product.id, processId: dto.processId, assemblyNodeId: node.id, productionOrderId: order.id,
+      processId: dto.processId, assemblyNodeId: node.id, productionOrderId: order.id,
       quantity: node.quantity ?? 1, status: WorkOrderStatus.PENDING, organizationId: org,
     }));
     const savedWos = await woRepo.save(woEntities, { chunk: 200 });
@@ -172,24 +161,6 @@ export class ProductionOrderService {
     if (!raw) return 0;
     const n = parseInt(raw.slice(prefix.length), 10);
     return Number.isFinite(n) ? n : 0;
-  }
-
-  private async saveWoWithNumber(org: string, productId: string, processId: string, node: AssemblyNode, productionOrderId: string): Promise<WorkOrder> {
-    const year = new Date().getFullYear();
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const base = await this.maxNumberSuffix('work_orders', 'order_number', `WO-${year}-`);
-      const orderNumber = `WO-${year}-${String(base + 1).padStart(4, '0')}`;
-      try {
-        return await this.woRepo.save(this.woRepo.create({
-          orderNumber, productId, processId, assemblyNodeId: node.id, productionOrderId,
-          quantity: node.quantity ?? 1, status: WorkOrderStatus.PENDING, organizationId: org,
-        }));
-      } catch (e: any) {
-        if (e?.code === '23505') continue;
-        throw e;
-      }
-    }
-    throw new BadRequestException('Could not allocate a unique work-order number');
   }
 
   listByProject(projectId: string): Promise<ProductionOrder[]> {

@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from '../core/services/api.service';
 
-/** Thin API layer for the Materials / BOM / Inventory backend (Phase 2). */
+/** Thin API layer for the Materials / Inventory backend (Phase 2). */
 @Injectable({ providedIn: 'root' })
 export class MaterialsApiService {
   constructor(private api: ApiService) {}
@@ -21,13 +21,4 @@ export class MaterialsApiService {
   receive(body: any): Observable<any> { return this.api.post('/inventory/receive', body); }
   issue(body: any): Observable<any> { return this.api.post('/inventory/issue', body); }
   adjust(body: any): Observable<any> { return this.api.post('/inventory/adjust', body); }
-  availability(productId: string, quantity: number): Observable<any> {
-    return this.api.get('/inventory/availability', { productId, quantity });
-  }
-
-  // BOM
-  getBom(productId: string): Observable<any> { return this.api.get('/bom', { productId }); }
-  addBomItem(body: any): Observable<any> { return this.api.post('/bom', body); }
-  updateBomItem(id: string, body: any): Observable<any> { return this.api.patch(`/bom/${id}`, body); }
-  removeBomItem(id: string): Observable<any> { return this.api.delete(`/bom/${id}`); }
 }

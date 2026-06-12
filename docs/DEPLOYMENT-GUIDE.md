@@ -131,7 +131,7 @@ aws s3api get-bucket-website --bucket pcs-frontend-prod-primeterminal
 # If missing, set it:
 aws s3 website s3://pcs-frontend-dev-primeterminal/ --index-document index.html --error-document index.html
 ```
-> **Why:** Angular is an SPA — all routes like `/dashboard` and `/products` must serve `index.html`. Without the error document, direct URL navigation returns a 404.
+> **Why:** Angular is an SPA — all routes like `/dashboard` and `/projects` must serve `index.html`. Without the error document, direct URL navigation returns a 404.
 
 ### Step 3: Upload to S3
 ```bash

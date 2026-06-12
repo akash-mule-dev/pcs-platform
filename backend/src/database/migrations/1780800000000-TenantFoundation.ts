@@ -7,7 +7,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * - Adds users.organization_id and backfills every existing user to the default org.
  *
  * Idempotent and safe to run alongside synchronize. Domain entities
- * (products, processes, work_orders, …) get their own organization_id columns in
+ * (processes, work_orders, …) get their own organization_id columns in
  * subsequent increments as each module is made tenant-scoped.
  */
 export class TenantFoundation1780800000000 implements MigrationInterface {

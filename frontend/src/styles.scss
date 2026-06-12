@@ -713,25 +713,13 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
   border: 1px solid var(--clay-border);
 }
 
-// Product 3D Viewer dialog
-.product-viewer-dialog .mat-mdc-dialog-container .mdc-dialog__surface {
-  display: flex;
-  flex-direction: column;
-}
-.product-viewer-dialog .mat-mdc-dialog-content {
-  flex: 1;
-  max-height: none !important;
-  padding: 0 !important;
-  overflow: hidden;
-}
-
 [data-theme="dark"] .mat-mdc-dialog-container .mdc-dialog__surface {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.5),
     0 0 24px rgba(173, 198, 255, 0.04) !important;
 }
 
-// Custom dialog shell (clay design system — process/stage/user/product/work-order forms, confirm dialog)
+// Custom dialog shell (clay design system — process/stage/user/work-order forms, confirm dialog)
 // Bounded flex column: header & footer stay pinned, only the body scrolls — so actions are always
 // reachable regardless of content height (fixes tall dialogs pushing the footer off-screen).
 .dialog-shell {

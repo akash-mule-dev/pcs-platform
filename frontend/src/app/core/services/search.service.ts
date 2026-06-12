@@ -4,7 +4,6 @@ import { ApiService } from './api.service';
 
 export interface SearchResults {
   workOrders: any[];
-  products: any[];
   users: any[];
 }
 
@@ -14,7 +13,7 @@ export class SearchService {
 
   search(query: string): Observable<SearchResults> {
     if (!query || query.trim().length < 2) {
-      return of({ workOrders: [], products: [], users: [] });
+      return of({ workOrders: [], users: [] });
     }
     return this.api.get<SearchResults>('/search', { q: query.trim() });
   }

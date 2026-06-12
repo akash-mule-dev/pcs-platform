@@ -39,7 +39,6 @@ export interface WorkOrderStage {
 export interface WorkOrder {
   id: string;
   orderNumber: string;
-  product?: { id: string; name: string };
   process?: { id: string; name: string };
   line?: { id: string; name: string } | null;
   quantity: number;
@@ -99,8 +98,6 @@ export interface Model3D {
   mimeType: string;
   modelType: string;
   assemblyInstructions: string | null;
-  productId: string | null;
-  product?: { id: string; name: string };
   createdAt: string;
 }
 

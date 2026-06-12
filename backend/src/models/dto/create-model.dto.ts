@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsIn, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsIn } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateModelDto {
@@ -6,5 +6,4 @@ export class CreateModelDto {
   @ApiPropertyOptional() @IsString() @IsOptional() description?: string;
   @ApiPropertyOptional({ enum: ['assembly', 'quality'] })
   @IsString() @IsOptional() @IsIn(['assembly', 'quality']) modelType?: string;
-  @ApiPropertyOptional() @IsUUID() @IsOptional() productId?: string;
 }

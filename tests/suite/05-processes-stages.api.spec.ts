@@ -1,13 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, authHeader } from '../helpers/auth.helper';
-import { createProduct } from '../helpers/test-data.helper';
 
 test.describe('Processes & Stages — CRUD operations', () => {
   let adminToken: string;
   let managerToken: string;
   let supervisorToken: string;
   let operatorToken: string;
-  let productId: string;
   let processId: string;
   let stageIds: string[] = [];
 
@@ -16,10 +14,6 @@ test.describe('Processes & Stages — CRUD operations', () => {
     ({ token: managerToken } = await loginAs(request, 'manager'));
     ({ token: supervisorToken } = await loginAs(request, 'supervisor'));
     ({ token: operatorToken } = await loginAs(request, 'operator'));
-
-    // Create a product to attach processes to
-    const product = await createProduct(request, adminToken);
-    productId = product.id;
   });
 
   // ── Create Process with inline stages ─────────────────────────────────────
@@ -29,7 +23,6 @@ test.describe('Processes & Stages — CRUD operations', () => {
       headers: authHeader(adminToken),
       data: {
         name: `Assembly Process ${Date.now()}`,
-        productId,
         stages: [
           { name: 'Cutting', targetTimeSeconds: 600, description: 'Cut raw materials' },
           { name: 'Welding', targetTimeSeconds: 1200, description: 'Weld components' },
@@ -42,7 +35,6 @@ test.describe('Processes & Stages — CRUD operations', () => {
     const body = await res.json();
     processId = body.data.id;
     expect(body.data.name).toContain('Assembly Process');
-    expect(body.data.productId || body.data.product).toBeTruthy();
   });
 
   test('POST /api/processes — manager can create process', async ({ request }) => {
@@ -50,7 +42,6 @@ test.describe('Processes & Stages — CRUD operations', () => {
       headers: authHeader(managerToken),
       data: {
         name: `Manager Process ${Date.now()}`,
-        productId,
         stages: [{ name: 'Step 1', targetTimeSeconds: 500 }],
       },
     });
@@ -60,17 +51,9 @@ test.describe('Processes & Stages — CRUD operations', () => {
   test('POST /api/processes — supervisor cannot create process', async ({ request }) => {
     const res = await request.post('/api/processes', {
       headers: authHeader(supervisorToken),
-      data: { name: 'Should Fail', productId },
+      data: { name: 'Should Fail' },
     });
     expect(res.status()).toBe(403);
-  });
-
-  test('POST /api/processes — rejects missing productId', async ({ request }) => {
-    const res = await request.post('/api/processes', {
-      headers: authHeader(adminToken),
-      data: { name: 'No Product' },
-    });
-    expect(res.status()).toBe(400);
   });
 
   // ── List Processes ────────────────────────────────────────────────────────
@@ -210,7 +193,6 @@ test.describe('Processes & Stages — CRUD operations', () => {
       headers: authHeader(adminToken),
       data: {
         name: `Disposable ${Date.now()}`,
-        productId,
         stages: [{ name: 'S1', targetTimeSeconds: 100 }],
       },
     });

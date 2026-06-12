@@ -12,7 +12,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { ProjectWorkspaceStore, IMPORT_STAGE_LABELS } from './project-workspace.store';
 import { ProjectEditDialogComponent } from './project-edit-dialog.component';
 import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/confirm-dialog.component';
-import { ProjectsService, Project, ProjectStatus } from '../core/services/projects.service';
+import { ProjectsService, Project } from '../core/services/projects.service';
 
 interface WorkspaceTab { path: string; label: string; icon: string; }
 
@@ -40,15 +40,10 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
             <div class="id-main">
               <div class="title-row">
                 <h1>{{ p.name }}</h1>
-                <span class="status-pill st-{{ p.status }}">
-                  <span class="dot"></span>{{ statusLabel(p.status) }}
-                </span>
-                @if (store.isOverdue()) { <span class="overdue-pill"><mat-icon>schedule</mat-icon>Overdue</span> }
               </div>
               <div class="meta-row">
                 @if (p.projectNumber) { <span class="meta"><mat-icon>tag</mat-icon>{{ p.projectNumber }}</span> }
                 @if (p.clientName) { <span class="meta"><mat-icon>business</mat-icon>{{ p.clientName }}</span> }
-                @if (p.dueDate) { <span class="meta" [class.is-overdue]="store.isOverdue()"><mat-icon>event</mat-icon>Due {{ p.dueDate | date:'mediumDate' }}</span> }
                 <span class="meta proc">
                   <mat-icon>account_tree</mat-icon>
                   <select [ngModel]="p.processId || ''" (ngModelChange)="updateProcess($event)" [disabled]="savingProcess">
@@ -172,28 +167,10 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
     }
     .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .title-row h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--clay-text); }
-    .status-pill {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 3px 11px 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
-    }
-    .status-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-    .st-planning { background: var(--info-bg); color: var(--info-text); }
-    .st-active { background: var(--success-bg); color: var(--success-text); }
-    .st-on_hold { background: var(--warning-bg); color: var(--warning-text); }
-    .st-completed { background: var(--badge-progress-bg); color: var(--badge-progress-text); }
-    .st-archived { background: var(--badge-draft-bg); color: var(--badge-draft-text); }
-    .overdue-pill {
-      display: inline-flex; align-items: center; gap: 4px;
-      background: var(--danger-bg); color: var(--danger-text);
-      padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
-    }
-    .overdue-pill mat-icon { font-size: 15px; width: 15px; height: 15px; }
 
     .meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-top: 8px; }
     .meta { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--clay-text-secondary); }
     .meta mat-icon { font-size: 16px; width: 16px; height: 16px; color: var(--clay-text-muted); }
-    .meta.is-overdue { color: var(--danger-text); font-weight: 600; }
-    .meta.is-overdue mat-icon { color: var(--danger); }
     .meta.proc select {
       border: 1px solid var(--clay-border); border-radius: var(--clay-radius-xs);
       background: var(--clay-surface); color: var(--clay-text);
@@ -311,10 +288,6 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
 
   stageLabel(stage: string): string {
     return IMPORT_STAGE_LABELS[stage] ?? stage;
-  }
-
-  statusLabel(s: ProjectStatus): string {
-    return { planning: 'Planning', active: 'Active', on_hold: 'On hold', completed: 'Completed', archived: 'Archived' }[s] ?? s;
   }
 
   onFile(event: Event): void {

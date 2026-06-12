@@ -14,18 +14,12 @@ import { AssemblyNode } from './assembly-node.entity.js';
 import { ImportFile } from './import-file.entity.js';
 import { Process } from '../processes/process.entity.js';
 
-export enum ProjectStatus {
-  PLANNING = 'planning',
-  ACTIVE = 'active',
-  ON_HOLD = 'on_hold',
-  COMPLETED = 'completed',
-  ARCHIVED = 'archived',
-}
-
 /**
  * A fabrication project (job / contract). The top-level container a customer
  * creates and uploads an IFC/CAD file against. Its full structure lives in
  * `assembly_nodes` (one self-referencing tree); source files in `import_files`.
+ * A pure design container: lifecycle status and due dates live on each
+ * production order, not here.
  */
 @Entity('projects')
 @Index(['organizationId', 'projectNumber'])
@@ -45,9 +39,6 @@ export class Project extends TenantOwnedEntity {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ type: 'enum', enum: ProjectStatus, default: ProjectStatus.PLANNING })
-  status: ProjectStatus;
-
   /** The fabrication process (stage routing) attached to this project. */
   @Column({ name: 'process_id', type: 'uuid', nullable: true })
   processId: string | null;
@@ -55,9 +46,6 @@ export class Project extends TenantOwnedEntity {
   @ManyToOne(() => Process, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'process_id' })
   process: Process | null;
-
-  @Column({ name: 'due_date', type: 'timestamp', nullable: true })
-  dueDate: Date | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;

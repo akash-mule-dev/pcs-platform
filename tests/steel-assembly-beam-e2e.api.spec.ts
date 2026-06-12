@@ -2,15 +2,14 @@
  * Steel-Assembly-Beam End-to-End Test Suite
  *
  * Tests the complete lifecycle:
- * 1. Product creation
- * 2. Process creation with 5 fabrication stages
- * 3. Work order creation and status transitions
- * 4. Operator assignment
- * 5. Time tracking (clock-in / clock-out) with duration accuracy validation
- * 6. Multi-operator parallel work
- * 7. Time tracking history verification
- * 8. Mobile API compatibility
- * 9. Dashboard sync
+ * 1. Process creation with 5 fabrication stages
+ * 2. Work order creation and status transitions
+ * 3. Operator assignment
+ * 4. Time tracking (clock-in / clock-out) with duration accuracy validation
+ * 5. Multi-operator parallel work
+ * 6. Time tracking history verification
+ * 7. Mobile API compatibility
+ * 8. Dashboard sync
  *
  * NOTE: All API responses are wrapped in { data: ... }
  */
@@ -49,7 +48,6 @@ let admin: AuthToken;
 let operator1: AuthToken;
 let operator2: AuthToken;
 
-let productId: string;
 let processId: string;
 let stageIds: string[] = [];        // process-level stage IDs
 let workOrderId: string;
@@ -73,45 +71,17 @@ test.describe.serial('Steel-Assembly-Beam Full E2E', () => {
     expect(operator2.token).toBeTruthy();
   });
 
-  // ── 2. Product ─────────────────────────────────────────────────────────────
-
-  test('2.1 – Create Steel-Assembly-Beam product', async ({ request }) => {
-    const res = await request.post(`${API}/api/products`, {
-      headers: h(admin.token),
-      data: {
-        name: 'Steel-Assembly-Beam',
-        description: 'Structural steel beam assembly – E2E test product',
-      },
-    });
-    expect(res.ok()).toBeTruthy();
-    const body = await res.json();
-    productId = body.data.id;
-    expect(productId).toBeTruthy();
-    expect(body.data.name).toBe('Steel-Assembly-Beam');
-  });
-
-  test('2.2 – Verify product appears via GET', async ({ request }) => {
-    const res = await request.get(`${API}/api/products/${productId}`, {
-      headers: h(admin.token),
-    });
-    expect(res.ok()).toBeTruthy();
-    const body = await res.json();
-    expect(body.data.name).toBe('Steel-Assembly-Beam');
-    expect(body.data.isActive).toBe(true);
-  });
-
   // ── 3. Process + Stages ────────────────────────────────────────────────────
 
-  test('3.1 – Create process for Steel-Assembly-Beam', async ({ request }) => {
+  test('3.1 – Create Steel Beam Fabrication process', async ({ request }) => {
     const res = await request.post(`${API}/api/processes`, {
       headers: h(admin.token),
-      data: { name: 'Steel Beam Fabrication', productId },
+      data: { name: 'Steel Beam Fabrication' },
     });
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     processId = body.data.id;
     expect(processId).toBeTruthy();
-    expect(body.data.productId).toBe(productId);
   });
 
   test('3.2 – Add 5 fabrication stages', async ({ request }) => {
@@ -171,7 +141,7 @@ test.describe.serial('Steel-Assembly-Beam Full E2E', () => {
 
     const res = await request.post(`${API}/api/work-orders`, {
       headers: h(admin.token),
-      data: { productId, processId, lineId, quantity: 10, priority: 'high', dueDate: dueDate.toISOString() },
+      data: { processId, lineId, quantity: 10, priority: 'high', dueDate: dueDate.toISOString() },
     });
     expect(res.ok()).toBeTruthy();
     const wo = (await res.json()).data;
@@ -179,7 +149,6 @@ test.describe.serial('Steel-Assembly-Beam Full E2E', () => {
     workOrderNumber = wo.orderNumber;
     expect(workOrderNumber).toMatch(/^WO-\d{4}-\d{4}$/);
     expect(wo.status).toBe('draft');
-    expect(wo.product.name).toBe('Steel-Assembly-Beam');
     expect(wo.stages).toHaveLength(5);
 
     // Save WO stage IDs sorted by stage sequence
@@ -499,7 +468,7 @@ test.describe.serial('Steel-Assembly-Beam Full E2E', () => {
     // Create
     const createRes = await request.post(`${API}/api/work-orders`, {
       headers: h(admin.token),
-      data: { productId, processId, lineId, quantity: 5, priority: 'medium' },
+      data: { processId, lineId, quantity: 5, priority: 'medium' },
     });
     expect(createRes.ok()).toBeTruthy();
     mobileWoId = (await createRes.json()).data.id;
@@ -561,14 +530,5 @@ test.describe.serial('Steel-Assembly-Beam Full E2E', () => {
       headers: h(admin.token), data: { status: 'in_progress' },
     });
     expect(res.ok()).toBeFalsy();
-  });
-
-  test('16.2 – Operator cannot create products (role guard)', async ({ request }) => {
-    const res = await request.post(`${API}/api/products`, {
-      headers: h(operator1.token),
-      data: { name: 'Should-Fail', description: 'unauthorized' },
-    });
-    expect(res.ok()).toBeFalsy();
-    expect(res.status()).toBe(403);
   });
 });

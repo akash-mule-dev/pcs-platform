@@ -13,7 +13,6 @@ import { AssignWorkOrderDto } from './dto/assign-work-order.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
 import { AuditService } from '../audit/audit.service.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
-import { InventoryService } from '../materials/inventory.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 
 @Injectable()
@@ -26,7 +25,6 @@ export class WorkOrdersService {
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
-    private readonly inventoryService: InventoryService,
   ) {}
 
   /** Open NCRs linked to a fabricated assembly (anything not closed/cancelled blocks the quality gate). */
@@ -85,7 +83,6 @@ export class WorkOrdersService {
 
   async findAll(pageOptions: PageOptionsDto, status?: string, priority?: string): Promise<PageDto<WorkOrder>> {
     const qb = this.woRepo.createQueryBuilder('wo')
-      .leftJoinAndSelect('wo.product', 'product')
       .leftJoinAndSelect('wo.process', 'process')
       .leftJoinAndSelect('wo.line', 'line')
       .orderBy('wo.createdAt', pageOptions.order)
@@ -104,7 +101,7 @@ export class WorkOrdersService {
   async findOne(id: string): Promise<WorkOrder> {
     const wo = await this.woRepo.findOne({
       where: { id, organizationId: TenantContext.getOrganizationId() ?? undefined },
-      relations: ['product', 'process', 'line', 'stages', 'stages.stage', 'stages.assignedUser', 'stages.station'],
+      relations: ['process', 'line', 'stages', 'stages.stage', 'stages.assignedUser', 'stages.station'],
     });
     if (!wo) throw new NotFoundException('Work order not found');
     return wo;
@@ -134,7 +131,6 @@ export class WorkOrdersService {
       try {
         const wo = this.woRepo.create({
           orderNumber,
-          productId: dto.productId,
           processId: dto.processId,
           lineId: dto.lineId || null,
           quantity: dto.quantity,
@@ -192,18 +188,6 @@ export class WorkOrdersService {
       const dep = await this.woRepo.findOne({ where: { id: wo.dependsOnId } });
       if (dep && dep.status !== WorkOrderStatus.COMPLETED) {
         throw new BadRequestException(`Cannot start: depends on ${dep.orderNumber} which is not completed`);
-      }
-    }
-
-    // Phase 2: Block starting a job we don't have the materials for.
-    // (Only enforced when the product has a BOM; soft-passes otherwise.)
-    if (newStatus === WorkOrderStatus.IN_PROGRESS) {
-      const availability = await this.inventoryService.checkAvailability(wo.productId, wo.quantity);
-      if (availability.hasBom && !availability.canRelease) {
-        throw new BadRequestException({
-          message: 'Cannot start work order: insufficient materials in stock',
-          shortages: availability.shortages,
-        });
       }
     }
 

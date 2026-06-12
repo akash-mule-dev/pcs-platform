@@ -4,10 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
 } from 'typeorm';
-import { Product } from '../products/product.entity.js';
 
 @Entity('models')
 export class Model3D {
@@ -40,13 +37,6 @@ export class Model3D {
 
   @Column({ name: 'model_type', type: 'varchar', length: 50, default: 'assembly' })
   modelType: string; // 'assembly' | 'quality'
-
-  @Column({ name: 'product_id', type: 'uuid', nullable: true })
-  productId: string;
-
-  @ManyToOne(() => Product, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'product_id' })
-  product: Product;
 
   // Phase 9: Thumbnail for quick preview
   @Column({ name: 'thumbnail_path', type: 'varchar', length: 500, nullable: true })

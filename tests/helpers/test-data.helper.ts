@@ -1,39 +1,17 @@
 import { APIRequestContext, expect } from '@playwright/test';
 import { authHeader } from './auth.helper';
 
-// ── Products ────────────────────────────────────────────────────────────────
-
-export async function createProduct(
-  request: APIRequestContext,
-  token: string,
-  overrides: Record<string, any> = {},
-) {
-  const res = await request.post('/api/products', {
-    headers: authHeader(token),
-    data: {
-      name: `Test Product ${Date.now()}`,
-      description: 'Auto-generated for testing',
-      ...overrides,
-    },
-  });
-  expect(res.status()).toBe(201);
-  const body = await res.json();
-  return body.data;
-}
-
 // ── Processes (with inline stages) ──────────────────────────────────────────
 
 export async function createProcess(
   request: APIRequestContext,
   token: string,
-  productId: string,
   overrides: Record<string, any> = {},
 ) {
   const res = await request.post('/api/processes', {
     headers: authHeader(token),
     data: {
       name: `Test Process ${Date.now()}`,
-      productId,
       stages: [
         { name: 'Preparation', targetTimeSeconds: 600, description: 'Prep work' },
         { name: 'Assembly', targetTimeSeconds: 900, description: 'Main assembly' },
@@ -93,7 +71,6 @@ export async function createStation(
 export async function createWorkOrder(
   request: APIRequestContext,
   token: string,
-  productId: string,
   processId: string,
   overrides: Record<string, any> = {},
 ) {
@@ -102,7 +79,6 @@ export async function createWorkOrder(
     const res = await request.post('/api/work-orders', {
       headers: authHeader(token),
       data: {
-        productId,
         processId,
         quantity: 10,
         priority: 'medium',
@@ -124,7 +100,6 @@ export async function createWorkOrder(
 // ── Full test setup ─────────────────────────────────────────────────────────
 
 export interface TestSetup {
-  product: any;
   process: any;
   line: any;
   station: any;
@@ -135,14 +110,13 @@ export async function createFullTestSetup(
   request: APIRequestContext,
   token: string,
 ): Promise<TestSetup> {
-  const product = await createProduct(request, token);
-  const process = await createProcess(request, token, product.id);
+  const process = await createProcess(request, token);
   const line = await createLine(request, token);
   const station = await createStation(request, token, line.id);
-  const workOrder = await createWorkOrder(request, token, product.id, process.id, {
+  const workOrder = await createWorkOrder(request, token, process.id, {
     lineId: line.id,
   });
-  return { product, process, line, station, workOrder };
+  return { process, line, station, workOrder };
 }
 
 // ── Fetch helpers ───────────────────────────────────────────────────────────

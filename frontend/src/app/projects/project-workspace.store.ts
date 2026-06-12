@@ -69,11 +69,6 @@ export class ProjectWorkspaceStore implements OnDestroy {
     return withModel?.modelId ? `${environment.apiUrl}/models/${withModel.modelId}/file` : null;
   });
   readonly openNcr = computed(() => this.quality()?.totals?.openNcr ?? 0);
-  readonly isOverdue = computed(() => {
-    const p = this.project();
-    if (!p?.dueDate || p.status === 'completed' || p.status === 'archived') return false;
-    return new Date(p.dueDate).getTime() < Date.now();
-  });
 
   /** Imports still moving through the pipeline (server side). */
   readonly activeImports = computed(() =>

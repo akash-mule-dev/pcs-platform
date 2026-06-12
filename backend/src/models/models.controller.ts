@@ -159,7 +159,6 @@ export class ModelsController {
         name: { type: 'string' },
         description: { type: 'string' },
         modelType: { type: 'string', enum: ['assembly', 'quality'] },
-        productId: { type: 'string' },
       },
       required: ['file', 'name'],
     },

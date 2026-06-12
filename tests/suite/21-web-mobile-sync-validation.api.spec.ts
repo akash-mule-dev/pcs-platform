@@ -99,7 +99,6 @@ test.describe('Web ↔ Mobile Sync Validation', () => {
     const webCreateRes = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
       data: {
-        productId: setup.product.id,
         processId: setup.process.id,
         quantity: 7,
         priority: 'high',
@@ -405,7 +404,6 @@ test.describe('Web ↔ Mobile Sync Validation', () => {
   test('SYNC-17: Pagination shape identical across paginated endpoints', async ({ request }) => {
     const endpoints = [
       '/api/work-orders?page=1&limit=5',
-      '/api/products?page=1&limit=5',
       '/api/time-tracking/history?page=1&limit=5',
       '/api/users?page=1&limit=5',
       '/api/lines?page=1&limit=5',
@@ -532,7 +530,7 @@ test.describe('Web ↔ Mobile Sync Validation', () => {
     // Create a WO in draft
     const createRes = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
-      data: { productId: setup.product.id, processId: setup.process.id, quantity: 3, priority: 'low' },
+      data: { processId: setup.process.id, quantity: 3, priority: 'low' },
     });
     const wo = (await createRes.json()).data;
 
@@ -567,7 +565,7 @@ test.describe('Web ↔ Mobile Sync Validation', () => {
     // Create WO for concurrency test
     const createRes = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
-      data: { productId: setup.product.id, processId: setup.process.id, quantity: 10, priority: 'medium' },
+      data: { processId: setup.process.id, quantity: 10, priority: 'medium' },
     });
     const wo = (await createRes.json()).data;
 
@@ -652,7 +650,6 @@ test.describe('Web ↔ Mobile Sync Validation', () => {
     const createRes = await request.post('/api/work-orders', {
       headers: authHeader(adminToken),
       data: {
-        productId: setup.product.id,
         processId: setup.process.id,
         quantity: 15,
         priority: 'high',
