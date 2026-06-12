@@ -6,7 +6,7 @@ import { WorkOrderStage, WorkOrderStageStatus } from './work-order-stage.entity.
 import { Stage } from '../stages/stage.entity.js';
 import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
 import { AssemblyNode } from '../projects/assembly-node.entity.js';
-import { isQualityStageName, qcGateMessage } from './qc-gate.js';
+import { inspectionGateError, isQualityStageName, qcGateMessage, InspectionSnapshot } from './qc-gate.js';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto.js';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto.js';
 import { AssignWorkOrderDto } from './dto/assign-work-order.dto.js';
@@ -44,14 +44,41 @@ export class WorkOrdersService {
     return node?.mark || node?.name || fallback;
   }
 
+  /** Inspection rows (status + sign-off) for an assembly — feeds the inspection gate. */
+  private async inspectionSnapshots(assemblyNodeId: string): Promise<InspectionSnapshot[]> {
+    const org = TenantContext.getOrganizationId();
+    const rows: { status: string; signoff_status: string | null }[] = org
+      ? await this.woRepo.query(
+          `SELECT status, signoff_status FROM quality_data WHERE assembly_node_id = $1 AND organization_id = $2 AND is_active = true`,
+          [assemblyNodeId, org],
+        )
+      : await this.woRepo.query(
+          `SELECT status, signoff_status FROM quality_data WHERE assembly_node_id = $1 AND is_active = true`,
+          [assemblyNodeId],
+        );
+    return rows.map((r) => ({ status: r.status, signoffStatus: r.signoff_status }));
+  }
+
   /**
    * Quality gate: a quality stage of a fabrication work order cannot be
-   * completed while the assembly still has open NCRs. Throws 400 when blocked.
+   * completed while the assembly has open NCRs or unresolved failed
+   * inspections; a `requiresInspection` hold-point stage additionally needs at
+   * least one acceptable inspection recorded. Throws 400 when blocked.
    */
-  private async assertQualityGate(wo: WorkOrder | null, stageName: string | null | undefined): Promise<void> {
-    if (!wo?.assemblyNodeId || !isQualityStageName(stageName)) return;
+  private async assertQualityGate(
+    wo: WorkOrder | null,
+    stage: { name?: string | null; requiresInspection?: boolean } | null | undefined,
+  ): Promise<void> {
+    if (!wo?.assemblyNodeId || !isQualityStageName(stage?.name)) return;
     const open = await this.countOpenNcrs(wo.assemblyNodeId);
     if (open > 0) throw new BadRequestException(qcGateMessage(await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber), open));
+    const entries = await this.inspectionSnapshots(wo.assemblyNodeId);
+    const err = inspectionGateError(
+      await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber),
+      entries,
+      !!stage?.requiresInspection,
+    );
+    if (err) throw new BadRequestException(err);
   }
 
   async findAll(pageOptions: PageOptionsDto, status?: string, priority?: string): Promise<PageDto<WorkOrder>> {
@@ -165,10 +192,24 @@ export class WorkOrdersService {
     }
 
     // Quality gate: completing the whole WO cascades every stage (incl. quality)
-    // to completed — blocked while the fabricated assembly has open NCRs.
+    // to completed — blocked while the fabricated assembly has open NCRs,
+    // unresolved failed inspections, or an unsatisfied inspection hold point.
     if (newStatus === WorkOrderStatus.COMPLETED && wo.assemblyNodeId) {
       const open = await this.countOpenNcrs(wo.assemblyNodeId);
       if (open > 0) throw new BadRequestException(qcGateMessage(await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber), open));
+      const qualityStages = wo.processId
+        ? await this.stageRepo.find({ where: { processId: wo.processId } })
+        : [];
+      const quality = qualityStages.filter((s) => isQualityStageName(s.name));
+      if (quality.length) {
+        const entries = await this.inspectionSnapshots(wo.assemblyNodeId);
+        const err = inspectionGateError(
+          await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber),
+          entries,
+          quality.some((s) => s.requiresInspection),
+        );
+        if (err) throw new BadRequestException(err);
+      }
     }
 
     const oldStatus = wo.status;
@@ -242,7 +283,7 @@ export class WorkOrdersService {
     // Quality gate: a quality stage can't be completed while the assembly has open NCRs.
     if (newStatus === WorkOrderStageStatus.COMPLETED && wos.status !== WorkOrderStageStatus.COMPLETED) {
       const wo = await this.woRepo.findOne({ where: { id: workOrderId } });
-      await this.assertQualityGate(wo, wos.stage?.name);
+      await this.assertQualityGate(wo, wos.stage);
     }
 
     const now = new Date();

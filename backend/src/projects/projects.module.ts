@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Project } from './project.entity.js';
 import { AssemblyNode } from './assembly-node.entity.js';
 import { ImportFile } from './import-file.entity.js';
+import { ImportFileEvent } from './import-file-event.entity.js';
 import { ProjectsService } from './projects.service.js';
 import { ProjectsController } from './projects.controller.js';
 import { IfcImportService } from './ifc-import.service.js';
@@ -20,7 +21,7 @@ import { ConversionModule } from '../conversion/conversion.module.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Project, AssemblyNode, ImportFile, WorkOrder]),
+    TypeOrmModule.forFeature([Project, AssemblyNode, ImportFile, ImportFileEvent, WorkOrder]),
     ConversionModule,
     ModelsModule,
     QualityDataModule,

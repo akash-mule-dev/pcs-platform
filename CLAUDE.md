@@ -89,7 +89,10 @@ Core data model (one self-referencing tree absorbs every source format):
   mesh-node name for 3D highlight), promoted fab columns (`mark`, `profile`, `material_grade`,
   `length_mm`, `weight_kg`), a `properties` jsonb bag, and a `model_id` link. Design facts only —
   no status/percent columns.
-- `ImportFile` — an uploaded source file (`conversion_job_id`, `model_id`, status, node_count).
+- `ImportFile` — an uploaded source file (`conversion_job_id`, `model_id`, status, node_count) plus
+  live pipeline telemetry (`stage`, `progress` 0–100, `started/finished_at`, `duration_ms`,
+  `created_by_*`, durable `storage_key` for retries). `ImportFileEvent` (`import_file_events`) is
+  its append-only stage-transition history (the monitoring timeline; mirrors the ncr_events idea).
 - `ProductionOrder` — a per-customer/per-run instance of the project: its own process, quantity
   and status; releasing it creates one WorkOrder per assembly (`WorkOrder.production_order_id`).
 - `Shipment` / `ShipmentItem` — shipping loads and the assemblies on them; what's shipped is
@@ -99,11 +102,23 @@ Core data model (one self-referencing tree absorbs every source format):
 
 Key services & flows:
 
-- **IFC import** (`ifc-import.service.ts`, `POST /api/projects/:id/import-ifc`): spawns
-  `cad-conversion/scripts/extract-ifc-structure.mjs` (web-ifc) → a normalized JSON node tree →
-  persisted into `assembly_nodes` **idempotently by `ifc_guid`**. The GLB is **always** built
-  asynchronously via the conversion queue (`ConversionService.createJob`); `linkPendingModels` /
-  `POST /api/projects/:id/resolve-models` link the finished GLB back to the nodes.
+- **IFC import — async, observable pipeline** (`ifc-import.service.ts`,
+  `POST /api/projects/:id/import-ifc`): the upload is stored durably FIRST (StorageProvider
+  `import-sources/…` + import_files row), the request returns immediately, then the background
+  pipeline runs `uploaded → extracting → persisting → converting → completed|failed`: spawns
+  `cad-conversion/scripts/extract-ifc-structure.mjs` (web-ifc) → normalized JSON tree →
+  persisted into `assembly_nodes` **idempotently by `ifc_guid`** → GLB queued via
+  `ConversionService.createJob`. Every transition updates `import_files.stage/progress`, appends
+  an `import_file_events` row and emits the room-scoped `import:progress` websocket event
+  (rooms: `join-project`/`leave-project`). Conversion progress (55→99%) + completion/failure are
+  mirrored onto the import row by `conversion/import-conversion-link.service.ts` inside the
+  processor (works inline + BullMQ, survives API restarts; entity-only cross-module dep).
+  Monitoring API: `GET :id/imports` (history), `GET :id/imports/:importId` (timeline + conversion
+  snapshot), `POST :id/imports/:importId/retry` (failed only; conversion-only or full re-run from
+  the stored source). `linkPendingModels` / `POST :id/resolve-models` remain as the healing path.
+  Web UI: per-project **Monitoring** tab (live stage stepper + history + event timelines), live
+  header pipeline bar; regression suite `npm run test:e2e:imports` (42 assertions incl. ws room
+  isolation; needs a freshly seeded API + `socket.io-client` resolvable for the ws checks).
 - **Production orders** (`production-order.service.ts`, `POST /api/projects/:id/orders`,
   `/api/orders/:id/*`): create-and-release transactionally generates per-assembly WorkOrders +
   stages with count totals (`quantity-math.ts`: `qtyDone`/`qtyTotal` per stage). The board
@@ -116,9 +131,64 @@ Key services & flows:
   production-complete units (every non-skipped stage done across its work orders), no open NCRs,
   and unallocated quantity left; shipped totals come from shipment items.
 
-Front end: `/projects`, `/projects/:id` workspace tabs (Overview / Assemblies & 3D / Work Orders);
-production tracking lives inside each order at `/projects/:id/orders/:orderId/(board|progress|quality|shipping)`.
-The workspace auto-polls `resolve-models` while a GLB converts so the viewer appears on its own.
+## The quality module (`quality-data`, `quality-ncr`, `quality-reports`, `spc`, `quality-notify`)
+
+End-to-end QA flow: **record inspection (web 3D / mobile AR / per-node) → auto-fail on
+out-of-tolerance → failed entries queue for sign-off → raise NCR → investigate → disposition →
+close (or CAPA) → gates lift** (work-order quality stages + shipping both block on open NCRs).
+
+- **Pure rule modules** (unit-tested, no Nest/TypeORM): `quality-data/quality-math.ts`
+  (tolerance evaluation + auto-fail + sign-off rules), `quality-ncr/ncr-workflow.ts`
+  (NCR/CAPA state machines), `work-orders/qc-gate.ts` (stage gate incl. inspection rules) and
+  `spc/spc-math.ts` (XmR charts + Western Electric rules). `npm run test:quality` runs all four.
+- **Stage quality gates** (work-orders + order bulk/board paths): a quality-named stage cannot
+  COMPLETE while the assembly has (1) open NCRs, or (2) failed inspections not yet signed off
+  (approve = formal concession); a stage flagged `stages.requires_inspection` (hold point — set
+  in the stage dialog) additionally needs ≥1 acceptable inspection recorded. Audit endpoints
+  return `gateBlocked` + human `gateReason` per stage row for pre-warn chips/tooltips.
+- **Rework verification:** closing an NCR dispositioned `rework` that is pinned to an assembly
+  requires a passing re-inspection recorded AFTER the disposition (`ncrs.dispositioned_at`).
+- **Concurrency & idempotency:** NCR PATCHes accept `expectedVersion` (409 on mismatch — web +
+  mobile reload on conflict); quality-data creates accept a `clientKey` uuid so offline-queue
+  replays return the original row (unique `(org, client_key)`), and the mobile AR queue retries
+  failed evidence uploads as separate queue items.
+- **Identity is server-stamped, never client-supplied:** `inspector`/`inspectorUserId` default
+  from the JWT on create; `PATCH /quality-data/:id/signoff` ignores any client `signoffBy` and
+  stamps `signoffBy`/`signoffByUserId` from the authenticated user. Sign-off needs the dedicated
+  `quality-analysis.signoff` permission (inspect ≠ approve).
+- **NCR lifecycle is a state machine:** open → investigation → disposition → closed, cancel from
+  open/investigation, reopen closed → investigation (clears `closed_at`/`closed_by`). Closing
+  REQUIRES a disposition. Every action (create/transition/disposition/assignment/comment) appends
+  an `ncr_events` row — `GET /api/ncr/:id/events` is the timeline; `GET /api/ncr/:id` returns
+  `allowedTransitions` which the web + mobile detail UIs render as guided action buttons.
+  CAPAs must be `verified` (stamps verifier) before they can close.
+- **Numbering is per-organization** (`NCR-YYYY-NNNN`, `QR-YYYY-NNNN`) with unique
+  `(organization_id, number)` indexes; allocation races retry on 23505.
+- **Tenancy:** every quality read/write is org-scoped (incl. summaries/trends/SPC/by-model
+  deletes); linked records (model/node/project/WO/quality entry/assignee) are validated to belong
+  to the caller's org on create. `ncr_events` is RLS-enrolled by the `QualityGovernance` migration.
+- **Eventing** (`quality-notify/`): failed inspections and NCR lifecycle changes emit the
+  `quality-alert` websocket event; high/critical failures + raised NCRs notify the org's
+  admin/manager/supervisors, assignments notify the assignee, sign-off decisions notify the
+  inspector. All best-effort (never fails the write). Sign-off/NCR/CAPA mutations are audit-logged.
+- **Evidence uploads** (`POST /quality-data/:id/evidence`, `POST /ncr/:id/evidence`) accept
+  JPEG/PNG/WebP only (≤10 MB); web fetches them as authed blobs. Rejecting a sign-off offers a
+  pre-filled "Raise NCR" on web + mobile AR; the web NCR detail has a print view (browser → PDF).
+- **Analytics:** `GET /quality-data/insights` (FPY, NCR aging/time-to-close, defect Pareto —
+  web page `/quality-insights`); `GET /spc/control-chart` returns a characteristics picker
+  without `meshName`, else an XmR chart (σ from average moving range, WE rules 1–4, Cp/Cpk).
+- **Regression suites:** `npm run test:quality` (pure rules), `npm run test:e2e:quality`
+  (80-assertion live suite: identity, workflow, gates, rework loop, idempotency, versioning,
+  evidence, SPC/insights, tenant isolation — scratch DB, mirrors `test:e2e:orders`),
+  plus `tests/suite/11-quality-data.api.spec.ts` and `tests/phase6-quality-enhancements.api.spec.ts`.
+
+Front end: `/projects`, `/projects/:id` workspace tabs (Overview / Assemblies & 3D / Work Orders /
+Monitoring); production tracking lives inside each order at
+`/projects/:id/orders/:orderId/(board|progress|quality|shipping)`.
+Import progress is live: the `ProjectWorkspaceStore` joins the `project:<id>` socket room
+(`RealtimeService.joinRoom`, re-joined on reconnect) and falls back to 5s polling of
+`GET :id/imports` while anything is active — uploads show browser→server % first, then the
+pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
 
 ## Conventions (follow these)
 

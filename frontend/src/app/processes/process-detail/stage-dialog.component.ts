@@ -6,13 +6,14 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { ApiService } from '../../core/services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 @Component({
   selector: 'app-stage-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule],
+  imports: [CommonModule, FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule, MatCheckboxModule],
   template: `
     <div class="dialog-shell">
       <div class="dialog-header">
@@ -33,6 +34,10 @@ import { MatSnackBar } from '@angular/material/snack-bar';
           <mat-label>Description</mat-label>
           <textarea matInput [(ngModel)]="form.description" rows="3" placeholder="Optional notes about this stage"></textarea>
         </mat-form-field>
+        <mat-checkbox class="hold-point" [(ngModel)]="form.requiresInspection">
+          Inspection hold point
+          <span class="hold-hint">— stage can only complete once a passing inspection (or approved concession) is recorded on the assembly</span>
+        </mat-checkbox>
       </div>
 
       <div class="dialog-footer">
@@ -43,11 +48,14 @@ import { MatSnackBar } from '@angular/material/snack-bar';
       </div>
     </div>
   `,
-  styles: []
+  styles: [`
+    .hold-point { display: block; margin: 4px 2px 8px; }
+    .hold-hint { font-size: 11.5px; color: var(--clay-text-muted, #64748b); }
+  `]
 })
 export class StageDialogComponent {
   isEdit = false;
-  form = { name: '', targetTimeSeconds: 600, description: '' };
+  form = { name: '', targetTimeSeconds: 600, description: '', requiresInspection: false };
 
   constructor(
     public dialogRef: MatDialogRef<StageDialogComponent>,
@@ -60,7 +68,8 @@ export class StageDialogComponent {
       this.form = {
         name: data.stage.name,
         targetTimeSeconds: data.stage.targetTimeSeconds,
-        description: data.stage.description || ''
+        description: data.stage.description || '',
+        requiresInspection: !!data.stage.requiresInspection
       };
     }
   }

@@ -25,6 +25,8 @@ export const PROJECTS_ROUTES: Routes = [
       { path: 'overview', loadComponent: () => import('./project-overview.component').then((m) => m.ProjectOverviewComponent) },
       { path: 'assemblies', loadComponent: () => import('./project-assemblies.component').then((m) => m.ProjectAssembliesComponent) },
       { path: 'orders', loadComponent: () => import('./project-orders.component').then((m) => m.ProjectOrdersComponent) },
+      // Import pipeline monitoring: live upload/extract/convert progress + full history.
+      { path: 'monitoring', loadComponent: () => import('./project-monitoring.component').then((m) => m.ProjectMonitoringComponent) },
       {
         path: 'orders/:orderId',
         loadComponent: () => import('./order-workspace.component').then((m) => m.OrderWorkspaceComponent),

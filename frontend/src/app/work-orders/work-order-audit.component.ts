@@ -236,7 +236,7 @@ const PAGE = 200;
                       @else if (st.status === 'skipped') { <mat-icon>skip_next</mat-icon> }
                       @else { {{ i + 1 }} }
                     </span>
-                    <span class="sname">{{ st.name }}@if (st.gateBlocked) { <mat-icon class="gate-lock" matTooltip="Blocked: open NCR must be closed before this quality stage can complete">lock</mat-icon> }</span>
+                    <span class="sname">{{ st.name }}@if (st.gateBlocked) { <mat-icon class="gate-lock" [matTooltip]="st.gateReason || 'Quality gate: resolve NCRs / inspections before completing this stage'">lock</mat-icon> }</span>
                     <span class="scount mono">{{ st.qtyDone }}/{{ st.qtyTotal }}</span>
                   </button>
                   @if (!last) { <span class="conn" [class.done]="st.status === 'completed' || st.status === 'skipped'"></span> }
@@ -249,7 +249,7 @@ const PAGE = 200;
                   <div class="sg-head">
                     <h3>{{ sg.name }}</h3>
                     <span class="ss ss-{{ sg.status }}">{{ stageStatusLabel(sg.status) }}</span>
-                    @if (sg.gateBlocked) { <span class="chip gate"><mat-icon>lock</mat-icon>NCR gate</span> }
+                    @if (sg.gateBlocked) { <span class="chip gate" [matTooltip]="sg.gateReason || ''"><mat-icon>lock</mat-icon>Quality gate</span> }
                     @if (savingIds.has(sg.wosId)) { <mat-spinner diameter="14"></mat-spinner> }
                     <span class="sg-qty mono">{{ sg.qtyDone }}<em>/{{ sg.qtyTotal }}</em></span>
                   </div>
@@ -282,7 +282,7 @@ const PAGE = 200;
                 @for (st of selItem.stages; track st.wosId) {
                   <button class="atrow" [class.cur]="st.stageId === selStageId" (click)="pickStage(st.stageId)">
                     <span class="at-name">{{ st.name }}</span>
-                    <span class="st-cell"><span class="ss sm ss-{{ st.status }}">{{ stageStatusLabel(st.status) }}</span>@if (st.gateBlocked) { <mat-icon class="gate-lock" matTooltip="Blocked by open NCR">lock</mat-icon> }</span>
+                    <span class="st-cell"><span class="ss sm ss-{{ st.status }}">{{ stageStatusLabel(st.status) }}</span>@if (st.gateBlocked) { <mat-icon class="gate-lock" [matTooltip]="st.gateReason || 'Quality gate'">lock</mat-icon> }</span>
                     <span class="num mono">{{ st.qtyDone }}/{{ st.qtyTotal }}</span>
                     <span class="dt">{{ st.statusUpdatedAt ? (st.statusUpdatedAt | date:'MMM d, HH:mm') : '—' }}</span>
                     <span class="dt">{{ st.assignedUser?.name || '—' }}</span>

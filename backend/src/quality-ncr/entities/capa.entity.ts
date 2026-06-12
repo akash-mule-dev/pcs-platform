@@ -19,6 +19,7 @@ export class Capa extends TenantOwnedEntity {
   @Column({ type: 'uuid', nullable: true }) owner: string | null;
   @Column({ name: 'due_date', type: 'date', nullable: true }) dueDate: string | null;
   @Column({ name: 'verified_by', type: 'uuid', nullable: true }) verifiedBy: string | null;
+  @Column({ name: 'verified_at', type: 'timestamp', nullable: true }) verifiedAt: Date | null;
   @Column({ name: 'closed_at', type: 'timestamp', nullable: true }) closedAt: Date | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;

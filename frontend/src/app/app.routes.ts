@@ -91,6 +91,11 @@ export const routes: Routes = [
         loadComponent: () => import('./quality-analysis/quality-analysis.component').then(m => m.QualityAnalysisComponent)
       },
       {
+        path: 'quality-insights',
+        canActivate: [featureGuard('quality-analysis')],
+        loadComponent: () => import('./quality-insights/quality-insights.component').then(m => m.QualityInsightsComponent)
+      },
+      {
         path: 'materials',
         canActivate: [featureGuard('materials')],
         loadComponent: () => import('./materials/materials.component').then(m => m.MaterialsComponent)

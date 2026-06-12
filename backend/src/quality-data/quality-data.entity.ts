@@ -6,14 +6,28 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Model3D } from '../models/model.entity.js';
 import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
 @Entity('quality_data')
+@Index(['organizationId', 'modelId'])
+@Index(['organizationId', 'projectId'])
+@Index(['organizationId', 'assemblyNodeId'])
+@Index(['organizationId', 'signoffStatus', 'status'])
+@Index('UQ_quality_data_org_client_key', ['organizationId', 'clientKey'], { unique: true })
 export class QualityData extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  /**
+   * Client-generated idempotency key: offline queues replay creates after
+   * network drops; the unique (org, client_key) index turns a double-replay
+   * into "return the already-saved row" instead of a duplicate record.
+   */
+  @Column({ name: 'client_key', type: 'uuid', nullable: true })
+  clientKey: string | null;
 
   @Column({ name: 'model_id', type: 'uuid' })
   modelId: string;
@@ -33,6 +47,10 @@ export class QualityData extends TenantOwnedEntity {
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   inspector: string;
+
+  /** Authenticated user who recorded the inspection (stamped server-side, not spoofable). */
+  @Column({ name: 'inspector_user_id', type: 'uuid', nullable: true })
+  inspectorUserId: string | null;
 
   @Column({ name: 'inspection_date', type: 'timestamp', nullable: true })
   inspectionDate: Date;
@@ -71,6 +89,10 @@ export class QualityData extends TenantOwnedEntity {
 
   @Column({ name: 'signoff_by', type: 'varchar', length: 100, nullable: true })
   signoffBy: string | null;
+
+  /** Authenticated user who made the sign-off decision (stamped server-side). */
+  @Column({ name: 'signoff_by_user_id', type: 'uuid', nullable: true })
+  signoffByUserId: string | null;
 
   @Column({ name: 'signoff_date', type: 'timestamp', nullable: true })
   signoffDate: Date | null;

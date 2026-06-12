@@ -34,6 +34,16 @@ export class ApiService {
     );
   }
 
+  /** GET a binary endpoint (e.g. evidence images) as a Blob; auth comes from the usual interceptor. */
+  getBlob(path: string): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}${path}`, { responseType: 'blob' });
+  }
+
+  /** POST multipart form data (file uploads) — browser sets the boundary header. */
+  postForm<T>(path: string, form: FormData): Observable<T> {
+    return this.http.post<T>(`${this.baseUrl}${path}`, form);
+  }
+
   post<T>(path: string, body: any = {}): Observable<T> {
     return this.http.post<T>(`${this.baseUrl}${path}`, body);
   }

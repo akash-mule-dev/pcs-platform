@@ -10,7 +10,7 @@ import { StageEvent } from '../work-orders/stage-event.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
-import { isQualityStageName, qcGateMessage } from '../work-orders/qc-gate.js';
+import { inspectionGateError, isQualityStageName, qcGateMessage, InspectionSnapshot } from '../work-orders/qc-gate.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { CreateProductionOrderDto, UpdateProductionOrderDto, BulkStageUpdateDto } from './production-order.dto.js';
 import { stageStatusFromCount, stageUnitsTotal, clamp, rollupCounts, StageStatus } from './quantity-math.js';
@@ -421,6 +421,24 @@ export class ProductionOrderService {
     return new Map(rows.map((r) => [r.nid, Number(r.cnt)]));
   }
 
+  /** Inspection rows per node (status + sign-off) — feeds the inspection gate, one batch query. */
+  private async inspectionsByNode(nodeIds: string[]): Promise<Map<string, InspectionSnapshot[]>> {
+    const map = new Map<string, InspectionSnapshot[]>();
+    if (!nodeIds.length) return map;
+    const rows: { nid: string; status: string; signoff_status: string | null }[] = await this.ncrRepo.query(
+      `SELECT assembly_node_id AS nid, status, signoff_status
+         FROM quality_data
+        WHERE organization_id = $1 AND assembly_node_id = ANY($2) AND is_active = true`,
+      [this.org, nodeIds],
+    );
+    for (const r of rows) {
+      const list = map.get(r.nid) ?? [];
+      list.push({ status: r.status, signoffStatus: r.signoff_status });
+      map.set(r.nid, list);
+    }
+    return map;
+  }
+
   /**
    * Ship-readiness per assembly node, in THREE batch queries — mirrors the
    * ShippingService gate exactly: production-complete units (across ALL the
@@ -644,9 +662,10 @@ export class ProductionOrderService {
       : [];
     const rowByWo = new Map(rows.map((r) => [r.workOrderId, r]));
 
-    // The QC gate needs open-NCR counts only when this is a quality stage.
+    // The QC gate needs open-NCR counts + inspection snapshots only when this is a quality stage.
     const gateNeeded = rows.some((r) => isQualityStageName(r.stage?.name));
     const ncrByNode = gateNeeded ? await this.openNcrCountByNode(nodeIds) : new Map<string, number>();
+    const inspByNode = gateNeeded ? await this.inspectionsByNode(nodeIds) : new Map<string, InspectionSnapshot[]>();
 
     const failed: { nodeId: string; mark: string; message: string }[] = [];
     const toSave: WorkOrderStage[] = [];
@@ -672,6 +691,11 @@ export class ProductionOrderService {
         const open = ncrByNode.get(nodeId) ?? 0;
         if (open > 0) {
           failed.push({ nodeId, mark, message: qcGateMessage(mark, open) }); // not saved → DB row untouched
+          continue;
+        }
+        const inspErr = inspectionGateError(mark, inspByNode.get(nodeId) ?? [], !!row.stage?.requiresInspection);
+        if (inspErr) {
+          failed.push({ nodeId, mark, message: inspErr }); // not saved → DB row untouched
           continue;
         }
       }
@@ -731,6 +755,7 @@ export class ProductionOrderService {
       : [];
     const timeByWos = new Map(timeAgg.map((t) => [t.wos_id, { seconds: Number(t.seconds), entries: Number(t.entries) }]));
     const ncrByNode = await this.openNcrCountByNode(nodeIds);
+    const inspByNode = await this.inspectionsByNode(nodeIds);
     const shipByNode = await this.shipStatusByNode(nodeIds, ncrByNode);
 
     const rowsByWo = new Map<string, WorkOrderStage[]>();
@@ -780,8 +805,17 @@ export class ProductionOrderService {
           station: r.station ? { id: r.station.id, name: r.station.name } : null,
           timeSeconds: seconds,
           timeEntries: t?.entries ?? 0,
-          // Pre-warn: this quality stage cannot be completed while NCRs are open.
-          gateBlocked: openNcrs > 0 && r.status !== WorkOrderStageStatus.COMPLETED && isQualityStageName(r.stage?.name),
+          // Pre-warn: this quality stage cannot be completed while NCRs are
+          // open, failures are unsigned, or its inspection hold point is unmet.
+          ...(() => {
+            const isQ = isQualityStageName(r.stage?.name) && r.status !== WorkOrderStageStatus.COMPLETED;
+            const mark = node?.mark || node?.name || wo.orderNumber;
+            const inspErr = isQ && wo.assemblyNodeId
+              ? inspectionGateError(mark, inspByNode.get(wo.assemblyNodeId) ?? [], !!r.stage?.requiresInspection)
+              : null;
+            const reason = !isQ ? null : openNcrs > 0 ? qcGateMessage(mark, openNcrs) : inspErr;
+            return { gateBlocked: !!reason, gateReason: reason };
+          })(),
         };
       });
       return {
@@ -900,6 +934,9 @@ export class ProductionOrderService {
     const ncrs = await this.ncrRepo.find({ where: { assemblyNodeId: nodeId, organizationId: org }, order: { createdAt: 'DESC' }, take: 20 });
     const openNcrCount = ncrs.filter((n) => String(n.status) !== 'closed' && String(n.status) !== 'cancelled').length;
     const ship = (await this.shipStatusByNode([nodeId], new Map([[nodeId, openNcrCount]]))).get(nodeId);
+    const nodeInspections = (await this.inspectionsByNode([nodeId])).get(nodeId) ?? [];
+    const nodeRow = await this.nodeRepo.findOne({ where: { id: nodeId, organizationId: org } });
+    const nodeMark = nodeRow?.mark || nodeRow?.name || wo.orderNumber;
 
     // Per-stage rows (stamps, people, counts) so mobile renders the whole
     // assembly audit from this one call.
@@ -935,7 +972,12 @@ export class ProductionOrderService {
           station: r.station ? { id: r.station.id, name: r.station.name } : null,
           timeSeconds: t?.seconds ?? r.actualTimeSeconds ?? 0,
           timeEntries: t?.entries ?? 0,
-          gateBlocked: openNcrCount > 0 && r.status !== WorkOrderStageStatus.COMPLETED && isQualityStageName(r.stage?.name),
+          ...(() => {
+            const isQ = isQualityStageName(r.stage?.name) && r.status !== WorkOrderStageStatus.COMPLETED;
+            const inspErr = isQ ? inspectionGateError(nodeMark, nodeInspections, !!r.stage?.requiresInspection) : null;
+            const reason = !isQ ? null : openNcrCount > 0 ? qcGateMessage(nodeMark, openNcrCount) : inspErr;
+            return { gateBlocked: !!reason, gateReason: reason };
+          })(),
         };
       });
 

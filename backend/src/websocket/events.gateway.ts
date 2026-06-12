@@ -86,6 +86,21 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     client.leave(`conversion:${jobId}`);
   }
 
+  /**
+   * Watch a project's import pipeline (upload → extract → convert). Import
+   * progress is emitted ONLY to this room (not broadcast) so one tenant's
+   * file names never reach another tenant's clients.
+   */
+  @SubscribeMessage('join-project')
+  handleJoinProject(client: Socket, projectId: string) {
+    if (typeof projectId === 'string' && projectId) client.join(`project:${projectId}`);
+  }
+
+  @SubscribeMessage('leave-project')
+  handleLeaveProject(client: Socket, projectId: string) {
+    if (typeof projectId === 'string' && projectId) client.leave(`project:${projectId}`);
+  }
+
   // --- Existing events (payloads sanitized before broadcast) ---
 
   emitTimeEntryUpdate(data: any) {
@@ -134,6 +149,23 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   emitAlert(data: { type: string; title: string; message: string; priority: string }) {
     if (this.server) {
       this.server.emit('alert', sanitize(data));
+    }
+  }
+
+  /**
+   * Live import-pipeline progress for a project (room-scoped — see
+   * join-project). Fired on every stage transition and on progress ticks.
+   */
+  emitImportProgress(data: {
+    importFileId: string;
+    projectId: string;
+    status: string;
+    stage: string;
+    progress: number;
+    [key: string]: any;
+  }) {
+    if (this.server) {
+      this.server.to(`project:${data.projectId}`).emit('import:progress', sanitize(data));
     }
   }
 

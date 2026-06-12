@@ -9,6 +9,7 @@ export interface QualityDataEntry {
   regionLabel: string | null;
   status: 'pass' | 'fail' | 'warning';
   inspector: string | null;
+  inspectorUserId?: string | null;
   inspectionDate: string | null;
   notes: string | null;
   defectType: string | null;
@@ -17,6 +18,13 @@ export interface QualityDataEntry {
   measurementUnit: string | null;
   toleranceMin: number | null;
   toleranceMax: number | null;
+  signoffStatus?: 'pending' | 'approved' | 'rejected';
+  signoffBy?: string | null;
+  signoffDate?: string | null;
+  signoffNotes?: string | null;
+  attachments?: string[] | null;
+  assemblyNodeId?: string | null;
+  projectId?: string | null;
   createdAt: string;
 }
 
@@ -83,7 +91,25 @@ export class QualityService {
     return this.api.get<QualityDataEntry[]>('/quality-data/pending-signoffs', params);
   }
 
-  signoff(id: string, status: 'approved' | 'rejected', signoffBy: string, notes?: string): Observable<QualityDataEntry> {
-    return this.api.patch<QualityDataEntry>(`/quality-data/${id}/signoff`, { status, signoffBy, notes });
+  /** The decider's identity is stamped from the JWT server-side. */
+  signoff(id: string, status: 'approved' | 'rejected', notes?: string): Observable<QualityDataEntry> {
+    return this.api.patch<QualityDataEntry>(`/quality-data/${id}/signoff`, { status, notes });
+  }
+
+  /** Stored evidence image as a Blob (streams via the API with auth). */
+  getEvidence(id: string, index: number): Observable<Blob> {
+    return this.api.getBlob(`/quality-data/${id}/evidence/${index}`);
+  }
+
+  /** SPC: characteristics list (no meshName) or XmR chart for one characteristic. */
+  getSpcChart(modelId: string, meshName?: string): Observable<any> {
+    const params: Record<string, string> = { modelId };
+    if (meshName) params['meshName'] = meshName;
+    return this.api.get<any>('/spc/control-chart', params);
+  }
+
+  /** Org-level quality KPIs (FPY, NCR aging, Pareto, time-to-close). */
+  getInsights(): Observable<any> {
+    return this.api.get<any>('/quality-data/insights');
   }
 }
