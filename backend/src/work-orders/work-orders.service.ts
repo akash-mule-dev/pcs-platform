@@ -107,6 +107,168 @@ export class WorkOrdersService {
     return wo;
   }
 
+  /**
+   * Stage kanban — the "where is every piece on the floor" view.
+   *
+   * Columns are the distinct process stages (ordered by sequence); each card is
+   * a work order placed in the column of its FIRST INCOMPLETE stage, computed
+   * live from the count-based stage rows (`qty_done`/`qty_total`) — the same
+   * source of truth as the order board and the dashboard funnel. Nothing here
+   * reads the legacy `work_orders.completed_quantity` column. Work orders with
+   * every stage completed/skipped land in the terminal "done" list (capped).
+   */
+  async kanban(filters: { projectId?: string; orderId?: string; q?: string } = {}) {
+    const org = TenantContext.getOrganizationId();
+
+    // 1. Cards: every non-cancelled WO with its fabrication context.
+    const params: any[] = [org];
+    let where = `w.organization_id = $1 AND w.status <> 'cancelled' AND (o.id IS NULL OR o.status <> 'cancelled')`;
+    if (filters.projectId) { params.push(filters.projectId); where += ` AND p.id = $${params.length}`; }
+    if (filters.orderId) { params.push(filters.orderId); where += ` AND o.id = $${params.length}`; }
+    if (filters.q) {
+      params.push(`%${filters.q}%`);
+      where += ` AND (w.order_number ILIKE $${params.length} OR n.mark ILIKE $${params.length} OR n.name ILIKE $${params.length} OR o.number ILIKE $${params.length})`;
+    }
+    const wos: any[] = await this.woRepo.query(
+      `SELECT w.id, w.order_number, w.status, w.priority, w.due_date, w.quantity, w.updated_at,
+              w.production_order_id, w.assembly_node_id,
+              n.mark, n.name AS node_name, n.profile,
+              o.number AS po_number, o.customer_name, o.due_date AS po_due,
+              p.id AS project_id, p.name AS project_name
+         FROM work_orders w
+         LEFT JOIN assembly_nodes n ON n.id = w.assembly_node_id
+         LEFT JOIN production_orders o ON o.id = w.production_order_id
+         LEFT JOIN projects p ON p.id = o.project_id
+        WHERE ${where}`,
+      params,
+    );
+    if (wos.length === 0) {
+      return { stages: [], cards: [], done: [], doneTotal: 0, totals: { active: 0, done: 0, late: 0, blocked: 0 } };
+    }
+
+    // 2. Their stage rows (single query), joined with stage/assignee/station.
+    const woIds = wos.map((w) => w.id);
+    const stageRows: any[] = await this.woRepo.query(
+      `SELECT s.id AS wos_id, s.work_order_id, s.status, s.qty_done, s.qty_total,
+              st.id AS stage_id, st.name, st.sequence, st.requires_inspection,
+              u.first_name, u.last_name, sta.name AS station_name
+         FROM work_order_stages s
+         JOIN stages st ON st.id = s.stage_id
+         LEFT JOIN users u ON u.id = s.assigned_user_id
+         LEFT JOIN stations sta ON sta.id = s.station_id
+        WHERE s.organization_id = $1 AND s.work_order_id = ANY($2::uuid[])
+        ORDER BY st.sequence ASC, st.name ASC`,
+      [org, woIds],
+    );
+    const stagesByWo = new Map<string, any[]>();
+    for (const r of stageRows) {
+      const arr = stagesByWo.get(r.work_order_id) ?? [];
+      arr.push(r);
+      stagesByWo.set(r.work_order_id, arr);
+    }
+
+    // 3. Quality holds per assembly (blocks the QC column's "complete").
+    const nodeIds = [...new Set(wos.map((w) => w.assembly_node_id).filter(Boolean))];
+    const ncrByNode = new Map<string, number>();
+    if (nodeIds.length) {
+      const ncrs: any[] = await this.woRepo.query(
+        `SELECT assembly_node_id AS node_id, COUNT(*)::int AS open
+           FROM ncrs
+          WHERE organization_id = $1 AND assembly_node_id = ANY($2::uuid[])
+            AND status NOT IN ('closed','cancelled')
+          GROUP BY assembly_node_id`,
+        [org, nodeIds],
+      );
+      for (const r of ncrs) ncrByNode.set(r.node_id, Number(r.open));
+    }
+
+    // Column skeleton: distinct stage names ordered by their first sequence.
+    const stageCols = new Map<string, { name: string; sequence: number }>();
+    for (const r of stageRows) {
+      const cur = stageCols.get(r.name);
+      if (!cur || Number(r.sequence) < cur.sequence) stageCols.set(r.name, { name: r.name, sequence: Number(r.sequence) });
+    }
+    const stages = [...stageCols.values()].sort((a, b) => a.sequence - b.sequence || a.name.localeCompare(b.name));
+
+    const now = Date.now();
+    const prioRank: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+    const cards: any[] = [];
+    const done: any[] = [];
+
+    for (const w of wos) {
+      const rows = stagesByWo.get(w.id) ?? [];
+      const active = rows.filter((r) => r.status !== 'skipped');
+      // Overall units: count-based when stage rows carry totals (fabrication),
+      // otherwise stage-count based (legacy WOs whose qty_total is null).
+      const counted = active.some((r) => r.qty_total != null);
+      const unitsTotal = counted
+        ? active.reduce((a, r) => a + Number(r.qty_total ?? 0), 0)
+        : active.length;
+      const unitsDone = counted
+        ? active.reduce((a, r) => a + Math.min(Number(r.qty_done ?? 0), Number(r.qty_total ?? 0)), 0)
+        : active.filter((r) => r.status === 'completed').length;
+      const current = active.find((r) => r.status !== 'completed') ?? null;
+      const openNcrs = w.assembly_node_id ? ncrByNode.get(w.assembly_node_id) ?? 0 : 0;
+      const due = w.due_date ?? w.po_due ?? null;
+
+      const card = {
+        workOrderId: w.id,
+        orderNumber: w.order_number,
+        woStatus: w.status,
+        priority: w.priority,
+        quantity: Number(w.quantity),
+        mark: w.mark ?? null,
+        nodeName: w.node_name ?? null,
+        profile: w.profile ?? null,
+        projectId: w.project_id ?? null,
+        projectName: w.project_name ?? null,
+        productionOrderId: w.production_order_id ?? null,
+        productionOrderNumber: w.po_number ?? null,
+        customerName: w.customer_name ?? null,
+        dueDate: due,
+        late: !!due && current != null && new Date(due).getTime() < now,
+        openNcrs,
+        updatedAt: w.updated_at,
+        overall: {
+          unitsDone,
+          unitsTotal,
+          percent: unitsTotal > 0 ? Math.round((unitsDone / unitsTotal) * 1000) / 10 : 0,
+        },
+        currentStage: current
+          ? {
+              wosId: current.wos_id,
+              stageId: current.stage_id,
+              name: current.name,
+              sequence: Number(current.sequence),
+              status: current.status,
+              qtyDone: Number(current.qty_done ?? 0),
+              qtyTotal: current.qty_total != null ? Number(current.qty_total) : null,
+              assignedTo: current.first_name ? `${current.first_name} ${current.last_name ?? ''}`.trim() : null,
+              station: current.station_name ?? null,
+              isQuality: isQualityStageName(current.name),
+              gateBlocked: isQualityStageName(current.name) && openNcrs > 0,
+            }
+          : null,
+      };
+      if (current) cards.push(card);
+      else done.push(card);
+    }
+
+    cards.sort((a, b) =>
+      Number(b.late) - Number(a.late)
+      || (prioRank[a.priority] ?? 9) - (prioRank[b.priority] ?? 9)
+      || String(a.orderNumber).localeCompare(String(b.orderNumber)));
+    done.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    const totals = {
+      active: cards.length,
+      done: done.length,
+      late: cards.filter((c) => c.late).length,
+      blocked: cards.filter((c) => c.currentStage?.gateBlocked).length,
+    };
+    return { stages, cards, done: done.slice(0, 25), doneTotal: done.length, totals };
+  }
+
   /** Highest numeric suffix among order numbers with the given prefix (count() drifts after deletes). */
   private async maxWoNumberSuffix(prefix: string): Promise<number> {
     const rows: { num: string }[] = await this.woRepo.query(

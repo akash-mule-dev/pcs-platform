@@ -23,6 +23,7 @@
     "test:quality": "node --experimental-strip-types src/quality-data/quality-math.test.ts && node --experimental-strip-types src/quality-ncr/ncr-workflow.test.ts && node --experimental-strip-types src/work-orders/qc-gate.test.ts && node --experimental-strip-types src/spc/spc-math.test.ts",
     "test:e2e:quality": "node scripts/quality-e2e.mjs",
     "test:e2e:imports": "node scripts/import-monitoring-e2e.mjs",
+    "test:e2e:kanban": "node scripts/kanban-e2e.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",

@@ -132,6 +132,15 @@ Key services & flows:
   stages with count totals (`quantity-math.ts`: `qtyDone`/`qtyTotal` per stage). The board
   (`GET /api/orders/:id/stage-board`) and progress (`GET /api/orders/:id/progress`) are
   count-based roll-ups scoped to that order.
+- **Stage kanban** (`work-orders.service.ts#kanban`, `GET /api/work-orders/kanban?projectId&orderId&q`):
+  org-wide "where is every piece" board fed by the SAME count-based stage rows as the order board —
+  columns are the distinct stage names (ordered by sequence), each card is a work order placed at
+  its **first incomplete stage** with current-stage qty, overall units/%, NCR + late + quality-gate
+  flags. It never reads `work_orders.completed_quantity` (legacy column the count engine doesn't
+  maintain — the root cause of the old board's wrong numbers). Web page `/work-orders/kanban`:
+  project/order/search filters, per-card `+1` and complete-stage actions (server-gated; cards move
+  columns as work is recorded), live via the `stage-update`/`work-order-update` ws events.
+  Regression suite `npm run test:e2e:kanban` (21 assertions; freshly seeded API).
 - **Design summary** (`project-progress.service.ts` + pure `progress-math.ts`,
   `GET /api/projects/:id/progress`): node composition + total tonnage + work-order item count —
   feeds the workspace header and the portfolio list (`GET /api/projects/summary`).

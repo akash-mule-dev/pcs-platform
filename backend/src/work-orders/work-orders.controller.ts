@@ -28,6 +28,16 @@ export class WorkOrdersController {
 
   // --- Static paths MUST come before :id param routes ---
 
+  @Get('kanban')
+  @RequirePermissions('work-orders.view')
+  @ApiOperation({ summary: 'Stage kanban: every work order placed at its first incomplete stage, computed live from count-based stage rows' })
+  @ApiQuery({ name: 'projectId', required: false })
+  @ApiQuery({ name: 'orderId', required: false })
+  @ApiQuery({ name: 'q', required: false })
+  kanban(@Query('projectId') projectId?: string, @Query('orderId') orderId?: string, @Query('q') q?: string) {
+    return this.service.kanban({ projectId: projectId || undefined, orderId: orderId || undefined, q: q || undefined });
+  }
+
   @Post()
   @RequirePermissions('work-orders.create')
   @ApiOperation({ summary: 'Create work order' })
