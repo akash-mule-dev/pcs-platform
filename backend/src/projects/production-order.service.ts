@@ -6,6 +6,7 @@ import { Project } from './project.entity.js';
 import { AssemblyNode, AssemblyNodeType } from './assembly-node.entity.js';
 import { WorkOrder, WorkOrderStatus } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
+import { StageEvent } from '../work-orders/stage-event.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { Product } from '../products/product.entity.js';
 import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
@@ -30,6 +31,7 @@ export class ProductionOrderService {
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
     @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
+    @InjectRepository(StageEvent) private readonly eventRepo: Repository<StageEvent>,
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
     @InjectRepository(Product) private readonly productRepo: Repository<Product>,
     @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
@@ -331,7 +333,7 @@ export class ProductionOrderService {
    *  - `qtyDone` (the quantity stepper): set the count, derive the status.
    *  - `status` (qty=1 three-state, or skip): set the status, sync the count.
    */
-  async setStageProgress(orderId: string, workOrderStageId: string, input: { qtyDone?: number; status?: string }): Promise<WorkOrderStage> {
+  async setStageProgress(orderId: string, workOrderStageId: string, input: { qtyDone?: number; status?: string; source?: string }): Promise<WorkOrderStage> {
     const org = this.org;
     await this.get(orderId);
     const wos = await this.wosRepo.findOne({ where: { id: workOrderStageId, organizationId: org }, relations: ['stage'] });
@@ -339,6 +341,7 @@ export class ProductionOrderService {
     const wo = await this.woRepo.findOne({ where: { id: wos.workOrderId, organizationId: org } });
     if (!wo || wo.productionOrderId !== orderId) throw new BadRequestException('That stage does not belong to this work order');
     const prevStatus = wos.status;
+    const prevQty = wos.qtyDone ?? 0;
 
     this.applyStageInput(wos, input);
 
@@ -361,12 +364,54 @@ export class ProductionOrderService {
 
     const saved = await this.wosRepo.save(wos);
 
+    // Audit trail: one immutable event per real change (who/what/when/where-from).
+    if (prevStatus !== saved.status || prevQty !== (saved.qtyDone ?? 0)) {
+      await this.recordEvents([this.buildEvent(saved, wo, orderId, input.status !== undefined ? 'status' : 'qty', prevStatus, prevQty, input.source)]);
+    }
+
     // Live propagation: WO status ← its stages; order status ← its WOs.
     await this.syncWorkOrderStatus(wo);
     await this.syncOrderStatus(orderId);
     this.events.emitWorkOrderUpdate({ id: wo.id, productionOrderId: orderId, workOrderStageId: saved.id, status: String(saved.status) });
     this.events.emitDashboardRefresh();
     return saved;
+  }
+
+  /** Build (not save) one audit-trail event for a stage row that just changed. */
+  private buildEvent(
+    wos: WorkOrderStage,
+    wo: WorkOrder,
+    orderId: string,
+    action: 'status' | 'qty' | 'bulk_status' | 'bulk_qty',
+    fromStatus: WorkOrderStageStatus,
+    fromQty: number,
+    source?: string,
+  ): StageEvent {
+    return this.eventRepo.create({
+      workOrderStageId: wos.id,
+      workOrderId: wo.id,
+      productionOrderId: orderId,
+      assemblyNodeId: wo.assemblyNodeId,
+      stageName: wos.stage?.name ?? null,
+      userId: TenantContext.get()?.userId ?? null,
+      action,
+      fromStatus: String(fromStatus),
+      toStatus: String(wos.status),
+      fromQty,
+      toQty: wos.qtyDone ?? 0,
+      source: source === 'mobile' || source === 'api' ? source : 'web',
+      organizationId: this.org,
+    });
+  }
+
+  /** Audit events must never break production updates — log-and-continue on failure. */
+  private async recordEvents(events: StageEvent[]): Promise<void> {
+    if (!events.length) return;
+    try {
+      await this.eventRepo.save(events, { chunk: 200 });
+    } catch {
+      /* trail is best-effort; the stage change itself already committed */
+    }
   }
 
   /**
@@ -403,6 +448,68 @@ export class ProductionOrderService {
       [this.org, nodeIds],
     );
     return new Map(rows.map((r) => [r.nid, Number(r.cnt)]));
+  }
+
+  /**
+   * Ship-readiness per assembly node, in THREE batch queries — mirrors the
+   * ShippingService gate exactly: production-complete units (across ALL the
+   * node's work orders), minus shipped, minus allocated-to-open-loads; an open
+   * NCR blocks shipping outright.
+   */
+  private async shipStatusByNode(
+    nodeIds: string[],
+    ncrByNode: Map<string, number>,
+  ): Promise<Map<string, { status: 'in_production' | 'blocked_ncr' | 'ready' | 'allocated' | 'shipped'; readyQty: number; shippedQty: number; allocatedQty: number; completedQty: number }>> {
+    const out = new Map<string, { status: 'in_production' | 'blocked_ncr' | 'ready' | 'allocated' | 'shipped'; readyQty: number; shippedQty: number; allocatedQty: number; completedQty: number }>();
+    if (!nodeIds.length) return out;
+    const org = this.org;
+
+    // Production-complete units per node (same math as ShippingService.completedUnits).
+    const completedRows: { nid: string; units: string }[] = await this.orderRepo.query(
+      `SELECT nid, SUM(units)::int AS units FROM (
+         SELECT w.assembly_node_id AS nid,
+                CASE WHEN BOOL_AND(s.status = 'completed')
+                     THEN GREATEST(MIN(LEAST(s.qty_done, COALESCE(s.qty_total, 0))), w.quantity)
+                     ELSE COALESCE(MIN(LEAST(s.qty_done, COALESCE(s.qty_total, 0))), 0) END AS units
+           FROM work_orders w
+           JOIN work_order_stages s ON s.work_order_id = w.id AND s.status <> 'skipped'
+          WHERE w.organization_id = $1 AND w.assembly_node_id = ANY($2)
+          GROUP BY w.id, w.assembly_node_id, w.quantity
+       ) t GROUP BY nid`,
+      [org, nodeIds],
+    );
+    const shippedRows: { nid: string; qty: string }[] = await this.orderRepo.query(
+      `SELECT it.assembly_node_id AS nid, COALESCE(SUM(it.quantity), 0)::int AS qty
+         FROM shipment_items it JOIN shipments sh ON sh.id = it.shipment_id
+        WHERE it.organization_id = $1 AND it.assembly_node_id = ANY($2) AND sh.status IN ('shipped','delivered')
+        GROUP BY it.assembly_node_id`,
+      [org, nodeIds],
+    );
+    const plannedRows: { nid: string; qty: string }[] = await this.orderRepo.query(
+      `SELECT it.assembly_node_id AS nid, COALESCE(SUM(it.quantity), 0)::int AS qty
+         FROM shipment_items it JOIN shipments sh ON sh.id = it.shipment_id
+        WHERE it.organization_id = $1 AND it.assembly_node_id = ANY($2) AND sh.status NOT IN ('shipped','delivered','cancelled')
+        GROUP BY it.assembly_node_id`,
+      [org, nodeIds],
+    );
+    const completedBy = new Map(completedRows.map((r) => [r.nid, Number(r.units)]));
+    const shippedBy = new Map(shippedRows.map((r) => [r.nid, Number(r.qty)]));
+    const plannedBy = new Map(plannedRows.map((r) => [r.nid, Number(r.qty)]));
+
+    for (const nid of nodeIds) {
+      const completed = completedBy.get(nid) ?? 0;
+      const shipped = shippedBy.get(nid) ?? 0;
+      const allocated = plannedBy.get(nid) ?? 0;
+      const ready = Math.max(0, completed - shipped - allocated);
+      let status: 'in_production' | 'blocked_ncr' | 'ready' | 'allocated' | 'shipped';
+      if (shipped > 0 && ready <= 0 && allocated <= 0) status = 'shipped';
+      else if (completed <= 0) status = 'in_production';
+      else if ((ncrByNode.get(nid) ?? 0) > 0) status = 'blocked_ncr';
+      else if (ready > 0) status = 'ready';
+      else status = 'allocated';
+      out.set(nid, { status, readyQty: ready, shippedQty: shipped, allocatedQty: allocated, completedQty: completed });
+    }
+    return out;
   }
 
   /** Derive a per-assembly WO's status from its stage rows (sets started/completed stamps). */
@@ -573,6 +680,8 @@ export class ProductionOrderService {
     const failed: { nodeId: string; mark: string; message: string }[] = [];
     const toSave: WorkOrderStage[] = [];
     const touched: WorkOrder[] = [];
+    const trail: StageEvent[] = [];
+    const bulkAction = dto.status !== undefined ? 'bulk_status' : 'bulk_qty';
     for (const nodeId of nodeIds) {
       const mark = nodeById.get(nodeId)?.mark || nodeById.get(nodeId)?.name || nodeId;
       const wo = woByNode.get(nodeId);
@@ -582,6 +691,7 @@ export class ProductionOrderService {
         continue;
       }
       const prevStatus = row.status;
+      const prevQty = row.qtyDone ?? 0;
       this.applyStageInput(row, { qtyDone: dto.qtyDone, status: dto.status });
       if (
         row.status === WorkOrderStageStatus.COMPLETED &&
@@ -596,10 +706,14 @@ export class ProductionOrderService {
       }
       toSave.push(row);
       touched.push(wo);
+      if (prevStatus !== row.status || prevQty !== (row.qtyDone ?? 0)) {
+        trail.push(this.buildEvent(row, wo, orderId, bulkAction, prevStatus, prevQty, dto.source));
+      }
     }
 
     if (toSave.length) {
       await this.wosRepo.save(toSave, { chunk: 200 });
+      await this.recordEvents(trail);
       await this.syncWorkOrderStatuses(touched);
       await this.syncOrderStatus(orderId);
       this.events.emitWorkOrderUpdate({ productionOrderId: orderId, bulk: true, updated: toSave.length });
@@ -646,6 +760,7 @@ export class ProductionOrderService {
       : [];
     const timeByWos = new Map(timeAgg.map((t) => [t.wos_id, { seconds: Number(t.seconds), entries: Number(t.entries) }]));
     const ncrByNode = await this.openNcrCountByNode(nodeIds);
+    const shipByNode = await this.shipStatusByNode(nodeIds, ncrByNode);
 
     const rowsByWo = new Map<string, WorkOrderStage[]>();
     for (const r of rows) {
@@ -667,6 +782,8 @@ export class ProductionOrderService {
       const node = wo.assemblyNodeId ? nodeById.get(wo.assemblyNodeId) : undefined;
       const woRows = (rowsByWo.get(wo.id) ?? []).sort((a, b) => (a.stage?.sequence ?? 0) - (b.stage?.sequence ?? 0));
       const rollup = rollupCounts(woRows.map((r) => ({ qtyDone: r.qtyDone ?? 0, qtyTotal: r.qtyTotal ?? 0, skipped: r.status === WorkOrderStageStatus.SKIPPED })));
+      const openNcrs = wo.assemblyNodeId ? (ncrByNode.get(wo.assemblyNodeId) ?? 0) : 0;
+      const ship = wo.assemblyNodeId ? shipByNode.get(wo.assemblyNodeId) : undefined;
       let itemSeconds = 0;
       let lastActivity: Date | null = null;
       const stageRows = woRows.map((r) => {
@@ -692,6 +809,8 @@ export class ProductionOrderService {
           station: r.station ? { id: r.station.id, name: r.station.name } : null,
           timeSeconds: seconds,
           timeEntries: t?.entries ?? 0,
+          // Pre-warn: this quality stage cannot be completed while NCRs are open.
+          gateBlocked: openNcrs > 0 && r.status !== WorkOrderStageStatus.COMPLETED && isQualityStageName(r.stage?.name),
         };
       });
       return {
@@ -710,9 +829,13 @@ export class ProductionOrderService {
         percent: rollup.percentComplete,
         unitsDone: rollup.unitsDone,
         unitsTotal: rollup.unitsTotal,
-        openNcrs: wo.assemblyNodeId ? (ncrByNode.get(wo.assemblyNodeId) ?? 0) : 0,
+        openNcrs,
         totalTimeSeconds: itemSeconds,
         lastActivityAt: lastActivity,
+        shipStatus: ship?.status ?? 'in_production',
+        shipReadyQty: ship?.readyQty ?? 0,
+        shippedQty: ship?.shippedQty ?? 0,
+        allocatedQty: ship?.allocatedQty ?? 0,
         stages: stageRows,
       };
     });
@@ -726,6 +849,8 @@ export class ProductionOrderService {
       percent: 0,
       totalTimeSeconds: items.reduce((a, i) => a + i.totalTimeSeconds, 0),
       openNcrs: [...ncrByNode.values()].reduce((a, b) => a + b, 0),
+      readyToShip: items.filter((i) => i.shipStatus === 'ready').length,
+      shippedItems: items.filter((i) => i.shipStatus === 'shipped').length,
     };
     totals.percent = totals.unitsTotal > 0 ? Math.round((totals.unitsDone / totals.unitsTotal) * 1000) / 10 : 0;
 
@@ -738,6 +863,38 @@ export class ProductionOrderService {
     };
   }
 
+  /** Order-wide stage-change history (newest first) — the audit feed. */
+  async getEvents(orderId: string, limit = 100) {
+    const org = this.org;
+    await this.get(orderId);
+    const take = clamp(limit, 1, 500);
+    const rows: any[] = await this.orderRepo.query(
+      `SELECT e.id, e.action, e.from_status, e.to_status, e.from_qty, e.to_qty, e.stage_name, e.source, e.created_at,
+              e.assembly_node_id, u.first_name, u.last_name, n.mark, n.name AS node_name
+         FROM work_order_stage_events e
+         LEFT JOIN users u ON u.id = e.user_id
+         LEFT JOIN assembly_nodes n ON n.id = e.assembly_node_id
+        WHERE e.organization_id = $1 AND e.production_order_id = $2
+        ORDER BY e.created_at DESC
+        LIMIT ${take}`,
+      [org, orderId],
+    );
+    return rows.map((e) => ({
+      id: e.id,
+      action: e.action,
+      fromStatus: e.from_status,
+      toStatus: e.to_status,
+      fromQty: e.from_qty != null ? Number(e.from_qty) : null,
+      toQty: e.to_qty != null ? Number(e.to_qty) : null,
+      stageName: e.stage_name ?? null,
+      source: e.source ?? 'web',
+      user: [e.first_name, e.last_name].filter(Boolean).join(' ') || null,
+      nodeId: e.assembly_node_id ?? null,
+      mark: e.mark || e.node_name || null,
+      at: e.created_at,
+    }));
+  }
+
   /**
    * Per-assembly audit detail (lazy, for the right pane): the full time-entry
    * trail and the assembly's NCRs — who worked it, where, for how long, and
@@ -748,6 +905,10 @@ export class ProductionOrderService {
     await this.get(orderId);
     const wo = await this.woRepo.findOne({ where: { productionOrderId: orderId, assemblyNodeId: nodeId, organizationId: org } });
     if (!wo) throw new NotFoundException('This assembly is not part of this work order');
+
+    const ncrs = await this.ncrRepo.find({ where: { assemblyNodeId: nodeId, organizationId: org }, order: { createdAt: 'DESC' }, take: 20 });
+    const openNcrCount = ncrs.filter((n) => String(n.status) !== 'closed' && String(n.status) !== 'cancelled').length;
+    const ship = (await this.shipStatusByNode([nodeId], new Map([[nodeId, openNcrCount]]))).get(nodeId);
 
     // Per-stage rows (stamps, people, counts) so mobile renders the whole
     // assembly audit from this one call.
@@ -783,8 +944,21 @@ export class ProductionOrderService {
           station: r.station ? { id: r.station.id, name: r.station.name } : null,
           timeSeconds: t?.seconds ?? r.actualTimeSeconds ?? 0,
           timeEntries: t?.entries ?? 0,
+          gateBlocked: openNcrCount > 0 && r.status !== WorkOrderStageStatus.COMPLETED && isQualityStageName(r.stage?.name),
         };
       });
+
+    // Stage-change history: who moved what, when, from where (newest first).
+    const eventRows: any[] = await this.orderRepo.query(
+      `SELECT e.id, e.action, e.from_status, e.to_status, e.from_qty, e.to_qty, e.stage_name, e.source, e.created_at,
+              u.first_name, u.last_name
+         FROM work_order_stage_events e
+         LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.organization_id = $1 AND e.production_order_id = $2 AND e.assembly_node_id = $3
+        ORDER BY e.created_at DESC
+        LIMIT 30`,
+      [org, orderId, nodeId],
+    );
 
     const entries: any[] = await this.orderRepo.query(
       `SELECT te.id, te.start_time, te.end_time, te.duration_seconds, te.is_rework, te.notes, te.input_method,
@@ -799,7 +973,6 @@ export class ProductionOrderService {
         LIMIT 50`,
       [org, wo.id],
     );
-    const ncrs = await this.ncrRepo.find({ where: { assemblyNodeId: nodeId, organizationId: org }, order: { createdAt: 'DESC' }, take: 20 });
 
     return {
       nodeId,
@@ -809,7 +982,23 @@ export class ProductionOrderService {
       percentComplete: rollup.percentComplete,
       unitsDone: rollup.unitsDone,
       unitsTotal: rollup.unitsTotal,
+      shipStatus: ship?.status ?? 'in_production',
+      shipReadyQty: ship?.readyQty ?? 0,
+      shippedQty: ship?.shippedQty ?? 0,
+      allocatedQty: ship?.allocatedQty ?? 0,
       stages,
+      events: eventRows.map((e) => ({
+        id: e.id,
+        action: e.action,
+        fromStatus: e.from_status,
+        toStatus: e.to_status,
+        fromQty: e.from_qty != null ? Number(e.from_qty) : null,
+        toQty: e.to_qty != null ? Number(e.to_qty) : null,
+        stageName: e.stage_name ?? null,
+        source: e.source ?? 'web',
+        user: [e.first_name, e.last_name].filter(Boolean).join(' ') || null,
+        at: e.created_at,
+      })),
       timeEntries: entries.map((e) => ({
         id: e.id,
         user: [e.first_name, e.last_name].filter(Boolean).join(' ') || null,

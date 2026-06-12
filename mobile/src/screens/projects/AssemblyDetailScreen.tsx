@@ -7,16 +7,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
+import { WO, SHIP_META } from '../../theme/wo';
 import { ProjectsStackParamList } from '../../navigation/types';
 import {
   ordersService, projectsService, qcReportsService,
-  MNode, MNodeAudit, MAuditStageRow, MQualityEntry, MTemplate,
+  MNode, MNodeAudit, MAuditStageRow, MQualityEntry, MTemplate, MStageEvent,
 } from '../../services/projects.service';
 import { timeTrackingService } from '../../services/time-tracking.service';
 import { authService } from '../../services/auth.service';
 import { environment } from '../../config/environment';
 import { useAuth } from '../../context/AuthContext';
 import { ProgressRing } from '../../components/ProgressRing';
+import { useSocketEvent } from '../../hooks/useSocketEvent';
 import { TimeEntry } from '../../types';
 
 type Rt = RouteProp<ProjectsStackParamList, 'AssemblyDetail'>;
@@ -40,6 +42,20 @@ function fmtStamp(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+}
+function evText(ev: MStageEvent): string {
+  if (ev.action === 'status' || ev.action === 'bulk_status') {
+    const lbl = (s: string | null) => (s ? (STAGE_OPTS.find((o) => o.key === s)?.label ?? (s === 'skipped' ? 'Skipped' : s)) : '—');
+    return `set ${lbl(ev.fromStatus)} → ${lbl(ev.toStatus)}`;
+  }
+  return `set count ${ev.fromQty ?? 0} → ${ev.toQty ?? 0}`;
+}
+function evIcon(ev: MStageEvent): string {
+  if (ev.toStatus === 'completed') return 'checkmark-circle';
+  if (ev.toStatus === 'skipped') return 'play-skip-forward';
+  if (ev.toStatus === 'pending') return 'refresh-circle';
+  if (ev.action === 'qty' || ev.action === 'bulk_qty') return 'add-circle';
+  return 'swap-horizontal';
 }
 
 /**
@@ -110,6 +126,18 @@ export function AssemblyDetailScreen() {
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+
+  // LIVE: refresh when anyone (web or another device) moves a stage of this order.
+  const busyRef = useRef(false);
+  busyRef.current = busy || trackBusy || qaBusy;
+  const rtTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useSocketEvent('work-order-update', (p: any) => {
+    if (p?.productionOrderId && p.productionOrderId !== orderId) return;
+    if (busyRef.current) return;
+    if (rtTimer.current) clearTimeout(rtTimer.current);
+    rtTimer.current = setTimeout(() => { if (!busyRef.current) load(); }, 400);
+  });
+  useEffect(() => () => { if (rtTimer.current) clearTimeout(rtTimer.current); }, []);
 
   // Tick the running tracker every second while one is active.
   useEffect(() => {
@@ -253,15 +281,21 @@ export function AssemblyDetailScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
     >
-      {/* ── Hero: ring + identity ── */}
+      {/* ── Hero: deep-teal band with ring + identity ── */}
       <View style={styles.hero}>
-        <ProgressRing percent={audit.percentComplete} size={86} />
+        <ProgressRing percent={audit.percentComplete} size={86} trackColor="rgba(255,255,255,0.2)" color="#f9a825" lightText />
         <View style={styles.heroBody}>
           <Text style={styles.mark} numberOfLines={1}>{mark}</Text>
           <Text style={styles.woNum}>{audit.workOrderNumber}</Text>
           <View style={styles.heroChips}>
-            <View style={[styles.chip, { backgroundColor: audit.status === 'completed' ? Colors.success : audit.status === 'in_progress' ? Colors.warning : Colors.medium }]}>
+            <View style={[styles.chip, { backgroundColor: audit.status === 'completed' ? Colors.success : audit.status === 'in_progress' ? Colors.warning : 'rgba(255,255,255,0.25)' }]}>
               <Text style={styles.chipTxt}>{audit.status === 'completed' ? 'Completed' : audit.status === 'in_progress' ? 'In progress' : 'Not started'}</Text>
+            </View>
+            <View style={[styles.chip, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
+              <Ionicons name={SHIP_META[audit.shipStatus]?.icon as any ?? 'construct'} size={11} color={WO.onInk} />
+              <Text style={styles.chipTxt}>
+                {audit.shipStatus === 'ready' ? `Ready to ship · ${audit.shipReadyQty}` : SHIP_META[audit.shipStatus]?.label ?? 'In production'}
+              </Text>
             </View>
             {audit.ncrs.filter((n) => n.status !== 'closed' && n.status !== 'cancelled').length > 0 && (
               <View style={[styles.chip, { backgroundColor: Colors.danger }]}>
@@ -309,6 +343,7 @@ export function AssemblyDetailScreen() {
                 <View style={[styles.crumbDot, done && styles.crumbDotDone, on && styles.crumbDotOn, skipped && styles.crumbDotSkip]}>
                   {done ? <Ionicons name="checkmark" size={13} color={Colors.white} />
                     : skipped ? <Ionicons name="play-skip-forward" size={11} color={Colors.white} />
+                    : s.gateBlocked ? <Ionicons name="lock-closed" size={11} color={WO.warn} />
                     : <Text style={[styles.crumbNum, on && styles.crumbNumOn]}>{i + 1}</Text>}
                 </View>
                 <Text style={[styles.crumbName, on && styles.crumbNameOn]} numberOfLines={2}>{s.name}</Text>
@@ -337,6 +372,13 @@ export function AssemblyDetailScreen() {
         <View style={styles.stageTrack}>
           <View style={[styles.stageFill, sel.qtyDone >= total && total > 0 && { backgroundColor: Colors.success }, { width: `${total ? Math.min(100, (sel.qtyDone / total) * 100) : 0}%` as any }]} />
         </View>
+
+        {sel.gateBlocked && (
+          <View style={styles.gateBanner}>
+            <Ionicons name="lock-closed" size={14} color={WO.warn} />
+            <Text style={styles.gateTxt}>Quality gate: close the open NCR(s) before this stage can complete.</Text>
+          </View>
+        )}
 
         {/* controls */}
         {total > 1 ? (
@@ -398,6 +440,32 @@ export function AssemblyDetailScreen() {
           )}
         </View>
       </View>
+
+      {/* ── Change history (who did what, when, from where) ── */}
+      <Text style={styles.sectionTitle}>Change history{audit.events.length ? ` (${audit.events.length})` : ''}</Text>
+      {audit.events.length === 0 ? (
+        <Text style={styles.muted}>No stage changes recorded yet — history starts with the next update.</Text>
+      ) : (
+        <View style={styles.listGap}>
+          {audit.events.map((ev) => (
+            <View key={ev.id} style={styles.rowItem}>
+              <Ionicons
+                name={evIcon(ev) as any}
+                size={16}
+                color={ev.toStatus === 'completed' ? WO.good : ev.toStatus === 'skipped' || ev.toStatus === 'pending' ? Colors.medium : WO.accent}
+              />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.rowMainNoCap} numberOfLines={1}>
+                  <Text style={{ fontWeight: '800' }}>{ev.user || 'Unknown'}</Text> {evText(ev)}
+                </Text>
+                <Text style={styles.rowMeta} numberOfLines={1}>{ev.stageName || 'Stage'} · {fmtStamp(ev.at)}</Text>
+              </View>
+              {ev.action.startsWith('bulk') && <Text style={[styles.srcTag, { color: WO.accent, backgroundColor: WO.infoBg }]}>BULK</Text>}
+              <Text style={styles.srcTag}>{(ev.source || 'web').toUpperCase()}</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* ── Quality ── */}
       <TouchableOpacity style={styles.secHead} onPress={() => setQaOpen((o) => !o)}>
@@ -534,42 +602,46 @@ export function AssemblyDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: WO.mist },
   content: { padding: 16, paddingBottom: 40 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   muted: { color: Colors.textSecondary, marginVertical: 8 },
   err: { color: Colors.danger, fontSize: 13, marginBottom: 8 },
 
-  hero: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: WO.ink, borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
   heroBody: { flex: 1, minWidth: 0 },
-  mark: { fontSize: 22, fontWeight: '800', color: Colors.text },
-  woNum: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
-  heroChips: { flexDirection: 'row', gap: 6, marginTop: 7 },
-  chip: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
+  mark: { fontSize: 23, fontWeight: '800', color: WO.onInk, letterSpacing: 0.2 },
+  woNum: { fontSize: 12, color: WO.onInkSoft, marginTop: 1 },
+  heroChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 3.5, borderRadius: 999 },
   chipTxt: { color: Colors.white, fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
-  heroMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 7 },
+  heroMeta: { fontSize: 12, color: WO.onInkSoft, marginTop: 8 },
 
-  tiles: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  tile: { flex: 1, backgroundColor: Colors.card, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 6 },
+  tiles: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  tile: { flex: 1, backgroundColor: WO.card, borderRadius: 14, borderWidth: 1, borderColor: WO.line, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, gap: 7, shadowColor: '#0d2f40', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   tileOff: { opacity: 0.45 },
-  tileTxt: { fontSize: 11, fontWeight: '700', color: Colors.text, textAlign: 'center' },
-  tileHint: { fontSize: 11, color: Colors.textSecondary, marginTop: 6 },
+  tileTxt: { fontSize: 11, fontWeight: '800', color: WO.text, textAlign: 'center' },
+  tileHint: { fontSize: 11, color: WO.textSoft, marginTop: 6 },
+  gateBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: WO.warnBg, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8, marginTop: 11 },
+  gateTxt: { flex: 1, fontSize: 12, color: WO.warn, fontWeight: '600' },
+  rowMainNoCap: { color: WO.text, fontWeight: '600', fontSize: 13 },
+  srcTag: { fontSize: 9, fontWeight: '800', color: WO.textSoft, backgroundColor: WO.muteBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, overflow: 'hidden' },
 
   crumbRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 18 },
-  navBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: Colors.secondary, alignItems: 'center', justifyContent: 'center' },
+  navBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: WO.ink, alignItems: 'center', justifyContent: 'center' },
   navBtnOff: { backgroundColor: Colors.light, borderWidth: 1, borderColor: Colors.border },
   crumbs: { gap: 2, alignItems: 'flex-start', paddingVertical: 2 },
   crumb: { width: 92, alignItems: 'center', gap: 4 },
-  crumbDot: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center' },
-  crumbDotOn: { borderColor: Colors.primary },
-  crumbDotDone: { backgroundColor: Colors.success, borderColor: Colors.success },
+  crumbDot: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: WO.line, backgroundColor: WO.card, alignItems: 'center', justifyContent: 'center' },
+  crumbDotOn: { borderColor: WO.ink },
+  crumbDotDone: { backgroundColor: WO.good, borderColor: WO.good },
   crumbDotSkip: { backgroundColor: Colors.medium, borderColor: Colors.medium },
-  crumbNum: { fontSize: 12, fontWeight: '800', color: Colors.textSecondary },
-  crumbNumOn: { color: Colors.primary },
-  crumbName: { fontSize: 10.5, fontWeight: '600', color: Colors.textSecondary, textAlign: 'center' },
-  crumbNameOn: { color: Colors.primary, fontWeight: '800' },
+  crumbNum: { fontSize: 12, fontWeight: '800', color: WO.textSoft },
+  crumbNumOn: { color: WO.ink },
+  crumbName: { fontSize: 10.5, fontWeight: '600', color: WO.textSoft, textAlign: 'center' },
+  crumbNameOn: { color: WO.ink, fontWeight: '800' },
 
-  stageCard: { backgroundColor: Colors.card, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 12 },
+  stageCard: { backgroundColor: WO.card, borderRadius: 14, borderWidth: 1, borderColor: WO.line, padding: 15, marginTop: 12, shadowColor: '#0d2f40', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   stageHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   stageName: { fontSize: 17, fontWeight: '800', color: Colors.text },
   stageQty: { fontSize: 18, fontWeight: '800', color: Colors.text },

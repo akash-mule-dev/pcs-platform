@@ -7,8 +7,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Subscription } from 'rxjs';
 import {
-  ProjectsService, OrderAudit, AuditItem, AuditStageRow, NodeAuditDetail, BulkStageResult,
+  ProjectsService, OrderAudit, AuditItem, AuditStageRow, NodeAuditDetail, BulkStageResult, StageEventRow, ShipStatus,
 } from '../core/services/projects.service';
+import { RealtimeService } from '../core/services/realtime.service';
 
 type StatusFilter = 'all' | 'not_started' | 'in_progress' | 'completed' | 'holds';
 type BulkAction = 'completed' | 'in_progress' | 'pending' | 'skipped' | 'qty';
@@ -83,6 +84,10 @@ const PAGE = 200;
               <span class="kl">Units through all stages</span>
             </div>
             <div class="kpi"><span class="kn mono">{{ fmtDur(audit.totals.totalTimeSeconds) }}</span><span class="kl">Time logged</span></div>
+            <div class="kpi" [class.good]="audit.totals.readyToShip > 0">
+              <span class="kn">{{ audit.totals.readyToShip }}<em>&nbsp;ready</em></span>
+              <span class="kl">{{ audit.totals.shippedItems }} shipped</span>
+            </div>
             <div class="kpi" [class.alert]="audit.totals.openNcrs > 0"><span class="kn">{{ audit.totals.openNcrs }}</span><span class="kl">Open NCRs</span></div>
           </div>
         </header>
@@ -169,6 +174,9 @@ const PAGE = 200;
                       <span class="tag">{{ tagOf(it.nodeType) }}</span>
                       <span class="mk">{{ it.mark }}</span>
                       @if (it.openNcrs > 0) { <span class="ncr-dot" [matTooltip]="it.openNcrs + ' open NCR(s)'">{{ it.openNcrs }}</span> }
+                      @if (it.shipStatus === 'ready') { <mat-icon class="ship-ico ready" [matTooltip]="'Ready to ship · ' + it.shipReadyQty + ' unit(s)'">local_shipping</mat-icon> }
+                      @else if (it.shipStatus === 'shipped') { <mat-icon class="ship-ico shipped" matTooltip="Shipped">done_all</mat-icon> }
+                      @else if (it.shipStatus === 'allocated') { <mat-icon class="ship-ico alloc" matTooltip="Allocated to a load">schedule_send</mat-icon> }
                     </span>
                     <span class="num">{{ it.unitsTotal }}</span>
                     <span class="lprog">
@@ -199,6 +207,7 @@ const PAGE = 200;
                   <span class="tag big">{{ tagOf(selItem.nodeType) }}</span>
                   <span class="ss ss-{{ selItem.status }}">{{ itemStatusLabel(selItem.status) }}</span>
                   @if (selItem.openNcrs > 0) { <span class="chip ncr"><mat-icon>report_problem</mat-icon>{{ selItem.openNcrs }} open NCR</span> }
+                  <span class="chip ship sh-{{ selItem.shipStatus }}"><mat-icon>{{ shipIcon(selItem.shipStatus) }}</mat-icon>{{ shipLabel(selItem) }}</span>
                 </div>
                 <span class="wonum mono">{{ selItem.workOrderNumber }}</span>
               </div>
@@ -223,7 +232,7 @@ const PAGE = 200;
                       @else if (st.status === 'skipped') { <mat-icon>skip_next</mat-icon> }
                       @else { {{ i + 1 }} }
                     </span>
-                    <span class="sname">{{ st.name }}</span>
+                    <span class="sname">{{ st.name }}@if (st.gateBlocked) { <mat-icon class="gate-lock" matTooltip="Blocked: open NCR must be closed before this quality stage can complete">lock</mat-icon> }</span>
                     <span class="scount mono">{{ st.qtyDone }}/{{ st.qtyTotal }}</span>
                   </button>
                   @if (!last) { <span class="conn" [class.done]="st.status === 'completed' || st.status === 'skipped'"></span> }
@@ -236,6 +245,7 @@ const PAGE = 200;
                   <div class="sg-head">
                     <h3>{{ sg.name }}</h3>
                     <span class="ss ss-{{ sg.status }}">{{ stageStatusLabel(sg.status) }}</span>
+                    @if (sg.gateBlocked) { <span class="chip gate"><mat-icon>lock</mat-icon>NCR gate</span> }
                     @if (savingIds.has(sg.wosId)) { <mat-spinner diameter="14"></mat-spinner> }
                     <span class="sg-qty mono">{{ sg.qtyDone }}<em>/{{ sg.qtyTotal }}</em></span>
                   </div>
@@ -268,7 +278,7 @@ const PAGE = 200;
                 @for (st of selItem.stages; track st.wosId) {
                   <button class="atrow" [class.cur]="st.stageId === selStageId" (click)="pickStage(st.stageId)">
                     <span class="at-name">{{ st.name }}</span>
-                    <span><span class="ss sm ss-{{ st.status }}">{{ stageStatusLabel(st.status) }}</span></span>
+                    <span class="st-cell"><span class="ss sm ss-{{ st.status }}">{{ stageStatusLabel(st.status) }}</span>@if (st.gateBlocked) { <mat-icon class="gate-lock" matTooltip="Blocked by open NCR">lock</mat-icon> }</span>
                     <span class="num mono">{{ st.qtyDone }}/{{ st.qtyTotal }}</span>
                     <span class="dt">{{ st.statusUpdatedAt ? (st.statusUpdatedAt | date:'MMM d, HH:mm') : '—' }}</span>
                     <span class="dt">{{ st.assignedUser?.name || '—' }}</span>
@@ -277,9 +287,30 @@ const PAGE = 200;
                 }
               </div>
 
-              <!-- audit trail: time entries + NCRs -->
+              <!-- audit trail: change history + time entries + NCRs -->
               <div class="trail">
-                <div class="tr-head"><h3><mat-icon>history</mat-icon>Time entries</h3>@if (detailLoading) { <mat-spinner diameter="14"></mat-spinner> }</div>
+                <div class="tr-head"><h3><mat-icon>fact_check</mat-icon>Change history</h3>@if (detailLoading) { <mat-spinner diameter="14"></mat-spinner> }</div>
+                @if (!selItem.nodeId) {
+                  <p class="none-line">No linked assembly node — no history available.</p>
+                } @else if (detail && detail.events.length === 0 && !detailLoading) {
+                  <p class="none-line">No stage changes recorded yet — history starts with the next update.</p>
+                } @else if (detail) {
+                  <div class="evlist">
+                    @for (ev of detail.events; track ev.id) {
+                      <div class="evrow">
+                        <mat-icon class="ev-ico {{ evTone(ev) }}">{{ evIcon(ev) }}</mat-icon>
+                        <div class="ev-body">
+                          <span class="ev-main"><b>{{ ev.user || 'Unknown' }}</b> {{ evText(ev) }}</span>
+                          <span class="ev-meta">{{ ev.stageName || 'Stage' }} · {{ ev.at | date:'MMM d, HH:mm:ss' }}</span>
+                        </div>
+                        @if (ev.action.startsWith('bulk')) { <span class="ev-src bulk">bulk</span> }
+                        <span class="ev-src">{{ ev.source }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <div class="tr-head"><h3><mat-icon>history</mat-icon>Time entries</h3></div>
                 @if (!selItem.nodeId) {
                   <p class="none-line">This row has no linked assembly node, so there is no trail to show.</p>
                 } @else if (detail && detail.timeEntries.length === 0 && !detailLoading) {
@@ -353,9 +384,10 @@ const PAGE = 200;
     .m mat-icon { font-size: 15px; width: 15px; height: 15px; color: var(--clay-text-muted); }
     .m em { font-style: normal; color: var(--clay-text-muted); }
     .m.proj:hover { color: var(--clay-primary); }
-    .kpis { display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; margin-top: 12px; }
+    .kpis { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px; margin-top: 12px; }
     .kpi { display: flex; flex-direction: column; gap: 3px; background: var(--clay-bg-warm); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 9px 14px; min-width: 120px; }
     .kpi.alert { border-color: var(--danger); }
+    .kpi.good { border-color: var(--success); }
     .kn { font-size: 17px; font-weight: 700; color: var(--clay-text); font-family: 'Space Grotesk','Inter',sans-serif; line-height: 1.1; }
     .kn em { font-style: normal; font-size: 12px; color: var(--clay-text-muted); font-weight: 500; }
     .kn b { font-size: 12px; color: var(--clay-primary); margin-left: 6px; }
@@ -416,6 +448,10 @@ const PAGE = 200;
     .tag { font-size: 9px; font-weight: 800; color: var(--clay-primary); background: var(--info-bg); border-radius: 4px; padding: 1px 4px; flex-shrink: 0; }
     .tag.big { font-size: 10px; padding: 2px 6px; }
     .ncr-dot { background: var(--danger-bg); color: var(--danger-text); border-radius: 999px; padding: 0 6px; font-size: 10px; font-weight: 800; flex-shrink: 0; }
+    .ship-ico { font-size: 15px; width: 15px; height: 15px; flex-shrink: 0; }
+    .ship-ico.ready { color: var(--success); }
+    .ship-ico.shipped { color: var(--clay-text-muted); }
+    .ship-ico.alloc { color: var(--clay-primary); }
     .num { font-size: 12.5px; color: var(--clay-text); text-align: right; font-family: 'Space Grotesk', monospace; }
     .lprog { display: flex; align-items: center; gap: 6px; }
     .pbar { flex: 1; height: 7px; border-radius: 5px; background: var(--clay-bg-warm); overflow: hidden; }
@@ -443,6 +479,14 @@ const PAGE = 200;
     .chip { display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
     .chip mat-icon { font-size: 13px; width: 13px; height: 13px; }
     .chip.ncr { background: var(--danger-bg); color: var(--danger-text); }
+    .chip.ship.sh-ready { background: var(--success-bg); color: var(--success-text); }
+    .chip.ship.sh-shipped { background: var(--clay-bg-warm); color: var(--clay-text-secondary); }
+    .chip.ship.sh-allocated { background: var(--info-bg); color: var(--clay-primary); }
+    .chip.ship.sh-blocked_ncr { background: var(--danger-bg); color: var(--danger-text); }
+    .chip.ship.sh-in_production { background: var(--badge-draft-bg); color: var(--badge-draft-text); }
+    .chip.gate { background: var(--warning-bg); color: var(--warning-text); }
+    .gate-lock { font-size: 13px; width: 13px; height: 13px; color: var(--warning-text); vertical-align: middle; margin-left: 3px; }
+    .st-cell { display: inline-flex; align-items: center; gap: 4px; }
     .wonum { font-size: 12px; color: var(--clay-text-muted); font-weight: 600; }
     .props { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 14px; }
     .prop { display: inline-flex; flex-direction: column; gap: 1px; background: var(--clay-bg-warm); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 6px 11px; font-size: 12.5px; color: var(--clay-text); font-weight: 600; }
@@ -496,6 +540,21 @@ const PAGE = 200;
     .at-name { font-size: 13px; font-weight: 700; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dt { font-size: 12px; color: var(--clay-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dt.live { color: var(--success-text); font-weight: 700; }
+
+    /* Change history */
+    .evlist { border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); overflow: hidden; }
+    .evrow { display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-bottom: 1px solid var(--clay-border); background: var(--clay-surface); }
+    .evrow:last-child { border-bottom: none; }
+    .ev-ico { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
+    .ev-ico.good { color: var(--success); }
+    .ev-ico.mute { color: var(--clay-text-muted); }
+    .ev-ico.info { color: var(--clay-primary); }
+    .ev-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .ev-main { font-size: 12.5px; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-main b { font-weight: 700; }
+    .ev-meta { font-size: 11px; color: var(--clay-text-muted); }
+    .ev-src { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--clay-text-muted); background: var(--clay-bg-warm); border-radius: 4px; padding: 2px 6px; flex-shrink: 0; }
+    .ev-src.bulk { color: var(--clay-primary); background: var(--info-bg); }
 
     /* Trail */
     .tr-head { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; }
@@ -585,6 +644,9 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private routeSub: Subscription | null = null;
+  private realtime = inject(RealtimeService);
+  private rtSub: Subscription | null = null;
+  private rtDebounce: ReturnType<typeof setTimeout> | null = null;
 
   get selectableFilteredCount(): number { return this.filtered.filter((i) => !!i.nodeId).length; }
 
@@ -601,15 +663,25 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
       next: (d) => (this.allOrders = d.orders.map((o) => ({ id: o.id, number: o.number, projectName: o.project.name }))),
       error: () => {},
     });
-    // Silent refresh — never while edits are in flight or a bulk apply is running.
+    // LIVE: refresh when anyone (web or mobile) moves a stage of this order.
+    this.rtSub = this.realtime.on<any>('work-order-update').subscribe((p) => {
+      if (p?.productionOrderId && p.productionOrderId !== this.orderId) return;
+      if (this.rtDebounce) clearTimeout(this.rtDebounce);
+      this.rtDebounce = setTimeout(() => {
+        if (!this.loading && !this.bulkBusy && this.sendTimers.size === 0 && this.savingIds.size === 0) this.silentReload();
+      }, 350);
+    });
+    // Slow polling stays as the fallback when the socket can't connect.
     this.pollTimer = setInterval(() => {
       if (document.hidden || this.loading || this.bulkBusy || this.sendTimers.size > 0 || this.savingIds.size > 0) return;
       this.silentReload();
-    }, 20000);
+    }, 60000);
   }
 
   ngOnDestroy(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.rtDebounce) clearTimeout(this.rtDebounce);
+    this.rtSub?.unsubscribe();
     this.routeSub?.unsubscribe();
     for (const wosId of [...this.sendTimers.keys()]) this.flush(wosId); // no taps lost on navigation
   }
@@ -899,6 +971,38 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
   itemStatusLabel(s: string): string { return ITEM_STATUS_LABEL[s] ?? s; }
   stageStatusLabel(s: string): string { return STAGE_STATUS_LABEL[s] ?? s; }
   orderStatusLabel(s: string): string { return ORDER_STATUS_LABEL[s] ?? s; }
+
+  shipIcon(s: ShipStatus): string {
+    return s === 'ready' ? 'local_shipping' : s === 'shipped' ? 'done_all' : s === 'allocated' ? 'schedule_send' : s === 'blocked_ncr' ? 'report_problem' : 'precision_manufacturing';
+  }
+  shipLabel(it: AuditItem): string {
+    switch (it.shipStatus) {
+      case 'ready': return `Ready to ship · ${it.shipReadyQty}`;
+      case 'shipped': return 'Shipped';
+      case 'allocated': return 'On a load';
+      case 'blocked_ncr': return 'Ship blocked — NCR';
+      default: return 'In production';
+    }
+  }
+
+  evText(ev: StageEventRow): string {
+    if (ev.action === 'status' || ev.action === 'bulk_status') {
+      return `set ${this.stageStatusLabel(ev.fromStatus ?? '')} → ${this.stageStatusLabel(ev.toStatus ?? '')}`;
+    }
+    return `set count ${ev.fromQty ?? 0} → ${ev.toQty ?? 0}`;
+  }
+  evIcon(ev: StageEventRow): string {
+    if (ev.toStatus === 'completed') return 'check_circle';
+    if (ev.toStatus === 'skipped') return 'skip_next';
+    if (ev.toStatus === 'pending') return 'restart_alt';
+    if (ev.action === 'qty' || ev.action === 'bulk_qty') return 'pin';
+    return 'sync_alt';
+  }
+  evTone(ev: StageEventRow): string {
+    if (ev.toStatus === 'completed') return 'good';
+    if (ev.toStatus === 'skipped' || ev.toStatus === 'pending') return 'mute';
+    return 'info';
+  }
 
   fmtDur(s: number | null | undefined): string {
     const v = Math.max(0, Math.floor(s ?? 0));

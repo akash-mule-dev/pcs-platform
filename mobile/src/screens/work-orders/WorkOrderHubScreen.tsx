@@ -1,11 +1,13 @@
-import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
+import { WO } from '../../theme/wo';
 import { WorkOrdersStackParamList } from '../../navigation/types';
 import { ordersService, MOrdersDashboard, MDashboardOrder, OrderStatusColors, OrderStatusLabels } from '../../services/projects.service';
+import { useSocketEvent } from '../../hooks/useSocketEvent';
 
 type Nav = NativeStackNavigationProp<WorkOrdersStackParamList, 'WorkOrderHub'>;
 type Filter = 'all' | 'active' | 'late' | 'holds' | 'completed';
@@ -49,6 +51,13 @@ export function WorkOrderHubScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
+  // LIVE: stage movements anywhere refresh the hub (debounced).
+  const rtTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useSocketEvent('dashboard-refresh', () => {
+    if (rtTimer.current) clearTimeout(rtTimer.current);
+    rtTimer.current = setTimeout(() => load(), 600);
+  });
+
   const counts = useMemo(() => {
     const rows = data?.orders ?? [];
     return {
@@ -81,14 +90,17 @@ export function WorkOrderHubScreen() {
   const Header = (
     <View>
       {data && (
-        <View style={styles.kpis}>
+        <View style={styles.kpiBand}>
           <View style={styles.kpi}><Text style={styles.kpiNum}>{counts.active}</Text><Text style={styles.kpiLbl}>Active</Text></View>
+          <View style={styles.kpiDiv} />
           <View style={styles.kpi}>
             <Text style={styles.kpiNum}>{data.kpis.unitsDone}<Text style={styles.kpiDim}>/{data.kpis.unitsTotal}</Text></Text>
             <Text style={styles.kpiLbl}>Units done</Text>
           </View>
-          <View style={[styles.kpi, counts.late > 0 && styles.kpiBad]}><Text style={[styles.kpiNum, counts.late > 0 && styles.kpiNumBad]}>{counts.late}</Text><Text style={styles.kpiLbl}>Late</Text></View>
-          <View style={[styles.kpi, data.kpis.openNcrs > 0 && styles.kpiBad]}><Text style={[styles.kpiNum, data.kpis.openNcrs > 0 && styles.kpiNumBad]}>{data.kpis.openNcrs}</Text><Text style={styles.kpiLbl}>NCRs</Text></View>
+          <View style={styles.kpiDiv} />
+          <View style={styles.kpi}><Text style={[styles.kpiNum, counts.late > 0 && styles.kpiNumWarn]}>{counts.late}</Text><Text style={styles.kpiLbl}>Late</Text></View>
+          <View style={styles.kpiDiv} />
+          <View style={styles.kpi}><Text style={[styles.kpiNum, data.kpis.openNcrs > 0 && styles.kpiNumBad]}>{data.kpis.openNcrs}</Text><Text style={styles.kpiLbl}>NCRs</Text></View>
         </View>
       )}
       <View style={styles.searchRow}>
@@ -172,13 +184,14 @@ const styles = StyleSheet.create({
   empty: { padding: 32, alignItems: 'center', gap: 8 },
   muted: { color: Colors.textSecondary, textAlign: 'center' },
 
-  kpis: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  kpi: { flex: 1, backgroundColor: Colors.card, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, paddingVertical: 10, alignItems: 'center' },
-  kpiBad: { borderColor: '#f4c7c3' },
-  kpiNum: { fontSize: 17, fontWeight: '800', color: Colors.text },
-  kpiNumBad: { color: Colors.danger },
-  kpiDim: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
-  kpiLbl: { fontSize: 10.5, color: Colors.textSecondary, marginTop: 1 },
+  kpiBand: { flexDirection: 'row', alignItems: 'center', backgroundColor: WO.ink, borderRadius: 14, paddingVertical: 13, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
+  kpi: { flex: 1, alignItems: 'center' },
+  kpiDiv: { width: 1, height: 26, backgroundColor: WO.inkLine },
+  kpiNum: { fontSize: 17, fontWeight: '800', color: WO.onInk },
+  kpiNumBad: { color: '#ff9d94' },
+  kpiNumWarn: { color: '#ffd54f' },
+  kpiDim: { fontSize: 11, color: WO.onInkFaint, fontWeight: '600' },
+  kpiLbl: { fontSize: 10, color: WO.onInkFaint, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.4 },
 
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },

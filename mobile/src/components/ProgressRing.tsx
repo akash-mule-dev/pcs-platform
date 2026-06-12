@@ -13,6 +13,7 @@ export function ProgressRing({
   color = Colors.warning,
   trackColor = Colors.border,
   label,
+  lightText = false,
 }: {
   percent: number;
   size?: number;
@@ -20,6 +21,8 @@ export function ProgressRing({
   color?: string;
   trackColor?: string;
   label?: string;
+  /** White percent text for dark backgrounds. */
+  lightText?: boolean;
 }) {
   const pct = Math.max(0, Math.min(100, percent));
   const firstDeg = Math.min(pct, 50) * 3.6; // right half: 0..180°
@@ -72,8 +75,8 @@ export function ProgressRing({
       )}
 
       <View style={[styles.abs, styles.center, { width: size, height: size }]}>
-        <Text style={[styles.pct, { fontSize: size * 0.24 }]}>{Math.round(pct)}%</Text>
-        {label ? <Text style={styles.lbl} numberOfLines={1}>{label}</Text> : null}
+        <Text style={[styles.pct, { fontSize: size * 0.24 }, lightText && styles.pctLight]}>{Math.round(pct)}%</Text>
+        {label ? <Text style={[styles.lbl, lightText && styles.lblLight]} numberOfLines={1}>{label}</Text> : null}
       </View>
     </View>
   );
@@ -84,5 +87,7 @@ const styles = StyleSheet.create({
   clip: { overflow: 'hidden' },
   center: { left: 0, alignItems: 'center', justifyContent: 'center' },
   pct: { fontWeight: '800', color: Colors.text },
+  pctLight: { color: Colors.white },
   lbl: { fontSize: 10, color: Colors.textSecondary, maxWidth: '80%' },
+  lblLight: { color: 'rgba(255,255,255,0.7)' },
 });

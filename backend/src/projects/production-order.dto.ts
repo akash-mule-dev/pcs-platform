@@ -24,6 +24,8 @@ export class SetStageProgressDto {
   @IsOptional() @IsInt() @Min(0) qtyDone?: number;
   @ApiPropertyOptional({ enum: ['pending', 'in_progress', 'completed', 'skipped'], description: 'Set status directly (for qty=1 or skip)' })
   @IsOptional() @IsIn(['pending', 'in_progress', 'completed', 'skipped']) status?: string;
+  @ApiPropertyOptional({ enum: ['web', 'mobile', 'api'], description: 'Recorded on the audit trail' })
+  @IsOptional() @IsIn(['web', 'mobile', 'api']) source?: string;
 }
 
 /** Batch update: apply ONE stage change to MANY assemblies of the same order. */
@@ -39,4 +41,7 @@ export class BulkStageUpdateDto {
 
   @ApiPropertyOptional({ enum: ['pending', 'in_progress', 'completed', 'skipped'] })
   @IsOptional() @IsIn(['pending', 'in_progress', 'completed', 'skipped']) status?: string;
+
+  @ApiPropertyOptional({ enum: ['web', 'mobile', 'api'], description: 'Recorded on the audit trail' })
+  @IsOptional() @IsIn(['web', 'mobile', 'api']) source?: string;
 }

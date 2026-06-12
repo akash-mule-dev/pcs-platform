@@ -171,6 +171,7 @@ export interface OrdersDashboard {
 }
 
 // ── Per-order audit dashboard (assemblies left, stage trail right) ──
+export type ShipStatus = 'in_production' | 'blocked_ncr' | 'ready' | 'allocated' | 'shipped';
 export interface AuditStageRow {
   wosId: string; stageId: string; name: string; sequence: number;
   status: string; qtyDone: number; qtyTotal: number;
@@ -178,6 +179,8 @@ export interface AuditStageRow {
   assignedUser: { id: string; name: string } | null;
   station: { id: string; name: string } | null;
   timeSeconds: number; timeEntries: number;
+  /** Quality stage that cannot complete while the assembly has open NCRs. */
+  gateBlocked: boolean;
 }
 export interface AuditItem {
   nodeId: string | null; workOrderId: string; workOrderNumber: string;
@@ -185,17 +188,32 @@ export interface AuditItem {
   profile: string | null; materialGrade: string | null; lengthMm: number | null; weightKg: number | null;
   quantity: number; status: 'not_started' | 'in_progress' | 'completed'; percent: number;
   unitsDone: number; unitsTotal: number; openNcrs: number; totalTimeSeconds: number;
-  lastActivityAt: string | null; stages: AuditStageRow[];
+  lastActivityAt: string | null;
+  shipStatus: ShipStatus; shipReadyQty: number; shippedQty: number; allocatedQty: number;
+  stages: AuditStageRow[];
 }
 export interface OrderAudit {
   order: ProductionOrder & { notes?: string | null };
   project: { id: string; name: string; number: string | null } | null;
   stages: { id: string; name: string; sequence: number }[];
-  totals: { items: number; itemsDone: number; unitsDone: number; unitsTotal: number; percent: number; totalTimeSeconds: number; openNcrs: number };
+  totals: {
+    items: number; itemsDone: number; unitsDone: number; unitsTotal: number; percent: number;
+    totalTimeSeconds: number; openNcrs: number; readyToShip: number; shippedItems: number;
+  };
   items: AuditItem[];
+}
+export interface StageEventRow {
+  id: string; action: string; fromStatus: string | null; toStatus: string | null;
+  fromQty: number | null; toQty: number | null; stageName: string | null;
+  source: string; user: string | null; at: string;
+  nodeId?: string | null; mark?: string | null;
 }
 export interface NodeAuditDetail {
   nodeId: string; workOrderId: string; workOrderNumber: string;
+  status: string; percentComplete: number; unitsDone: number; unitsTotal: number;
+  shipStatus: ShipStatus; shipReadyQty: number; shippedQty: number; allocatedQty: number;
+  stages: AuditStageRow[];
+  events: StageEventRow[];
   timeEntries: {
     id: string; user: string | null; stageName: string | null; stationName: string | null;
     startTime: string; endTime: string | null; durationSeconds: number | null;
@@ -332,7 +350,7 @@ export class ProjectsService {
   }
   /** Update a stage: qtyDone stepper, or status for qty=1 / skip. */
   setOrderStage(orderId: string, wosId: string, body: { qtyDone?: number; status?: string }): Observable<unknown> {
-    return this.http.patch(`${environment.apiUrl}/orders/${orderId}/stages/${wosId}`, body);
+    return this.http.patch(`${environment.apiUrl}/orders/${orderId}/stages/${wosId}`, { ...body, source: 'web' });
   }
 
   // ── Per-order audit dashboard ──
@@ -346,6 +364,10 @@ export class ProjectsService {
   }
   /** Batch update: one stage change applied to many assemblies. */
   bulkUpdateOrderStage(orderId: string, body: BulkStageUpdate): Observable<BulkStageResult> {
-    return this.http.patch<BulkStageResult>(`${environment.apiUrl}/orders/${orderId}/stages/bulk`, body);
+    return this.http.patch<BulkStageResult>(`${environment.apiUrl}/orders/${orderId}/stages/bulk`, { ...body, source: 'web' });
+  }
+  /** Order-wide stage-change history (newest first). */
+  orderEvents(orderId: string, limit = 100): Observable<StageEventRow[]> {
+    return this.http.get<StageEventRow[]>(`${environment.apiUrl}/orders/${orderId}/events?limit=${limit}`);
   }
 }
