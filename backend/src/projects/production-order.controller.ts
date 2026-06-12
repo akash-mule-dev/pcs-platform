@@ -76,6 +76,13 @@ export class ProductionOrderController {
     return this.service.getAudit(id);
   }
 
+  @Get('nodes/:nodeId/orders')
+  @RequirePermissions('production-orders.view')
+  @ApiOperation({ summary: 'QR scan resolver: which work orders build this assembly' })
+  resolveNode(@Param('nodeId') nodeId: string) {
+    return this.service.resolveNodeOrders(nodeId);
+  }
+
   @Get('orders/:id/events')
   @RequirePermissions('production-orders.view')
   @ApiOperation({ summary: 'Stage-change history for this work order (who/what/when/source), newest first' })

@@ -14,6 +14,7 @@ import {
   OrderStatusColors, OrderStatusLabels,
 } from '../../services/projects.service';
 import { authService } from '../../services/auth.service';
+import { offlineService } from '../../services/offline.service';
 import { environment } from '../../config/environment';
 import { useSocketEvent } from '../../hooks/useSocketEvent';
 
@@ -118,9 +119,14 @@ export function OrderBoardScreen() {
     navigation.setOptions({
       title: orderNumber || 'Work order',
       headerRight: () => (
-        <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+          <TouchableOpacity onPress={() => (navigation as any).navigate('Scan')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
+          </TouchableOpacity>
+        </View>
       ),
     });
   }, [navigation, orderNumber, openTemplates]);
@@ -175,6 +181,10 @@ export function OrderBoardScreen() {
 
   const applyBulk = (status: 'completed' | 'pending' | 'skipped' | 'in_progress') => {
     if (stageSel === ALL || stageSel === DONE || selected.size === 0 || bulkBusy) return;
+    if (!offlineService.isOnline) {
+      Alert.alert('You are offline', 'Bulk updates need a connection. Single stage updates (on the assembly screen) queue automatically.');
+      return;
+    }
     const byWo = new Map(items.map((i) => [i.workOrderId, i]));
     const nodeIds = [...selected].map((k) => byWo.get(k)?.nodeId).filter((x): x is string => !!x);
     if (!nodeIds.length) return;

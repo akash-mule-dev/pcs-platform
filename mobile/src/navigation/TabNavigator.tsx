@@ -12,6 +12,7 @@ import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { WorkOrderListScreen } from '../screens/work-orders/WorkOrderListScreen';
 import { WorkOrderDetailScreen } from '../screens/work-orders/WorkOrderDetailScreen';
 import { WorkOrderHubScreen } from '../screens/work-orders/WorkOrderHubScreen';
+import { ScanScreen } from '../screens/work-orders/ScanScreen';
 import { TimerScreen } from '../screens/time-tracking/TimerScreen';
 import { HistoryScreen } from '../screens/time-tracking/HistoryScreen';
 import { ModelListScreen } from '../screens/model-viewer/ModelListScreen';
@@ -43,6 +44,7 @@ function WorkOrdersStack() {
   return (
     <WOStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
       <WOStack.Screen name="WorkOrderHub" component={WorkOrderHubScreen} options={{ title: 'Work Orders' }} />
+      <WOStack.Screen name="Scan" component={ScanScreen} options={{ title: 'Scan label' }} />
       <WOStack.Screen name="OrderBoard" component={OrderBoardScreen} options={{ title: 'Work Order' }} />
       <WOStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />
       <WOStack.Screen name="PartViewer" component={PartViewerScreen} options={{ title: '3D Viewer' }} />
@@ -99,6 +101,7 @@ function ProjectsStack() {
   return (
     <PStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
       <PStack.Screen name="ProjectList" component={ProjectListScreen} options={{ title: 'Projects' }} />
+      <PStack.Screen name="Scan" component={ScanScreen} options={{ title: 'Scan label' }} />
       <PStack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: 'Project' }} />
       <PStack.Screen name="OrderBoard" component={OrderBoardScreen} options={{ title: 'Work Order' }} />
       <PStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />

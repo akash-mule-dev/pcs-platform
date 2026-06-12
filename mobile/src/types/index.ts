@@ -84,7 +84,7 @@ export interface TimeEntry {
 // ── Offline ──
 export interface PendingAction {
   id: string;
-  type: 'clock-in' | 'clock-out';
+  type: 'clock-in' | 'clock-out' | 'stage-update';
   payload: any;
   timestamp: number;
 }

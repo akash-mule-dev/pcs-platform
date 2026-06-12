@@ -10,6 +10,7 @@ import {
   ProjectsService, OrderAudit, AuditItem, AuditStageRow, NodeAuditDetail, BulkStageResult, StageEventRow, ShipStatus,
 } from '../core/services/projects.service';
 import { RealtimeService } from '../core/services/realtime.service';
+import * as QRCode from 'qrcode';
 
 type StatusFilter = 'all' | 'not_started' | 'in_progress' | 'completed' | 'holds';
 type BulkAction = 'completed' | 'in_progress' | 'pending' | 'skipped' | 'qty';
@@ -58,6 +59,9 @@ const PAGE = 200;
             <div class="actions">
               <button class="ghost" (click)="load()"><mat-icon>refresh</mat-icon>Refresh</button>
               <button class="ghost" [class.on]="bulkMode" (click)="toggleBulk()"><mat-icon>checklist</mat-icon>Bulk edit</button>
+              <button class="ghost" [disabled]="labelsBusy" (click)="printLabels()" matTooltip="Print QR piece-mark labels — scan them with the mobile app">
+                <mat-icon>qr_code_2</mat-icon>{{ bulkMode && selected.size > 0 ? 'Labels (' + selected.size + ')' : 'Labels' }}
+              </button>
               @if (audit.project) {
                 <a class="ghost" [routerLink]="['/projects', audit.project.id, 'orders', orderId, 'board']"><mat-icon>view_kanban</mat-icon>Board</a>
                 <a class="ghost" [routerLink]="['/projects', audit.project.id, 'orders', orderId, 'quality']"><mat-icon>verified</mat-icon>Quality</a>
@@ -960,6 +964,52 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
       next: (res) => { this.bulkBusy = false; this.bulkResult = res; this.silentReload(); },
       error: (e) => { this.bulkBusy = false; this.error = e?.error?.message || 'Bulk update failed.'; },
     });
+  }
+
+  // ── QR piece-mark labels (scanned by the mobile app) ──
+  labelsBusy = false;
+
+  async printLabels(): Promise<void> {
+    if (!this.audit || this.labelsBusy) return;
+    const pool = this.bulkMode && this.selected.size > 0
+      ? this.audit.items.filter((i) => this.selected.has(i.workOrderId))
+      : this.filtered;
+    const items = pool.filter((i) => !!i.nodeId).slice(0, 400);
+    if (!items.length) { this.error = 'No assemblies to label.'; return; }
+    this.labelsBusy = true;
+    try {
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const projectId = this.audit.project?.id ?? '';
+      const cards = await Promise.all(items.map(async (it) => {
+        const png = await QRCode.toDataURL(JSON.stringify({ t: 'pcs-asm', p: projectId, n: it.nodeId }), { width: 220, margin: 1 });
+        const spec = [it.profile, it.materialGrade].filter(Boolean).join(' · ');
+        return `<div class="label">
+          <img src="${png}" alt="QR">
+          <div class="lb">
+            <div class="mk">${esc(it.mark)}</div>
+            ${spec ? `<div class="ln">${esc(spec)}</div>` : ''}
+            <div class="ln">${esc(it.workOrderNumber)} · ${esc(this.audit!.order.number)}</div>
+            <div class="ln">${esc(this.audit!.project?.name ?? '')}</div>
+          </div>
+        </div>`;
+      }));
+      const html = `<!doctype html><html><head><title>Labels — ${esc(this.audit.order.number)}</title><style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 8mm; display: flex; flex-wrap: wrap; gap: 5mm; }
+        .label { display: flex; align-items: center; gap: 4mm; border: 1px solid #555; border-radius: 2.5mm; padding: 3mm; width: 88mm; height: 34mm; box-sizing: border-box; page-break-inside: avoid; overflow: hidden; }
+        img { width: 27mm; height: 27mm; flex-shrink: 0; }
+        .lb { min-width: 0; }
+        .mk { font-size: 7.5mm; font-weight: 800; letter-spacing: 0.2mm; }
+        .ln { font-size: 3.1mm; color: #222; margin-top: 1mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @media print { body { padding: 3mm; } }
+      </style></head><body>${cards.join('')}</body></html>`;
+      const w = window.open('', '_blank');
+      if (!w) { this.error = 'Allow pop-ups for this site to print labels.'; return; }
+      w.document.write(html);
+      w.document.close();
+      setTimeout(() => { try { w.focus(); w.print(); } catch { /* user closed it */ } }, 450);
+    } finally {
+      this.labelsBusy = false;
+    }
   }
 
   // ── Misc ──

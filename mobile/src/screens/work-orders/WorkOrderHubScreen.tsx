@@ -35,9 +35,14 @@ export function WorkOrderHubScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.navigate('WorkOrderList')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 13 }}>Product orders</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+          <TouchableOpacity onPress={() => navigation.navigate('Scan')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="qr-code-outline" size={21} color={Colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('WorkOrderList')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 13 }}>Product orders</Text>
+          </TouchableOpacity>
+        </View>
       ),
     });
   }, [navigation]);

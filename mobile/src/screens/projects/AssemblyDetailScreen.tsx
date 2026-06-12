@@ -14,6 +14,7 @@ import {
   MNode, MNodeAudit, MAuditStageRow, MQualityEntry, MTemplate, MStageEvent,
 } from '../../services/projects.service';
 import { timeTrackingService } from '../../services/time-tracking.service';
+import { offlineService, isNetworkError } from '../../services/offline.service';
 import { authService } from '../../services/auth.service';
 import { environment } from '../../config/environment';
 import { useAuth } from '../../context/AuthContext';
@@ -157,12 +158,52 @@ export function AssemblyDetailScreen() {
     breadRef.current?.scrollTo({ x: Math.max(0, i * 96 - 60), animated: true });
   };
 
-  // ── Stage edit ──
+  // ── Stage edit (offline-first: queue + optimistic apply when the network is down) ──
+  const [queuedWos, setQueuedWos] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    offlineService.pendingStageWosIds().then(setQueuedWos).catch(() => {});
+    const off = offlineService.subscribePending(async (count) => {
+      setQueuedWos(await offlineService.pendingStageWosIds().catch(() => new Set<string>()));
+      if (count === 0) load(); // queue drained → pull server truth
+    });
+    return off;
+  }, [load]);
+
+  /** Mirror the server's stage semantics locally so the queued change is visible immediately. */
+  const applyLocal = (s: MAuditStageRow, body: { qtyDone?: number; status?: string }) => {
+    const total = s.qtyTotal || 0;
+    if (body.status !== undefined) {
+      if (body.status === 'completed') { s.qtyDone = total; s.status = 'completed'; }
+      else if (body.status === 'skipped') { s.status = 'skipped'; }
+      else if (body.status === 'in_progress') { s.status = 'in_progress'; if (total > 0 && s.qtyDone >= total) s.qtyDone = Math.max(0, total - 1); }
+      else { s.qtyDone = 0; s.status = 'pending'; }
+    } else {
+      s.qtyDone = Math.max(0, Math.min(total, body.qtyDone ?? 0));
+      if (s.status !== 'skipped') s.status = total > 0 && s.qtyDone >= total ? 'completed' : s.qtyDone > 0 ? 'in_progress' : 'pending';
+    }
+    setAudit((a) => (a ? { ...a, stages: [...a.stages] } : a));
+  };
+
   const setStage = async (s: MAuditStageRow, body: { qtyDone?: number; status?: string }) => {
     setBusy(true); setError(null);
-    try { await ordersService.setStage(orderId, s.wosId, body); await load(); }
-    catch (e: any) { setError(e?.message || 'Could not update the stage.'); }
-    finally { setBusy(false); }
+    try {
+      await ordersService.setStage(orderId, s.wosId, body);
+      await load();
+    } catch (e: any) {
+      if (!offlineService.isOnline || isNetworkError(e)) {
+        applyLocal(s, body);
+        await offlineService.queueStageUpdate(orderId, s.wosId, body);
+        setQueuedWos(await offlineService.pendingStageWosIds().catch(() => new Set<string>()));
+      } else {
+        setError(e?.message || 'Could not update the stage.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  const syncNow = async () => {
+    setBusy(true);
+    try { await offlineService.syncPendingActions(); await load(); } finally { setBusy(false); }
   };
 
   // ── Tracker (clock in/out on the selected stage) ──
@@ -365,6 +406,12 @@ export function AssemblyDetailScreen() {
           <View style={[styles.chip, { backgroundColor: ST_COLOR[sel.status] || Colors.medium }]}>
             <Text style={styles.chipTxt}>{ST_LABEL[sel.status] || sel.status}</Text>
           </View>
+          {queuedWos.has(sel.wosId) && (
+            <View style={[styles.chip, { backgroundColor: WO.warn }]}>
+              <Ionicons name="cloud-offline" size={11} color={Colors.white} />
+              <Text style={styles.chipTxt}>Queued</Text>
+            </View>
+          )}
           {busy && <ActivityIndicator size="small" color={Colors.primary} />}
           <View style={{ flex: 1 }} />
           <Text style={styles.stageQty}>{sel.qtyDone}<Text style={styles.stageQtyTot}>/{total}</Text></Text>
@@ -377,6 +424,18 @@ export function AssemblyDetailScreen() {
           <View style={styles.gateBanner}>
             <Ionicons name="lock-closed" size={14} color={WO.warn} />
             <Text style={styles.gateTxt}>Quality gate: close the open NCR(s) before this stage can complete.</Text>
+          </View>
+        )}
+
+        {queuedWos.size > 0 && (
+          <View style={styles.gateBanner}>
+            <Ionicons name="cloud-upload" size={14} color={WO.warn} />
+            <Text style={styles.gateTxt}>
+              {queuedWos.size} update{queuedWos.size > 1 ? 's' : ''} queued offline — syncs automatically on reconnect.
+            </Text>
+            {offlineService.isOnline && (
+              <TouchableOpacity onPress={syncNow} disabled={busy}><Text style={styles.syncNow}>Sync now</Text></TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -624,6 +683,7 @@ const styles = StyleSheet.create({
   tileHint: { fontSize: 11, color: WO.textSoft, marginTop: 6 },
   gateBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: WO.warnBg, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8, marginTop: 11 },
   gateTxt: { flex: 1, fontSize: 12, color: WO.warn, fontWeight: '600' },
+  syncNow: { fontSize: 12, fontWeight: '800', color: WO.accent },
   rowMainNoCap: { color: WO.text, fontWeight: '600', fontSize: 13 },
   srcTag: { fontSize: 9, fontWeight: '800', color: WO.textSoft, backgroundColor: WO.muteBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, overflow: 'hidden' },
 

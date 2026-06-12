@@ -162,6 +162,13 @@ export const ordersService = {
   audit: (orderId: string) => api.get<MOrderAudit>(`/orders/${orderId}/audit`),
   nodeAudit: (orderId: string, nodeId: string) => api.get<MNodeAudit>(`/orders/${orderId}/nodes/${nodeId}/audit`),
   events: (orderId: string, limit = 100) => api.getList<MStageEvent>(`/orders/${orderId}/events`, { limit }),
+  /** QR scan resolver: which work orders build this assembly. */
+  resolveNode: (nodeId: string) =>
+    api.get<{
+      node: { id: string; mark: string; name: string; nodeType: string; projectId: string };
+      project: { id: string; name: string; number: string | null } | null;
+      orders: { id: string; number: string; status: string; customerName: string | null; quantity: number; createdAt: string }[];
+    }>(`/nodes/${nodeId}/orders`),
   bulkUpdate: (orderId: string, body: { stageId: string; nodeIds: string[]; qtyDone?: number; status?: string }) =>
     api.patch<MBulkResult>(`/orders/${orderId}/stages/bulk`, { ...body, source: 'mobile' }),
 };

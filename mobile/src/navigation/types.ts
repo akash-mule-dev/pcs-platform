@@ -17,6 +17,7 @@ export type TabParamList = {
 // reach the same experience). The legacy per-product list/detail stay reachable.
 export type WorkOrdersStackParamList = {
   WorkOrderHub: undefined;
+  Scan: undefined;
   OrderBoard: { orderId: string; projectId: string; orderNumber: string };
   AssemblyDetail: { orderId: string; projectId: string; nodeId: string; mark: string };
   PartViewer: {
@@ -36,6 +37,7 @@ export type WorkOrdersStackParamList = {
 // ── Projects Stack (nested in tab) ──
 export type ProjectsStackParamList = {
   ProjectList: undefined;
+  Scan: undefined;
   ProjectDetail: { projectId: string; name: string };
   OrderBoard: { orderId: string; projectId: string; orderNumber: string };
   AssemblyDetail: { orderId: string; projectId: string; nodeId: string; mark: string };

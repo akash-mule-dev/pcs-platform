@@ -863,6 +863,26 @@ export class ProductionOrderService {
     };
   }
 
+  /** QR scan resolver: which work orders build this assembly (active first, newest first). */
+  async resolveNodeOrders(nodeId: string) {
+    const org = this.org;
+    const node = await this.nodeRepo.findOne({ where: { id: nodeId, organizationId: org } });
+    if (!node) throw new NotFoundException('Assembly not found');
+    const project = await this.projectRepo.findOne({ where: { id: node.projectId, organizationId: org } });
+    const wos = await this.woRepo.find({ where: { assemblyNodeId: nodeId, organizationId: org } });
+    const orderIds = [...new Set(wos.map((w) => w.productionOrderId).filter((x): x is string => !!x))];
+    const orders = orderIds.length
+      ? await this.orderRepo.find({ where: { id: In(orderIds), organizationId: org } })
+      : [];
+    const rank = (s: string) => (s === 'in_progress' ? 0 : s === 'planned' ? 1 : s === 'completed' ? 2 : 3);
+    orders.sort((a, b) => rank(String(a.status)) - rank(String(b.status)) || +new Date(b.createdAt) - +new Date(a.createdAt));
+    return {
+      node: { id: node.id, mark: node.mark || node.name, name: node.name, nodeType: String(node.nodeType), projectId: node.projectId },
+      project: project ? { id: project.id, name: project.name, number: project.projectNumber } : null,
+      orders: orders.map((o) => ({ id: o.id, number: o.number, status: String(o.status), customerName: o.customerName, quantity: o.quantity, createdAt: o.createdAt })),
+    };
+  }
+
   /** Order-wide stage-change history (newest first) — the audit feed. */
   async getEvents(orderId: string, limit = 100) {
     const org = this.org;
