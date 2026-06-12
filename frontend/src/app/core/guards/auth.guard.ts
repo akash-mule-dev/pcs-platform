@@ -10,6 +10,7 @@ export const authGuard: CanActivateFn = async () => {
     router.navigate(['/login']);
     return false;
   }
+  // isLoaded is session-aware: switching accounts re-fetches the permission set.
   if (!permissions.isLoaded) {
     await permissions.load();
   }

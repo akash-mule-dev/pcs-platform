@@ -17,8 +17,8 @@ import { UpdateQualityDataDto } from './dto/update-quality-data.dto.js';
 import { BulkCreateQualityDataDto } from './dto/bulk-create-quality-data.dto.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 // Temp staging dir for multipart evidence uploads; the storage provider moves
 // the file to its final destination (mirrors ModelsController's thumbnail flow).
@@ -26,8 +26,8 @@ const STAGING_DIR = path.join(os.tmpdir(), 'pcs-uploads');
 
 @ApiTags('Quality Data')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin', 'manager', 'supervisor')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequirePermissions('quality-analysis.view')
 @Controller('api/quality-data')
 export class QualityDataController {
   constructor(private readonly service: QualityDataService) {}
@@ -75,7 +75,7 @@ export class QualityDataController {
   }
 
   @Get('pending-signoffs')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('quality-analysis.view')
   @ApiOperation({ summary: 'Get quality data pending sign-off' })
   getPendingSignoffs(@Query('modelId') modelId?: string) {
     return this.service.getPendingSignoffs(modelId);
@@ -90,21 +90,21 @@ export class QualityDataController {
   }
 
   @Post()
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('quality-analysis.inspect')
   @ApiOperation({ summary: 'Create quality inspection entry' })
   create(@Body() dto: CreateQualityDataDto) {
     return this.service.create(dto);
   }
 
   @Post('bulk')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('quality-analysis.inspect')
   @ApiOperation({ summary: 'Bulk create quality inspection entries' })
   bulkCreate(@Body() dto: BulkCreateQualityDataDto) {
     return this.service.bulkCreate(dto);
   }
 
   @Patch(':id/signoff')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('quality-analysis.inspect')
   @ApiOperation({ summary: 'Sign off on a quality data entry' })
   signoff(
     @Param('id') id: string,
@@ -114,7 +114,7 @@ export class QualityDataController {
   }
 
   @Post(':id/evidence')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('quality-analysis.inspect')
   @ApiOperation({ summary: 'Attach a captured evidence image (e.g. AR snapshot) to a quality entry' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] } })
@@ -156,21 +156,21 @@ export class QualityDataController {
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('quality-analysis.inspect')
   @ApiOperation({ summary: 'Update quality data entry' })
   update(@Param('id') id: string, @Body() dto: UpdateQualityDataDto) {
     return this.service.update(id, dto);
   }
 
   @Delete('by-model/:modelId')
-  @Roles('admin', 'manager')
+  @RequirePermissions('quality-analysis.delete')
   @ApiOperation({ summary: 'Delete all quality data for a model' })
   removeByModel(@Param('modelId') modelId: string) {
     return this.service.removeByModel(modelId);
   }
 
   @Delete(':id')
-  @Roles('admin', 'manager')
+  @RequirePermissions('quality-analysis.delete')
   @ApiOperation({ summary: 'Delete quality data entry' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);

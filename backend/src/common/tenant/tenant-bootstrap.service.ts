@@ -53,12 +53,16 @@ export class TenantBootstrapService implements OnModuleInit {
         return;
       }
 
-      // 1. Users.
+      // 1. Users. Platform operators (org-less by design) are exempt — they
+      // administer ALL tenants and must never be claimed by the default org.
       const res = await this.userRepo
         .createQueryBuilder()
         .update()
         .set({ organizationId: org.id })
         .where('organization_id IS NULL')
+        .andWhere(
+          `role_id NOT IN (SELECT id FROM roles WHERE is_system = true AND name = 'platform-admin')`,
+        )
         .execute();
       if (res.affected) {
         this.logger.log(`Assigned ${res.affected} user(s) to the default organization`);

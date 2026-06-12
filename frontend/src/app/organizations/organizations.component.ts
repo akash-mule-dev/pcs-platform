@@ -34,9 +34,26 @@ import { OrganizationsApiService } from './organizations.service';
           </div>
           <mat-form-field appearance="outline" class="full"><mat-label>Description (optional)</mat-label>
             <input matInput [(ngModel)]="editing.description"></mat-form-field>
+
+          <h4 class="sub">Initial admin account <span class="muted">(recommended — makes the tenant immediately usable)</span></h4>
+          <div class="form-row">
+            <mat-form-field appearance="outline" class="grow"><mat-label>First name</mat-label>
+              <input matInput [(ngModel)]="editing.adminFirstName"></mat-form-field>
+            <mat-form-field appearance="outline" class="grow"><mat-label>Last name</mat-label>
+              <input matInput [(ngModel)]="editing.adminLastName"></mat-form-field>
+            <mat-form-field appearance="outline" class="grow"><mat-label>Employee ID</mat-label>
+              <input matInput [(ngModel)]="editing.adminEmployeeId" placeholder="e.g. ACME-001"></mat-form-field>
+          </div>
+          <div class="form-row">
+            <mat-form-field appearance="outline" class="grow"><mat-label>Email</mat-label>
+              <input matInput type="email" [(ngModel)]="editing.adminEmail"></mat-form-field>
+            <mat-form-field appearance="outline" class="grow"><mat-label>Password</mat-label>
+              <input matInput type="password" [(ngModel)]="editing.adminPassword" placeholder="min 6 characters"></mat-form-field>
+          </div>
+
           <div class="panel-actions">
             <button mat-button (click)="editing = null">Cancel</button>
-            <button mat-raised-button color="primary" [disabled]="!editing.name || !editing.slug" (click)="save()">Create</button>
+            <button mat-raised-button color="primary" [disabled]="!canSave" (click)="save()">Create</button>
           </div>
         </div>
       }
@@ -59,6 +76,7 @@ import { OrganizationsApiService } from './organizations.service';
     .page-title { margin:0; font-size:22px; } .page-subtitle { margin:2px 0 0; color: var(--clay-text-muted,#64748b); font-size:13px; }
     .panel { background: var(--clay-surface,#fff); border:1px solid var(--clay-border,#e2e8f0); border-radius:10px; padding:16px; margin-bottom:16px; }
     .panel h3 { margin:0 0 12px; font-size:15px; } .form-row { display:flex; flex-wrap:wrap; gap:12px; } .grow { flex:1; min-width:220px; } .full { width:100%; }
+    .sub { margin:8px 0 10px; font-size:13px; } .muted { color: var(--clay-text-muted,#64748b); font-weight:400; font-size:12px; }
     .panel-actions { display:flex; justify-content:flex-end; gap:8px; }
     table.full { width:100%; } .empty { text-align:center; color: var(--clay-text-muted,#64748b); padding:24px; }
     code { background: var(--clay-bg,#f1f5f9); padding:1px 6px; border-radius:4px; font-size:12px; }
@@ -79,7 +97,21 @@ export class OrganizationsComponent implements OnInit {
     this.api.list().subscribe({ next: (d) => this.orgs = Array.isArray(d) ? d : (d?.data || []), error: () => {} });
   }
 
-  startNew(): void { this.editing = { name: '', slug: '', description: '' }; }
+  startNew(): void {
+    this.editing = {
+      name: '', slug: '', description: '',
+      adminFirstName: '', adminLastName: '', adminEmployeeId: '', adminEmail: '', adminPassword: '',
+    };
+  }
+
+  /** Org fields required; admin block is all-or-nothing. */
+  get canSave(): boolean {
+    const e = this.editing;
+    if (!e?.name || !e?.slug) return false;
+    const adminFields = [e.adminFirstName, e.adminLastName, e.adminEmployeeId, e.adminEmail, e.adminPassword];
+    const filled = adminFields.filter((v) => !!v).length;
+    return filled === 0 || (filled === adminFields.length && e.adminPassword.length >= 6);
+  }
 
   /** Auto-derive a slug from the name until the user edits the slug directly. */
   onName(): void {
@@ -88,10 +120,23 @@ export class OrganizationsComponent implements OnInit {
   }
 
   save(): void {
-    const body = { name: this.editing.name, slug: this.editing.slug, description: this.editing.description || undefined };
+    const e = this.editing;
+    const body: any = { name: e.name, slug: e.slug, description: e.description || undefined };
+    if (e.adminEmail) {
+      body.initialAdmin = {
+        email: e.adminEmail,
+        password: e.adminPassword,
+        firstName: e.adminFirstName,
+        lastName: e.adminLastName,
+        employeeId: e.adminEmployeeId,
+      };
+    }
     this.api.create(body).subscribe({
-      next: () => { this.snack.open('Organization created', 'OK', { duration: 2500 }); this.editing = null; this.load(); },
-      error: (e) => this.snack.open(e?.error?.message || 'Create failed', 'Dismiss', { duration: 4000 }),
+      next: () => {
+        this.snack.open(body.initialAdmin ? `Organization created — admin ${body.initialAdmin.email} can sign in` : 'Organization created', 'OK', { duration: 3500 });
+        this.editing = null; this.load();
+      },
+      error: (err) => this.snack.open(err?.error?.message || 'Create failed', 'Dismiss', { duration: 4000 }),
     });
   }
 

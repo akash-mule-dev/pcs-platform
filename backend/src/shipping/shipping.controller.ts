@@ -5,51 +5,53 @@ import { ShipmentStatus } from './shipment.entity.js';
 import { CreateShipmentDto } from './dto/create-shipment.dto.js';
 import { AddShipmentItemDto } from './dto/add-shipment-item.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('Shipping')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/shipments')
 export class ShippingController {
   constructor(private readonly service: ShippingService) {}
 
   @Get()
+  @RequirePermissions('shipping.view')
   @ApiOperation({ summary: 'List shipments (optionally filtered by project)' })
   findAll(@Query('projectId') projectId?: string) {
     return projectId ? this.service.findByProject(projectId) : this.service.findAll();
   }
 
   @Get(':id')
+  @RequirePermissions('shipping.view')
   @ApiOperation({ summary: 'Get shipment by ID' })
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
   }
 
   @Post()
-  @Roles('admin', 'manager')
+  @RequirePermissions('shipping.manage')
   @ApiOperation({ summary: 'Create shipment' })
   create(@Body() dto: CreateShipmentDto) {
     return this.service.create(dto as any);
   }
 
   @Post(':id/items')
-  @Roles('admin', 'manager')
+  @RequirePermissions('shipping.manage')
   @ApiOperation({ summary: 'Add an assembly to a shipment' })
   addItem(@Param('id') id: string, @Body() dto: AddShipmentItemDto) {
     return this.service.addItem(id, dto);
   }
 
   @Delete(':id/items/:itemId')
-  @Roles('admin', 'manager')
+  @RequirePermissions('shipping.manage')
   @ApiOperation({ summary: 'Remove an assembly from a shipment' })
   removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
     return this.service.removeItem(id, itemId);
   }
 
   @Patch(':id/status')
-  @Roles('admin', 'manager')
+  @RequirePermissions('shipping.manage')
   @ApiOperation({ summary: 'Set shipment status (shipping advances the assemblies)' })
   setStatus(@Param('id') id: string, @Body() body: { status?: ShipmentStatus }) {
     if (!body?.status) throw new BadRequestException('status is required');
@@ -57,14 +59,14 @@ export class ShippingController {
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager')
+  @RequirePermissions('shipping.manage')
   @ApiOperation({ summary: 'Update shipment' })
   update(@Param('id') id: string, @Body() dto: Partial<CreateShipmentDto>) {
     return this.service.update(id, dto as any);
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @RequirePermissions('shipping.delete')
   @ApiOperation({ summary: 'Delete shipment' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);

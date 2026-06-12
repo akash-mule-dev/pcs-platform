@@ -14,16 +14,16 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { CoordinationService } from './coordination.service.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
 
 const STAGING_DIR = path.join(os.tmpdir(), 'pcs-coordination-staging');
 
 @ApiTags('Coordination Packages')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin', 'manager', 'supervisor')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequirePermissions('coordination.view')
 @Controller('api/coordination')
 export class CoordinationController {
   constructor(private readonly service: CoordinationService) {}
@@ -64,7 +64,7 @@ export class CoordinationController {
   }
 
   @Post('upload-zip')
-  @Roles('admin', 'manager')
+  @RequirePermissions('coordination.manage')
   @ApiOperation({ summary: 'Upload a coordination package as ZIP (IFC + PDFs + KSS)' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -107,7 +107,7 @@ export class CoordinationController {
   }
 
   @Post('upload-files')
-  @Roles('admin', 'manager')
+  @RequirePermissions('coordination.manage')
   @ApiOperation({ summary: 'Upload coordination package as individual files (IFC + PDFs + KSS)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(AnyFilesInterceptor({
@@ -145,7 +145,7 @@ export class CoordinationController {
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @RequirePermissions('coordination.delete')
   @ApiOperation({ summary: 'Delete a coordination package and all associated files' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);

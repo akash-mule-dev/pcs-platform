@@ -18,6 +18,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       id: payload.sub,
       email: payload.email,
       role: payload.role,
+      // Fine-grained RBAC resolves permissions by role id; legacy tokens
+      // (issued before this field existed) fall back to the role name.
+      roleId: payload.roleId ?? null,
       employeeId: payload.employeeId,
       organizationId: payload.organizationId,
     };

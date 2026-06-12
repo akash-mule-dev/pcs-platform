@@ -3,28 +3,28 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { QualityNcrService } from './quality-ncr.service.js';
 import { CreateNcrDto, UpdateNcrDto } from './dto/ncr.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('NCR')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/ncr')
 export class NcrController {
   constructor(private readonly service: QualityNcrService) {}
 
-  @Get() @ApiQuery({ name: 'status', required: false })
+  @Get() @RequirePermissions('ncr.view') @ApiQuery({ name: 'status', required: false })
   list(@Query('status') status?: string) { return this.service.listNcr(status); }
 
-  @Get(':id') findOne(@Param('id') id: string) { return this.service.getNcr(id); }
+  @Get(':id') @RequirePermissions('ncr.view') findOne(@Param('id') id: string) { return this.service.getNcr(id); }
 
   @Post()
-  @Roles('operator', 'supervisor', 'manager', 'admin')
+  @RequirePermissions('ncr.create')
   @ApiOperation({ summary: 'Raise a non-conformance report (against a template)' })
   create(@Body() dto: CreateNcrDto) { return this.service.createNcr(dto); }
 
   @Patch(':id')
-  @Roles('supervisor', 'manager', 'admin')
+  @RequirePermissions('ncr.manage')
   @ApiOperation({ summary: 'Update / disposition / close an NCR' })
   update(@Param('id') id: string, @Body() dto: UpdateNcrDto) { return this.service.updateNcr(id, dto); }
 }

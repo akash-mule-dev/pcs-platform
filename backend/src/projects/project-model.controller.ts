@@ -3,12 +3,12 @@ import type { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProjectModelService } from './project-model.service.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
 import { Public } from '../common/decorators/public.decorator.js';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/projects')
 export class ProjectModelController {
   constructor(private readonly modelService: ProjectModelService) {}

@@ -53,7 +53,7 @@ backend/src/
   app.module.ts            # root module — every feature module is imported here
   database/                # TypeORM datasource, DatabaseModule, migrations/
   common/tenant/           # multi-tenancy: TenantOwnedEntity, TenantContext, TenantScopedService, interceptor, subscriber
-  auth/  rbac/             # JWT auth, guards, permissions.config.ts (feature → roles)
+  auth/  rbac/             # JWT auth + fine-grained RBAC: permission-catalog.ts, PermissionsGuard, roles API (system + custom roles)
   products/ materials/     # catalog products + BOM / materials / stock
   processes/ stages/       # a Process is an ordered list of Stages (the routing)
   work-orders/             # WorkOrder + WorkOrderStage — the stage-execution engine
@@ -127,9 +127,23 @@ The workspace auto-polls `resolve-models` while a GLB converts so the viewer app
 - **Multi-tenancy:** every domain entity extends `TenantOwnedEntity` (adds `organization_id`).
   New services should extend `TenantScopedService` (auto-filters reads + stamps `organization_id`),
   and read the current org via `TenantContext.requireOrganizationId()`. RLS is enabled as defense-in-depth.
-- **RBAC:** controllers use `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(...)`. Feature → roles
-  live in `backend/src/auth/permissions.config.ts` (served to web/mobile); the Angular `featureGuard`
-  reads the same config. Register new features there.
+- **RBAC (fine-grained):** controllers use `@UseGuards(JwtAuthGuard, PermissionsGuard)` +
+  `@RequirePermissions('<feature>.<action>')` (e.g. `work-orders.execute`); never hardcode role
+  names — custom roles exist. The permission catalog (features × actions + system-role defaults)
+  lives in `backend/src/rbac/permission-catalog.ts` — register new features/actions there.
+  Roles are DB records: immutable org-less **system roles** (admin `*`, manager, supervisor,
+  operator; permissions from the catalog) + per-organization **custom roles** (grants in
+  `role_permission_grants`, managed via `/api/rbac/roles`, UI at `/rbac`). `GET /api/auth/permissions`
+  returns the caller's `{ role, permissions[] }`; web (`PermissionsService.can/canView/canManage`,
+  `featureGuard('<feature>')`) and mobile (`config/permissions.ts`) gate on that set (wildcard-aware).
+  **Platform vs tenant:** catalog features flagged `platform: true` (organizations) are excluded
+  from the tenant `*` wildcard, ungrantable to custom roles, and held only by the org-less
+  `platform-admin` system role (seed login `platform@pcs.com`) — a tenant admin can never manage
+  other tenants or grant platform-admin. `POST /api/organizations` accepts an `initialAdmin`
+  block to bootstrap a new tenant's first admin transactionally. Role/user/org mutations are
+  written to the audit log. Regression suites: `npm run test:rbac` (catalog unit tests) and
+  `npm run test:rbac:e2e` (62-assertion live suite, needs a freshly seeded API).
+  The old `@Roles`/RolesGuard + `auth/permissions.config.ts` are deprecated shims — don't add usages.
 - **TypeORM:** enum columns use `type: 'enum'` (TypeORM names the PG type `"<table>_<column>_enum"`);
   numeric columns use the `numericTransformer` so they come back as `number`, not string.
 - **Migrations & `synchronize`:** `DB_SYNCHRONIZE` defaults **ON** (including prod) — the schema is

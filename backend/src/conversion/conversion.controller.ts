@@ -14,8 +14,8 @@ import { ConversionService } from './conversion.service.js';
 import { CreateConversionDto } from './dto/create-conversion.dto.js';
 import { SUPPORTED_INPUT_EXTS, SUPPORTED_FORMATS } from './converters/converter.registry.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 const STAGING_DIR = path.join(os.tmpdir(), 'pcs-conversion-staging');
 
@@ -27,13 +27,13 @@ function parseBool(value: unknown, def: boolean): boolean {
 
 @ApiTags('Conversion')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/conversion')
 export class ConversionController {
   constructor(private readonly service: ConversionService) {}
 
   @Post('convert')
-  @Roles('admin', 'manager')
+  @RequirePermissions('coordination.convert')
   @ApiOperation({
     summary: 'Upload any supported 3D file; convert + optimize to GLB asynchronously',
   })
@@ -101,7 +101,7 @@ export class ConversionController {
   }
 
   @Post('convert-batch')
-  @Roles('admin', 'manager')
+  @RequirePermissions('coordination.convert')
   @ApiOperation({ summary: 'Upload multiple 3D files and/or ZIP archives; convert each to GLB' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -163,7 +163,7 @@ export class ConversionController {
   }
 
   @Post(':id/retry')
-  @Roles('admin', 'manager')
+  @RequirePermissions('coordination.convert')
   @ApiOperation({ summary: 'Re-run a conversion job (e.g. after a failure)' })
   async retry(@Param('id') id: string) {
     const job = await this.service.retry(id);

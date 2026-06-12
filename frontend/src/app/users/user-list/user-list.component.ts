@@ -16,6 +16,7 @@ import { LoadingService } from '../../core/services/loading.service';
 import { PermissionsService } from '../../core/services/permissions.service';
 import { UserFormComponent } from '../user-form/user-form.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { AssignableRole, RolesApiService } from '../../core/services/roles.service';
 
 @Component({
   selector: 'app-user-list',
@@ -27,7 +28,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         <h1 class="page-title">Users</h1>
         <p class="page-subtitle">Manage accounts, roles and access</p>
       </div>
-      @if (canEdit) {
+      @if (canCreate) {
         <button class="btn-primary" (click)="openForm()">
           <mat-icon>person_add</mat-icon>
           <span>Add User</span>
@@ -40,10 +41,9 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         <mat-label>Filter by Role</mat-label>
         <mat-select [(ngModel)]="roleFilter" (selectionChange)="applyFilter()">
           <mat-option value="">All</mat-option>
-          <mat-option value="admin">Admin</mat-option>
-          <mat-option value="manager">Manager</mat-option>
-          <mat-option value="supervisor">Supervisor</mat-option>
-          <mat-option value="operator">Operator</mat-option>
+          @for (r of availableRoles; track r.id) {
+            <mat-option [value]="r.name">{{ r.name }}</mat-option>
+          }
         </mat-select>
       </mat-form-field>
       <mat-form-field appearance="outline" class="filter-field">
@@ -72,7 +72,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       <ng-container matColumnDef="role">
         <th mat-header-cell *matHeaderCellDef>Role</th>
         <td mat-cell *matCellDef="let u">
-          <span class="role-chip" [class]="'role-' + u.role?.name">{{ u.role?.name | uppercase }}</span>
+          <span class="role-chip" [class]="'role-' + u.role?.name" [class.role-custom]="u.role && !u.role.isSystem">{{ u.role?.name | uppercase }}</span>
         </td>
       </ng-container>
       <ng-container matColumnDef="status">
@@ -83,14 +83,18 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
           </span>
         </td>
       </ng-container>
-      @if (canEdit) {
+      @if (showActions) {
         <ng-container matColumnDef="actions">
           <th mat-header-cell *matHeaderCellDef>Actions</th>
           <td mat-cell *matCellDef="let u">
             @if (u.isActive) {
-              <button mat-icon-button color="primary" (click)="openForm(u)"><mat-icon>edit</mat-icon></button>
-              <button mat-icon-button color="warn" (click)="deleteUser(u)"><mat-icon>delete</mat-icon></button>
-            } @else {
+              @if (canUpdate) {
+                <button mat-icon-button color="primary" (click)="openForm(u)" matTooltip="Edit user"><mat-icon>edit</mat-icon></button>
+              }
+              @if (canDelete) {
+                <button mat-icon-button color="warn" (click)="deleteUser(u)" matTooltip="Deactivate user"><mat-icon>delete</mat-icon></button>
+              }
+            } @else if (canUpdate) {
               <button mat-icon-button color="primary" (click)="activateUser(u)" matTooltip="Activate user"><mat-icon>person_add</mat-icon></button>
             }
           </td>
@@ -110,6 +114,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     .role-manager { background: var(--info-bg); color: var(--info-text); box-shadow: var(--clay-shadow-soft); }
     .role-supervisor { background: var(--warning-bg); color: var(--warning-text); box-shadow: var(--clay-shadow-soft); }
     .role-operator { background: var(--success-bg); color: var(--success-text); box-shadow: var(--clay-shadow-soft); }
+    .role-custom { background: #ecfdf5; color: #047857; box-shadow: var(--clay-shadow-soft); }
     .filters { display: flex; gap: 16px; }
     .status-chip { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; }
     .status-active { background: var(--success-bg); color: var(--success-text); }
@@ -122,17 +127,30 @@ export class UserListComponent implements OnInit, AfterViewInit {
   columns: string[] = [];
   roleFilter = '';
   statusFilter = 'active';
-  canEdit = false;
+  availableRoles: AssignableRole[] = [];
+  canCreate = false;
+  canUpdate = false;
+  canDelete = false;
+  showActions = false;
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private loading: LoadingService, private permissions: PermissionsService) {
-    this.canEdit = this.permissions.canManage('users');
-    this.columns = this.canEdit
+  constructor(private api: ApiService, private rolesApi: RolesApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private loading: LoadingService, private permissions: PermissionsService) {
+    this.canCreate = this.permissions.can('users.create');
+    this.canUpdate = this.permissions.can('users.update');
+    this.canDelete = this.permissions.can('users.delete');
+    this.showActions = this.canUpdate || this.canDelete;
+    this.columns = this.showActions
       ? ['name', 'mobileNo', 'employeeId', 'role', 'status', 'actions']
       : ['name', 'mobileNo', 'employeeId', 'role', 'status'];
   }
 
-  ngOnInit(): void { this.load(); }
+  ngOnInit(): void {
+    this.load();
+    this.rolesApi.assignable().subscribe({
+      next: (roles) => (this.availableRoles = roles ?? []),
+      error: () => (this.availableRoles = []),
+    });
+  }
 
   ngAfterViewInit(): void { this.dataSource.paginator = this.paginator; }
 

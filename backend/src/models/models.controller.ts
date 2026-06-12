@@ -28,8 +28,8 @@ import { CreateModelDto } from './dto/create-model.dto.js';
 import { UpdateModelDto } from './dto/update-model.dto.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
 
 // Use a temp directory for multer staging; storage provider handles final destination
@@ -37,7 +37,7 @@ const STAGING_DIR = path.join(os.tmpdir(), 'pcs-uploads');
 
 @ApiTags('3D Models')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/models')
 export class ModelsController {
   constructor(private readonly service: ModelsService) {}
@@ -148,7 +148,7 @@ export class ModelsController {
   }
 
   @Post()
-  @Roles('admin', 'manager')
+  @RequirePermissions('coordination.manage')
   @ApiOperation({ summary: 'Upload a 3D model' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -196,14 +196,14 @@ export class ModelsController {
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager')
+  @RequirePermissions('coordination.manage')
   @ApiOperation({ summary: 'Update 3D model metadata' })
   update(@Param('id') id: string, @Body() dto: UpdateModelDto) {
     return this.service.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @RequirePermissions('coordination.delete')
   @ApiOperation({ summary: 'Delete 3D model' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);

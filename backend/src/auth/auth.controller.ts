@@ -3,15 +3,11 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
-import { RbacService } from '../rbac/rbac.service.js';
 
 @ApiTags('Auth')
 @Controller('api/auth')
 export class AuthController {
-  constructor(
-    private readonly authService: AuthService,
-    private readonly rbacService: RbacService,
-  ) {}
+  constructor(private readonly authService: AuthService) {}
 
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
@@ -30,8 +26,8 @@ export class AuthController {
   @Get('permissions')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get role-based permissions config' })
-  getPermissions() {
-    return this.rbacService.resolveEffectivePermissions();
+  @ApiOperation({ summary: "The caller's role and effective fine-grained permissions" })
+  getPermissions(@Request() req: any) {
+    return this.authService.getMyAccess(req.user);
   }
 }

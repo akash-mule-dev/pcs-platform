@@ -5,12 +5,12 @@ import { ProjectProgressService } from './project-progress.service.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/projects')
 export class ProjectsController {
   constructor(
@@ -19,6 +19,7 @@ export class ProjectsController {
   ) {}
 
   @Get()
+  @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'List projects' })
   findAll() {
     return this.service.findAll();
@@ -26,57 +27,63 @@ export class ProjectsController {
 
   // NOTE: must precede `@Get(':id')` so the literal path isn't matched as an id.
   @Get('summary')
+  @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'List projects with production rollup (portfolio dashboard)' })
   findAllWithMetrics() {
     return this.service.findAllWithMetrics();
   }
 
   @Get(':id')
+  @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'Get project by ID' })
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
   }
 
   @Get(':id/nodes')
+  @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'List a project\'s assembly nodes (tree)' })
   findNodes(@Param('id') id: string) {
     return this.service.findNodes(id);
   }
 
   @Get(':id/nodes/:nodeId')
+  @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'Get one assembly node (dimensions, properties, model link)' })
   findNode(@Param('id') id: string, @Param('nodeId') nodeId: string) {
     return this.service.findNode(id, nodeId);
   }
 
   @Get(':id/progress')
+  @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'Design summary: node composition, total tonnage, work-order item count' })
   progress(@Param('id') id: string) {
     return this.progressService.getProgress(id);
   }
 
   @Get(':id/nodes/:nodeId/meshes')
+  @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'GLB mesh names for a node + descendants (for 3D isolation)' })
   nodeMeshes(@Param('id') id: string, @Param('nodeId') nodeId: string) {
     return this.service.nodeMeshNames(id, nodeId);
   }
 
   @Post()
-  @Roles('admin', 'manager')
+  @RequirePermissions('projects.create')
   @ApiOperation({ summary: 'Create project' })
   create(@Body() dto: CreateProjectDto) {
     return this.service.create(dto as any);
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager')
+  @RequirePermissions('projects.update')
   @ApiOperation({ summary: 'Update project' })
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
     return this.service.update(id, dto as any);
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @RequirePermissions('projects.delete')
   @ApiOperation({ summary: 'Delete project' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);

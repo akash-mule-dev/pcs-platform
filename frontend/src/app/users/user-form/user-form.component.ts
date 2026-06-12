@@ -9,6 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../../core/services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { LoadingService } from '../../core/services/loading.service';
+import { AssignableRole, RolesApiService } from '../../core/services/roles.service';
 
 @Component({
   selector: 'app-user-form',
@@ -64,7 +65,9 @@ import { LoadingService } from '../../core/services/loading.service';
             <mat-label>Role</mat-label>
             <mat-select [(ngModel)]="form.roleId" name="roleId" required #roleId="ngModel">
               @for (r of roles; track r.id) {
-                <mat-option [value]="r.id">{{ r.name | uppercase }}</mat-option>
+                <mat-option [value]="r.id">
+                  {{ r.name }}@if (r.isSystem) { <span class="role-tag">system</span> }
+                </mat-option>
               }
             </mat-select>
             @if (roleId.invalid && submitted) {
@@ -91,18 +94,20 @@ import { LoadingService } from '../../core/services/loading.service';
   `,
   styles: [`
     form { display: flex; flex-direction: column; }
+    .role-tag { margin-left: 8px; font-size: 11px; color: var(--clay-text-muted, #64748b); border: 1px solid var(--clay-border, #e2e8f0); border-radius: 999px; padding: 1px 6px; }
   `]
 })
 export class UserFormComponent implements OnInit {
   @ViewChild('userForm') userForm!: NgForm;
   form: any = { firstName: '', lastName: '', mobileNo: '', email: '', employeeId: '', roleId: '', password: '' };
-  roles: any[] = [];
+  roles: AssignableRole[] = [];
   submitted = false;
 
   constructor(
     public dialogRef: MatDialogRef<UserFormComponent>,
     @Inject(MAT_DIALOG_DATA) public data: any,
     private api: ApiService,
+    private rolesApi: RolesApiService,
     private snackBar: MatSnackBar,
     private loadingService: LoadingService
   ) {
@@ -120,21 +125,10 @@ export class UserFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    // Load roles - try dedicated endpoint first, fallback to extracting from users
-    this.api.getList<any>('/users').subscribe(users => {
-      const roleMap = new Map<string, any>();
-      users.forEach((u: any) => {
-        if (u.role && !roleMap.has(u.role.id)) roleMap.set(u.role.id, u.role);
-      });
-      this.roles = Array.from(roleMap.values());
-      if (this.roles.length === 0) {
-        this.roles = [
-          { id: 'admin', name: 'admin' },
-          { id: 'manager', name: 'manager' },
-          { id: 'supervisor', name: 'supervisor' },
-          { id: 'operator', name: 'operator' }
-        ];
-      }
+    // System roles + this organization's custom roles.
+    this.rolesApi.assignable().subscribe({
+      next: (roles) => (this.roles = roles ?? []),
+      error: () => (this.roles = []),
     });
   }
 

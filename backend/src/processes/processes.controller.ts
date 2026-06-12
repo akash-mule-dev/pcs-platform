@@ -5,53 +5,53 @@ import { CreateProcessDto } from './dto/create-process.dto.js';
 import { UpdateProcessDto } from './dto/update-process.dto.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('Processes')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/processes')
 export class ProcessesController {
   constructor(private readonly service: ProcessesService) {}
 
   @Get()
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('processes.view')
   @ApiOperation({ summary: 'List processes' })
   findAll(@Query() pageOptions: PageOptionsDto) {
     return this.service.findAll(pageOptions);
   }
 
   @Get(':id')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('processes.view')
   @ApiOperation({ summary: 'Get process with stages' })
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
   }
 
   @Post('standard')
-  @Roles('admin', 'manager')
+  @RequirePermissions('processes.create')
   @ApiOperation({ summary: 'Get-or-create the "Standard Fabrication" process (Cut → Fit → Weld → QC → Paint)' })
   ensureStandard() {
     return this.service.ensureStandard();
   }
 
   @Post()
-  @Roles('admin', 'manager')
+  @RequirePermissions('processes.create')
   @ApiOperation({ summary: 'Create process' })
   create(@Body() dto: CreateProcessDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager')
+  @RequirePermissions('processes.update')
   @ApiOperation({ summary: 'Update process' })
   update(@Param('id') id: string, @Body() dto: UpdateProcessDto) {
     return this.service.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @RequirePermissions('processes.delete')
   @ApiOperation({ summary: 'Delete process' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);

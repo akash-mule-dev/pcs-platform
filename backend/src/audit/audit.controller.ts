@@ -3,13 +3,13 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { AuditService } from './audit.service.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('Audit')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin', 'manager')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequirePermissions('audit.view')
 @Controller('api/audit')
 export class AuditController {
   constructor(private readonly service: AuditService) {}

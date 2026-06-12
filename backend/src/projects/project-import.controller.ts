@@ -3,18 +3,18 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { IfcImportService } from './ifc-import.service.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/projects')
 export class ProjectImportController {
   constructor(private readonly importService: IfcImportService) {}
 
   @Post(':id/import-ifc')
-  @Roles('admin', 'manager')
+  @RequirePermissions('projects.import')
   @ApiOperation({ summary: 'Upload an IFC file and extract its assembly tree into the project' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
@@ -26,7 +26,7 @@ export class ProjectImportController {
   }
 
   @Post(':id/resolve-models')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'Link GLBs produced by queued conversions back to the project tree' })
   resolveModels(@Param('id') id: string) {
     return this.importService.linkPendingModels(id);

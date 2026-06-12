@@ -12,12 +12,13 @@ import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage } from '../work-orders/work-order-stage.entity.js';
 import { TimeEntry } from '../time-tracking/time-entry.entity.js';
 import { Model3D } from '../models/model.entity.js';
+import { Organization } from '../organization/organization.entity.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       Role, User, Product, Process, Stage, Line, Station,
-      WorkOrder, WorkOrderStage, TimeEntry, Model3D,
+      WorkOrder, WorkOrderStage, TimeEntry, Model3D, Organization,
     ]),
   ],
   providers: [SeedService],

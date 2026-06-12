@@ -3,17 +3,18 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { ShiftsService } from './shifts.service.js';
 import { RecordAttendanceDto } from './dto/workforce.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('Attendance')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/attendance')
 export class AttendanceController {
   constructor(private readonly service: ShiftsService) {}
 
   @Get()
+  @RequirePermissions('workforce.view')
   @ApiQuery({ name: 'userId', required: false })
   @ApiQuery({ name: 'date', required: false })
   list(@Query('userId') userId?: string, @Query('date') date?: string) {
@@ -21,7 +22,7 @@ export class AttendanceController {
   }
 
   @Post()
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('workforce.assign')
   @ApiOperation({ summary: 'Record/update an employee daily attendance' })
   record(@Body() dto: RecordAttendanceDto) { return this.service.recordAttendance(dto); }
 }

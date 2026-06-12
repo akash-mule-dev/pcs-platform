@@ -19,6 +19,7 @@ import { ChartConfiguration } from 'chart.js';
 import { ThreeViewerComponent } from '../shared/components/three-viewer/three-viewer.component';
 import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
+import { PermissionsService } from '../core/services/permissions.service';
 import { QualityService, QualityDataEntry, QualitySummary } from './quality.service';
 import { ModelMediaService } from '../core/services/model-media.service';
 import { environment } from '../../environments/environment';
@@ -665,12 +666,14 @@ export class QualityAnalysisComponent implements OnInit {
     private api: ApiService,
     private qualityService: QualityService,
     private authService: AuthService,
+    private permissions: PermissionsService,
     private snackBar: MatSnackBar,
     private modelMedia: ModelMediaService,
   ) {}
 
   ngOnInit(): void {
-    this.canInspect = this.authService.hasRole('admin', 'manager', 'supervisor');
+    // Fine-grained: anyone whose role grants inspection — incl. custom roles.
+    this.canInspect = this.permissions.can('quality-analysis.inspect');
     this.loadModels();
   }
 

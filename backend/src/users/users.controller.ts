@@ -5,48 +5,49 @@ import { CreateUserDto } from './dto/create-user.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles('admin', 'manager')
-  @ApiOperation({ summary: 'List users (paginated)' })
-  @ApiQuery({ name: 'role', required: false })
+  @RequirePermissions('users.view')
+  @ApiOperation({ summary: 'List users of this organization (paginated)' })
+  @ApiQuery({ name: 'role', required: false, description: 'Role id or role name' })
   @ApiQuery({ name: 'status', required: false, enum: ['active', 'inactive', 'all'] })
   findAll(@Query() pageOptions: PageOptionsDto, @Query('role') role?: string, @Query('status') status?: string) {
     return this.usersService.findAll(pageOptions, role, status);
   }
 
   @Get(':id')
+  @RequirePermissions('users.view')
   @ApiOperation({ summary: 'Get user by ID' })
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
   }
 
   @Post()
-  @Roles('admin')
+  @RequirePermissions('users.create')
   @ApiOperation({ summary: 'Create user' })
   create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
   }
 
   @Patch(':id')
-  @Roles('admin')
-  @ApiOperation({ summary: 'Update user' })
+  @RequirePermissions('users.update')
+  @ApiOperation({ summary: 'Update user (role assignment requires an assignable role)' })
   update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('admin')
-  @ApiOperation({ summary: 'Soft-delete user' })
+  @RequirePermissions('users.delete')
+  @ApiOperation({ summary: 'Deactivate user (soft delete)' })
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }

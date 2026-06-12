@@ -6,37 +6,39 @@ import { ClockOutDto } from './dto/clock-out.dto.js';
 import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 @ApiTags('Time Tracking')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/time-tracking')
 export class TimeTrackingController {
   constructor(private readonly service: TimeTrackingService) {}
 
   @Post('clock-in')
-  @Roles('operator', 'supervisor', 'admin', 'manager')
+  @RequirePermissions('time-tracking.track')
   @ApiOperation({ summary: 'Clock in to a work order stage' })
   clockIn(@Request() req: any, @Body() dto: ClockInDto) {
     return this.service.clockIn(req.user.id, dto);
   }
 
   @Post('clock-out')
-  @Roles('operator', 'supervisor', 'admin', 'manager')
+  @RequirePermissions('time-tracking.track')
   @ApiOperation({ summary: 'Clock out of active time entry' })
   clockOut(@Request() req: any, @Body() dto: ClockOutDto) {
     return this.service.clockOut(req.user.id, dto);
   }
 
   @Get('active')
+  @RequirePermissions('time-tracking.view')
   @ApiOperation({ summary: 'Get all active time entries' })
   getActive() {
     return this.service.getActive();
   }
 
   @Get('history')
+  @RequirePermissions('time-tracking.view')
   @ApiOperation({ summary: 'Get time entry history' })
   @ApiQuery({ name: 'userId', required: false })
   @ApiQuery({ name: 'workOrderId', required: false })
@@ -53,14 +55,14 @@ export class TimeTrackingController {
   }
 
   @Get('user/:userId')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('time-tracking.manage')
   @ApiOperation({ summary: 'Get time entries for user' })
   getByUser(@Param('userId') userId: string) {
     return this.service.getByUser(userId);
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager', 'supervisor')
+  @RequirePermissions('time-tracking.manage')
   @ApiOperation({ summary: 'Correct a time entry' })
   update(@Param('id') id: string, @Body() dto: UpdateTimeEntryDto) {
     return this.service.update(id, dto);

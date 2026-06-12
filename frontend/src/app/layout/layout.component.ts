@@ -521,7 +521,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     { label: 'Administration', icon: 'settings', expanded: false, items: [
       { label: 'Organizations', icon: 'corporate_fare', route: '/organizations', feature: 'organizations' },
       { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
-      { label: 'Roles & Access', icon: 'admin_panel_settings', route: '/rbac', feature: 'rbac' },
+      { label: 'Roles & Access', icon: 'admin_panel_settings', route: '/rbac', feature: 'roles' },
     ] },
   ];
 

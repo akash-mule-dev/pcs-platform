@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from './entities/user.entity.js';
 import { LoginDto } from './dto/login.dto.js';
+import { RolePermissionsResolver } from '../rbac/role-permissions.resolver.js';
 
 @Injectable()
 export class AuthService {
@@ -12,6 +13,7 @@ export class AuthService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly permissionsResolver: RolePermissionsResolver,
   ) {}
 
   async login(dto: LoginDto) {
@@ -30,6 +32,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role.name,
+      roleId: user.roleId,
       employeeId: user.employeeId,
       organizationId: user.organizationId,
     };
@@ -43,7 +46,12 @@ export class AuthService {
         lastName: user.lastName,
         employeeId: user.employeeId,
         organizationId: user.organizationId,
-        role: user.role,
+        role: {
+          id: user.role.id,
+          name: user.role.name,
+          isSystem: user.role.isSystem,
+          description: user.role.description,
+        },
       },
     };
   }
@@ -56,5 +64,22 @@ export class AuthService {
     if (!user) throw new UnauthorizedException();
     const { passwordHash, ...result } = user as any;
     return result;
+  }
+
+  /**
+   * The CALLER's effective access: role + fine-grained permission keys
+   * (may include the `*` wildcard for the system admin role).
+   * This is what the web portal and mobile app gate their UI with.
+   */
+  async getMyAccess(principal: { id: string; roleId?: string | null; role?: string | null }) {
+    const access = await this.permissionsResolver.resolveForUser(principal);
+    return {
+      role: {
+        id: access.role.id,
+        name: access.role.name,
+        isSystem: access.role.isSystem,
+      },
+      permissions: [...access.permissions].sort(),
+    };
   }
 }

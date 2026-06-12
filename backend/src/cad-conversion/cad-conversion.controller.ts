@@ -14,14 +14,14 @@ import * as os from 'os';
 import { CadConversionService } from './cad-conversion.service.js';
 import { ModelsService } from '../models/models.service.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../common/decorators/roles.decorator.js';
+import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 const STAGING_DIR = path.join(os.tmpdir(), 'pcs-cad-staging');
 
 @ApiTags('CAD Conversion')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/cad')
 export class CadConversionController {
   constructor(
@@ -30,7 +30,7 @@ export class CadConversionController {
   ) {}
 
   @Post('convert-and-upload')
-  @Roles('admin', 'manager')
+  @RequirePermissions('coordination.convert')
   @ApiOperation({ summary: 'Upload a STEP/IGES CAD file, convert to GLB, and save as a 3D model' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({

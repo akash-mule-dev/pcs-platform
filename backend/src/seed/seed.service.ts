@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Role } from '../auth/entities/role.entity.js';
 import { User } from '../auth/entities/user.entity.js';
+import { Organization } from '../organization/organization.entity.js';
 import { Product } from '../products/product.entity.js';
 import { Process } from '../processes/process.entity.js';
 import { Stage } from '../stages/stage.entity.js';
@@ -21,6 +22,7 @@ export class SeedService {
   constructor(
     @InjectRepository(Role) private roleRepo: Repository<Role>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(Organization) private orgRepo: Repository<Organization>,
     @InjectRepository(Product) private productRepo: Repository<Product>,
     @InjectRepository(Process) private processRepo: Repository<Process>,
     @InjectRepository(Stage) private stageRepo: Repository<Stage>,
@@ -33,8 +35,10 @@ export class SeedService {
   ) {}
 
   async seed() {
-    const existingRoles = await this.roleRepo.count();
-    if (existingRoles > 0) {
+    // Users are the idempotency marker — system roles may already exist
+    // (RbacSeedService syncs them on every boot, before --seed runs).
+    const existingUsers = await this.userRepo.count();
+    if (existingUsers > 0) {
       this.logger.log('Database already seeded, skipping');
       return;
     }
@@ -50,13 +54,24 @@ export class SeedService {
     const hash = await bcrypt.hash(defaultPassword, 10);
 
     // ─── ROLES ──────────────────────────────────────────────────────────
+    // Built-in system roles, upserted by name (RbacSeedService may have
+    // created them already on bootstrap). Their fine-grained permissions live
+    // in code (rbac/permission-catalog.ts); custom org roles are created at
+    // runtime via the Roles & Permissions UI (POST /api/rbac/roles).
     const roles: Record<string, Role> = {};
-    for (const r of ['admin', 'manager', 'supervisor', 'operator']) {
-      roles[r] = await this.roleRepo.save(this.roleRepo.create({ name: r, description: `${r} role` }));
+    for (const r of ['admin', 'manager', 'supervisor', 'operator', 'platform-admin']) {
+      const existing = await this.roleRepo.findOne({ where: { name: r } });
+      roles[r] = existing
+        ?? await this.roleRepo.save(
+          this.roleRepo.create({ name: r, description: `Built-in ${r} role`, isSystem: true, organizationId: null }),
+        );
     }
 
     // ─── DEFAULT USERS (login accounts only) ────────────────────────────
+    // EMP-000 is the org-less PLATFORM operator (provisions tenants); the
+    // TenantBootstrapService deliberately never claims it for the default org.
     const usersData = [
+      { employeeId: 'EMP-000', email: 'platform@pcs.com', mobileNo: '9876543000', firstName: 'Priya', lastName: 'Operator', role: 'platform-admin' },
       { employeeId: 'EMP-001', email: 'admin@pcs.com', mobileNo: '9876543001', firstName: 'Rajesh', lastName: 'Patil', role: 'admin' },
       { employeeId: 'EMP-002', email: 'manager@pcs.com', mobileNo: '9876543002', firstName: 'Priya', lastName: 'Sharma', role: 'manager' },
       { employeeId: 'EMP-003', email: 'supervisor1@pcs.com', mobileNo: '9876543003', firstName: 'Vikram', lastName: 'Deshmukh', role: 'supervisor' },
@@ -71,6 +86,10 @@ export class SeedService {
       { employeeId: 'EMP-012', email: 'operator8@pcs.com', mobileNo: '9876543012', firstName: 'Kavita', lastName: 'Mane', role: 'operator' },
     ];
 
+    // Tenant users belong to the default org (created by TenantBootstrapService,
+    // which runs before --seed); stamping it here makes a FRESH database fully
+    // usable after a single boot. The platform operator stays org-less by design.
+    const defaultOrg = await this.orgRepo.findOne({ where: { slug: 'default' } });
     for (const u of usersData) {
       await this.userRepo.save(this.userRepo.create({
         employeeId: u.employeeId,
@@ -80,10 +99,11 @@ export class SeedService {
         firstName: u.firstName,
         lastName: u.lastName,
         roleId: roles[u.role].id,
+        organizationId: u.role === 'platform-admin' ? null : defaultOrg?.id ?? null,
       }));
     }
 
-    this.logger.log('Seeded: 4 roles, 12 users. All business data (products, processes, lines, work orders) must be created via the web portal or mobile app.');
+    this.logger.log('Seeded: 5 system roles, 13 users (incl. org-less platform@pcs.com). All business data (products, processes, lines, work orders) must be created via the web portal or mobile app.');
   }
 
 }

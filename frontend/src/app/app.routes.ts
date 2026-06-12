@@ -132,7 +132,7 @@ export const routes: Routes = [
       },
       {
         path: 'rbac',
-        canActivate: [featureGuard('rbac')],
+        canActivate: [featureGuard('roles')],
         loadComponent: () => import('./rbac/rbac.component').then(m => m.RbacComponent)
       },
       {
