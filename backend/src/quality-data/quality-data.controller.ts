@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, Query, UseGuards,
+  Body, Param, Query, UseGuards, BadRequestException,
   UseInterceptors, UploadedFile, Res, ParseFilePipe, MaxFileSizeValidator, ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -11,10 +11,11 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
-import { QualityDataService } from './quality-data.service.js';
+import { QualityDataService, EVIDENCE_EXTENSIONS, EVIDENCE_MIME_TYPES } from './quality-data.service.js';
 import { CreateQualityDataDto } from './dto/create-quality-data.dto.js';
 import { UpdateQualityDataDto } from './dto/update-quality-data.dto.js';
 import { BulkCreateQualityDataDto } from './dto/bulk-create-quality-data.dto.js';
+import { SignoffQualityDataDto } from './dto/signoff-quality-data.dto.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
@@ -104,13 +105,10 @@ export class QualityDataController {
   }
 
   @Patch(':id/signoff')
-  @RequirePermissions('quality-analysis.inspect')
-  @ApiOperation({ summary: 'Sign off on a quality data entry' })
-  signoff(
-    @Param('id') id: string,
-    @Body() body: { status: 'approved' | 'rejected'; signoffBy: string; notes?: string },
-  ) {
-    return this.service.signoff(id, body.status, body.signoffBy, body.notes);
+  @RequirePermissions('quality-analysis.signoff')
+  @ApiOperation({ summary: 'Sign off on a quality data entry (decider stamped from the authenticated user)' })
+  signoff(@Param('id') id: string, @Body() body: SignoffQualityDataDto) {
+    return this.service.signoff(id, body.status, body.notes);
   }
 
   @Post(':id/evidence')
@@ -126,6 +124,11 @@ export class QualityDataController {
       },
       filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname) || '.jpg'}`),
     }),
+    fileFilter: (_req, file, cb) => {
+      const ext = (path.extname(file.originalname) || '').toLowerCase();
+      const ok = EVIDENCE_MIME_TYPES.includes((file.mimetype || '').toLowerCase()) && EVIDENCE_EXTENSIONS.includes(ext);
+      cb(ok ? null : new BadRequestException('Evidence must be a JPEG, PNG or WebP image'), ok);
+    },
     limits: { fileSize: 10 * 1024 * 1024 },
   }))
   addEvidence(
@@ -147,7 +150,7 @@ export class QualityDataController {
     try {
       const { stream, key } = await this.service.getEvidenceStream(id, index);
       const ext = path.extname(key).toLowerCase();
-      const type = ext === '.png' ? 'image/png' : 'image/jpeg';
+      const type = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
       res.set({ 'Content-Type': type, 'Cache-Control': 'private, max-age=3600' });
       (stream as any).pipe(res);
     } catch {

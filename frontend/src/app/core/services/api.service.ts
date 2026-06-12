@@ -34,6 +34,11 @@ export class ApiService {
     );
   }
 
+  /** GET a binary endpoint (e.g. evidence images) as a Blob; auth comes from the usual interceptor. */
+  getBlob(path: string): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}${path}`, { responseType: 'blob' });
+  }
+
   post<T>(path: string, body: any = {}): Observable<T> {
     return this.http.post<T>(`${this.baseUrl}${path}`, body);
   }

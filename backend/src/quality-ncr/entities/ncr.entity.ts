@@ -8,9 +8,11 @@ export enum NcrDisposition { REWORK = 'rework', SCRAP = 'scrap', USE_AS_IS = 'us
 /** Non-Conformance Report — captured against a configurable template (per tenant). */
 @Entity('ncrs')
 @Index(['organizationId', 'status'])
+@Index(['organizationId', 'number'], { unique: true })
+@Index(['assemblyNodeId'])
 export class Ncr extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
-  @Column({ type: 'varchar', length: 50 }) number: string; // NCR-YYYY-NNNN
+  @Column({ type: 'varchar', length: 50 }) number: string; // NCR-YYYY-NNNN (sequence per organization)
   @Column({ type: 'varchar', length: 255 }) title: string;
   @Column({ type: 'text', nullable: true }) description: string | null;
   @Column({ type: 'enum', enum: NcrStatus, default: NcrStatus.OPEN }) status: NcrStatus;
@@ -34,6 +36,8 @@ export class Ncr extends TenantOwnedEntity {
   @Column({ type: 'enum', enum: NcrDisposition, nullable: true }) disposition: NcrDisposition | null;
   @Column({ name: 'disposition_note', type: 'text', nullable: true }) dispositionNote: string | null;
   @Column({ name: 'closed_at', type: 'timestamp', nullable: true }) closedAt: Date | null;
+  /** Who closed it (stamped server-side on the closing transition). */
+  @Column({ name: 'closed_by', type: 'uuid', nullable: true }) closedBy: string | null;
 
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;

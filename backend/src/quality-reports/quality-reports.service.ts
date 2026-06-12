@@ -52,8 +52,8 @@ export class QualityReportsService {
     const prefix = `QR-${year}-`;
     for (let attempt = 0; attempt < 5; attempt++) {
       const rows: { num: string }[] = await this.repo.query(
-        `SELECT number AS num FROM quality_reports WHERE number LIKE $1 ORDER BY number DESC LIMIT 1`,
-        [`${prefix}%`],
+        `SELECT number AS num FROM quality_reports WHERE number LIKE $1 AND organization_id = $2 ORDER BY number DESC LIMIT 1`,
+        [`${prefix}%`, org],
       );
       const base = rows?.[0]?.num ? parseInt(rows[0].num.slice(prefix.length), 10) || 0 : 0;
       try {

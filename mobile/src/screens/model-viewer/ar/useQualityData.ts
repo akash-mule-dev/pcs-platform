@@ -148,8 +148,10 @@ export function useQualityData(modelId: string | null) {
   );
 
   const signoff = useCallback(
-    async (id: string, status: 'approved' | 'rejected', signoffBy: string, notes?: string) => {
-      await api.patch(`/quality-data/${id}/signoff`, { status, signoffBy, notes });
+    // signoffBy is accepted for call-site compatibility but ignored — the
+    // backend stamps the decider's identity from the JWT (not spoofable).
+    async (id: string, status: 'approved' | 'rejected', _signoffBy?: string, notes?: string) => {
+      await api.patch(`/quality-data/${id}/signoff`, { status, notes });
       await refresh();
     },
     [refresh],

@@ -19,6 +19,7 @@ import { useModelState } from './useModelState';
 import { useDeviceCapabilities } from './useDeviceCapabilities';
 import { useQualityData, ARQualityEntry } from './useQualityData';
 import { useAuth } from '../../../context/AuthContext';
+import { can } from '../../../config/permissions';
 import {
   Vec3,
   TrackingMode,
@@ -169,14 +170,18 @@ export default function ARExperience({
 
   const handleSignoff = useCallback(
     (entry: ARQualityEntry) => {
-      const who = inspectorName || 'Mobile inspector';
+      // Decisions need the dedicated permission; identity is stamped server-side.
+      if (!can('quality-analysis.signoff')) {
+        Alert.alert('Sign-off', 'Your role cannot approve/reject inspections — a reviewer with sign-off permission will pick this up.');
+        return;
+      }
       Alert.alert(`Sign off — ${entry.meshName}`, `Current status: ${entry.status.toUpperCase()}`, [
-        { text: 'Approve', onPress: () => { void signoffQuality(entry.id, 'approved', who); } },
-        { text: 'Reject', style: 'destructive', onPress: () => { void signoffQuality(entry.id, 'rejected', who); } },
+        { text: 'Approve', onPress: () => { void signoffQuality(entry.id, 'approved'); } },
+        { text: 'Reject', style: 'destructive', onPress: () => { void signoffQuality(entry.id, 'rejected'); } },
         { text: 'Cancel', style: 'cancel' },
       ]);
     },
-    [signoffQuality, inspectorName],
+    [signoffQuality],
   );
 
   // Set initial model on mount / when the prepared model changes.

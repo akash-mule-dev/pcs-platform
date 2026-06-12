@@ -141,7 +141,7 @@ ok('catalog covers every permission referenced by controllers (no orphans)', () 
     'products.view', 'products.create', 'products.update', 'products.delete',
     'processes.view', 'processes.create', 'processes.update', 'processes.delete',
     'scheduling.view', 'costing.view', 'audit.view',
-    'quality-analysis.view', 'quality-analysis.inspect', 'quality-analysis.delete',
+    'quality-analysis.view', 'quality-analysis.inspect', 'quality-analysis.signoff', 'quality-analysis.delete',
     'templates.view', 'templates.manage',
     'coordination.view', 'coordination.manage', 'coordination.convert', 'coordination.delete',
     'shipping.view', 'shipping.manage', 'shipping.delete',

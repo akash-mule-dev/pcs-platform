@@ -116,6 +116,40 @@ Key services & flows:
   production-complete units (every non-skipped stage done across its work orders), no open NCRs,
   and unallocated quantity left; shipped totals come from shipment items.
 
+## The quality module (`quality-data`, `quality-ncr`, `quality-reports`, `spc`, `quality-notify`)
+
+End-to-end QA flow: **record inspection (web 3D / mobile AR / per-node) → auto-fail on
+out-of-tolerance → failed entries queue for sign-off → raise NCR → investigate → disposition →
+close (or CAPA) → gates lift** (work-order quality stages + shipping both block on open NCRs).
+
+- **Pure rule modules** (unit-tested, no Nest/TypeORM): `quality-data/quality-math.ts`
+  (tolerance evaluation + auto-fail + sign-off rules) and `quality-ncr/ncr-workflow.ts`
+  (NCR/CAPA state machines). `npm run test:quality` runs both.
+- **Identity is server-stamped, never client-supplied:** `inspector`/`inspectorUserId` default
+  from the JWT on create; `PATCH /quality-data/:id/signoff` ignores any client `signoffBy` and
+  stamps `signoffBy`/`signoffByUserId` from the authenticated user. Sign-off needs the dedicated
+  `quality-analysis.signoff` permission (inspect ≠ approve).
+- **NCR lifecycle is a state machine:** open → investigation → disposition → closed, cancel from
+  open/investigation, reopen closed → investigation (clears `closed_at`/`closed_by`). Closing
+  REQUIRES a disposition. Every action (create/transition/disposition/assignment/comment) appends
+  an `ncr_events` row — `GET /api/ncr/:id/events` is the timeline; `GET /api/ncr/:id` returns
+  `allowedTransitions` which the web + mobile detail UIs render as guided action buttons.
+  CAPAs must be `verified` (stamps verifier) before they can close.
+- **Numbering is per-organization** (`NCR-YYYY-NNNN`, `QR-YYYY-NNNN`) with unique
+  `(organization_id, number)` indexes; allocation races retry on 23505.
+- **Tenancy:** every quality read/write is org-scoped (incl. summaries/trends/SPC/by-model
+  deletes); linked records (model/node/project/WO/quality entry/assignee) are validated to belong
+  to the caller's org on create. `ncr_events` is RLS-enrolled by the `QualityGovernance` migration.
+- **Eventing** (`quality-notify/`): failed inspections and NCR lifecycle changes emit the
+  `quality-alert` websocket event; high/critical failures + raised NCRs notify the org's
+  admin/manager/supervisors, assignments notify the assignee, sign-off decisions notify the
+  inspector. All best-effort (never fails the write). Sign-off/NCR/CAPA mutations are audit-logged.
+- **Evidence uploads** (`POST /quality-data/:id/evidence`) accept JPEG/PNG/WebP only (≤10 MB);
+  the web inspection detail fetches them as authed blobs.
+- **Regression suites:** `npm run test:quality` (pure rules), `npm run test:e2e:quality`
+  (51-assertion live suite incl. tenant isolation — scratch DB, mirrors `test:e2e:orders`),
+  plus `tests/suite/11-quality-data.api.spec.ts` and `tests/phase6-quality-enhancements.api.spec.ts`.
+
 Front end: `/projects`, `/projects/:id` workspace tabs (Overview / Assemblies & 3D / Work Orders);
 production tracking lives inside each order at `/projects/:id/orders/:orderId/(board|progress|quality|shipping)`.
 The workspace auto-polls `resolve-models` while a GLB converts so the viewer appears on its own.

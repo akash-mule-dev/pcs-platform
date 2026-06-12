@@ -23,7 +23,24 @@ export interface Ncr {
   status: string;
   severity?: string | null;
   disposition?: string | null;
+  dispositionNote?: string | null;
+  projectName?: string | null;
+  itemMark?: string | null;
+  closedAt?: string | null;
   createdAt?: string;
+  /** Present on GET /ncr/:id — legal next statuses (drives the action buttons). */
+  allowedTransitions?: string[];
+}
+
+/** One row of the NCR timeline (GET /ncr/:id/events). */
+export interface NcrEvent {
+  id: string;
+  type: 'created' | 'status_change' | 'disposition' | 'assignment' | 'comment';
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  note?: string | null;
+  actorName?: string | null;
+  createdAt: string;
 }
 
 export interface Equipment {
@@ -59,6 +76,7 @@ export const materialsService = {
 };
 
 export const ncrService = {
+  /** Filters: status, severity, projectId, open ('true' → not closed/cancelled), q. */
   getAll(params?: Record<string, string | number>): Promise<Ncr[]> {
     return api.getList<Ncr>('/ncr', params);
   },
@@ -67,6 +85,16 @@ export const ncrService = {
   },
   create(body: CreateNcrInput): Promise<Ncr> {
     return api.post<Ncr>('/ncr', body);
+  },
+  /** Transition / disposition — server validates against the workflow state machine. */
+  update(id: string, body: { status?: string; disposition?: string; dispositionNote?: string }): Promise<Ncr> {
+    return api.patch<Ncr>(`/ncr/${id}`, body);
+  },
+  events(id: string): Promise<NcrEvent[]> {
+    return api.getList<NcrEvent>(`/ncr/${id}/events`);
+  },
+  addComment(id: string, note: string): Promise<NcrEvent> {
+    return api.post<NcrEvent>(`/ncr/${id}/comments`, { note });
   },
 };
 

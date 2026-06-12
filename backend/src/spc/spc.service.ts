@@ -2,14 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { QualityData } from '../quality-data/quality-data.entity.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 /**
  * Statistical Process Control over quality inspection measurements.
  * Produces a control chart (mean, ±3σ control limits), spec limits + Cp/Cpk
  * from tolerances, and basic rule violations (beyond 3σ, run of 8 one side).
- *
- * NOTE: quality_data is not yet tenant-scoped (part of the 0a rollout); results
- * are scoped by modelId/meshName supplied by the caller.
+ * Tenant-scoped: only the caller's organization's measurements are charted.
  */
 @Injectable()
 export class SpcService {
@@ -19,6 +18,8 @@ export class SpcService {
     const where: any = { isActive: true };
     if (modelId) where.modelId = modelId;
     if (meshName) where.meshName = meshName;
+    const org = TenantContext.getOrganizationId();
+    if (org) where.organizationId = org;
 
     const rows = await this.qdRepo.find({ where, order: { inspectionDate: 'ASC' } as any, take: 500 });
     const measured = rows.filter((r) => r.measurementValue !== null && r.measurementValue !== undefined);

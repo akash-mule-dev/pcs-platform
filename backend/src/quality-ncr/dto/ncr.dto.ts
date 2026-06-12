@@ -1,9 +1,9 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsUUID, IsObject } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsUUID, IsObject, IsIn, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { NcrStatus, NcrSeverity, NcrDisposition } from '../entities/ncr.entity.js';
 
 export class CreateNcrDto {
-  @ApiProperty() @IsString() @IsNotEmpty() title: string;
+  @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(255) title: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional({ enum: NcrSeverity }) @IsOptional() @IsEnum(NcrSeverity) severity?: NcrSeverity;
   @ApiPropertyOptional() @IsOptional() @IsUUID() workOrderId?: string;
@@ -19,7 +19,7 @@ export class CreateNcrDto {
 }
 
 export class UpdateNcrDto {
-  @ApiPropertyOptional() @IsOptional() @IsString() title?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(255) title?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional({ enum: NcrStatus }) @IsOptional() @IsEnum(NcrStatus) status?: NcrStatus;
   @ApiPropertyOptional({ enum: NcrSeverity }) @IsOptional() @IsEnum(NcrSeverity) severity?: NcrSeverity;
@@ -27,4 +27,23 @@ export class UpdateNcrDto {
   @ApiPropertyOptional({ enum: NcrDisposition }) @IsOptional() @IsEnum(NcrDisposition) disposition?: NcrDisposition;
   @ApiPropertyOptional() @IsOptional() @IsString() dispositionNote?: string;
   @ApiPropertyOptional({ type: Object }) @IsOptional() @IsObject() dataJson?: Record<string, any>;
+}
+
+/** List filters — everything optional; `open=true` means not closed/cancelled. */
+export class NcrFilterDto {
+  @ApiPropertyOptional({ enum: NcrStatus }) @IsOptional() @IsEnum(NcrStatus) status?: NcrStatus;
+  @ApiPropertyOptional({ enum: NcrSeverity }) @IsOptional() @IsEnum(NcrSeverity) severity?: NcrSeverity;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() projectId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() assemblyNodeId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() workOrderId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() assignedTo?: string;
+  @ApiPropertyOptional({ description: "'true' → only NCRs that still block gates" })
+  @IsOptional() @IsIn(['true', 'false']) open?: string;
+  @ApiPropertyOptional({ description: 'Search in number/title' })
+  @IsOptional() @IsString() @MaxLength(120) q?: string;
+}
+
+export class NcrCommentDto {
+  @ApiProperty({ description: 'Comment text for the NCR timeline' })
+  @IsString() @IsNotEmpty() @MaxLength(4000) note: string;
 }

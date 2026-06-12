@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -265,7 +265,7 @@ interface Model3D {
             <mat-card class="detail-card">
               <mat-card-header>
                 <mat-card-title>Inspection Detail</mat-card-title>
-                <button mat-icon-button (click)="selectedEntry = null" class="close-btn">
+                <button mat-icon-button (click)="setSelectedEntry(null)" class="close-btn">
                   <mat-icon>close</mat-icon>
                 </button>
               </mat-card-header>
@@ -322,7 +322,32 @@ interface Model3D {
                       <span class="detail-value">{{ selectedEntry.notes }}</span>
                     </div>
                   }
+                  @if (selectedEntry.status === 'fail') {
+                    <div class="detail-row">
+                      <span class="detail-label">Sign-off</span>
+                      <span class="detail-value signoff-{{ selectedEntry.signoffStatus || 'pending' }}">
+                        {{ (selectedEntry.signoffStatus || 'pending') | uppercase }}
+                        @if (selectedEntry.signoffBy) { <span class="signoff-by">by {{ selectedEntry.signoffBy }}</span> }
+                      </span>
+                    </div>
+                    @if (selectedEntry.signoffNotes) {
+                      <div class="detail-row notes">
+                        <span class="detail-label">Review notes</span>
+                        <span class="detail-value">{{ selectedEntry.signoffNotes }}</span>
+                      </div>
+                    }
+                  }
                 </div>
+                @if (evidenceUrls.length) {
+                  <div class="evidence-strip">
+                    <span class="detail-label">Evidence</span>
+                    <div class="evidence-thumbs">
+                      @for (url of evidenceUrls; track url) {
+                        <a [href]="url" target="_blank" rel="noopener"><img [src]="url" alt="evidence" /></a>
+                      }
+                    </div>
+                  </div>
+                }
               </mat-card-content>
             </mat-card>
           }
@@ -338,7 +363,7 @@ interface Model3D {
                   @for (entry of qualityEntries; track entry.id) {
                     <div class="entry-item" [class]="entry.status"
                          [class.active]="selectedEntry?.id === entry.id"
-                         (click)="selectedEntry = entry">
+                         (click)="setSelectedEntry(entry)">
                       <span class="entry-dot" [class]="entry.status"></span>
                       <div class="entry-info">
                         <span class="entry-name">{{ entry.regionLabel || entry.meshName }}</span>
@@ -405,14 +430,18 @@ interface Model3D {
                         <span class="entry-name">{{ entry.regionLabel || entry.meshName }}</span>
                         <span class="entry-meta">{{ entry.defectType || 'Defect' }}</span>
                       </div>
-                      <div class="signoff-actions">
-                        <button mat-icon-button color="primary" (click)="approveSignoff(entry.id)" matTooltip="Approve">
-                          <mat-icon>check</mat-icon>
-                        </button>
-                        <button mat-icon-button color="warn" (click)="rejectSignoff(entry.id)" matTooltip="Reject">
-                          <mat-icon>close</mat-icon>
-                        </button>
-                      </div>
+                      @if (canSignoff) {
+                        <div class="signoff-actions">
+                          <button mat-icon-button color="primary" (click)="approveSignoff(entry.id)" matTooltip="Approve">
+                            <mat-icon>check</mat-icon>
+                          </button>
+                          <button mat-icon-button color="warn" (click)="rejectSignoff(entry.id)" matTooltip="Reject">
+                            <mat-icon>close</mat-icon>
+                          </button>
+                        </div>
+                      } @else {
+                        <span class="signoff-wait" matTooltip="Awaiting a reviewer with sign-off permission">awaiting review</span>
+                      }
                     </div>
                   }
                 </div>
@@ -615,6 +644,14 @@ interface Model3D {
     /* Phase 6: Sign-off */
     .signoff-card { max-height: 250px; overflow-y: auto; }
     .signoff-actions { display: flex; gap: 2px; }
+    .signoff-wait { font-size: 11px; color: var(--clay-text-muted, #64748b); font-style: italic; }
+    .signoff-pending { color: var(--warning-text, #92400e); font-weight: 600; }
+    .signoff-approved { color: var(--success-text, #166534); font-weight: 600; }
+    .signoff-rejected { color: var(--danger-text, #b91c1c); font-weight: 600; }
+    .signoff-by { font-weight: 400; color: var(--clay-text-muted, #64748b); margin-left: 4px; }
+    .evidence-strip { margin-top: 10px; }
+    .evidence-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .evidence-thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--clay-border, #e2e8f0); }
 
     .header-actions { display: flex; gap: 8px; }
 
@@ -627,7 +664,7 @@ interface Model3D {
     }
   `]
 })
-export class QualityAnalysisComponent implements OnInit {
+export class QualityAnalysisComponent implements OnInit, OnDestroy {
   @ViewChild('viewer') viewer!: ThreeViewerComponent;
 
   models: Model3D[] = [];
@@ -658,6 +695,8 @@ export class QualityAnalysisComponent implements OnInit {
   inspectNote = '';
   savingInspection = false;
   canInspect = false;
+  canSignoff = false;
+  evidenceUrls: string[] = [];
   qaByModel: Record<string, QualitySummary> = {};
   backfilling = false;
   private loadedResolver: (() => void) | null = null;
@@ -674,7 +713,31 @@ export class QualityAnalysisComponent implements OnInit {
   ngOnInit(): void {
     // Fine-grained: anyone whose role grants inspection — incl. custom roles.
     this.canInspect = this.permissions.can('quality-analysis.inspect');
+    this.canSignoff = this.permissions.can('quality-analysis.signoff');
     this.loadModels();
+  }
+
+  ngOnDestroy(): void {
+    this.clearEvidence();
+  }
+
+  /** Select an inspection entry and stream its evidence images (if any). */
+  setSelectedEntry(entry: QualityDataEntry | null): void {
+    this.selectedEntry = entry;
+    this.clearEvidence();
+    const count = entry?.attachments?.length ?? 0;
+    if (!entry || !count) return;
+    for (let i = 0; i < count; i++) {
+      this.qualityService.getEvidence(entry.id, i).subscribe({
+        next: (blob) => this.evidenceUrls.push(URL.createObjectURL(blob)),
+        error: () => { /* evidence is best-effort */ },
+      });
+    }
+  }
+
+  private clearEvidence(): void {
+    for (const url of this.evidenceUrls) URL.revokeObjectURL(url);
+    this.evidenceUrls = [];
   }
 
   loadModels(): void {
@@ -709,7 +772,7 @@ export class QualityAnalysisComponent implements OnInit {
     this.selectedModelUrl = `${environment.apiUrl}/models/${model.id}/file`;
     this.qualityOverlay = [];
     this.qualityEntries = [];
-    this.selectedEntry = null;
+    this.setSelectedEntry(null);
     this.summary = null;
     this.allParts = [];
     this.selectedPart = null;
@@ -726,7 +789,7 @@ export class QualityAnalysisComponent implements OnInit {
         }));
         // Keep the open detail in sync after a mark/refresh.
         if (this.selectedPart) {
-          this.selectedEntry = entries.find(e => e.meshName === this.selectedPart) || null;
+          this.setSelectedEntry(entries.find(e => e.meshName === this.selectedPart) || null);
         }
       },
     });
@@ -779,24 +842,23 @@ export class QualityAnalysisComponent implements OnInit {
   }
 
   approveSignoff(id: string): void {
-    const user = this.authService.currentUser;
-    const name = user ? `${user.firstName} ${user.lastName}` : 'Unknown';
-    this.qualityService.signoff(id, 'approved', name).subscribe({
+    // Identity is stamped server-side from the authenticated user.
+    this.qualityService.signoff(id, 'approved').subscribe({
       next: () => {
         this.snackBar.open('Approved', 'Close', { duration: 2000 });
         if (this.selectedModel) this.loadQualityData(this.selectedModel.id);
       },
+      error: (e) => this.snackBar.open(e?.error?.message || 'Sign-off failed', 'Close', { duration: 3500 }),
     });
   }
 
   rejectSignoff(id: string): void {
-    const user = this.authService.currentUser;
-    const name = user ? `${user.firstName} ${user.lastName}` : 'Unknown';
-    this.qualityService.signoff(id, 'rejected', name).subscribe({
+    this.qualityService.signoff(id, 'rejected').subscribe({
       next: () => {
         this.snackBar.open('Rejected', 'Close', { duration: 2000 });
         if (this.selectedModel) this.loadQualityData(this.selectedModel.id);
       },
+      error: (e) => this.snackBar.open(e?.error?.message || 'Sign-off failed', 'Close', { duration: 3500 }),
     });
   }
 
@@ -872,7 +934,7 @@ export class QualityAnalysisComponent implements OnInit {
           this.selectedModel = null;
           this.selectedModelUrl = null;
           this.qualityEntries = [];
-          this.selectedEntry = null;
+          this.setSelectedEntry(null);
           this.summary = null;
         }
         this.loadModels();
@@ -958,7 +1020,7 @@ export class QualityAnalysisComponent implements OnInit {
   /** Select a part (from a 3D click or the parts list) for inspection. */
   selectPart(meshName: string): void {
     this.selectedPart = meshName;
-    this.selectedEntry = this.qualityEntries.find((e) => e.meshName === meshName) || null;
+    this.setSelectedEntry(this.qualityEntries.find((e) => e.meshName === meshName) || null);
     if (meshName && !this.allParts.includes(meshName)) {
       this.allParts = [...this.allParts, meshName].sort();
     }

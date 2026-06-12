@@ -16,11 +16,12 @@ export enum QualityReportStatus {
 @Entity('quality_reports')
 @Index(['organizationId', 'productionOrderId'])
 @Index(['organizationId', 'status'])
+@Index(['organizationId', 'number'], { unique: true })
 export class QualityReport extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
 
-  /** QR-YYYY-NNNN — allocated from the MAX existing suffix. */
-  @Column({ type: 'varchar', length: 50, unique: true }) number: string;
+  /** QR-YYYY-NNNN — sequence per organization, allocated from the MAX existing suffix. */
+  @Column({ type: 'varchar', length: 50 }) number: string;
 
   // Template snapshot
   @Column({ name: 'template_id', type: 'uuid', nullable: true }) templateId: string | null;

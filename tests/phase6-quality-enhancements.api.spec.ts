@@ -1,16 +1,13 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
+import { loginAs } from './helpers/auth.helper';
 
 let token: string;
 let modelId: string;
 let failEntryId: string;
 
 async function getAuthToken(request: APIRequestContext): Promise<string> {
-  const res = await request.post('/api/auth/login', {
-    data: { email: 'admin@pcs.local', password: 'password123' },
-  });
-  expect(res.status()).toBe(201);
-  const body = await res.json();
-  return body.data.accessToken;
+  const { token: t } = await loginAs(request, 'admin');
+  return t;
 }
 
 function createTestGLB(): Buffer {
@@ -167,12 +164,14 @@ test.describe('Phase 6 — Quality Analysis Enhancements', () => {
 
     const res = await request.patch(`/api/quality-data/${failEntryId}/signoff`, {
       headers: { Authorization: `Bearer ${token}` },
-      data: { status: 'approved', signoffBy: 'System Admin', notes: 'Reviewed and accepted' },
+      data: { status: 'approved', notes: 'Reviewed and accepted' },
     });
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.data.signoffStatus).toBe('approved');
-    expect(body.data.signoffBy).toBe('System Admin');
+    // Identity is stamped from the authenticated user, never from the payload.
+    expect(body.data.signoffBy).toBeTruthy();
+    expect(body.data.signoffByUserId).toBeTruthy();
     expect(body.data.signoffNotes).toBe('Reviewed and accepted');
     expect(body.data.signoffDate).toBeTruthy();
   });
@@ -186,7 +185,7 @@ test.describe('Phase 6 — Quality Analysis Enhancements', () => {
 
     const res = await request.patch(`/api/quality-data/${pending[0].id}/signoff`, {
       headers: { Authorization: `Bearer ${token}` },
-      data: { status: 'rejected', signoffBy: 'System Admin', notes: 'Needs rework' },
+      data: { status: 'rejected', notes: 'Needs rework' },
     });
     expect(res.status()).toBe(200);
     const body = await res.json();

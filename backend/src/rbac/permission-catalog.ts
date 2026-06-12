@@ -232,7 +232,8 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
     key: 'quality-analysis', label: '3D Quality', category: 'Quality',
     actions: [
       { action: 'view', label: 'View', description: 'See 3D quality data, trends and SPC charts', defaultRoles: MS },
-      { action: 'inspect', label: 'Inspect', description: 'Record inspections, sign off, attach evidence', defaultRoles: MS },
+      { action: 'inspect', label: 'Inspect', description: 'Record inspections and attach evidence', defaultRoles: MS },
+      { action: 'signoff', label: 'Sign off', description: 'Approve / reject failed inspections', defaultRoles: MS },
       { action: 'delete', label: 'Delete', description: 'Delete quality data', defaultRoles: M },
     ],
   },
