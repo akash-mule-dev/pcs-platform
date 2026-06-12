@@ -94,7 +94,7 @@ const STATUS_LABEL: Record<string, string> = {
               <p class="none"><mat-icon>task_alt</mat-icon>Nothing is late or on hold.</p>
             } @else {
               @for (o of attention(); track o.id) {
-                <a class="att-row" [routerLink]="['/projects', o.project.id, 'orders', o.id]">
+                <a class="att-row" [routerLink]="['/work-orders', o.id]">
                   <span class="att-num">{{ o.number }}</span>
                   <span class="att-proj">{{ o.project.name }}</span>
                   <span class="spacer"></span>
@@ -127,7 +127,7 @@ const STATUS_LABEL: Record<string, string> = {
             <span class="num">Items</span><span>Progress</span><span>Status</span><span>Due</span>
           </div>
           @for (o of filtered(); track o.id) {
-            <a class="trow" [routerLink]="['/projects', o.project.id, 'orders', o.id]">
+            <a class="trow" [routerLink]="['/work-orders', o.id]">
               <span class="t-num">{{ o.number }}
                 @if (o.openNcrs > 0) { <span class="chip ncr sm" matTooltip="Open NCRs block the quality stage">{{ o.openNcrs }}</span> }
               </span>

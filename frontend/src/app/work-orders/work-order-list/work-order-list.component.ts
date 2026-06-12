@@ -181,7 +181,8 @@ export class WorkOrderListComponent implements OnInit, OnDestroy, AfterViewInit 
   }
 
   goToDetail(wo: any): void {
-    this.router.navigate(['/work-orders', wo.id]);
+    // Legacy per-product detail — /work-orders/:id is the per-order audit dashboard.
+    this.router.navigate(['/work-orders/legacy', wo.id]);
   }
 
   openForm(): void {

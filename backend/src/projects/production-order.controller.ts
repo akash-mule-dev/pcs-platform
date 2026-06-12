@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProductionOrderService } from './production-order.service.js';
-import { CreateProductionOrderDto, UpdateProductionOrderDto, SetStageProgressDto } from './production-order.dto.js';
+import { CreateProductionOrderDto, UpdateProductionOrderDto, SetStageProgressDto, BulkStageUpdateDto } from './production-order.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
@@ -69,11 +69,33 @@ export class ProductionOrderController {
     return this.service.getProgress(id);
   }
 
+  @Get('orders/:id/audit')
+  @Roles('admin', 'manager', 'supervisor', 'operator')
+  @ApiOperation({ summary: 'Audit view: every assembly with per-stage status, counts, stamps, people, time and holds — one call' })
+  audit(@Param('id') id: string) {
+    return this.service.getAudit(id);
+  }
+
   @Get('orders/:id/nodes/:nodeId/stages')
   @Roles('admin', 'manager', 'supervisor', 'operator')
   @ApiOperation({ summary: "One assembly's stages within this work order (with quantity counts)" })
   nodeStages(@Param('id') id: string, @Param('nodeId') nodeId: string) {
     return this.service.getNodeStages(id, nodeId);
+  }
+
+  @Get('orders/:id/nodes/:nodeId/audit')
+  @Roles('admin', 'manager', 'supervisor', 'operator')
+  @ApiOperation({ summary: "One assembly's audit trail in this work order: time entries + NCRs" })
+  nodeAudit(@Param('id') id: string, @Param('nodeId') nodeId: string) {
+    return this.service.getNodeAudit(id, nodeId);
+  }
+
+  // NOTE: declared BEFORE 'orders/:id/stages/:wosId' so 'bulk' is never captured as a :wosId.
+  @Patch('orders/:id/stages/bulk')
+  @Roles('admin', 'manager', 'supervisor', 'operator')
+  @ApiOperation({ summary: 'Batch update: apply one stage change to many assemblies (qtyDone or status)' })
+  bulkSetProgress(@Param('id') id: string, @Body() dto: BulkStageUpdateDto) {
+    return this.service.bulkStageUpdate(id, dto);
   }
 
   @Patch('orders/:id/stages/:wosId')

@@ -12,7 +12,7 @@ import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { isQualityStageName, qcGateMessage } from '../work-orders/qc-gate.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
-import { CreateProductionOrderDto, UpdateProductionOrderDto } from './production-order.dto.js';
+import { CreateProductionOrderDto, UpdateProductionOrderDto, BulkStageUpdateDto } from './production-order.dto.js';
 import { stageStatusFromCount, stageUnitsTotal, clamp, rollupCounts, StageStatus } from './quantity-math.js';
 
 /**
@@ -338,20 +338,9 @@ export class ProductionOrderService {
     if (!wos) throw new NotFoundException('Work-order stage not found');
     const wo = await this.woRepo.findOne({ where: { id: wos.workOrderId, organizationId: org } });
     if (!wo || wo.productionOrderId !== orderId) throw new BadRequestException('That stage does not belong to this work order');
-    const total = wos.qtyTotal ?? 0;
     const prevStatus = wos.status;
 
-    if (input.status !== undefined) {
-      const s = input.status;
-      if (s === 'completed') { wos.qtyDone = total; wos.status = WorkOrderStageStatus.COMPLETED; }
-      else if (s === 'skipped') { wos.status = WorkOrderStageStatus.SKIPPED; }
-      else if (s === 'in_progress') { wos.status = WorkOrderStageStatus.IN_PROGRESS; if (total > 0 && wos.qtyDone >= total) wos.qtyDone = Math.max(0, total - 1); }
-      else { wos.qtyDone = 0; wos.status = WorkOrderStageStatus.PENDING; }
-    } else {
-      const done = clamp(input.qtyDone ?? 0, 0, total);
-      wos.qtyDone = done;
-      wos.status = this.toStageEnum(stageStatusFromCount(done, total, wos.status === WorkOrderStageStatus.SKIPPED));
-    }
+    this.applyStageInput(wos, input);
 
     // Quality gate: a quality stage can't reach COMPLETED while its assembly has open NCRs.
     if (
@@ -370,8 +359,6 @@ export class ProductionOrderService {
       }
     }
 
-    if (wos.status === WorkOrderStageStatus.IN_PROGRESS && !wos.startedAt) wos.startedAt = new Date();
-    wos.completedAt = wos.status === WorkOrderStageStatus.COMPLETED ? (wos.completedAt ?? new Date()) : null;
     const saved = await this.wosRepo.save(wos);
 
     // Live propagation: WO status ← its stages; order status ← its WOs.
@@ -382,26 +369,79 @@ export class ProductionOrderService {
     return saved;
   }
 
+  /**
+   * Apply a qtyDone/status input to a stage row (pure mutation, no save):
+   * derives the counterpart field and keeps the started/completed stamps honest.
+   * Shared by the single-stage PATCH and the bulk update so both behave identically.
+   */
+  private applyStageInput(wos: WorkOrderStage, input: { qtyDone?: number; status?: string }): void {
+    const total = wos.qtyTotal ?? 0;
+    if (input.status !== undefined) {
+      const s = input.status;
+      if (s === 'completed') { wos.qtyDone = total; wos.status = WorkOrderStageStatus.COMPLETED; }
+      else if (s === 'skipped') { wos.status = WorkOrderStageStatus.SKIPPED; }
+      else if (s === 'in_progress') { wos.status = WorkOrderStageStatus.IN_PROGRESS; if (total > 0 && wos.qtyDone >= total) wos.qtyDone = Math.max(0, total - 1); }
+      else { wos.qtyDone = 0; wos.status = WorkOrderStageStatus.PENDING; }
+    } else {
+      const done = clamp(input.qtyDone ?? 0, 0, total);
+      wos.qtyDone = done;
+      wos.status = this.toStageEnum(stageStatusFromCount(done, total, wos.status === WorkOrderStageStatus.SKIPPED));
+    }
+    if (wos.status === WorkOrderStageStatus.IN_PROGRESS && !wos.startedAt) wos.startedAt = new Date();
+    wos.completedAt = wos.status === WorkOrderStageStatus.COMPLETED ? (wos.completedAt ?? new Date()) : null;
+  }
+
+  /** Open-NCR counts per assembly node, in ONE query (the bulk QC gate). */
+  private async openNcrCountByNode(nodeIds: string[]): Promise<Map<string, number>> {
+    if (!nodeIds.length) return new Map();
+    const rows: { nid: string; cnt: string }[] = await this.ncrRepo.query(
+      `SELECT assembly_node_id AS nid, COUNT(*)::int AS cnt
+         FROM ncrs
+        WHERE organization_id = $1 AND assembly_node_id = ANY($2)
+          AND status NOT IN ('closed','cancelled')
+        GROUP BY assembly_node_id`,
+      [this.org, nodeIds],
+    );
+    return new Map(rows.map((r) => [r.nid, Number(r.cnt)]));
+  }
+
   /** Derive a per-assembly WO's status from its stage rows (sets started/completed stamps). */
   private async syncWorkOrderStatus(wo: WorkOrder): Promise<void> {
-    const rows = await this.wosRepo.find({ where: { workOrderId: wo.id } });
-    if (!rows.length) return;
-    const done = rows.every((r) => r.status === WorkOrderStageStatus.COMPLETED || r.status === WorkOrderStageStatus.SKIPPED);
-    const any = rows.some(
-      (r) => r.status === WorkOrderStageStatus.IN_PROGRESS || r.status === WorkOrderStageStatus.COMPLETED || (r.qtyDone ?? 0) > 0,
-    );
-    const next = done ? WorkOrderStatus.COMPLETED : any ? WorkOrderStatus.IN_PROGRESS : WorkOrderStatus.PENDING;
-    if (wo.status === next) return;
-    wo.status = next;
-    const now = new Date();
-    if (next === WorkOrderStatus.IN_PROGRESS && !wo.startedAt) wo.startedAt = now;
-    if (next === WorkOrderStatus.COMPLETED) {
-      wo.completedAt = wo.completedAt ?? now;
-      wo.completedQuantity = wo.quantity;
-    } else {
-      wo.completedAt = null;
+    await this.syncWorkOrderStatuses([wo]);
+  }
+
+  /** Batched WO-status sync: one stage query + one save for ALL given WOs (bulk-safe). */
+  private async syncWorkOrderStatuses(wos: WorkOrder[]): Promise<void> {
+    if (!wos.length) return;
+    const rows = await this.wosRepo.find({ where: { workOrderId: In(wos.map((w) => w.id)) } });
+    const byWo = new Map<string, WorkOrderStage[]>();
+    for (const r of rows) {
+      const arr = byWo.get(r.workOrderId) ?? [];
+      arr.push(r);
+      byWo.set(r.workOrderId, arr);
     }
-    await this.woRepo.save(wo);
+    const now = new Date();
+    const changed: WorkOrder[] = [];
+    for (const wo of wos) {
+      const stageRows = byWo.get(wo.id) ?? [];
+      if (!stageRows.length) continue;
+      const done = stageRows.every((r) => r.status === WorkOrderStageStatus.COMPLETED || r.status === WorkOrderStageStatus.SKIPPED);
+      const any = stageRows.some(
+        (r) => r.status === WorkOrderStageStatus.IN_PROGRESS || r.status === WorkOrderStageStatus.COMPLETED || (r.qtyDone ?? 0) > 0,
+      );
+      const next = done ? WorkOrderStatus.COMPLETED : any ? WorkOrderStatus.IN_PROGRESS : WorkOrderStatus.PENDING;
+      if (wo.status === next) continue;
+      wo.status = next;
+      if (next === WorkOrderStatus.IN_PROGRESS && !wo.startedAt) wo.startedAt = now;
+      if (next === WorkOrderStatus.COMPLETED) {
+        wo.completedAt = wo.completedAt ?? now;
+        wo.completedQuantity = wo.quantity;
+      } else {
+        wo.completedAt = null;
+      }
+      changed.push(wo);
+    }
+    if (changed.length) await this.woRepo.save(changed, { chunk: 200 });
   }
 
   /** Derive the order's status from its per-assembly WOs (cancelled stays manual). */
@@ -500,6 +540,247 @@ export class ProductionOrderService {
       unitsTotal: rollup.unitsTotal,
       assemblies: wos.length,
       stages,
+    };
+  }
+
+  /**
+   * Batch update: apply ONE stage change to MANY assemblies of this order in a
+   * single request (the dashboard's "bulk edit"). Reuses the exact single-row
+   * semantics via applyStageInput, enforces the QC gate per assembly (gated rows
+   * are reported, not saved), then syncs WO + order status once at the end.
+   */
+  async bulkStageUpdate(orderId: string, dto: BulkStageUpdateDto) {
+    const org = this.org;
+    if (dto.qtyDone === undefined && dto.status === undefined) {
+      throw new BadRequestException('Provide qtyDone or status to apply');
+    }
+    await this.get(orderId);
+
+    const nodeIds = [...new Set(dto.nodeIds)];
+    const wos = await this.woRepo.find({ where: { productionOrderId: orderId, organizationId: org, assemblyNodeId: In(nodeIds) } });
+    const woByNode = new Map(wos.filter((w) => w.assemblyNodeId).map((w) => [w.assemblyNodeId as string, w]));
+    const nodes = nodeIds.length ? await this.nodeRepo.find({ where: { id: In(nodeIds), organizationId: org } }) : [];
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const rows = wos.length
+      ? await this.wosRepo.find({ where: { workOrderId: In(wos.map((w) => w.id)), stageId: dto.stageId }, relations: ['stage'] })
+      : [];
+    const rowByWo = new Map(rows.map((r) => [r.workOrderId, r]));
+
+    // The QC gate needs open-NCR counts only when this is a quality stage.
+    const gateNeeded = rows.some((r) => isQualityStageName(r.stage?.name));
+    const ncrByNode = gateNeeded ? await this.openNcrCountByNode(nodeIds) : new Map<string, number>();
+
+    const failed: { nodeId: string; mark: string; message: string }[] = [];
+    const toSave: WorkOrderStage[] = [];
+    const touched: WorkOrder[] = [];
+    for (const nodeId of nodeIds) {
+      const mark = nodeById.get(nodeId)?.mark || nodeById.get(nodeId)?.name || nodeId;
+      const wo = woByNode.get(nodeId);
+      const row = wo ? rowByWo.get(wo.id) : undefined;
+      if (!wo || !row) {
+        failed.push({ nodeId, mark, message: 'No matching stage on this assembly in this work order' });
+        continue;
+      }
+      const prevStatus = row.status;
+      this.applyStageInput(row, { qtyDone: dto.qtyDone, status: dto.status });
+      if (
+        row.status === WorkOrderStageStatus.COMPLETED &&
+        prevStatus !== WorkOrderStageStatus.COMPLETED &&
+        isQualityStageName(row.stage?.name)
+      ) {
+        const open = ncrByNode.get(nodeId) ?? 0;
+        if (open > 0) {
+          failed.push({ nodeId, mark, message: qcGateMessage(mark, open) }); // not saved → DB row untouched
+          continue;
+        }
+      }
+      toSave.push(row);
+      touched.push(wo);
+    }
+
+    if (toSave.length) {
+      await this.wosRepo.save(toSave, { chunk: 200 });
+      await this.syncWorkOrderStatuses(touched);
+      await this.syncOrderStatus(orderId);
+      this.events.emitWorkOrderUpdate({ productionOrderId: orderId, bulk: true, updated: toSave.length });
+      this.events.emitDashboardRefresh();
+    }
+    return { requested: nodeIds.length, updated: toSave.length, failed };
+  }
+
+  /**
+   * AUDIT view for one order — everything the per-order dashboard needs in one
+   * call: the order + project, its stage columns, per-assembly rows with every
+   * stage's status/counts/stamps/people, logged time and quality holds.
+   * Built from 5 batch queries — never N+1 per assembly.
+   */
+  async getAudit(orderId: string) {
+    const org = this.org;
+    const order = await this.get(orderId);
+    const project = await this.projectRepo.findOne({ where: { id: order.projectId, organizationId: org } });
+
+    const stages = order.processId
+      ? await this.stageRepo.find({ where: { processId: order.processId, organizationId: org }, order: { sequence: 'ASC' } })
+      : [];
+    const wos = await this.woRepo.find({ where: { productionOrderId: orderId, organizationId: org } });
+    const nodeIds = wos.map((w) => w.assemblyNodeId).filter((x): x is string => !!x);
+    const nodes = nodeIds.length ? await this.nodeRepo.find({ where: { id: In(nodeIds), organizationId: org } }) : [];
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const rows = wos.length
+      ? await this.wosRepo.find({ where: { workOrderId: In(wos.map((w) => w.id)) }, relations: ['stage', 'assignedUser', 'station'] })
+      : [];
+
+    // Logged time per stage row (closed time entries) — one aggregate query.
+    const timeAgg: { wos_id: string; seconds: string; entries: string }[] = wos.length
+      ? await this.orderRepo.query(
+          `SELECT te.work_order_stage_id AS wos_id,
+                  COALESCE(SUM(te.duration_seconds), 0)::int AS seconds,
+                  COUNT(*)::int AS entries
+             FROM time_entries te
+             JOIN work_order_stages s ON s.id = te.work_order_stage_id
+             JOIN work_orders w ON w.id = s.work_order_id
+            WHERE te.organization_id = $1 AND w.production_order_id = $2
+            GROUP BY te.work_order_stage_id`,
+          [org, orderId],
+        )
+      : [];
+    const timeByWos = new Map(timeAgg.map((t) => [t.wos_id, { seconds: Number(t.seconds), entries: Number(t.entries) }]));
+    const ncrByNode = await this.openNcrCountByNode(nodeIds);
+
+    const rowsByWo = new Map<string, WorkOrderStage[]>();
+    for (const r of rows) {
+      const arr = rowsByWo.get(r.workOrderId) ?? [];
+      arr.push(r);
+      rowsByWo.set(r.workOrderId, arr);
+    }
+
+    // Stage columns from the process; fall back to whatever the rows reference
+    // (orders survive a deleted/edited process).
+    let stageList = stages.map((s) => ({ id: s.id, name: s.name, sequence: s.sequence }));
+    if (!stageList.length) {
+      const seen = new Map<string, { id: string; name: string; sequence: number }>();
+      for (const r of rows) if (r.stage && !seen.has(r.stageId)) seen.set(r.stageId, { id: r.stageId, name: r.stage.name, sequence: r.stage.sequence });
+      stageList = [...seen.values()].sort((a, b) => a.sequence - b.sequence);
+    }
+
+    const items = wos.map((wo) => {
+      const node = wo.assemblyNodeId ? nodeById.get(wo.assemblyNodeId) : undefined;
+      const woRows = (rowsByWo.get(wo.id) ?? []).sort((a, b) => (a.stage?.sequence ?? 0) - (b.stage?.sequence ?? 0));
+      const rollup = rollupCounts(woRows.map((r) => ({ qtyDone: r.qtyDone ?? 0, qtyTotal: r.qtyTotal ?? 0, skipped: r.status === WorkOrderStageStatus.SKIPPED })));
+      let itemSeconds = 0;
+      let lastActivity: Date | null = null;
+      const stageRows = woRows.map((r) => {
+        const t = timeByWos.get(r.id);
+        const seconds = t?.seconds ?? r.actualTimeSeconds ?? 0;
+        itemSeconds += seconds;
+        // "Status updated" only once the stage has actually moved — fresh rows stay blank.
+        const moved = r.status !== WorkOrderStageStatus.PENDING || (r.qtyDone ?? 0) > 0;
+        const statusUpdatedAt = moved ? (r.updatedAt ?? r.completedAt ?? r.startedAt ?? null) : null;
+        if (statusUpdatedAt && (!lastActivity || statusUpdatedAt > lastActivity)) lastActivity = statusUpdatedAt;
+        return {
+          wosId: r.id,
+          stageId: r.stageId,
+          name: r.stage?.name ?? 'Stage',
+          sequence: r.stage?.sequence ?? 0,
+          status: String(r.status),
+          qtyDone: r.qtyDone ?? 0,
+          qtyTotal: r.qtyTotal ?? 0,
+          startedAt: r.startedAt,
+          completedAt: r.completedAt,
+          statusUpdatedAt,
+          assignedUser: r.assignedUser ? { id: r.assignedUser.id, name: `${r.assignedUser.firstName ?? ''} ${r.assignedUser.lastName ?? ''}`.trim() } : null,
+          station: r.station ? { id: r.station.id, name: r.station.name } : null,
+          timeSeconds: seconds,
+          timeEntries: t?.entries ?? 0,
+        };
+      });
+      return {
+        nodeId: wo.assemblyNodeId,
+        workOrderId: wo.id,
+        workOrderNumber: wo.orderNumber,
+        mark: node?.mark || node?.name || wo.orderNumber,
+        name: node?.name ?? null,
+        nodeType: node ? String(node.nodeType) : 'assembly',
+        profile: node?.profile ?? null,
+        materialGrade: node?.materialGrade ?? null,
+        lengthMm: node?.lengthMm ?? null,
+        weightKg: node?.weightKg ?? null,
+        quantity: wo.quantity,
+        status: rollup.status,
+        percent: rollup.percentComplete,
+        unitsDone: rollup.unitsDone,
+        unitsTotal: rollup.unitsTotal,
+        openNcrs: wo.assemblyNodeId ? (ncrByNode.get(wo.assemblyNodeId) ?? 0) : 0,
+        totalTimeSeconds: itemSeconds,
+        lastActivityAt: lastActivity,
+        stages: stageRows,
+      };
+    });
+    items.sort((a, b) => a.mark.localeCompare(b.mark, undefined, { numeric: true }));
+
+    const totals = {
+      items: items.length,
+      itemsDone: items.filter((i) => i.status === 'completed').length,
+      unitsDone: items.reduce((a, i) => a + i.unitsDone, 0),
+      unitsTotal: items.reduce((a, i) => a + i.unitsTotal, 0),
+      percent: 0,
+      totalTimeSeconds: items.reduce((a, i) => a + i.totalTimeSeconds, 0),
+      openNcrs: [...ncrByNode.values()].reduce((a, b) => a + b, 0),
+    };
+    totals.percent = totals.unitsTotal > 0 ? Math.round((totals.unitsDone / totals.unitsTotal) * 1000) / 10 : 0;
+
+    return {
+      order: this.orderDto(order),
+      project: project ? { id: project.id, name: project.name, number: project.projectNumber } : null,
+      stages: stageList,
+      totals,
+      items,
+    };
+  }
+
+  /**
+   * Per-assembly audit detail (lazy, for the right pane): the full time-entry
+   * trail and the assembly's NCRs — who worked it, where, for how long, and
+   * what quality actions are open against it.
+   */
+  async getNodeAudit(orderId: string, nodeId: string) {
+    const org = this.org;
+    await this.get(orderId);
+    const wo = await this.woRepo.findOne({ where: { productionOrderId: orderId, assemblyNodeId: nodeId, organizationId: org } });
+    if (!wo) throw new NotFoundException('This assembly is not part of this work order');
+
+    const entries: any[] = await this.orderRepo.query(
+      `SELECT te.id, te.start_time, te.end_time, te.duration_seconds, te.is_rework, te.notes, te.input_method,
+              u.first_name, u.last_name, st.name AS stage_name, sta.name AS station_name
+         FROM time_entries te
+         JOIN work_order_stages s ON s.id = te.work_order_stage_id
+         LEFT JOIN stages st ON st.id = s.stage_id
+         LEFT JOIN users u ON u.id = te.user_id
+         LEFT JOIN stations sta ON sta.id = te.station_id
+        WHERE te.organization_id = $1 AND s.work_order_id = $2
+        ORDER BY te.start_time DESC
+        LIMIT 50`,
+      [org, wo.id],
+    );
+    const ncrs = await this.ncrRepo.find({ where: { assemblyNodeId: nodeId, organizationId: org }, order: { createdAt: 'DESC' }, take: 20 });
+
+    return {
+      nodeId,
+      workOrderId: wo.id,
+      workOrderNumber: wo.orderNumber,
+      timeEntries: entries.map((e) => ({
+        id: e.id,
+        user: [e.first_name, e.last_name].filter(Boolean).join(' ') || null,
+        stageName: e.stage_name ?? null,
+        stationName: e.station_name ?? null,
+        startTime: e.start_time,
+        endTime: e.end_time,
+        durationSeconds: e.duration_seconds != null ? Number(e.duration_seconds) : null,
+        isRework: !!e.is_rework,
+        notes: e.notes ?? null,
+        inputMethod: e.input_method ?? null,
+      })),
+      ncrs: ncrs.map((n) => ({ id: n.id, number: n.number, title: n.title, status: String(n.status), severity: String(n.severity), createdAt: n.createdAt })),
     };
   }
 }

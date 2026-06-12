@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { WorkOrder } from './work-order.entity.js';
 import { Stage } from '../stages/stage.entity.js';
 import { User } from '../auth/entities/user.entity.js';
@@ -66,4 +66,8 @@ export class WorkOrderStage extends TenantOwnedEntity {
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  // Audit: when this stage row last changed (status flips, count steps, assignment).
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
 }

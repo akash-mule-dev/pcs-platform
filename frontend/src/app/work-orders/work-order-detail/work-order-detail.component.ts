@@ -29,7 +29,7 @@ import { environment } from '../../../environments/environment';
     ThreeViewerComponent,
   ],
   template: `
-    <a routerLink="/work-orders" class="back-link">← Back to Work Orders</a>
+    <a routerLink="/work-orders/legacy" class="back-link">← Back to Work Orders</a>
 
     @if (wo) {
       <div class="wo-header">

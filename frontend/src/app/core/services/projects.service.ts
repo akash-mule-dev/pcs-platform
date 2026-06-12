@@ -170,6 +170,42 @@ export interface OrdersDashboard {
   orders: DashboardOrderRow[];
 }
 
+// ── Per-order audit dashboard (assemblies left, stage trail right) ──
+export interface AuditStageRow {
+  wosId: string; stageId: string; name: string; sequence: number;
+  status: string; qtyDone: number; qtyTotal: number;
+  startedAt: string | null; completedAt: string | null; statusUpdatedAt: string | null;
+  assignedUser: { id: string; name: string } | null;
+  station: { id: string; name: string } | null;
+  timeSeconds: number; timeEntries: number;
+}
+export interface AuditItem {
+  nodeId: string | null; workOrderId: string; workOrderNumber: string;
+  mark: string; name: string | null; nodeType: string;
+  profile: string | null; materialGrade: string | null; lengthMm: number | null; weightKg: number | null;
+  quantity: number; status: 'not_started' | 'in_progress' | 'completed'; percent: number;
+  unitsDone: number; unitsTotal: number; openNcrs: number; totalTimeSeconds: number;
+  lastActivityAt: string | null; stages: AuditStageRow[];
+}
+export interface OrderAudit {
+  order: ProductionOrder & { notes?: string | null };
+  project: { id: string; name: string; number: string | null } | null;
+  stages: { id: string; name: string; sequence: number }[];
+  totals: { items: number; itemsDone: number; unitsDone: number; unitsTotal: number; percent: number; totalTimeSeconds: number; openNcrs: number };
+  items: AuditItem[];
+}
+export interface NodeAuditDetail {
+  nodeId: string; workOrderId: string; workOrderNumber: string;
+  timeEntries: {
+    id: string; user: string | null; stageName: string | null; stationName: string | null;
+    startTime: string; endTime: string | null; durationSeconds: number | null;
+    isRework: boolean; notes: string | null; inputMethod: string | null;
+  }[];
+  ncrs: { id: string; number: string; title: string; status: string; severity: string; createdAt: string }[];
+}
+export interface BulkStageUpdate { stageId: string; nodeIds: string[]; qtyDone?: number; status?: string; }
+export interface BulkStageResult { requested: number; updated: number; failed: { nodeId: string; mark: string; message: string }[]; }
+
 @Injectable({ providedIn: 'root' })
 export class ProjectsService {
   private readonly base = `${environment.apiUrl}/projects`;
@@ -297,5 +333,19 @@ export class ProjectsService {
   /** Update a stage: qtyDone stepper, or status for qty=1 / skip. */
   setOrderStage(orderId: string, wosId: string, body: { qtyDone?: number; status?: string }): Observable<unknown> {
     return this.http.patch(`${environment.apiUrl}/orders/${orderId}/stages/${wosId}`, body);
+  }
+
+  // ── Per-order audit dashboard ──
+  /** Everything the audit dashboard needs in one call: assemblies + per-stage trail. */
+  orderAudit(orderId: string): Observable<OrderAudit> {
+    return this.http.get<OrderAudit>(`${environment.apiUrl}/orders/${orderId}/audit`);
+  }
+  /** Lazy per-assembly trail: time entries + NCRs. */
+  orderNodeAudit(orderId: string, nodeId: string): Observable<NodeAuditDetail> {
+    return this.http.get<NodeAuditDetail>(`${environment.apiUrl}/orders/${orderId}/nodes/${nodeId}/audit`);
+  }
+  /** Batch update: one stage change applied to many assemblies. */
+  bulkUpdateOrderStage(orderId: string, body: BulkStageUpdate): Observable<BulkStageResult> {
+    return this.http.patch<BulkStageResult>(`${environment.apiUrl}/orders/${orderId}/stages/bulk`, body);
   }
 }

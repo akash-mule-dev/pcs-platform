@@ -54,14 +54,21 @@ export const routes: Routes = [
         loadComponent: () => import('./work-orders/work-order-list/work-order-list.component').then(m => m.WorkOrderListComponent)
       },
       {
+        // Legacy per-product work-order detail (the audit dashboard owns /work-orders/:id now).
+        path: 'work-orders/legacy/:id',
+        canActivate: [featureGuard('work-orders')],
+        loadComponent: () => import('./work-orders/work-order-detail/work-order-detail.component').then(m => m.WorkOrderDetailComponent)
+      },
+      {
         path: 'work-orders/kanban',
         canActivate: [featureGuard('kanban')],
         loadComponent: () => import('./work-orders/work-order-kanban/work-order-kanban.component').then(m => m.WorkOrderKanbanComponent)
       },
       {
+        // Per-order AUDIT dashboard: assemblies left, full stage trail right, bulk edit.
         path: 'work-orders/:id',
         canActivate: [featureGuard('work-orders')],
-        loadComponent: () => import('./work-orders/work-order-detail/work-order-detail.component').then(m => m.WorkOrderDetailComponent)
+        loadComponent: () => import('./work-orders/work-order-audit.component').then(m => m.WorkOrderAuditComponent)
       },
       {
         path: 'time-tracking',

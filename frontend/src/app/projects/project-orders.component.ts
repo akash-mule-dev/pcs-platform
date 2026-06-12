@@ -50,7 +50,8 @@ import { ProjectWorkspaceStore } from './project-workspace.store';
       } @else {
         <div class="grid">
           @for (o of orders; track o.id) {
-            <a class="card" [routerLink]="['/projects', projectId, 'orders', o.id]">
+            <!-- Work orders open the per-order AUDIT dashboard (stage trail + bulk edit). -->
+            <a class="card" [routerLink]="['/work-orders', o.id]">
               <div class="card-top">
                 <span class="num">{{ o.number }}</span>
                 <span class="pill st-{{ o.status }}">{{ statusLabel(o.status) }}</span>

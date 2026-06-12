@@ -117,7 +117,7 @@ interface NavGroup {
                   <div class="search-group">
                     <div class="search-group-title">Work Orders</div>
                     @for (wo of searchResults.workOrders; track wo.id) {
-                      <div class="search-item" (click)="navigateTo('/work-orders/' + wo.id)">
+                      <div class="search-item" (click)="navigateTo('/work-orders/legacy/' + wo.id)">
                         <mat-icon>assignment</mat-icon>
                         <span>{{ wo.orderNumber }} — {{ wo.product?.name }}</span>
                       </div>
