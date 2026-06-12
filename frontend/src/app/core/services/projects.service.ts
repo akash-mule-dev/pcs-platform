@@ -168,9 +168,21 @@ export interface EarnedValue {
 
 // ── Node documents ──
 export interface NodeDocument {
-  id: string; nodeId: string; originalName: string; contentType: string; size: number;
+  id: string; nodeId: string | null; originalName: string; contentType: string; size: number;
   label: string | null; createdByName: string | null; createdAt: string;
 }
+
+/** One document of a package / project (snake_case raw row + matched mark). */
+export interface PackageDocumentRow {
+  id: string; node_id: string | null; import_file_id: string | null;
+  original_name: string; content_type: string; size: number;
+  label: string | null; created_by_name: string | null; created_at: string;
+  node_mark: string | null; node_name: string | null;
+}
+
+/** File formats the import endpoint accepts (keep in sync with the backend). */
+export const IMPORT_ACCEPT = '.ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply';
+export const IMPORT_FORMATS_HINT = 'IFC / ZIP package (model + PDF drawings) / STEP, IGES / GLB, OBJ, STL';
 
 // ── Traceability ──
 export interface LotOption {
@@ -453,6 +465,11 @@ export class ProjectsService {
   }
   nodeDocumentBlob(projectId: string, docId: string): Observable<Blob> {
     return this.http.get(`${this.base}/${projectId}/documents/${docId}/file`, { responseType: 'blob' });
+  }
+  /** All project documents, or one package's contents (importId), with matched marks. */
+  projectDocuments(projectId: string, importId?: string): Observable<PackageDocumentRow[]> {
+    const qs = importId ? `?importId=${importId}` : '';
+    return this.http.get<PackageDocumentRow[]>(`${this.base}/${projectId}/documents${qs}`);
   }
   deleteNodeDocument(projectId: string, docId: string): Observable<{ ok: true }> {
     return this.http.delete<{ ok: true }>(`${this.base}/${projectId}/documents/${docId}`);

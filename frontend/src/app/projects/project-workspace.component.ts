@@ -56,9 +56,9 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
             </div>
 
             <div class="actions">
-              <input #fileInput type="file" hidden accept=".ifc" (change)="onFile($event)">
+              <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
               <button class="act-btn primary" (click)="fileInput.click()" [disabled]="store.importing()">
-                <mat-icon>upload_file</mat-icon><span>Import IFC</span>
+                <mat-icon>upload_file</mat-icon><span>Import Package</span>
               </button>
               <button class="act-btn" (click)="editProject()"><mat-icon>edit</mat-icon><span>Edit</span></button>
               <button class="act-icon" [matMenuTriggerFor]="more" matTooltip="More actions"><mat-icon>more_vert</mat-icon></button>

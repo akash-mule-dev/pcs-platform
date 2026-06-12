@@ -63,12 +63,12 @@ import { ProjectsService, Project, CreateProject, ImportStarted } from '../core/
         <mat-step>
           <ng-template matStepLabel>Upload model</ng-template>
           <div class="upload">
-            <input #fileInput type="file" hidden accept=".ifc" (change)="onFile($event)">
+            <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
             @if (!selectedFile) {
               <button mat-stroked-button color="primary" (click)="fileInput.click()">
-                <mat-icon>upload_file</mat-icon>&nbsp;Choose IFC file
+                <mat-icon>upload_file</mat-icon>&nbsp;Choose model or package
               </button>
-              <p class="hint">Upload an IFC (.ifc) export from Tekla, Revit or Advance Steel — we'll extract its assemblies, subassemblies and parts into the project tree. You can also skip and add it later.</p>
+              <p class="hint">Supported: <strong>IFC</strong>, <strong>ZIP packages</strong> (model + PDF shop drawings — drawings auto-attach to piece marks), <strong>STEP/IGES</strong> and mesh formats (GLB, OBJ, STL). You can also skip and add files later.</p>
             } @else {
               <div class="file">
                 <mat-icon>description</mat-icon>

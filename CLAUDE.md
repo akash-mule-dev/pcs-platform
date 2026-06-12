@@ -125,8 +125,16 @@ Key services & flows:
   (in-progress tab with queue positions + live %, history tab with filters; nav item + projects
   header button; the wizard routes there after an upload) and the per-project **Monitoring** tab
   (live stage stepper + per-import event timelines), live header pipeline bar; regression suite
-  `npm run test:e2e:imports` (52 assertions incl. ws room isolation; needs a freshly seeded API +
+  `npm run test:e2e:imports` (62 assertions incl. ws room isolation; needs a freshly seeded API +
   `socket.io-client` resolvable for the ws checks).
+- **Multi-format & ZIP packages** (`package-import-math.ts` pure module, `npm run test:package`):
+  the import endpoint accepts IFC, geometry-only CAD/mesh formats (STEP/IGES/GLB/OBJ/STL/…,
+  converted to GLB without structure extraction) and **ZIP coordination packages** (Tekla/SDS2
+  exports: model + PDF drawings + .kss). Packages are unpacked + classified, every IFC builds the
+  tree, the largest model drives the GLB, and drawings/certs are stored as `assembly_documents`
+  with **piece-mark filename matching** ("B101 - Rev 0.pdf" attaches to mark B101; unmatched stay
+  project-level, junk skipped). `GET :id/documents?importId=` lists a package's contents (shown in
+  the Monitoring import detail). Unsupported extensions are rejected at upload with the accepted list.
 - **Production orders** (`production-order.service.ts`, `POST /api/projects/:id/orders`,
   `/api/orders/:id/*`): create-and-release transactionally generates per-assembly WorkOrders +
   stages with count totals (`quantity-math.ts`: `qtyDone`/`qtyTotal` per stage). The board
@@ -163,6 +171,52 @@ Key services & flows:
 - **Shipping gate** (`shipping.service.ts`): an assembly can be loaded once it has
   production-complete units (every non-skipped stage done across its work orders), no open NCRs,
   and unallocated quantity left; shipped totals come from shipment items.
+
+## The costing & inventory module (`materials`, `costing`, `projects/material-planning`)
+
+End-to-end flow: **import IFC → per-unit material requirement (BOM) → one-click material
+masters → receive stock (moving average) → order requirement ×qty + coverage → issue/return
+against the order → costs roll up (WO → order → project → org).**
+
+- **Inventory valuation is MOVING AVERAGE** (`materials/inventory-math.ts`, pure + unit-tested):
+  a receipt with a `unitCost` re-averages `materials.unit_cost` over total on-hand; every
+  movement **stamps `stock_movements.unit_cost` at movement time** — costing reads the ledger,
+  never today's price. All stock mutations run in one transaction with pessimistic locks on the
+  stock + material rows (insert-then-lock on the unique index for first movers). Movement types:
+  receipt / issue / scrap / adjustment / **return** (issue reversal) / reserve / release.
+  `GET /api/inventory/summary` is the one-call UI overview (on-hand, avg cost, value, low-stock).
+- **BOM = the assembly tree** (`projects/material-requirements-math.ts`, pure): part nodes
+  grouped by normalized `(profile, material_grade)` → per-unit lines (pieces, Σlength, Σweight).
+  A material master **matches a line by the same normalized pair** (`materials.profile` +
+  `material_grade` columns); `requiredQty` is expressed in the material's UoM (kg/m/ea/t,
+  unknown → kg). `POST /api/projects/:id/material-requirements/sync-materials` creates missing
+  masters (code from profile+grade, kg, cost 0). Order requirement = per-unit × `order.quantity`,
+  plus net issued (issues+scrap−returns by `stock_movements.production_order_id`), remaining,
+  and stock coverage status (`unmapped | covered | short | issued`); off-BOM issues are listed
+  as extras. Endpoints in `material-planning.controller.ts` (own module — exports
+  `MaterialRequirementsService`, entity-only deps, imported by CostingModule; keep acyclic).
+- **Costing** (`costing/costing-math.ts`, pure): `total = material + labor + overhead`.
+  Material = stamped ledger consumption. Labor = `(duration − break) × rate` with per-entry
+  rate resolution **worker (`users.hourly_rate`) → stage (`stages.hourly_rate`) → org default**;
+  overhead = % on labor. Estimates: BOM × current avg costs and `stages.target_time_seconds ×
+  qty_total × (stage rate | default)` — actual vs estimate everywhere. Settings live in
+  `organizations.settings.costing` (`{defaultLaborRate, overheadPercent, currency}`, legacy
+  `settings.laborHourlyRate` honored) via `GET/PUT /api/costing/settings` (audited;
+  `costing.manage` permission). Cost endpoints (all SQL aggregates, org-scoped, never N+1):
+  `/api/costing/work-order/:id` (+per-worker), `/order/:id` (per-assembly + per-material +
+  variance), `/project/:id`, `/orders` (org overview). Issues/returns validate refs belong to
+  the org; a work-order ref auto-stamps its production order; consumption against
+  completed/cancelled orders is rejected (returns stay allowed).
+- **Web:** Inventory page (`/materials`: avg cost/value/low-stock, receive with live new-avg
+  preview, return, adjust, per-material ledger), project **Materials** tab (per-unit BOM +
+  coverage + sync button), order **Materials** tab (×qty, one-click issue prefilled with
+  min(remaining, on-hand), issue history + returns) and **Costs** tab (actual-vs-estimate cards,
+  per-assembly/per-material breakdowns, settings inline), org `/costing` overview. Rates are
+  edited on the user form (admin) and the stage dialog.
+- **Regression suites:** `npm run test:costing` (3 pure suites, 35 assertions) and
+  `npm run test:e2e:costing` (50-assertion live suite: BOM→sync→moving average→order scaling→
+  issue guards→rate chain→overhead→roll-up agreement→closed-order guard; freshly seeded API +
+  `E2E_PG_URL` — the demo IFC has no part weights, the suite backfills them via SQL).
 
 ## The quality module (`quality-data`, `quality-ncr`, `quality-reports`, `spc`, `quality-notify`)
 
@@ -237,8 +291,11 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
   Roles are DB records: immutable org-less **system roles** (admin `*`, manager, supervisor,
   operator; permissions from the catalog) + per-organization **custom roles** (grants in
   `role_permission_grants`, managed via `/api/rbac/roles`, UI at `/rbac`). `GET /api/auth/permissions`
-  returns the caller's `{ role, permissions[] }`; web (`PermissionsService.can/canView/canManage`,
-  `featureGuard('<feature>')`) and mobile (`config/permissions.ts`) gate on that set (wildcard-aware).
+  returns the caller's `{ role, permissions[] }` with wildcards EXPANDED server-side to concrete
+  catalog keys (the tenant `*` excludes platform features) — clients must never re-interpret
+  wildcard semantics themselves (that bug once showed the Organizations sidebar to tenant admins);
+  web (`PermissionsService.can/canView/canManage`, `featureGuard('<feature>')`) and mobile
+  (`config/permissions.ts`) gate on that set.
   **Platform vs tenant:** catalog features flagged `platform: true` (organizations) are excluded
   from the tenant `*` wildcard, ungrantable to custom roles, and held only by the org-less
   `platform-admin` system role (seed login `platform@pcs.com`) — a tenant admin can never manage

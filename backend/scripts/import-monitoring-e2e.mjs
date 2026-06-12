@@ -234,6 +234,81 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       'org history filtered to the project includes the failed package');
   }
 
+  if (SCENARIO === 'package' || SCENARIO === 'all') {
+    // ── Multi-format: ZIP package (IFC + PDF drawings + KISS data) ────────
+    // Probe a scratch project for real piece marks so the test PDFs can match.
+    const probe = await j(await post('/projects', { name: `Pkg probe ${Date.now()}` }));
+    const fdP = new FormData();
+    fdP.append('file', new Blob([fs.readFileSync(IFC)]), 'probe.ifc');
+    const started = await j(await fetch(`${A}/projects/${probe.id}/import-ifc`, { method: 'POST', headers: HA, body: fdP }));
+    for (let t = 0; t < 80; t++) {
+      const d = await j(await get(`/projects/${probe.id}/imports/${started.importFileId}`));
+      if (d.file.status === 'completed' || d.file.status === 'failed') break;
+      await sleep(400);
+    }
+    const probeNodes = await j(await get(`/projects/${probe.id}/nodes`));
+    const marked = probeNodes.filter((nd) => nd.mark);
+    const mark = marked[0]?.mark ?? null;
+
+    const pkgProject = await j(await post('/projects', { name: `Pkg E2E ${Date.now()}` }));
+    const pdf = Buffer.from('%PDF-1.4\n1 0 obj <</Type/Catalog>> endobj\ntrailer <<>>\n%%EOF\n');
+    const zip = makeStoreZip([
+      { name: 'Project model.ifc', data: fs.readFileSync(IFC) },
+      ...(mark ? [{ name: `Drawings/${mark} - Rev 0.pdf`, data: pdf }] : []),
+      { name: 'Drawings/general-notes.pdf', data: pdf },
+      { name: 'data/export.kss', data: Buffer.from('KISS test data') },
+      { name: 'junk/readme.txt', data: Buffer.from('ignore me') },
+    ]);
+    const fdZ = new FormData();
+    fdZ.append('file', new Blob([zip], { type: 'application/zip' }), 'coordination-package.zip');
+    const zres = await fetch(`${A}/projects/${pkgProject.id}/import-ifc`, { method: 'POST', headers: HA, body: fdZ });
+    const zstarted = await j(zres);
+    assert(zres.status === 201 && !!zstarted.importFileId, 'ZIP package accepted by the import endpoint');
+
+    let zfile = null;
+    for (let t = 0; t < 100; t++) {
+      const d = await j(await get(`/projects/${pkgProject.id}/imports/${zstarted.importFileId}`));
+      zfile = d;
+      if (d.file.status === 'completed' || d.file.status === 'failed') break;
+      await sleep(400);
+    }
+    assert(zfile.file.status === 'completed', `package pipeline completes (${zfile.file.status})`);
+    assert(zfile.file.nodeCount > 0, `assembly tree built from the IFC inside the package (${zfile.file.nodeCount} nodes)`);
+    assert(!!zfile.file.modelId, '3D model converted from the package IFC');
+    assert(zfile.events.some((e) => /Package unpacked/i.test(e.message)), 'timeline records the package classification');
+    assert(zfile.events.some((e) => /Attached .* document/i.test(e.message)), 'timeline records the attached documents');
+
+    const docs = await j(await get(`/projects/${pkgProject.id}/documents?importId=${zstarted.importFileId}`));
+    const expectedDocs = (mark ? 3 : 2); // pdfs + kss; txt skipped
+    assert(docs.length === expectedDocs, `package documents stored (${docs.length}), junk skipped`);
+    if (mark) {
+      const matchedDoc = docs.find((d) => d.node_mark === mark);
+      assert(!!matchedDoc, `drawing "${mark} - Rev 0.pdf" auto-matched to piece mark ${mark}`);
+    }
+    assert(docs.some((d) => d.node_id === null), 'unmatched documents kept at project level');
+
+    // Geometry-only format: a minimal OBJ converts to a GLB without a tree.
+    const obj = Buffer.from('v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n');
+    const fdO = new FormData();
+    fdO.append('file', new Blob([obj]), 'plate.obj');
+    const ores = await j(await fetch(`${A}/projects/${pkgProject.id}/import-ifc`, { method: 'POST', headers: HA, body: fdO }));
+    let ofile = null;
+    for (let t = 0; t < 80; t++) {
+      const d = await j(await get(`/projects/${pkgProject.id}/imports/${ores.importFileId}`));
+      ofile = d.file;
+      if (ofile.status === 'completed' || ofile.status === 'failed') break;
+      await sleep(400);
+    }
+    assert(ofile.status === 'completed' && ofile.nodeCount === 0 && !!ofile.modelId,
+      'geometry-only format (OBJ) converts to a 3D model without structure extraction');
+
+    // Unsupported format rejected at upload time with a helpful message.
+    const fdBad = new FormData();
+    fdBad.append('file', new Blob([Buffer.from('nope')]), 'data.xyz');
+    const bres = await fetch(`${A}/projects/${pkgProject.id}/import-ifc`, { method: 'POST', headers: HA, body: fdBad });
+    assert(bres.status === 400, 'unsupported file format rejected with 400 + accepted-formats message');
+  }
+
   wsJoined?.close();
   wsStray?.close();
   console.log(`\n${n} assertions passed — import monitoring pipeline OK`);
@@ -242,3 +317,64 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.error('SUITE ERROR:', e);
   process.exit(1);
 });
+
+/** Minimal STORE-method ZIP writer (no deps) — enough for test fixtures. */
+function makeStoreZip(entries) {
+  const table = (() => {
+    const t = new Int32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[i] = c;
+    }
+    return t;
+  })();
+  const crc32 = (buf) => {
+    let c = ~0;
+    for (let i = 0; i < buf.length; i++) c = table[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+    return ~c >>> 0;
+  };
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const e of entries) {
+    const name = Buffer.from(e.name, 'utf8');
+    const data = e.data;
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);   // version needed
+    local.writeUInt16LE(0, 6);    // flags
+    local.writeUInt16LE(0, 8);    // method: store
+    local.writeUInt32LE(0, 10);   // dos time/date
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    locals.push(local, name, data);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt32LE(0, 12);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    centrals.push(central, name);
+    offset += 30 + name.length + data.length;
+  }
+  const centralStart = offset;
+  const centralBuf = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralBuf.length, 12);
+  end.writeUInt32LE(centralStart, 16);
+  return Buffer.concat([...locals, centralBuf, end]);
+}

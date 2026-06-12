@@ -88,7 +88,7 @@ const PAGE = 25;
             <div class="empty">
               <mat-icon>check_circle</mat-icon>
               <h4>No packages in progress</h4>
-              <p>The pipeline is idle. Upload an IFC from a project (or create a new project) and it will appear here live.</p>
+              <p>The pipeline is idle. Upload a model or ZIP package from a project (or create a new project) and it will appear here live.</p>
             </div>
           } @else {
             @for (row of monitor()!.active; track row.id) {

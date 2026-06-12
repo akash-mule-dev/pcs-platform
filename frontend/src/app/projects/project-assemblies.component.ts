@@ -37,9 +37,9 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
         } @else {
           <mat-icon>account_tree</mat-icon>
           <h3>No assemblies yet</h3>
-          <p>Upload an IFC export (Tekla, Revit, Advance Steel) to extract assemblies, sub-assemblies and parts into the tree.</p>
-          <input #fileInput type="file" hidden accept=".ifc" (change)="onFile($event)">
-          <button class="cta" (click)="fileInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>Import IFC file</button>
+          <p>Upload an IFC / STEP model or a ZIP package (Tekla, SDS2, Advance Steel exports: model + PDF drawings). Structure, 3D and drawings are extracted automatically.</p>
+          <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
+          <button class="cta" (click)="fileInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>Import package / model</button>
         }
       </div>
     } @else {

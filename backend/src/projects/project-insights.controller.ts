@@ -36,7 +36,15 @@ export class ProjectInsightsController {
     return this.insights.earnedValue(id, orderId || undefined);
   }
 
-  // ── Shop drawings / documents per node ──
+  // ── Shop drawings / documents ──
+  @Get(':id/documents')
+  @RequirePermissions('projects.view')
+  @ApiOperation({ summary: 'All project documents, or one package\'s contents (?importId=), with matched piece marks' })
+  @ApiQuery({ name: 'importId', required: false })
+  listProjectDocuments(@Param('id') id: string, @Query('importId') importId?: string) {
+    return this.documents.listForProject(id, importId || undefined);
+  }
+
   @Get(':id/nodes/:nodeId/documents')
   @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'Documents attached to an assembly node (shop drawings, weld maps…)' })

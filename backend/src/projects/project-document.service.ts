@@ -35,6 +35,27 @@ export class ProjectDocumentService {
     return this.docRepo.find({ where: { organizationId: org, projectId, nodeId }, order: { createdAt: 'DESC' } });
   }
 
+  /**
+   * Project-wide document list (optionally one package's contents) with the
+   * matched piece mark — the Monitoring "package contents" view.
+   */
+  async listForProject(projectId: string, importFileId?: string) {
+    const org = TenantContext.requireOrganizationId();
+    const params: any[] = [org, projectId];
+    let where = 'd.organization_id = $1 AND d.project_id = $2';
+    if (importFileId) { params.push(importFileId); where += ` AND d.import_file_id = $${params.length}`; }
+    return this.docRepo.query(
+      `SELECT d.id, d.node_id, d.import_file_id, d.original_name, d.content_type, d.size,
+              d.label, d.created_by_name, d.created_at, n.mark AS node_mark, n.name AS node_name
+         FROM assembly_documents d
+         LEFT JOIN assembly_nodes n ON n.id = d.node_id
+        WHERE ${where}
+        ORDER BY d.created_at DESC
+        LIMIT 1000`,
+      params,
+    );
+  }
+
   async upload(
     projectId: string,
     nodeId: string,

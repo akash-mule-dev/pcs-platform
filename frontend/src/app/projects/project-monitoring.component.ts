@@ -6,7 +6,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectWorkspaceStore, IMPORT_STAGE_LABELS } from './project-workspace.store';
-import { ProjectsService, ImportFileRow, ImportDetail, ImportRevision } from '../core/services/projects.service';
+import { ProjectsService, ImportFileRow, ImportDetail, ImportRevision, PackageDocumentRow } from '../core/services/projects.service';
 
 interface StepDef { key: string; label: string; icon: string; }
 
@@ -91,9 +91,9 @@ interface StepDef { key: string; label: string; icon: string; }
               @if (k.active > 0) { <span class="chip run">{{ k.active }} running</span> }
             }
             <button class="ghost-btn" (click)="store.refreshImports()" matTooltip="Refresh"><mat-icon>refresh</mat-icon></button>
-            <input #fileInput type="file" hidden accept=".ifc" (change)="onFile($event)">
+            <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
             <button class="ghost-btn primary" (click)="fileInput.click()" [disabled]="store.importing()">
-              <mat-icon>upload_file</mat-icon><span>Import IFC</span>
+              <mat-icon>upload_file</mat-icon><span>Import package</span>
             </button>
           </div>
         </div>
@@ -104,7 +104,7 @@ interface StepDef { key: string; label: string; icon: string; }
           <div class="empty">
             <mat-icon>cloud_upload</mat-icon>
             <h4>No packages uploaded yet</h4>
-            <p>Import an IFC to build this project's assembly tree and 3D model. Every upload and its processing pipeline will be tracked here.</p>
+            <p>Import an IFC/STEP model or a ZIP package (model + PDF drawings) to build this project's assembly tree, 3D model and drawing set. Every upload and its processing pipeline is tracked here.</p>
           </div>
         } @else {
           <div class="tbl">
@@ -178,6 +178,29 @@ interface StepDef { key: string; label: string; icon: string; }
                           @if (c.outputSize) { <span class="chip">GLB {{ fmtBytes(c.outputSize) }}</span> }
                           @if (c.durationMs) { <span class="chip">{{ (c.durationMs / 1000) | number:'1.0-1' }}s</span> }
                         </div>
+                      }
+
+                      <!-- Package contents (documents extracted from this upload) -->
+                      @if (pkgDocs(); as pd) {
+                        @if (pd.length > 0) {
+                          <div class="pkg">
+                            <div class="rev-head"><mat-icon>folder_zip</mat-icon><strong>Package contents</strong>
+                              <span class="chip">{{ pd.length }} document(s)</span>
+                              <span class="chip add">{{ matchedDocs(pd) }} matched to marks</span>
+                            </div>
+                            <div class="pkg-list">
+                              @for (doc of pd.slice(0, 40); track doc.id) {
+                                <div class="pkg-row">
+                                  <mat-icon class="pkg-ic">{{ doc.content_type === 'application/pdf' ? 'picture_as_pdf' : 'description' }}</mat-icon>
+                                  <button class="pkg-link" (click)="openPkgDoc(doc)" [title]="doc.original_name">{{ doc.original_name }}</button>
+                                  @if (doc.node_mark) { <span class="chip add" [matTooltip]="'Attached to piece ' + doc.node_mark">{{ doc.node_mark }}</span> }
+                                  @else { <span class="chip">project</span> }
+                                </div>
+                              }
+                              @if (pd.length > 40) { <p class="muted">+ {{ pd.length - 40 }} more (see the piece panels on the Assemblies tab)</p> }
+                            </div>
+                          </div>
+                        }
                       }
 
                       <!-- Revision diff + production impact -->
@@ -352,6 +375,14 @@ interface StepDef { key: string; label: string; icon: string; }
     .tl-msg { margin: 2px 0 0; font-size: 12.5px; color: var(--clay-text-secondary); word-break: break-word; }
     .conv-stats { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 
+    /* Package contents */
+    .pkg { margin-top: 14px; border-top: 1px dashed var(--clay-border); padding-top: 12px; }
+    .pkg-list { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+    .pkg-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 2px 0; min-width: 0; }
+    .pkg-ic { font-size: 15px; width: 15px; height: 15px; color: var(--clay-text-muted); flex-shrink: 0; }
+    .pkg-link { background: none; border: none; color: var(--clay-primary); font-size: 12.5px; cursor: pointer; font-family: inherit; padding: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pkg-link:hover { text-decoration: underline; }
+
     /* Revision diff + impact */
     .rev { margin-top: 14px; border-top: 1px dashed var(--clay-border); padding-top: 12px; }
     .rev-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -399,6 +430,7 @@ export class ProjectMonitoringComponent implements OnDestroy {
   readonly expanded = signal<string | null>(null);
   readonly detail = signal<ImportDetail | null>(null);
   readonly revision = signal<ImportRevision | null>(null);
+  readonly pkgDocs = signal<PackageDocumentRow[] | null>(null);
   /** stage:progress snapshot of the expanded row — refetch the timeline when it moves. */
   private lastSnapshot = '';
   private refetchFx = effect(() => {
@@ -466,11 +498,27 @@ export class ProjectMonitoringComponent implements OnDestroy {
   stageLabel(stage: string): string { return IMPORT_STAGE_LABELS[stage] ?? stage; }
 
   toggle(id: string): void {
-    if (this.expanded() === id) { this.expanded.set(null); this.detail.set(null); this.revision.set(null); this.lastSnapshot = ''; return; }
+    if (this.expanded() === id) { this.expanded.set(null); this.detail.set(null); this.revision.set(null); this.pkgDocs.set(null); this.lastSnapshot = ''; return; }
     this.expanded.set(id);
     this.detail.set(null);
     this.revision.set(null);
+    this.pkgDocs.set(null);
     this.lastSnapshot = '';
+  }
+
+  matchedDocs(docs: PackageDocumentRow[]): number {
+    return docs.filter((d) => !!d.node_id).length;
+  }
+
+  openPkgDoc(d: PackageDocumentRow): void {
+    this.svc.nodeDocumentBlob(this.store.id(), d.id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      },
+      error: () => {},
+    });
   }
 
   private fetchDetail(id: string): void {
@@ -480,6 +528,10 @@ export class ProjectMonitoringComponent implements OnDestroy {
     });
     this.svc.importRevision(this.store.id(), id).subscribe({
       next: (r) => { if (this.expanded() === id) this.revision.set(r); },
+      error: () => {},
+    });
+    this.svc.projectDocuments(this.store.id(), id).subscribe({
+      next: (d) => { if (this.expanded() === id) this.pkgDocs.set(d); },
       error: () => {},
     });
   }

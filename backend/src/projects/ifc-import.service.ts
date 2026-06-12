@@ -12,6 +12,13 @@ import { ImportFile, ImportFileStatus, IMPORT_STAGE_PROGRESS } from './import-fi
 import { ImportFileEvent } from './import-file-event.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { computeRevisionDiff, revisionSummaryMessage, RevisionDiff } from './revision-diff.js';
+import {
+  ACCEPTED_UPLOAD_EXTS, MODEL_EXTS, GEOMETRY_EXTS, DOC_CONTENT_TYPES,
+  classifyPackageEntries, matchDrawingsToMarks, packageSummaryMessage,
+  ClassifiedPackage,
+} from './package-import-math.js';
+import { AssemblyDocument } from './assembly-document.entity.js';
+import * as unzipper from 'unzipper';
 import { ConversionService } from '../conversion/conversion.service.js';
 import { ConversionJob } from '../conversion/conversion-job.entity.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
@@ -93,6 +100,7 @@ export class IfcImportService implements OnModuleInit {
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
     @InjectRepository(ImportFile) private readonly importRepo: Repository<ImportFile>,
     @InjectRepository(ImportFileEvent) private readonly eventRepo: Repository<ImportFileEvent>,
+    @InjectRepository(AssemblyDocument) private readonly docRepo: Repository<AssemblyDocument>,
     private readonly conversionService: ConversionService,
     private readonly ws: EventsGateway,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
@@ -175,6 +183,11 @@ export class IfcImportService implements OnModuleInit {
     if (!project) throw new NotFoundException('Project not found');
 
     const format = path.extname(originalName).replace('.', '').toLowerCase() || 'ifc';
+    if (!ACCEPTED_UPLOAD_EXTS.includes(format)) {
+      throw new BadRequestException(
+        `Unsupported file format ".${format}". Accepted: IFC models, geometry files (${[...GEOMETRY_EXTS].map((e) => '.' + e).join(', ')}) or a .zip package (model + drawings).`,
+      );
+    }
     const createdByName =
       [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || null;
 
@@ -250,111 +263,305 @@ export class IfcImportService implements OnModuleInit {
     if (!imp || !imp.storageKey) return;
 
     fs.mkdirSync(this.tmpDir, { recursive: true });
-    const inPath = path.join(this.tmpDir, `${imp.id}-src${path.extname(imp.originalName) || '.ifc'}`);
-    const outPath = path.join(this.tmpDir, `${imp.id}-tree.json`);
+    const inPath = path.join(this.tmpDir, `${imp.id}-src${path.extname(imp.originalName) || '.dat'}`);
+    const cleanup: string[] = [inPath];
 
     try {
       await this.downloadToFile(imp.storageKey, inPath);
+      const fmt = (imp.format || '').toLowerCase();
 
-      // 1. Extract structure
-      await this.record(imp, {
-        stage: 'extracting',
-        status: ImportFileStatus.EXTRACTING,
-        progress: IMPORT_STAGE_PROGRESS.extracting,
-        message: 'Structure extraction started',
-      });
-      await this.runExtractor(inPath, outPath);
-      const result = JSON.parse(fs.readFileSync(outPath, 'utf8')) as ExtractResult;
-
-      // 2a. Revision diff: compare the incoming nodes against the tree AS IT
-      // STANDS before this import mutates it (added/changed/missing pieces).
-      let diff: RevisionDiff | null = null;
-      try {
-        const existing: any[] = await this.nodeRepo
-          .createQueryBuilder('n')
-          .select(['n.ifcGuid AS "ifcGuid"', 'n.nodeType AS "nodeType"', 'n.name AS name', 'n.mark AS mark',
-            'n.quantity AS quantity', 'n.profile AS profile', 'n.materialGrade AS "materialGrade"',
-            'n.lengthMm AS "lengthMm"', 'n.weightKg AS "weightKg"'])
-          .where('n.organization_id = :org AND n.project_id = :pid', { org: organizationId, pid: imp.projectId })
-          .getRawMany();
-        diff = computeRevisionDiff(
-          result.nodes.map((nd) => ({
-            externalId: nd.externalId, type: nd.type, name: nd.name, mark: nd.mark,
-            quantity: nd.quantity ?? 1, profile: nd.profile, materialGrade: nd.materialGrade,
-            lengthMm: nd.lengthMm, weightKg: nd.weightKg,
-          })),
-          existing.map((e) => ({ ...e, quantity: Number(e.quantity ?? 1), lengthMm: e.lengthMm != null ? Number(e.lengthMm) : null, weightKg: e.weightKg != null ? Number(e.weightKg) : null })),
-        );
-        imp.revision = diff as unknown as Record<string, unknown>;
-      } catch (e) {
-        this.logger.warn(`Revision diff failed for ${imp.id} (import continues): ${this.errMsg(e)}`);
-      }
-
-      // 2b. Persist tree (progress 35 → 55, ticked per depth level)
-      await this.record(imp, {
-        stage: 'persisting',
-        status: ImportFileStatus.EXTRACTING,
-        progress: IMPORT_STAGE_PROGRESS.persisting,
-        message: diff ? revisionSummaryMessage(diff) : `Structure extracted — persisting ${result.nodeCount} nodes`,
-        detail: { counts: result.counts, rootCount: result.rootCount, revision: diff?.counts ?? null },
-      });
-      const nodeCount = await this.persistTree(
-        organizationId, imp.projectId, imp.id, imp.format, result.nodes,
-        async (done, total) => {
-          const pct = IMPORT_STAGE_PROGRESS.persisting +
-            Math.round((Math.min(done, total) / Math.max(total, 1)) * (IMPORT_STAGE_PROGRESS.converting - IMPORT_STAGE_PROGRESS.persisting));
-          await this.tick(imp, pct);
-        },
-      );
-      imp.nodeCount = nodeCount;
-      await this.record(imp, {
-        stage: 'persisting',
-        status: ImportFileStatus.EXTRACTING,
-        progress: IMPORT_STAGE_PROGRESS.converting,
-        message: `Assembly tree ready: ${nodeCount} nodes (${result.counts['part'] ?? 0} parts)`,
-        detail: { nodeCount, counts: result.counts },
-      });
-
-      // 3. Queue GLB conversion. Its progress (55→99) + completion/failure are
-      // mirrored onto this row by the conversion processor; a dedupe hit
-      // returns an already-completed job, which we link right here.
-      const job = await this.queueConversion(imp, inPath, projectName);
-      if (job) {
-        imp.conversionJobId = job.id;
-        if (job.status === 'completed' && job.modelId) {
-          await this.linkModel(imp, job.modelId, 'reused an identical prior conversion');
-        } else if (job.status === 'failed') {
-          await this.fail(imp, 'converting', job.error || '3D conversion failed');
-        } else {
-          await this.record(imp, {
-            stage: 'converting',
-            status: ImportFileStatus.CONVERTING,
-            progress: IMPORT_STAGE_PROGRESS.converting,
-            message: '3D model (GLB) conversion queued',
-            detail: { conversionJobId: job.id },
-          });
-        }
+      if (fmt === 'zip') {
+        await this.runPackagePipeline(imp, organizationId, projectName, inPath, cleanup);
+      } else if (MODEL_EXTS.has(fmt)) {
+        const r = await this.extractAndPersistModels(imp, organizationId, [{ path: inPath, name: imp.originalName }], cleanup);
+        await this.queueGlb(imp, inPath, imp.originalName, projectName, r.nodeCount);
+      } else if (GEOMETRY_EXTS.has(fmt)) {
+        await this.record(imp, {
+          stage: 'extracting',
+          status: ImportFileStatus.EXTRACTING,
+          progress: IMPORT_STAGE_PROGRESS.extracting,
+          message: `Geometry-only format (.${fmt}): no assembly structure to extract, converting the 3D model`,
+          detail: { geometryOnly: true },
+        });
+        await this.queueGlb(imp, inPath, imp.originalName, projectName, 0);
       } else {
-        // Geometry pipeline unavailable for this format — structure still usable.
-        await this.complete(imp, 'Import complete (no 3D conversion for this format)');
+        throw new Error(`Unsupported file format ".${fmt}" - accepted: ${ACCEPTED_UPLOAD_EXTS.map((e) => '.' + e).join(', ')}`);
       }
     } catch (err) {
       const imp2 = await this.importRepo.findOne({ where: { id: importFileId } });
       if (imp2) await this.fail(imp2, imp2.stage || 'extracting', err);
     } finally {
-      this.safeUnlink(inPath);
-      this.safeUnlink(outPath);
+      for (const f of cleanup) this.safeUnlink(f);
+    }
+  }
+
+  /**
+   * ZIP package pipeline: unpack, classify members (models / geometry /
+   * documents / junk), build the tree from every IFC, attach drawings with
+   * piece-mark matching ("B101 - Rev 0.pdf" lands on mark B101), then convert
+   * the primary geometry to GLB. This is the shape Tekla/SDS2/Advance Steel
+   * coordination exports actually arrive in.
+   */
+  private async runPackagePipeline(
+    imp: ImportFile,
+    organizationId: string,
+    projectName: string,
+    zipPath: string,
+    cleanup: string[],
+  ): Promise<void> {
+    const dir = await unzipper.Open.file(zipPath);
+    const entries = dir.files
+      .filter((f: any) => f.type !== 'Directory')
+      .map((f: any) => ({ path: f.path as string, size: Number(f.uncompressedSize ?? 0) }));
+    const cls = classifyPackageEntries(entries);
+    await this.record(imp, {
+      stage: 'extracting',
+      status: ImportFileStatus.EXTRACTING,
+      progress: IMPORT_STAGE_PROGRESS.extracting,
+      message: packageSummaryMessage(cls, 0),
+      detail: {
+        members: entries.length,
+        models: cls.models.length,
+        geometry: cls.geometry.length,
+        documents: cls.documents.length,
+        skipped: cls.skipped.length,
+      },
+    });
+    if (!cls.models.length && !cls.geometry.length && !cls.documents.length) {
+      throw new Error('The package contains no usable files (expected IFC/STEP models, PDF drawings or related documents)');
+    }
+
+    const entryByPath = new Map(dir.files.map((f: any) => [f.path, f]));
+    const extractEntry = async (entryPath: string, ext: string): Promise<string> => {
+      const buf = await (entryByPath.get(entryPath) as any).buffer();
+      const p = path.join(this.tmpDir, `${imp.id}-${crypto.randomUUID()}.${ext}`);
+      fs.writeFileSync(p, buf);
+      cleanup.push(p);
+      return p;
+    };
+
+    // 1. Structure from every IFC in the package (largest first, capped).
+    const models: { path: string; name: string }[] = [];
+    for (const m of cls.models.slice(0, 5)) {
+      models.push({ path: await extractEntry(m.path, 'ifc'), name: path.basename(m.path) });
+    }
+    let nodeCount = 0;
+    if (models.length) {
+      nodeCount = (await this.extractAndPersistModels(imp, organizationId, models, cleanup)).nodeCount;
+    }
+
+    // 2. Documents: attach drawings/certs, matched to piece marks when possible.
+    const attached = await this.attachPackageDocuments(imp, organizationId, entryByPath, cls);
+    if (cls.documents.length) {
+      await this.record(imp, {
+        stage: models.length ? 'persisting' : 'extracting',
+        status: ImportFileStatus.EXTRACTING,
+        progress: Math.max(imp.progress, IMPORT_STAGE_PROGRESS.persisting),
+        message: `Attached ${attached.count} document(s): ${attached.matched} matched to piece marks, ${attached.count - attached.matched} kept at project level`,
+        detail: { documents: attached.count, matchedToMarks: attached.matched, capped: attached.capped },
+      });
+    }
+
+    // 3. 3D model from the primary geometry (largest IFC, else largest CAD file).
+    if (models.length) {
+      await this.queueGlb(imp, models[0].path, models[0].name, projectName, nodeCount);
+    } else if (cls.geometry.length) {
+      const g = cls.geometry[0];
+      const gPath = await extractEntry(g.path, g.path.split('.').pop()!.toLowerCase());
+      await this.queueGlb(imp, gPath, path.basename(g.path), projectName, nodeCount);
+    } else {
+      await this.complete(imp, `Package processed: ${attached.count} document(s) attached (no 3D model in the package)`);
+    }
+  }
+
+  /** Store package documents + match them to piece marks by filename. */
+  private async attachPackageDocuments(
+    imp: ImportFile,
+    organizationId: string,
+    entryByPath: Map<string, any>,
+    cls: ClassifiedPackage,
+  ): Promise<{ count: number; matched: number; capped: boolean }> {
+    const docs = cls.documents.slice(0, 500);
+    if (!docs.length) return { count: 0, matched: 0, capped: false };
+
+    const markRows: { id: string; mark: string }[] = await this.nodeRepo.query(
+      `SELECT id, mark FROM assembly_nodes WHERE organization_id = $1 AND project_id = $2 AND mark IS NOT NULL`,
+      [organizationId, imp.projectId],
+    );
+    const marks = new Map(markRows.map((r) => [r.mark.toUpperCase(), r.id]));
+    const matchByPath = matchDrawingsToMarks(docs.map((d) => d.path), marks);
+
+    let matched = 0;
+    for (const d of docs) {
+      try {
+        const base = path.basename(d.path);
+        const ext = base.split('.').pop()!.toLowerCase();
+        const buf = await (entryByPath.get(d.path) as any).buffer();
+        const staged = path.join(this.tmpDir, `${imp.id}-doc-${crypto.randomUUID()}.${ext}`);
+        fs.writeFileSync(staged, buf);
+        const key = `assembly-docs/${crypto.randomUUID()}.${ext}`;
+        try {
+          await this.storage.upload(staged, key, DOC_CONTENT_TYPES[ext] ?? 'application/octet-stream');
+        } finally {
+          this.safeUnlink(staged);
+        }
+        const nodeId = matchByPath.get(d.path) ?? null;
+        if (nodeId) matched++;
+        await this.docRepo.save(this.docRepo.create({
+          organizationId,
+          projectId: imp.projectId,
+          nodeId,
+          importFileId: imp.id,
+          originalName: base,
+          contentType: DOC_CONTENT_TYPES[ext] ?? 'application/octet-stream',
+          size: buf.length,
+          storageKey: key,
+          label: base.replace(/\.[a-z0-9]+$/i, ''),
+          createdById: imp.createdById,
+          createdByName: imp.createdByName,
+        }));
+      } catch (e) {
+        this.logger.warn(`Package document ${d.path} skipped: ${this.errMsg(e)}`);
+      }
+    }
+    return { count: docs.length, matched, capped: cls.documents.length > docs.length };
+  }
+
+  /**
+   * Extract + persist the assembly structure from one or more IFC files
+   * (shared by the single-file and package pipelines): revision diff vs the
+   * pre-import tree, then level-ordered upsert with live progress ticks.
+   */
+  private async extractAndPersistModels(
+    imp: ImportFile,
+    organizationId: string,
+    models: { path: string; name: string }[],
+    cleanup: string[],
+  ): Promise<{ nodeCount: number }> {
+    await this.record(imp, {
+      stage: 'extracting',
+      status: ImportFileStatus.EXTRACTING,
+      progress: Math.max(imp.progress, IMPORT_STAGE_PROGRESS.extracting),
+      message: models.length > 1 ? `Structure extraction started (${models.length} models)` : 'Structure extraction started',
+    });
+
+    const results: ExtractResult[] = [];
+    for (const m of models) {
+      const outPath = path.join(this.tmpDir, `${imp.id}-${crypto.randomUUID()}-tree.json`);
+      cleanup.push(outPath);
+      await this.runExtractor(m.path, outPath);
+      results.push(JSON.parse(fs.readFileSync(outPath, 'utf8')) as ExtractResult);
+    }
+
+    // Union of all extracted nodes (dedupe by GUID across files).
+    const seen = new Set<string>();
+    const union: ExtractedNode[] = [];
+    for (const r of results) {
+      for (const nd of r.nodes) {
+        if (seen.has(nd.externalId)) continue;
+        seen.add(nd.externalId);
+        union.push(nd);
+      }
+    }
+    const counts: Record<string, number> = {};
+    for (const r of results) for (const [k, v] of Object.entries(r.counts ?? {})) counts[k] = (counts[k] ?? 0) + Number(v);
+
+    // Revision diff vs the tree as it stands BEFORE this import mutates it.
+    let diff: RevisionDiff | null = null;
+    try {
+      const existing: any[] = await this.nodeRepo
+        .createQueryBuilder('n')
+        .select(['n.ifcGuid AS "ifcGuid"', 'n.nodeType AS "nodeType"', 'n.name AS name', 'n.mark AS mark',
+          'n.quantity AS quantity', 'n.profile AS profile', 'n.materialGrade AS "materialGrade"',
+          'n.lengthMm AS "lengthMm"', 'n.weightKg AS "weightKg"'])
+        .where('n.organization_id = :org AND n.project_id = :pid', { org: organizationId, pid: imp.projectId })
+        .getRawMany();
+      diff = computeRevisionDiff(
+        union.map((nd) => ({
+          externalId: nd.externalId, type: nd.type, name: nd.name, mark: nd.mark,
+          quantity: nd.quantity ?? 1, profile: nd.profile, materialGrade: nd.materialGrade,
+          lengthMm: nd.lengthMm, weightKg: nd.weightKg,
+        })),
+        existing.map((e) => ({ ...e, quantity: Number(e.quantity ?? 1), lengthMm: e.lengthMm != null ? Number(e.lengthMm) : null, weightKg: e.weightKg != null ? Number(e.weightKg) : null })),
+      );
+      imp.revision = diff as unknown as Record<string, unknown>;
+    } catch (e) {
+      this.logger.warn(`Revision diff failed for ${imp.id} (import continues): ${this.errMsg(e)}`);
+    }
+
+    await this.record(imp, {
+      stage: 'persisting',
+      status: ImportFileStatus.EXTRACTING,
+      progress: IMPORT_STAGE_PROGRESS.persisting,
+      message: diff ? revisionSummaryMessage(diff) : `Structure extracted - persisting ${union.length} nodes`,
+      detail: { counts, revision: diff?.counts ?? null },
+    });
+
+    let nodeCount = 0;
+    let done = 0;
+    const total = union.length;
+    for (const r of results) {
+      nodeCount += await this.persistTree(
+        organizationId, imp.projectId, imp.id, 'ifc', r.nodes,
+        async (levelDone) => {
+          const pct = IMPORT_STAGE_PROGRESS.persisting +
+            Math.round((Math.min(done + levelDone, total) / Math.max(total, 1)) * (IMPORT_STAGE_PROGRESS.converting - IMPORT_STAGE_PROGRESS.persisting));
+          await this.tick(imp, pct);
+        },
+      );
+      done += r.nodes.length;
+    }
+    imp.nodeCount = nodeCount;
+    await this.record(imp, {
+      stage: 'persisting',
+      status: ImportFileStatus.EXTRACTING,
+      progress: IMPORT_STAGE_PROGRESS.converting,
+      message: `Assembly tree ready: ${nodeCount} nodes (${counts['part'] ?? 0} parts)`,
+      detail: { nodeCount, counts },
+    });
+    return { nodeCount };
+  }
+
+  /** Queue the GLB conversion + handle dedupe/instant outcomes uniformly. */
+  private async queueGlb(
+    imp: ImportFile,
+    srcPath: string,
+    sourceName: string,
+    projectName: string,
+    nodeCount: number,
+  ): Promise<void> {
+    const job = await this.queueConversion(imp, srcPath, projectName, sourceName);
+    if (job) {
+      imp.conversionJobId = job.id;
+      if (job.status === 'completed' && job.modelId) {
+        await this.linkModel(imp, job.modelId, 'reused an identical prior conversion');
+      } else if (job.status === 'failed') {
+        await this.fail(imp, 'converting', job.error || '3D conversion failed');
+      } else {
+        await this.record(imp, {
+          stage: 'converting',
+          status: ImportFileStatus.CONVERTING,
+          progress: Math.max(imp.progress, IMPORT_STAGE_PROGRESS.converting),
+          message: `3D model (GLB) conversion queued${sourceName !== imp.originalName ? ` for ${sourceName}` : ''}`,
+          detail: { conversionJobId: job.id, sourceName },
+        });
+      }
+    } else {
+      await this.complete(imp, nodeCount > 0
+        ? 'Import complete (no 3D conversion for this format)'
+        : 'Import complete');
     }
   }
 
   /** Hand the source to the conversion queue (its own staging copy). */
-  private async queueConversion(imp: ImportFile, srcPath: string, projectName: string): Promise<ConversionJob | null> {
-    const bgPath = path.join(this.tmpDir, `${imp.id}-conv${path.extname(imp.originalName) || '.ifc'}`);
+  private async queueConversion(imp: ImportFile, srcPath: string, projectName: string, sourceName?: string): Promise<ConversionJob | null> {
+    const name = sourceName || imp.originalName;
+    const bgPath = path.join(this.tmpDir, `${imp.id}-conv${path.extname(name) || '.ifc'}`);
     fs.copyFileSync(srcPath, bgPath);
     try {
-      const base = path.basename(imp.originalName, path.extname(imp.originalName));
+      const base = path.basename(name, path.extname(name));
       const stats = fs.statSync(bgPath);
-      const file = this.asMulterFile(bgPath, imp.originalName, stats.size, 'application/octet-stream');
+      const file = this.asMulterFile(bgPath, name, stats.size, 'application/octet-stream');
       const job = await this.conversionService.createJob(
         { name: projectName || base, description: `Imported from ${imp.originalName}`, modelType: 'assembly' },
         file,
