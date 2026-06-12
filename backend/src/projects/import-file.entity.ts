@@ -20,6 +20,28 @@ export enum ImportFileStatus {
 }
 
 /**
+ * Fine-grained pipeline position (the coarse `status` enum stays untouched for
+ * backward compatibility). Stage progression:
+ *   uploaded → extracting → persisting → converting → completed | failed
+ */
+export type ImportFileStage =
+  | 'uploaded' // source stored durably (storage + DB row)
+  | 'extracting' // structure extraction (web-ifc) running
+  | 'persisting' // assembly_nodes tree being upserted
+  | 'converting' // GLB conversion job running
+  | 'completed'
+  | 'failed';
+
+/** Overall pipeline % checkpoints per stage (conversion maps its own 0-100 into 55→99). */
+export const IMPORT_STAGE_PROGRESS: Record<string, number> = {
+  uploaded: 5,
+  extracting: 10,
+  persisting: 35,
+  converting: 55,
+  completed: 100,
+};
+
+/**
  * A source file uploaded to a project (IFC, STEP, mesh, …). Records provenance
  * and links the two pipeline outputs: the GLB (`model_id`, via conversion_jobs)
  * and the structured tree (the assembly_nodes whose `import_file_id` points here).
@@ -51,6 +73,30 @@ export class ImportFile extends TenantOwnedEntity {
 
   @Column({ type: 'enum', enum: ImportFileStatus, default: ImportFileStatus.UPLOADED })
   status: ImportFileStatus;
+
+  /** Fine-grained pipeline position; drives the monitoring UI stepper. */
+  @Column({ type: 'varchar', length: 30, default: 'uploaded' })
+  stage: string;
+
+  /** Overall pipeline progress 0–100 (upload→extract→persist→convert→done). */
+  @Column({ type: 'integer', default: 0 })
+  progress: number;
+
+  @Column({ name: 'started_at', type: 'timestamptz', nullable: true })
+  startedAt: Date | null;
+
+  @Column({ name: 'finished_at', type: 'timestamptz', nullable: true })
+  finishedAt: Date | null;
+
+  @Column({ name: 'duration_ms', type: 'integer', nullable: true })
+  durationMs: number | null;
+
+  @Column({ name: 'created_by_id', type: 'uuid', nullable: true })
+  createdById: string | null;
+
+  /** Denormalized for the history table (no join on every poll). */
+  @Column({ name: 'created_by_name', type: 'varchar', length: 200, nullable: true })
+  createdByName: string | null;
 
   /** Links to the existing conversion pipeline job that produced the GLB. */
   @Column({ name: 'conversion_job_id', type: 'uuid', nullable: true })

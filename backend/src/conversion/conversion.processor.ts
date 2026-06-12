@@ -14,6 +14,7 @@ import { ModelsService } from '../models/models.service.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
+import { ImportConversionLinkService } from './import-conversion-link.service.js';
 
 /**
  * The staged conversion pipeline. Invoked identically by the inline driver and
@@ -32,6 +33,7 @@ export class ConversionProcessor {
     private readonly optimizer: GlbOptimizer,
     private readonly modelsService: ModelsService,
     private readonly ws: EventsGateway,
+    private readonly importLink: ImportConversionLinkService,
   ) {
     if (!fs.existsSync(this.tempDir)) fs.mkdirSync(this.tempDir, { recursive: true });
   }
@@ -170,6 +172,9 @@ export class ConversionProcessor {
       dimensions: job.dimensions,
       error: job.error,
     });
+    // Project the job's progress onto any project import that queued it
+    // (live monitoring + history). Best-effort, never fails the conversion.
+    await this.importLink.mirror(job);
   }
 
   private safeUnlink(filePath: string): void {

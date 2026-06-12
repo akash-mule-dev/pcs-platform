@@ -24,11 +24,23 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
       <div class="center"><mat-spinner diameter="36"></mat-spinner></div>
     } @else if (!store.hasNodes()) {
       <div class="empty-state">
-        <mat-icon>account_tree</mat-icon>
-        <h3>No assemblies yet</h3>
-        <p>Upload an IFC export (Tekla, Revit, Advance Steel) to extract assemblies, sub-assemblies and parts into the tree.</p>
-        <input #fileInput type="file" hidden accept=".ifc" (change)="onFile($event)">
-        <button class="cta" (click)="fileInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>{{ store.importing() ? 'Importing…' : 'Import IFC file' }}</button>
+        @if (store.pipelineActive()) {
+          <mat-spinner diameter="34"></mat-spinner>
+          <h3>Import in progress</h3>
+          <p>
+            @if (store.importing()) { Uploading… {{ store.uploadProgress() }}% }
+            @else {
+              @if (store.currentImport(); as imp) { {{ imp.originalName }} — {{ imp.progress }}% · {{ store.pipelineMessage() || 'processing' }} }
+            }
+            <br>The assembly tree will appear here as soon as the structure is extracted.
+          </p>
+        } @else {
+          <mat-icon>account_tree</mat-icon>
+          <h3>No assemblies yet</h3>
+          <p>Upload an IFC export (Tekla, Revit, Advance Steel) to extract assemblies, sub-assemblies and parts into the tree.</p>
+          <input #fileInput type="file" hidden accept=".ifc" (change)="onFile($event)">
+          <button class="cta" (click)="fileInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>Import IFC file</button>
+        }
       </div>
     } @else {
       <div class="layout">

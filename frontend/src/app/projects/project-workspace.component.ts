@@ -9,7 +9,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
-import { ProjectWorkspaceStore } from './project-workspace.store';
+import { ProjectWorkspaceStore, IMPORT_STAGE_LABELS } from './project-workspace.store';
 import { ProjectEditDialogComponent } from './project-edit-dialog.component';
 import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/confirm-dialog.component';
 import { ProjectsService, Project, ProjectStatus } from '../core/services/projects.service';
@@ -76,9 +76,20 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
 
           @if (store.importing()) {
             <div class="import-bar">
-              <mat-progress-bar [mode]="store.uploadProgress() < 100 ? 'determinate' : 'indeterminate'" [value]="store.uploadProgress()"></mat-progress-bar>
-              <span class="import-hint">{{ store.uploadProgress() < 100 ? 'Uploading ' + store.uploadProgress() + '%' : 'Extracting assembly structure…' }}</span>
+              <mat-progress-bar mode="determinate" [value]="store.uploadProgress()"></mat-progress-bar>
+              <span class="import-hint">Uploading… {{ store.uploadProgress() }}% — the file is stored safely before processing begins</span>
             </div>
+          } @else {
+            @if (store.currentImport(); as imp) {
+              <div class="import-bar">
+                <mat-progress-bar mode="determinate" [value]="imp.progress"></mat-progress-bar>
+                <span class="import-hint">
+                  <span class="pl-stage">{{ stageLabel(imp.stage) }}</span> · {{ imp.progress }}%
+                  @if (store.pipelineMessage(); as msg) { <span class="pl-msg">— {{ msg }}</span> }
+                  <a class="pl-link" [routerLink]="['/projects', store.id(), 'monitoring']">View pipeline</a>
+                </span>
+              </div>
+            }
           }
           @if (store.importError()) { <p class="import-err">{{ store.importError() }}</p> }
 
@@ -214,7 +225,10 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
     ::ng-deep .danger-item mat-icon { color: var(--danger) !important; }
 
     .import-bar { background: var(--clay-surface); border-left: 1px solid var(--clay-border); border-right: 1px solid var(--clay-border); padding: 8px 20px 4px; }
-    .import-hint { font-size: 12px; color: var(--clay-text-muted); }
+    .import-hint { font-size: 12px; color: var(--clay-text-muted); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .pl-stage { font-weight: 700; color: var(--clay-primary); }
+    .pl-msg { color: var(--clay-text-muted); }
+    .pl-link { margin-left: 8px; font-weight: 600; color: var(--clay-primary); text-decoration: underline; cursor: pointer; }
     .import-err { background: var(--clay-surface); border-left: 1px solid var(--clay-border); border-right: 1px solid var(--clay-border); margin: 0; padding: 8px 20px; color: var(--danger-text); font-size: 13px; }
 
     /* ── Stat strip ────────────────────────────────────────────────── */
@@ -275,6 +289,7 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
     { path: 'overview', label: 'Overview', icon: 'dashboard' },
     { path: 'assemblies', label: 'Assemblies & 3D', icon: 'account_tree' },
     { path: 'orders', label: 'Work Orders', icon: 'receipt_long' },
+    { path: 'monitoring', label: 'Monitoring', icon: 'monitor_heart' },
   ];
 
   ngOnInit(): void {
@@ -290,7 +305,12 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
   tabBadge(path: string): number | null {
     if (path === 'assemblies') { const c = this.store.nodes().length; return c > 0 ? c : null; }
     if (path === 'orders') { const c = this.store.ordersCount(); return c > 0 ? c : null; }
+    if (path === 'monitoring') { const c = this.store.activeImports().length; return c > 0 ? c : null; }
     return null;
+  }
+
+  stageLabel(stage: string): string {
+    return IMPORT_STAGE_LABELS[stage] ?? stage;
   }
 
   statusLabel(s: ProjectStatus): string {

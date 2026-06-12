@@ -11,7 +11,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatStepper, MatStepperModule } from '@angular/material/stepper';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { ProjectsService, Project, CreateProject, ImportResult } from '../core/services/projects.service';
+import { ProjectsService, Project, CreateProject, ImportStarted } from '../core/services/projects.service';
 
 @Component({
   selector: 'app-project-wizard',
@@ -80,8 +80,8 @@ import { ProjectsService, Project, CreateProject, ImportResult } from '../core/s
               </div>
             }
             @if (importing) {
-              <mat-progress-bar [mode]="uploadProgress < 100 ? 'determinate' : 'indeterminate'" [value]="uploadProgress"></mat-progress-bar>
-              <p class="hint">{{ uploadProgress < 100 ? 'Uploading ' + uploadProgress + '%' : 'Extracting assembly structure…' }}</p>
+              <mat-progress-bar mode="determinate" [value]="uploadProgress"></mat-progress-bar>
+              <p class="hint">Uploading… {{ uploadProgress }}% — processing continues in the background once stored</p>
             }
             @if (error) { <p class="err">{{ error }}</p> }
           </div>
@@ -100,12 +100,8 @@ import { ProjectsService, Project, CreateProject, ImportResult } from '../core/s
             <mat-icon class="ok">check_circle</mat-icon>
             <h3>{{ created?.name }}</h3>
             @if (result) {
-              <p>Imported <strong>{{ result.nodeCount }}</strong> nodes from the IFC.</p>
-              <div class="counts">
-                @for (c of countEntries(); track c.key) {
-                  <span class="chip">{{ c.key }}: {{ c.value }}</span>
-                }
-              </div>
+              <p><strong>{{ result.originalName }}</strong> is uploaded and processing has started.</p>
+              <p class="hint">The assembly tree and 3D model are being built in the background — follow the live pipeline on the project's <strong>Monitoring</strong> tab.</p>
             } @else {
               <p>Project created. You can import an IFC from the project page anytime.</p>
             }
@@ -161,7 +157,7 @@ export class ProjectWizardComponent implements OnInit {
   importing = false;
   uploadProgress = 0;
   created: Project | null = null;
-  result: ImportResult | null = null;
+  result: ImportStarted | null = null;
   error: string | null = null;
 
   onFile(event: Event): void {
@@ -204,7 +200,7 @@ export class ProjectWizardComponent implements OnInit {
         },
         error: (e) => {
           this.importing = false;
-          this.error = e?.error?.message || 'Import failed — the file may not be a valid IFC.';
+          this.error = e?.error?.message || 'Upload failed — the file could not be stored.';
         },
       });
     } catch (e: any) {
@@ -220,10 +216,6 @@ export class ProjectWizardComponent implements OnInit {
     } catch (e: any) {
       this.error = e?.error?.message || 'Could not create the project.';
     }
-  }
-
-  countEntries(): { key: string; value: number }[] {
-    return this.result ? Object.entries(this.result.counts).map(([key, value]) => ({ key, value })) : [];
   }
 
   finish(): void {

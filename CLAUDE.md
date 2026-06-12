@@ -89,7 +89,10 @@ Core data model (one self-referencing tree absorbs every source format):
   mesh-node name for 3D highlight), promoted fab columns (`mark`, `profile`, `material_grade`,
   `length_mm`, `weight_kg`), a `properties` jsonb bag, and a `model_id` link. Design facts only —
   no status/percent columns.
-- `ImportFile` — an uploaded source file (`conversion_job_id`, `model_id`, status, node_count).
+- `ImportFile` — an uploaded source file (`conversion_job_id`, `model_id`, status, node_count) plus
+  live pipeline telemetry (`stage`, `progress` 0–100, `started/finished_at`, `duration_ms`,
+  `created_by_*`, durable `storage_key` for retries). `ImportFileEvent` (`import_file_events`) is
+  its append-only stage-transition history (the monitoring timeline; mirrors the ncr_events idea).
 - `ProductionOrder` — a per-customer/per-run instance of the project: its own process, quantity
   and status; releasing it creates one WorkOrder per assembly (`WorkOrder.production_order_id`).
 - `Shipment` / `ShipmentItem` — shipping loads and the assemblies on them; what's shipped is
@@ -99,11 +102,23 @@ Core data model (one self-referencing tree absorbs every source format):
 
 Key services & flows:
 
-- **IFC import** (`ifc-import.service.ts`, `POST /api/projects/:id/import-ifc`): spawns
-  `cad-conversion/scripts/extract-ifc-structure.mjs` (web-ifc) → a normalized JSON node tree →
-  persisted into `assembly_nodes` **idempotently by `ifc_guid`**. The GLB is **always** built
-  asynchronously via the conversion queue (`ConversionService.createJob`); `linkPendingModels` /
-  `POST /api/projects/:id/resolve-models` link the finished GLB back to the nodes.
+- **IFC import — async, observable pipeline** (`ifc-import.service.ts`,
+  `POST /api/projects/:id/import-ifc`): the upload is stored durably FIRST (StorageProvider
+  `import-sources/…` + import_files row), the request returns immediately, then the background
+  pipeline runs `uploaded → extracting → persisting → converting → completed|failed`: spawns
+  `cad-conversion/scripts/extract-ifc-structure.mjs` (web-ifc) → normalized JSON tree →
+  persisted into `assembly_nodes` **idempotently by `ifc_guid`** → GLB queued via
+  `ConversionService.createJob`. Every transition updates `import_files.stage/progress`, appends
+  an `import_file_events` row and emits the room-scoped `import:progress` websocket event
+  (rooms: `join-project`/`leave-project`). Conversion progress (55→99%) + completion/failure are
+  mirrored onto the import row by `conversion/import-conversion-link.service.ts` inside the
+  processor (works inline + BullMQ, survives API restarts; entity-only cross-module dep).
+  Monitoring API: `GET :id/imports` (history), `GET :id/imports/:importId` (timeline + conversion
+  snapshot), `POST :id/imports/:importId/retry` (failed only; conversion-only or full re-run from
+  the stored source). `linkPendingModels` / `POST :id/resolve-models` remain as the healing path.
+  Web UI: per-project **Monitoring** tab (live stage stepper + history + event timelines), live
+  header pipeline bar; regression suite `npm run test:e2e:imports` (42 assertions incl. ws room
+  isolation; needs a freshly seeded API + `socket.io-client` resolvable for the ws checks).
 - **Production orders** (`production-order.service.ts`, `POST /api/projects/:id/orders`,
   `/api/orders/:id/*`): create-and-release transactionally generates per-assembly WorkOrders +
   stages with count totals (`quantity-math.ts`: `qtyDone`/`qtyTotal` per stage). The board
@@ -167,9 +182,13 @@ close (or CAPA) → gates lift** (work-order quality stages + shipping both bloc
   evidence, SPC/insights, tenant isolation — scratch DB, mirrors `test:e2e:orders`),
   plus `tests/suite/11-quality-data.api.spec.ts` and `tests/phase6-quality-enhancements.api.spec.ts`.
 
-Front end: `/projects`, `/projects/:id` workspace tabs (Overview / Assemblies & 3D / Work Orders);
-production tracking lives inside each order at `/projects/:id/orders/:orderId/(board|progress|quality|shipping)`.
-The workspace auto-polls `resolve-models` while a GLB converts so the viewer appears on its own.
+Front end: `/projects`, `/projects/:id` workspace tabs (Overview / Assemblies & 3D / Work Orders /
+Monitoring); production tracking lives inside each order at
+`/projects/:id/orders/:orderId/(board|progress|quality|shipping)`.
+Import progress is live: the `ProjectWorkspaceStore` joins the `project:<id>` socket room
+(`RealtimeService.joinRoom`, re-joined on reconnect) and falls back to 5s polling of
+`GET :id/imports` while anything is active — uploads show browser→server % first, then the
+pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
 
 ## Conventions (follow these)
 

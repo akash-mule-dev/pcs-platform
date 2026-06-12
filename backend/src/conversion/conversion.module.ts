@@ -4,6 +4,10 @@ import { ConversionJob } from './conversion-job.entity.js';
 import { ConversionController } from './conversion.controller.js';
 import { ConversionService } from './conversion.service.js';
 import { ConversionProcessor } from './conversion.processor.js';
+import { ImportConversionLinkService } from './import-conversion-link.service.js';
+import { ImportFile } from '../projects/import-file.entity.js';
+import { ImportFileEvent } from '../projects/import-file-event.entity.js';
+import { AssemblyNode } from '../projects/assembly-node.entity.js';
 import { MeshConverter } from './converters/mesh-converter.js';
 import { GlbOptimizer } from './optimize/glb-optimizer.js';
 import { CONVERSION_QUEUE } from './queue/conversion-queue.interface.js';
@@ -36,7 +40,9 @@ const conversionQueueProvider = {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ConversionJob]),
+    // Projects entities are referenced entity-only (no module import → no cycle):
+    // the processor mirrors job progress onto the import pipeline rows.
+    TypeOrmModule.forFeature([ConversionJob, ImportFile, ImportFileEvent, AssemblyNode]),
     StorageModule,
     WebsocketModule,
     ModelsModule,
@@ -46,6 +52,7 @@ const conversionQueueProvider = {
   providers: [
     ConversionService,
     ConversionProcessor,
+    ImportConversionLinkService,
     MeshConverter,
     GlbOptimizer,
     conversionQueueProvider,
