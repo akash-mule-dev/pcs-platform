@@ -84,6 +84,54 @@ export interface MOrderNodeStages { orderId: string; workOrderId: string | null;
 export interface MProcess { id: string; name: string }
 export interface MCreateOrder { processId: string; customerName?: string; quantity?: number; dueDate?: string; notes?: string }
 
+// ── Audit dashboard (everything about one work order in one call) ──
+export interface MAuditStageRow {
+  wosId: string; stageId: string; name: string; sequence: number;
+  status: string; qtyDone: number; qtyTotal: number;
+  startedAt: string | null; completedAt: string | null; statusUpdatedAt: string | null;
+  assignedUser: { id: string; name: string } | null;
+  station: { id: string; name: string } | null;
+  timeSeconds: number; timeEntries: number;
+}
+export interface MAuditItem {
+  nodeId: string | null; workOrderId: string; workOrderNumber: string;
+  mark: string; name: string | null; nodeType: string;
+  profile: string | null; materialGrade: string | null; lengthMm: number | null; weightKg: number | null;
+  quantity: number; status: 'not_started' | 'in_progress' | 'completed'; percent: number;
+  unitsDone: number; unitsTotal: number; openNcrs: number; totalTimeSeconds: number;
+  lastActivityAt: string | null; stages: MAuditStageRow[];
+}
+export interface MOrderAudit {
+  order: MOrder & { notes?: string | null };
+  project: { id: string; name: string; number: string | null } | null;
+  stages: { id: string; name: string; sequence: number }[];
+  totals: { items: number; itemsDone: number; unitsDone: number; unitsTotal: number; percent: number; totalTimeSeconds: number; openNcrs: number };
+  items: MAuditItem[];
+}
+export interface MNodeAudit {
+  nodeId: string; workOrderId: string; workOrderNumber: string;
+  status: string; percentComplete: number; unitsDone: number; unitsTotal: number;
+  stages: MAuditStageRow[];
+  timeEntries: {
+    id: string; user: string | null; stageName: string | null; stationName: string | null;
+    startTime: string; endTime: string | null; durationSeconds: number | null;
+    isRework: boolean; notes: string | null; inputMethod: string | null;
+  }[];
+  ncrs: { id: string; number: string; title: string; status: string; severity: string; createdAt: string }[];
+}
+export interface MBulkResult { requested: number; updated: number; failed: { nodeId: string; mark: string; message: string }[] }
+export interface MDashboardOrder {
+  id: string; number: string; customerName: string | null; quantity: number;
+  status: string; dueDate: string | null; createdAt: string;
+  project: { id: string; name: string; number: string | null };
+  items: number; itemsDone: number; unitsDone: number; unitsTotal: number; percent: number;
+  openNcrs: number; late: boolean;
+}
+export interface MOrdersDashboard {
+  kpis: { orders: number; planned: number; inProgress: number; completed: number; late: number; openNcrs: number; unitsDone: number; unitsTotal: number };
+  orders: MDashboardOrder[];
+}
+
 export const ordersService = {
   listByProject: (projectId: string) => api.getList<MOrder>(`/projects/${projectId}/orders`),
   create: (projectId: string, body: MCreateOrder) => api.post<MOrder>(`/projects/${projectId}/orders`, body),
@@ -93,6 +141,12 @@ export const ordersService = {
   setStage: (orderId: string, workOrderStageId: string, body: { qtyDone?: number; status?: string }) =>
     api.patch<MOrderNodeStage>(`/orders/${orderId}/stages/${workOrderStageId}`, body),
   processes: () => api.getList<MProcess>('/processes'),
+  // Audit dashboard (assemblies + per-stage trail) + batch updates
+  dashboard: () => api.get<MOrdersDashboard>('/orders/dashboard'),
+  audit: (orderId: string) => api.get<MOrderAudit>(`/orders/${orderId}/audit`),
+  nodeAudit: (orderId: string, nodeId: string) => api.get<MNodeAudit>(`/orders/${orderId}/nodes/${nodeId}/audit`),
+  bulkUpdate: (orderId: string, body: { stageId: string; nodeIds: string[]; qtyDone?: number; status?: string }) =>
+    api.patch<MBulkResult>(`/orders/${orderId}/stages/bulk`, body),
 };
 
 export const OrderStatusColors: Record<string, string> = {

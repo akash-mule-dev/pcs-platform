@@ -749,6 +749,43 @@ export class ProductionOrderService {
     const wo = await this.woRepo.findOne({ where: { productionOrderId: orderId, assemblyNodeId: nodeId, organizationId: org } });
     if (!wo) throw new NotFoundException('This assembly is not part of this work order');
 
+    // Per-stage rows (stamps, people, counts) so mobile renders the whole
+    // assembly audit from this one call.
+    const wosRows = await this.wosRepo.find({ where: { workOrderId: wo.id }, relations: ['stage', 'assignedUser', 'station'] });
+    const stageTimeAgg: { wos_id: string; seconds: string; entries: string }[] = await this.orderRepo.query(
+      `SELECT te.work_order_stage_id AS wos_id,
+              COALESCE(SUM(te.duration_seconds), 0)::int AS seconds, COUNT(*)::int AS entries
+         FROM time_entries te
+         JOIN work_order_stages s ON s.id = te.work_order_stage_id
+        WHERE te.organization_id = $1 AND s.work_order_id = $2
+        GROUP BY te.work_order_stage_id`,
+      [org, wo.id],
+    );
+    const stageTime = new Map(stageTimeAgg.map((t) => [t.wos_id, { seconds: Number(t.seconds), entries: Number(t.entries) }]));
+    const rollup = rollupCounts(wosRows.map((r) => ({ qtyDone: r.qtyDone ?? 0, qtyTotal: r.qtyTotal ?? 0, skipped: r.status === WorkOrderStageStatus.SKIPPED })));
+    const stages = wosRows
+      .sort((a, b) => (a.stage?.sequence ?? 0) - (b.stage?.sequence ?? 0))
+      .map((r) => {
+        const t = stageTime.get(r.id);
+        const moved = r.status !== WorkOrderStageStatus.PENDING || (r.qtyDone ?? 0) > 0;
+        return {
+          wosId: r.id,
+          stageId: r.stageId,
+          name: r.stage?.name ?? 'Stage',
+          sequence: r.stage?.sequence ?? 0,
+          status: String(r.status),
+          qtyDone: r.qtyDone ?? 0,
+          qtyTotal: r.qtyTotal ?? 0,
+          startedAt: r.startedAt,
+          completedAt: r.completedAt,
+          statusUpdatedAt: moved ? (r.updatedAt ?? r.completedAt ?? r.startedAt ?? null) : null,
+          assignedUser: r.assignedUser ? { id: r.assignedUser.id, name: `${r.assignedUser.firstName ?? ''} ${r.assignedUser.lastName ?? ''}`.trim() } : null,
+          station: r.station ? { id: r.station.id, name: r.station.name } : null,
+          timeSeconds: t?.seconds ?? r.actualTimeSeconds ?? 0,
+          timeEntries: t?.entries ?? 0,
+        };
+      });
+
     const entries: any[] = await this.orderRepo.query(
       `SELECT te.id, te.start_time, te.end_time, te.duration_seconds, te.is_rework, te.notes, te.input_method,
               u.first_name, u.last_name, st.name AS stage_name, sta.name AS station_name
@@ -768,6 +805,11 @@ export class ProductionOrderService {
       nodeId,
       workOrderId: wo.id,
       workOrderNumber: wo.orderNumber,
+      status: rollup.status,
+      percentComplete: rollup.percentComplete,
+      unitsDone: rollup.unitsDone,
+      unitsTotal: rollup.unitsTotal,
+      stages,
       timeEntries: entries.map((e) => ({
         id: e.id,
         user: [e.first_name, e.last_name].filter(Boolean).join(' ') || null,

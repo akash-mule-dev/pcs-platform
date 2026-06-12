@@ -11,6 +11,7 @@ import { canViewTab, TabKey } from '../config/permissions';
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { WorkOrderListScreen } from '../screens/work-orders/WorkOrderListScreen';
 import { WorkOrderDetailScreen } from '../screens/work-orders/WorkOrderDetailScreen';
+import { WorkOrderHubScreen } from '../screens/work-orders/WorkOrderHubScreen';
 import { TimerScreen } from '../screens/time-tracking/TimerScreen';
 import { HistoryScreen } from '../screens/time-tracking/HistoryScreen';
 import { ModelListScreen } from '../screens/model-viewer/ModelListScreen';
@@ -35,11 +36,17 @@ import { OrderBoardScreen } from '../screens/projects/OrderBoardScreen';
 const Tab = createBottomTabNavigator<TabParamList>();
 
 // ── Work Orders Stack ──
+// Hub (all production orders) → audit dashboard → assembly → 3D. The legacy
+// per-product list/detail remain reachable from the hub header.
 const WOStack = createNativeStackNavigator<WorkOrdersStackParamList>();
 function WorkOrdersStack() {
   return (
     <WOStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
-      <WOStack.Screen name="WorkOrderList" component={WorkOrderListScreen} options={{ title: 'Work Orders' }} />
+      <WOStack.Screen name="WorkOrderHub" component={WorkOrderHubScreen} options={{ title: 'Work Orders' }} />
+      <WOStack.Screen name="OrderBoard" component={OrderBoardScreen} options={{ title: 'Work Order' }} />
+      <WOStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />
+      <WOStack.Screen name="PartViewer" component={PartViewerScreen} options={{ title: '3D Viewer' }} />
+      <WOStack.Screen name="WorkOrderList" component={WorkOrderListScreen} options={{ title: 'Product Orders' }} />
       <WOStack.Screen name="WorkOrderDetail" component={WorkOrderDetailScreen} options={{ title: 'Work Order' }} />
     </WOStack.Navigator>
   );
