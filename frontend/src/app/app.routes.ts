@@ -32,6 +32,13 @@ export const routes: Routes = [
         loadChildren: () => import('./projects/projects.routes').then(m => m.PROJECTS_ROUTES),
       },
       {
+        // Tenant-wide package monitor: live import pipeline (queue positions,
+        // stage/%) + upload history across every project of the org.
+        path: 'package-monitor',
+        canActivate: [featureGuard('projects')],
+        loadComponent: () => import('./projects/package-monitor.component').then(m => m.PackageMonitorComponent)
+      },
+      {
         path: 'processes',
         canActivate: [featureGuard('processes')],
         loadComponent: () => import('./processes/process-list/process-list.component').then(m => m.ProcessListComponent)

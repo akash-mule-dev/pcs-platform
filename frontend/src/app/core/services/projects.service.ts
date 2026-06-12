@@ -71,7 +71,7 @@ export interface ImportStarted {
 }
 
 export type ImportStatus = 'uploaded' | 'extracting' | 'converting' | 'completed' | 'failed';
-export type ImportStage = 'uploaded' | 'extracting' | 'persisting' | 'converting' | 'completed' | 'failed';
+export type ImportStage = 'uploaded' | 'queued' | 'extracting' | 'persisting' | 'converting' | 'completed' | 'failed';
 
 /** One uploaded package + its live pipeline position (the monitoring row). */
 export interface ImportFileRow {
@@ -111,6 +111,30 @@ export interface ImportDetail {
   events: ImportEventRow[];
   conversion: { id: string; status: string; progress: number; error: string | null; durationMs: number | null; trianglesAfter: number | null; outputSize: number | null } | null;
 }
+
+/** One live package on the org-wide monitor. */
+export interface MonitorActiveRow extends ImportFileRow {
+  projectName: string | null;
+  /** Active packages of this org uploaded before this one ("N ahead of yours"). */
+  ahead: number;
+}
+
+export interface ImportsMonitor {
+  active: MonitorActiveRow[];
+  kpis: {
+    inProgress: number;
+    queued: number;
+    processing: number;
+    completedToday: number;
+    failedToday: number;
+    completedTotal: number;
+    failedTotal: number;
+    totalPackages: number;
+  };
+}
+
+export type HistoryRow = ImportFileRow & { projectName: string | null };
+export interface ImportsHistoryPage { rows: HistoryRow[]; total: number; }
 
 /** Live `import:progress` websocket payload (room: project:<id>). */
 export interface ImportProgressEvent {
@@ -351,6 +375,22 @@ export class ProjectsService {
   /** Retry a failed import (conversion-only, or the full pipeline from the stored source). */
   retryImport(projectId: string, importId: string): Observable<ImportStarted> {
     return this.http.post<ImportStarted>(`${this.base}/${projectId}/imports/${importId}/retry`, {});
+  }
+
+  /** Org-wide live pipeline: active packages with queue position + KPI counts. */
+  importsMonitor(): Observable<ImportsMonitor> {
+    return this.http.get<ImportsMonitor>(`${environment.apiUrl}/imports/monitor`);
+  }
+
+  /** Org-wide upload history (filter by projects, sort by upload time, paged). */
+  importsHistory(opts: { projectIds?: string[]; sort?: 'asc' | 'desc'; limit?: number; offset?: number } = {}): Observable<ImportsHistoryPage> {
+    const p = new URLSearchParams();
+    if (opts.projectIds?.length) p.set('projects', opts.projectIds.join(','));
+    if (opts.sort) p.set('sort', opts.sort);
+    if (opts.limit != null) p.set('limit', String(opts.limit));
+    if (opts.offset != null) p.set('offset', String(opts.offset));
+    const qs = p.toString();
+    return this.http.get<ImportsHistoryPage>(`${environment.apiUrl}/imports/history${qs ? '?' + qs : ''}`);
   }
 
   /** Processes available for work-order routing (tolerant of array or paged responses). */

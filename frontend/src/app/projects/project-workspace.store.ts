@@ -11,6 +11,7 @@ import { RealtimeService } from '../core/services/realtime.service';
 /** Stages a live import walks through, in order (drives steppers/labels). */
 export const IMPORT_STAGE_LABELS: Record<string, string> = {
   uploaded: 'Uploaded',
+  queued: 'Queued',
   extracting: 'Extracting structure',
   persisting: 'Building assembly tree',
   converting: 'Converting 3D model',

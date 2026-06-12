@@ -1,6 +1,6 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
@@ -13,7 +13,7 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
 @Component({
   selector: 'app-project-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatDialogModule, MatProgressSpinnerModule],
+  imports: [CommonModule, FormsModule, RouterModule, MatIconModule, MatDialogModule, MatProgressSpinnerModule],
   template: `
     <div class="portfolio">
       <div class="page-header">
@@ -21,7 +21,12 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
           <h1 class="page-title">Projects</h1>
           <p class="page-subtitle">Fabrication jobs across the shop — track production, tonnage and shipping at a glance.</p>
         </div>
-        <button class="new-btn" (click)="openWizard()"><mat-icon>add</mat-icon>New Project</button>
+        <div class="header-actions">
+          <a class="monitor-btn" routerLink="/package-monitor" title="Live import pipeline + package history across all projects">
+            <mat-icon>monitor_heart</mat-icon>Package Monitor
+          </a>
+          <button class="new-btn" (click)="openWizard()"><mat-icon>add</mat-icon>New Project</button>
+        </div>
       </div>
 
       @if (loading) {
@@ -130,6 +135,16 @@ interface StatusFilter { value: ProjectStatus | 'all'; label: string; }
   styles: [`
     .portfolio { max-width: 1280px; margin: 0 auto; }
     .center { display: flex; justify-content: center; padding: 64px 0; }
+    .header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .monitor-btn {
+      display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+      background: var(--clay-surface); color: var(--clay-text-secondary);
+      border: 1px solid var(--clay-border);
+      border-radius: var(--clay-radius-sm); padding: 9px 16px;
+      font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    .monitor-btn:hover { border-color: var(--clay-primary); color: var(--clay-primary); background: var(--info-bg); }
+    .monitor-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
     .new-btn {
       display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
       background: var(--clay-primary); color: #fff; border: none;
@@ -339,8 +354,13 @@ export class ProjectListComponent implements OnInit {
 
   openWizard(): void {
     this.dialog.open(ProjectWizardComponent, { width: '640px', maxWidth: '95vw' })
-      .afterClosed().subscribe((created: { id: string } | undefined) => {
-        if (created) { this.load(); this.router.navigate(['/projects', created.id]); }
+      .afterClosed().subscribe((created: { id: string; navigated?: boolean } | undefined) => {
+        if (created) {
+          this.load();
+          // The wizard already routed to the Package Monitor when a file was
+          // uploaded; only open the workspace for the no-upload path.
+          if (!created.navigated) this.router.navigate(['/projects', created.id]);
+        }
       });
   }
 

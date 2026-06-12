@@ -93,6 +93,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert(!!projectId, 'project created');
   const unauth = await fetch(`${A}/projects/${projectId}/imports`);
   assert(unauth.status === 401, 'imports list requires auth (401 without token)');
+  const unauthMon = await fetch(`${A}/imports/monitor`);
+  assert(unauthMon.status === 401, 'org monitor requires auth (401 without token)');
 
   // ── Optional websocket feed ────────────────────────────────────────────
   let ioClient = null;
@@ -122,7 +124,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const started = await j(up);
     assert(up.status === 201 || up.status === 200, `upload accepted (${up.status})`);
     assert(!!started.importFileId, 'response carries importFileId');
-    assert(started.status === 'uploaded' && started.stage === 'uploaded', 'response returns immediately in the uploaded stage (processing is async)');
+    assert(started.status === 'uploaded' && (started.stage === 'queued' || started.stage === 'uploaded'),
+      `response returns immediately, package queued for processing (stage=${started.stage})`);
     console.log(`# upload round-trip ${upMs}ms`);
 
     const list0 = await j(await get(`/projects/${projectId}/imports`));
@@ -130,6 +133,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     assert(!!row0, 'imports list shows the new package right away');
     assert(row0.originalName === 'demo_assembly.ifc' && row0.size === buf.length, 'list row carries name + size');
     assert(typeof row0.progress === 'number' && row0.stage, 'list row carries live stage + progress');
+
+    // Org-wide monitor sees it live, with queue awareness
+    const mon0 = await j(await get('/imports/monitor'));
+    const monRow = mon0.active.find((r) => r.id === started.importFileId);
+    assert(!!monRow && mon0.kpis.inProgress >= 1, 'org monitor shows the package among active pipelines');
+    assert(monRow.projectName === projRes.name, 'monitor row carries the project name');
+    assert(typeof monRow.ahead === 'number', 'monitor row carries its queue position (packages ahead)');
 
     const { detail, stages } = await followImport(projectId, started.importFileId, 60_000);
     const f = detail.file;
@@ -142,7 +152,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const evs = detail.events;
     assert(evs.length >= 5, `event timeline recorded (${evs.length} events)`);
     const evStages = evs.map((e) => e.stage);
-    for (const s of ['uploaded', 'extracting', 'persisting', 'completed']) {
+    for (const s of ['uploaded', 'queued', 'extracting', 'persisting', 'completed']) {
       assert(evStages.includes(s), `timeline contains the '${s}' stage`);
     }
     const times = evs.map((e) => new Date(e.createdAt).getTime());
@@ -155,6 +165,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const nodes = await j(await get(`/projects/${projectId}/nodes`));
     assert(nodes.length === f.nodeCount, 'assembly nodes persisted');
     assert(nodes.some((nd) => nd.modelId === f.modelId), 'nodes carry the linked model id');
+
+    // Org-wide history + KPIs reflect the completion
+    const monDone = await j(await get('/imports/monitor'));
+    assert(monDone.kpis.completedTotal >= 1, 'monitor KPIs count the completed package');
+    const histAll = await j(await get('/imports/history?limit=10'));
+    const histRow = histAll.rows.find((r) => r.id === started.importFileId);
+    assert(!!histRow && histRow.projectName === projRes.name && histRow.status === 'completed',
+      'org-wide history lists the package with project name + final status');
+    assert(typeof histAll.total === 'number' && histAll.total >= 1, 'history is paged with a total count');
 
     if (ioClient) {
       await sleep(300);
@@ -206,6 +225,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     assert(Array.isArray(listB) && listB.length === 0, "another project's monitoring history is empty (scoped)");
     const cross = await get(`/projects/${projB.id}/imports/${startedBad.importFileId}`);
     assert(cross.status === 404, 'import detail is not readable through a different project (404)');
+
+    // Org-wide history honors the project filter
+    const histB = await j(await get(`/imports/history?projects=${projB.id}`));
+    assert(histB.rows.length === 0 && histB.total === 0, 'org history filtered to an empty project returns nothing');
+    const histFail = await j(await get(`/imports/history?projects=${projectId}&sort=desc`));
+    assert(histFail.rows.some((r) => r.id === startedBad.importFileId && r.status === 'failed'),
+      'org history filtered to the project includes the failed package');
   }
 
   wsJoined?.close();

@@ -1,6 +1,6 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -71,11 +71,21 @@ export interface ImportStarted {
  * both inline and BullMQ-worker modes and survives API restarts.
  */
 @Injectable()
-export class IfcImportService {
+export class IfcImportService implements OnModuleInit {
   private readonly logger = new Logger(IfcImportService.name);
   // dist/projects -> dist/cad-conversion/scripts/extract-ifc-structure.mjs
   private readonly scriptPath = path.join(__dirname, '..', 'cad-conversion', 'scripts', 'extract-ifc-structure.mjs');
   private readonly tmpDir = path.join(os.tmpdir(), 'pcs-ifc-import');
+
+  /**
+   * FIFO pipeline queue with bounded concurrency: uploads beyond the limit
+   * wait in the `queued` stage, which makes "N packages ahead of yours" a real
+   * number on the monitor (and stops a burst of uploads from spawning an
+   * unbounded number of extractor processes).
+   */
+  private readonly pipelineQueue: { importFileId: string; organizationId: string; projectName: string }[] = [];
+  private runningPipelines = 0;
+  private readonly pipelineConcurrency = Math.max(1, Number(process.env.IMPORT_PIPELINE_CONCURRENCY || 2));
 
   constructor(
     @InjectRepository(Project) private readonly projectRepo: Repository<Project>,
@@ -86,6 +96,65 @@ export class IfcImportService {
     private readonly ws: EventsGateway,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
+
+  /**
+   * Restart recovery: imports that were mid-pipeline when the process died are
+   * re-queued from their durably stored source. Conversions already handed to
+   * the conversion queue heal through the processor mirror / linkPendingModels.
+   * (Single-API-instance assumption — same as the inline conversion driver.)
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      const stuck = await this.importRepo.find({
+        where: [
+          { status: In([ImportFileStatus.UPLOADED, ImportFileStatus.EXTRACTING]) },
+          { status: ImportFileStatus.CONVERTING, conversionJobId: IsNull() },
+        ],
+      });
+      const recoverable = stuck.filter((i) => !!i.storageKey && !!i.organizationId);
+      if (!recoverable.length) return;
+      const projects = await this.projectRepo.find({ where: { id: In(recoverable.map((i) => i.projectId)) } });
+      const nameById = new Map(projects.map((p) => [p.id, p.name]));
+      for (const imp of recoverable) {
+        await this.record(imp, {
+          stage: 'queued',
+          status: ImportFileStatus.UPLOADED,
+          progress: IMPORT_STAGE_PROGRESS.queued,
+          message: 'Recovered after a service restart — re-queued from the stored source',
+          detail: { recovered: true },
+        });
+        this.enqueuePipeline(imp.id, imp.organizationId as string, nameById.get(imp.projectId) ?? '');
+      }
+      this.logger.log(`Recovered ${recoverable.length} interrupted import(s) into the pipeline queue`);
+    } catch (e) {
+      this.logger.warn(`Import recovery sweep failed: ${this.errMsg(e)}`);
+    }
+  }
+
+  // ── Pipeline scheduling (FIFO, bounded concurrency) ──────────────────
+
+  /** Imports currently waiting or running ahead of a new arrival. */
+  queueDepth(): number {
+    return this.pipelineQueue.length + this.runningPipelines;
+  }
+
+  private enqueuePipeline(importFileId: string, organizationId: string, projectName: string): void {
+    this.pipelineQueue.push({ importFileId, organizationId, projectName });
+    this.pumpQueue();
+  }
+
+  private pumpQueue(): void {
+    while (this.runningPipelines < this.pipelineConcurrency && this.pipelineQueue.length > 0) {
+      const next = this.pipelineQueue.shift()!;
+      this.runningPipelines++;
+      void this.runPipeline(next.importFileId, next.organizationId, next.projectName)
+        .catch((e) => this.logger.error(`Import pipeline ${next.importFileId} crashed: ${this.errMsg(e)}`))
+        .finally(() => {
+          this.runningPipelines--;
+          this.pumpQueue();
+        });
+    }
+  }
 
   // ───────────────────────────────────────────────────────────── start ──
 
@@ -147,10 +216,17 @@ export class IfcImportService {
       this.safeUnlink(stagePath);
     }
 
-    // Fire-and-forget: the request returns now; monitoring follows the rest.
-    void this.runPipeline(importFile.id, organizationId, project.name).catch((e) =>
-      this.logger.error(`Import pipeline ${importFile.id} crashed: ${this.errMsg(e)}`),
-    );
+    // Hand off to the FIFO pipeline queue: the request returns now; the
+    // monitor shows the live queue position and stage from here on.
+    const ahead = this.queueDepth();
+    await this.record(importFile, {
+      stage: 'queued',
+      status: ImportFileStatus.UPLOADED,
+      progress: IMPORT_STAGE_PROGRESS.queued,
+      message: ahead > 0 ? `Queued for processing — ${ahead} package(s) ahead` : 'Queued for processing',
+      detail: { ahead },
+    });
+    this.enqueuePipeline(importFile.id, organizationId, project.name);
 
     return {
       importFileId: importFile.id,
@@ -310,16 +386,17 @@ export class IfcImportService {
         detail: { conversionJobId: job.id, retry: true },
       });
     } else {
+      const ahead = this.queueDepth();
       await this.record(imp, {
-        stage: 'uploaded',
+        stage: 'queued',
         status: ImportFileStatus.UPLOADED,
-        progress: IMPORT_STAGE_PROGRESS.uploaded,
-        message: 'Retry: pipeline restarted from the stored source file',
-        detail: { retry: true },
+        progress: IMPORT_STAGE_PROGRESS.queued,
+        message: ahead > 0
+          ? `Retry: re-queued from the stored source — ${ahead} package(s) ahead`
+          : 'Retry: re-queued from the stored source',
+        detail: { retry: true, ahead },
       });
-      void this.runPipeline(imp.id, organizationId, project.name).catch((e) =>
-        this.logger.error(`Import retry ${imp.id} crashed: ${this.errMsg(e)}`),
-      );
+      this.enqueuePipeline(imp.id, organizationId, project.name);
     }
 
     return {

@@ -1,5 +1,6 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Router } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpEventType } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -136,6 +137,7 @@ import { ProjectsService, Project, CreateProject, ImportStarted } from '../core/
 export class ProjectWizardComponent implements OnInit {
   private fb = inject(FormBuilder);
   private svc = inject(ProjectsService);
+  private router = inject(Router);
   private dialogRef = inject(MatDialogRef<ProjectWizardComponent>);
 
   form = this.fb.group({
@@ -195,7 +197,11 @@ export class ProjectWizardComponent implements OnInit {
           } else if (ev.type === HttpEventType.Response) {
             this.result = ev.body;
             this.importing = false;
-            stepper.next();
+            // The package is stored and queued — take the user straight to the
+            // Package Monitor so they see their upload live in the pipeline
+            // (queue position, stage, %) alongside everything else processing.
+            this.dialogRef.close({ ...(this.created as Project), navigated: true });
+            this.router.navigate(['/package-monitor']);
           }
         },
         error: (e) => {

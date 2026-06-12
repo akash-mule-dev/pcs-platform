@@ -105,7 +105,10 @@ Key services & flows:
 - **IFC import — async, observable pipeline** (`ifc-import.service.ts`,
   `POST /api/projects/:id/import-ifc`): the upload is stored durably FIRST (StorageProvider
   `import-sources/…` + import_files row), the request returns immediately, then the background
-  pipeline runs `uploaded → extracting → persisting → converting → completed|failed`: spawns
+  pipeline runs `uploaded → queued → extracting → persisting → converting → completed|failed`.
+  Pipelines run through an in-process **FIFO queue with bounded concurrency**
+  (`IMPORT_PIPELINE_CONCURRENCY`, default 2) so "N packages ahead of yours" is real, and
+  `onModuleInit` re-queues imports interrupted by a restart from their stored source. Spawns
   `cad-conversion/scripts/extract-ifc-structure.mjs` (web-ifc) → normalized JSON tree →
   persisted into `assembly_nodes` **idempotently by `ifc_guid`** → GLB queued via
   `ConversionService.createJob`. Every transition updates `import_files.stage/progress`, appends
@@ -115,10 +118,15 @@ Key services & flows:
   processor (works inline + BullMQ, survives API restarts; entity-only cross-module dep).
   Monitoring API: `GET :id/imports` (history), `GET :id/imports/:importId` (timeline + conversion
   snapshot), `POST :id/imports/:importId/retry` (failed only; conversion-only or full re-run from
-  the stored source). `linkPendingModels` / `POST :id/resolve-models` remain as the healing path.
-  Web UI: per-project **Monitoring** tab (live stage stepper + history + event timelines), live
-  header pipeline bar; regression suite `npm run test:e2e:imports` (42 assertions incl. ws room
-  isolation; needs a freshly seeded API + `socket.io-client` resolvable for the ws checks).
+  the stored source); **org-wide** `GET /api/imports/monitor` (active pipelines with queue
+  position + KPI counts) and `GET /api/imports/history` (project filter, sort, paging) in
+  `import-monitor.service/controller.ts`. `linkPendingModels` / `POST :id/resolve-models` remain
+  as the healing path. Web UI: tenant-wide **Package Monitor** page at `/package-monitor`
+  (in-progress tab with queue positions + live %, history tab with filters; nav item + projects
+  header button; the wizard routes there after an upload) and the per-project **Monitoring** tab
+  (live stage stepper + per-import event timelines), live header pipeline bar; regression suite
+  `npm run test:e2e:imports` (52 assertions incl. ws room isolation; needs a freshly seeded API +
+  `socket.io-client` resolvable for the ws checks).
 - **Production orders** (`production-order.service.ts`, `POST /api/projects/:id/orders`,
   `/api/orders/:id/*`): create-and-release transactionally generates per-assembly WorkOrders +
   stages with count totals (`quantity-math.ts`: `qtyDone`/`qtyTotal` per stage). The board

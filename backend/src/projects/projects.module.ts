@@ -8,6 +8,8 @@ import { ProjectsService } from './projects.service.js';
 import { ProjectsController } from './projects.controller.js';
 import { IfcImportService } from './ifc-import.service.js';
 import { ProjectImportController } from './project-import.controller.js';
+import { ImportMonitorService } from './import-monitor.service.js';
+import { ImportMonitorController } from './import-monitor.controller.js';
 import { ProjectProgressService } from './project-progress.service.js';
 import { ProjectModelService } from './project-model.service.js';
 import { ProjectModelController } from './project-model.controller.js';
@@ -29,8 +31,8 @@ import { ConversionModule } from '../conversion/conversion.module.js';
     QualityDataModule,
     QualityNcrModule,
   ],
-  controllers: [ProjectsController, ProjectImportController, ProjectModelController, ProjectQualityController],
-  providers: [ProjectsService, IfcImportService, ProjectProgressService, ProjectModelService, ProjectQualityService],
+  controllers: [ProjectsController, ProjectImportController, ImportMonitorController, ProjectModelController, ProjectQualityController],
+  providers: [ProjectsService, IfcImportService, ImportMonitorService, ProjectProgressService, ProjectModelService, ProjectQualityService],
   exports: [ProjectsService, IfcImportService, TypeOrmModule],
 })
 export class ProjectsModule {}

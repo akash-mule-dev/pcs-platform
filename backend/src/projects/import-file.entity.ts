@@ -22,10 +22,11 @@ export enum ImportFileStatus {
 /**
  * Fine-grained pipeline position (the coarse `status` enum stays untouched for
  * backward compatibility). Stage progression:
- *   uploaded → extracting → persisting → converting → completed | failed
+ *   uploaded → queued → extracting → persisting → converting → completed | failed
  */
 export type ImportFileStage =
   | 'uploaded' // source stored durably (storage + DB row)
+  | 'queued' // waiting for a pipeline slot (FIFO, bounded concurrency)
   | 'extracting' // structure extraction (web-ifc) running
   | 'persisting' // assembly_nodes tree being upserted
   | 'converting' // GLB conversion job running
@@ -34,7 +35,8 @@ export type ImportFileStage =
 
 /** Overall pipeline % checkpoints per stage (conversion maps its own 0-100 into 55→99). */
 export const IMPORT_STAGE_PROGRESS: Record<string, number> = {
-  uploaded: 5,
+  uploaded: 3,
+  queued: 5,
   extracting: 10,
   persisting: 35,
   converting: 55,

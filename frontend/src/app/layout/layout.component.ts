@@ -486,6 +486,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   navGroups: NavGroup[] = [
     { label: 'Production', icon: 'precision_manufacturing', expanded: true, items: [
       { label: 'Projects', icon: 'foundation', route: '/projects', feature: 'projects' },
+      { label: 'Package Monitor', icon: 'monitor_heart', route: '/package-monitor', feature: 'projects' },
       { label: 'Work Orders', icon: 'assignment', route: '/work-orders', feature: 'work-orders' },
       { label: 'Kanban', icon: 'view_kanban', route: '/work-orders/kanban', feature: 'kanban' },
       { label: 'Processes', icon: 'account_tree', route: '/processes', feature: 'processes' },
