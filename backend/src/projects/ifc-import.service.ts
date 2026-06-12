@@ -11,6 +11,7 @@ import { AssemblyNode, AssemblyNodeType } from './assembly-node.entity.js';
 import { ImportFile, ImportFileStatus, IMPORT_STAGE_PROGRESS } from './import-file.entity.js';
 import { ImportFileEvent } from './import-file-event.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import { computeRevisionDiff, revisionSummaryMessage, RevisionDiff } from './revision-diff.js';
 import { ConversionService } from '../conversion/conversion.service.js';
 import { ConversionJob } from '../conversion/conversion-job.entity.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
@@ -265,13 +266,37 @@ export class IfcImportService implements OnModuleInit {
       await this.runExtractor(inPath, outPath);
       const result = JSON.parse(fs.readFileSync(outPath, 'utf8')) as ExtractResult;
 
-      // 2. Persist tree (progress 35 → 55, ticked per depth level)
+      // 2a. Revision diff: compare the incoming nodes against the tree AS IT
+      // STANDS before this import mutates it (added/changed/missing pieces).
+      let diff: RevisionDiff | null = null;
+      try {
+        const existing: any[] = await this.nodeRepo
+          .createQueryBuilder('n')
+          .select(['n.ifcGuid AS "ifcGuid"', 'n.nodeType AS "nodeType"', 'n.name AS name', 'n.mark AS mark',
+            'n.quantity AS quantity', 'n.profile AS profile', 'n.materialGrade AS "materialGrade"',
+            'n.lengthMm AS "lengthMm"', 'n.weightKg AS "weightKg"'])
+          .where('n.organization_id = :org AND n.project_id = :pid', { org: organizationId, pid: imp.projectId })
+          .getRawMany();
+        diff = computeRevisionDiff(
+          result.nodes.map((nd) => ({
+            externalId: nd.externalId, type: nd.type, name: nd.name, mark: nd.mark,
+            quantity: nd.quantity ?? 1, profile: nd.profile, materialGrade: nd.materialGrade,
+            lengthMm: nd.lengthMm, weightKg: nd.weightKg,
+          })),
+          existing.map((e) => ({ ...e, quantity: Number(e.quantity ?? 1), lengthMm: e.lengthMm != null ? Number(e.lengthMm) : null, weightKg: e.weightKg != null ? Number(e.weightKg) : null })),
+        );
+        imp.revision = diff as unknown as Record<string, unknown>;
+      } catch (e) {
+        this.logger.warn(`Revision diff failed for ${imp.id} (import continues): ${this.errMsg(e)}`);
+      }
+
+      // 2b. Persist tree (progress 35 → 55, ticked per depth level)
       await this.record(imp, {
         stage: 'persisting',
         status: ImportFileStatus.EXTRACTING,
         progress: IMPORT_STAGE_PROGRESS.persisting,
-        message: `Structure extracted — persisting ${result.nodeCount} nodes`,
-        detail: { counts: result.counts, rootCount: result.rootCount },
+        message: diff ? revisionSummaryMessage(diff) : `Structure extracted — persisting ${result.nodeCount} nodes`,
+        detail: { counts: result.counts, rootCount: result.rootCount, revision: diff?.counts ?? null },
       });
       const nodeCount = await this.persistTree(
         organizationId, imp.projectId, imp.id, imp.format, result.nodes,
@@ -440,6 +465,105 @@ export class IfcImportService implements OnModuleInit {
       } catch { /* job purged — row data stands on its own */ }
     }
     return { file, events, conversion };
+  }
+
+  /**
+   * Revision impact: for the pieces this import CHANGED or no longer contains,
+   * what production has already happened? Work recorded on a changed piece is
+   * money at risk — this is the change-order report. WOs attach at assembly
+   * level while changes often hit parts, so impact rolls up through ancestors.
+   */
+  async getImportRevision(projectId: string, importFileId: string) {
+    const organizationId = TenantContext.requireOrganizationId();
+    const imp = await this.importRepo.findOne({ where: { id: importFileId, projectId, organizationId } });
+    if (!imp) throw new NotFoundException('Import not found');
+    const diff = (imp.revision ?? null) as unknown as RevisionDiff | null;
+    if (!diff) return { diff: null, impact: null };
+
+    const affected = [
+      ...(diff.changed ?? []).map((e) => ({ ...e, kind: 'changed' as const })),
+      ...(diff.missing ?? []).map((e) => ({ ...e, kind: 'missing' as const })),
+    ];
+    const empty = { summary: { pieces: 0, critical: 0, high: 0, medium: 0, none: 0 }, rows: [] as any[] };
+    if (!affected.length) return { diff, impact: empty };
+
+    // Minimal whole-tree map for ancestor rollup (id, parent, guid).
+    const tree: { id: string; parent_id: string | null; ifc_guid: string | null }[] = await this.nodeRepo.query(
+      `SELECT id, parent_id, ifc_guid FROM assembly_nodes WHERE organization_id = $1 AND project_id = $2`,
+      [organizationId, projectId],
+    );
+    const parentOf = new Map(tree.map((t) => [t.id, t.parent_id]));
+    const idByGuid = new Map(tree.filter((t) => t.ifc_guid).map((t) => [t.ifc_guid as string, t.id]));
+
+    // Work + shipping state per assembly node (one query each).
+    const woRows: any[] = await this.nodeRepo.query(
+      `SELECT w.assembly_node_id AS node_id, w.id, w.order_number, w.status, o.number AS po_number,
+              COALESCE(SUM(s.qty_total) FILTER (WHERE s.status <> 'skipped'), 0)::int AS units_total,
+              COALESCE(SUM(LEAST(s.qty_done, s.qty_total)) FILTER (WHERE s.status <> 'skipped'), 0)::int AS units_done
+         FROM work_orders w
+         LEFT JOIN production_orders o ON o.id = w.production_order_id
+         LEFT JOIN work_order_stages s ON s.work_order_id = w.id
+        WHERE w.organization_id = $1 AND w.assembly_node_id IS NOT NULL AND w.status <> 'cancelled'
+          AND w.assembly_node_id IN (SELECT id FROM assembly_nodes WHERE project_id = $2)
+        GROUP BY w.assembly_node_id, w.id, w.order_number, w.status, o.number`,
+      [organizationId, projectId],
+    );
+    const wosByNode = new Map<string, any[]>();
+    for (const r of woRows) {
+      const arr = wosByNode.get(r.node_id) ?? [];
+      arr.push(r);
+      wosByNode.set(r.node_id, arr);
+    }
+    const shipRows: any[] = await this.nodeRepo.query(
+      `SELECT si.assembly_node_id AS node_id, SUM(si.quantity)::int AS shipped
+         FROM shipment_items si JOIN shipments sh ON sh.id = si.shipment_id
+        WHERE si.organization_id = $1 AND sh.project_id = $2 AND sh.status IN ('shipped','delivered')
+        GROUP BY si.assembly_node_id`,
+      [organizationId, projectId],
+    );
+    const shippedByNode = new Map<string, number>(shipRows.map((r) => [r.node_id, Number(r.shipped)]));
+
+    const rows = affected.map((e) => {
+      // Walk self → ancestors, collecting any production touching this piece.
+      const wos: any[] = [];
+      let shippedQty = 0;
+      let nodeId = idByGuid.get(e.guid) ?? null;
+      const hops = new Set<string>();
+      while (nodeId && !hops.has(nodeId)) {
+        hops.add(nodeId);
+        for (const w of wosByNode.get(nodeId) ?? []) wos.push(w);
+        shippedQty += shippedByNode.get(nodeId) ?? 0;
+        nodeId = parentOf.get(nodeId) ?? null;
+      }
+      const unitsDone = wos.reduce((a, w) => a + Number(w.units_done), 0);
+      const severity = shippedQty > 0 ? 'critical' : unitsDone > 0 ? 'high' : wos.length > 0 ? 'medium' : 'none';
+      return {
+        kind: e.kind,
+        guid: e.guid,
+        mark: e.mark,
+        name: e.name,
+        deltas: (e as any).deltas ?? null,
+        severity,
+        shippedQty,
+        workOrders: wos.map((w) => ({
+          orderNumber: w.order_number,
+          productionOrder: w.po_number,
+          status: w.status,
+          unitsDone: Number(w.units_done),
+          unitsTotal: Number(w.units_total),
+        })),
+      };
+    });
+    rows.sort((a, b) => ['critical', 'high', 'medium', 'none'].indexOf(a.severity) - ['critical', 'high', 'medium', 'none'].indexOf(b.severity));
+
+    const summary = {
+      pieces: rows.length,
+      critical: rows.filter((r) => r.severity === 'critical').length,
+      high: rows.filter((r) => r.severity === 'high').length,
+      medium: rows.filter((r) => r.severity === 'medium').length,
+      none: rows.filter((r) => r.severity === 'none').length,
+    };
+    return { diff, impact: { summary, rows } };
   }
 
   /**

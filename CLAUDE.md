@@ -141,6 +141,22 @@ Key services & flows:
   project/order/search filters, per-card `+1` and complete-stage actions (server-gated; cards move
   columns as work is recorded), live via the `stage-update`/`work-order-update` ws events.
   Regression suite `npm run test:e2e:kanban` (21 assertions; freshly seeded API).
+- **Revision management** (`revision-diff.ts` pure module + `npm run test:revision`): every import
+  captures an added/changed/missing diff vs the prior tree (stored on `import_files.revision`,
+  summarized in the event timeline). `GET :id/imports/:importId/revision` enriches it with
+  **production impact** per affected piece (work orders touching it via ancestor rollup, units
+  done, shipped qty → severity critical/high/medium/none) — the change-order report. Shown in the
+  Monitoring tab's import detail.
+- **Earned value / progress billing** (`project-insights.service.ts`,
+  `GET :id/earned-value?orderId=`): weekly produced tonnage (WOs completed × node weight) +
+  shipped tonnage (shipped/delivered loads) with cumulative %, scoped to released orders —
+  web "Reports" tab with chart + CSV export.
+- **Per-piece extras**: `assembly_documents` (shop drawings etc., PDF/PNG/JPEG/WebP ≤20 MB via
+  StorageProvider; CRUD under `:id/nodes/:nodeId/documents`, stream at `:id/documents/:docId/file`)
+  and `piece_lot_assignments` (heat-number traceability: assign `material_lots` to nodes,
+  `GET :id/shipments/:shipmentId/traceability` = MTR rollup incl. descendants + coverage gaps).
+  Both editable from the Assemblies tab's detail panel; MTR per load on the Shipping tab.
+  Regression suite `npm run test:e2e:projects` (25 assertions; freshly seeded API).
 - **Design summary** (`project-progress.service.ts` + pure `progress-math.ts`,
   `GET /api/projects/:id/progress`): node composition + total tonnage + work-order item count —
   feeds the workspace header and the portfolio list (`GET /api/projects/summary`).

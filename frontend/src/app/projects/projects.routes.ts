@@ -24,9 +24,13 @@ export const PROJECTS_ROUTES: Routes = [
       { path: '', redirectTo: 'overview', pathMatch: 'full' },
       { path: 'overview', loadComponent: () => import('./project-overview.component').then((m) => m.ProjectOverviewComponent) },
       { path: 'assemblies', loadComponent: () => import('./project-assemblies.component').then((m) => m.ProjectAssembliesComponent) },
+      // Per-unit bill of materials (from the assembly tree) + stock coverage.
+      { path: 'materials', loadComponent: () => import('./project-materials.component').then((m) => m.ProjectMaterialsComponent) },
       { path: 'orders', loadComponent: () => import('./project-orders.component').then((m) => m.ProjectOrdersComponent) },
       // Import pipeline monitoring: live upload/extract/convert progress + full history.
       { path: 'monitoring', loadComponent: () => import('./project-monitoring.component').then((m) => m.ProjectMonitoringComponent) },
+      // Earned value / progress billing report.
+      { path: 'reports', loadComponent: () => import('./project-reports.component').then((m) => m.ProjectReportsComponent) },
       {
         path: 'orders/:orderId',
         loadComponent: () => import('./order-workspace.component').then((m) => m.OrderWorkspaceComponent),
@@ -34,6 +38,10 @@ export const PROJECTS_ROUTES: Routes = [
           { path: '', redirectTo: 'board', pathMatch: 'full' },
           { path: 'board', loadComponent: () => import('./order-board.component').then((m) => m.OrderBoardComponent) },
           { path: 'progress', loadComponent: () => import('./project-progress.component').then((m) => m.ProjectProgressComponent) },
+          // Requirement × order quantity, issue-from-stock, fulfillment.
+          { path: 'materials', loadComponent: () => import('./order-materials.component').then((m) => m.OrderMaterialsComponent) },
+          // Actual vs estimated material/labor/overhead cost.
+          { path: 'costs', loadComponent: () => import('./order-costs.component').then((m) => m.OrderCostsComponent) },
           { path: 'quality', loadComponent: () => import('./project-quality.component').then((m) => m.ProjectQualityComponent) },
           { path: 'shipping', loadComponent: () => import('./project-shipping.component').then((m) => m.ProjectShippingComponent) },
         ],

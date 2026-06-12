@@ -132,6 +132,63 @@ export interface ImportsMonitor {
 export type HistoryRow = ImportFileRow & { projectName: string | null };
 export interface ImportsHistoryPage { rows: HistoryRow[]; total: number; }
 
+// ── Revision diff & impact ──
+export interface RevisionDelta { field: string; from: unknown; to: unknown; }
+export interface RevisionEntry { guid: string; mark: string | null; name: string; type: string; profile?: string | null; deltas?: RevisionDelta[]; }
+export interface RevisionDiffData {
+  initial: boolean;
+  counts: { incoming: number; added: number; changed: number; missing: number; unchanged: number };
+  added: RevisionEntry[];
+  changed: RevisionEntry[];
+  missing: RevisionEntry[];
+  capped: boolean;
+}
+export interface RevisionImpactRow {
+  kind: 'changed' | 'missing';
+  guid: string; mark: string | null; name: string;
+  deltas: RevisionDelta[] | null;
+  severity: 'critical' | 'high' | 'medium' | 'none';
+  shippedQty: number;
+  workOrders: { orderNumber: string; productionOrder: string | null; status: string; unitsDone: number; unitsTotal: number }[];
+}
+export interface ImportRevision {
+  diff: RevisionDiffData | null;
+  impact: { summary: { pieces: number; critical: number; high: number; medium: number; none: number }; rows: RevisionImpactRow[] } | null;
+}
+
+// ── Earned value ──
+export interface EarnedValueWeek {
+  weekStart: string; producedKg: number; producedPieces: number; shippedKg: number; shippedPieces: number;
+  cumulativeProducedKg: number; cumulativeShippedKg: number;
+}
+export interface EarnedValue {
+  kpis: { designKg: number; scopeKg: number; scopePieces: number; producedKg: number; shippedKg: number; producedPct: number; shippedPct: number };
+  series: EarnedValueWeek[];
+}
+
+// ── Node documents ──
+export interface NodeDocument {
+  id: string; nodeId: string; originalName: string; contentType: string; size: number;
+  label: string | null; createdByName: string | null; createdAt: string;
+}
+
+// ── Traceability ──
+export interface LotOption {
+  id: string; lot_number: string; heat_number: string | null; supplier: string | null;
+  cert_reference: string | null; remaining_quantity: number; material_code: string | null; material_name: string | null;
+}
+export interface NodeLotRow {
+  id: string; quantity: number; note: string | null; created_by_name: string | null; created_at: string;
+  lot_id: string; lot_number: string; heat_number: string | null; supplier: string | null; cert_reference: string | null;
+  material_code: string | null; material_name: string | null;
+}
+export interface ShipmentTraceability {
+  shipment: { id: string; shipment_number: string; status: string };
+  items: { itemId: string; mark: string | null; name: string; quantity: number; covered: boolean;
+    lots: { lotNumber: string; heatNumber: string | null; supplier: string | null; certReference: string | null; material: string | null }[] }[];
+  summary: { items: number; covered: number; missing: number };
+}
+
 /** Live `import:progress` websocket payload (room: project:<id>). */
 export interface ImportProgressEvent {
   importFileId: string;
@@ -371,6 +428,52 @@ export class ProjectsService {
   /** Retry a failed import (conversion-only, or the full pipeline from the stored source). */
   retryImport(projectId: string, importId: string): Observable<ImportStarted> {
     return this.http.post<ImportStarted>(`${this.base}/${projectId}/imports/${importId}/retry`, {});
+  }
+
+  /** Revision diff of an import (added/changed/missing) + production impact per piece. */
+  importRevision(projectId: string, importId: string): Observable<ImportRevision> {
+    return this.http.get<ImportRevision>(`${this.base}/${projectId}/imports/${importId}/revision`);
+  }
+
+  /** Progress billing: weekly produced + shipped tonnage with cumulative earned %. */
+  earnedValue(projectId: string, orderId?: string): Observable<EarnedValue> {
+    const qs = orderId ? `?orderId=${orderId}` : '';
+    return this.http.get<EarnedValue>(`${this.base}/${projectId}/earned-value${qs}`);
+  }
+
+  // ── Node documents (shop drawings) ──
+  nodeDocuments(projectId: string, nodeId: string): Observable<NodeDocument[]> {
+    return this.http.get<NodeDocument[]>(`${this.base}/${projectId}/nodes/${nodeId}/documents`);
+  }
+  uploadNodeDocument(projectId: string, nodeId: string, file: File, label?: string): Observable<NodeDocument> {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (label) fd.append('label', label);
+    return this.http.post<NodeDocument>(`${this.base}/${projectId}/nodes/${nodeId}/documents`, fd);
+  }
+  nodeDocumentBlob(projectId: string, docId: string): Observable<Blob> {
+    return this.http.get(`${this.base}/${projectId}/documents/${docId}/file`, { responseType: 'blob' });
+  }
+  deleteNodeDocument(projectId: string, docId: string): Observable<{ ok: true }> {
+    return this.http.delete<{ ok: true }>(`${this.base}/${projectId}/documents/${docId}`);
+  }
+
+  // ── Heat-number traceability ──
+  availableLots(projectId: string, q?: string): Observable<LotOption[]> {
+    const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+    return this.http.get<LotOption[]>(`${this.base}/${projectId}/lots${qs}`);
+  }
+  nodeLots(projectId: string, nodeId: string): Observable<NodeLotRow[]> {
+    return this.http.get<NodeLotRow[]>(`${this.base}/${projectId}/nodes/${nodeId}/lots`);
+  }
+  assignLot(projectId: string, nodeId: string, body: { materialLotId: string; quantity?: number; note?: string }): Observable<unknown> {
+    return this.http.post(`${this.base}/${projectId}/nodes/${nodeId}/lots`, body);
+  }
+  unassignLot(projectId: string, assignmentId: string): Observable<{ ok: true }> {
+    return this.http.delete<{ ok: true }>(`${this.base}/${projectId}/lot-assignments/${assignmentId}`);
+  }
+  shipmentTraceability(projectId: string, shipmentId: string): Observable<ShipmentTraceability> {
+    return this.http.get<ShipmentTraceability>(`${this.base}/${projectId}/shipments/${shipmentId}/traceability`);
   }
 
   /** Org-wide live pipeline: active packages with queue position + KPI counts. */

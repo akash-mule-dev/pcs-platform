@@ -10,6 +10,13 @@ import { IfcImportService } from './ifc-import.service.js';
 import { ProjectImportController } from './project-import.controller.js';
 import { ImportMonitorService } from './import-monitor.service.js';
 import { ImportMonitorController } from './import-monitor.controller.js';
+import { AssemblyDocument } from './assembly-document.entity.js';
+import { PieceLotAssignment } from './piece-lot-assignment.entity.js';
+import { ProjectInsightsService } from './project-insights.service.js';
+import { ProjectDocumentService } from './project-document.service.js';
+import { ProjectTraceabilityService } from './project-traceability.service.js';
+import { ProjectInsightsController } from './project-insights.controller.js';
+import { StorageModule } from '../storage/storage.module.js';
 import { ProjectProgressService } from './project-progress.service.js';
 import { ProjectModelService } from './project-model.service.js';
 import { ProjectModelController } from './project-model.controller.js';
@@ -23,14 +30,18 @@ import { ConversionModule } from '../conversion/conversion.module.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Project, AssemblyNode, ImportFile, ImportFileEvent, WorkOrder]),
+    TypeOrmModule.forFeature([Project, AssemblyNode, ImportFile, ImportFileEvent, WorkOrder, AssemblyDocument, PieceLotAssignment]),
     ConversionModule,
     ModelsModule,
     QualityDataModule,
     QualityNcrModule,
+    StorageModule,
   ],
-  controllers: [ProjectsController, ProjectImportController, ImportMonitorController, ProjectModelController, ProjectQualityController],
-  providers: [ProjectsService, IfcImportService, ImportMonitorService, ProjectProgressService, ProjectModelService, ProjectQualityService],
+  controllers: [ProjectsController, ProjectImportController, ImportMonitorController, ProjectInsightsController, ProjectModelController, ProjectQualityController],
+  providers: [
+    ProjectsService, IfcImportService, ImportMonitorService, ProjectProgressService, ProjectModelService, ProjectQualityService,
+    ProjectInsightsService, ProjectDocumentService, ProjectTraceabilityService,
+  ],
   exports: [ProjectsService, IfcImportService, TypeOrmModule],
 })
 export class ProjectsModule {}

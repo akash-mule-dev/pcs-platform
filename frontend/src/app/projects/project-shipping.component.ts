@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectWorkspaceStore } from './project-workspace.store';
-import { ProjectsService, OrderBoardItem, NodeQualityStatus } from '../core/services/projects.service';
+import { ProjectsService, OrderBoardItem, NodeQualityStatus, ShipmentTraceability } from '../core/services/projects.service';
 import { ShippingService, Shipment, ShipmentStatus } from '../core/services/shipping.service';
 
 /** An assembly of this work order with production-complete units available to load. */
@@ -51,6 +51,9 @@ interface ReadyRow { nodeId: string; mark: string; readyUnits: number; weightKg:
                   <select class="st-select" [ngModel]="s.status" (ngModelChange)="changeStatus(s, $event)" (click)="$event.stopPropagation()">
                     @for (st of statuses; track st) { <option [value]="st">{{ st }}</option> }
                   </select>
+                  <button class="icon-x" (click)="toggleMtr(s); $event.stopPropagation()" [title]="mtrFor === s.id ? 'Hide MTR package' : 'MTR package: heat numbers + certs per item'">
+                    <mat-icon>{{ mtrFor === s.id ? 'expand_less' : 'verified' }}</mat-icon>
+                  </button>
                   <button class="icon-x" (click)="remove(s); $event.stopPropagation()" title="Delete load"><mat-icon>delete</mat-icon></button>
                 </div>
                 <div class="lc-meta">
@@ -73,6 +76,35 @@ interface ReadyRow { nodeId: string; mark: string; readyUnits: number; weightKg:
                   } @else { <p class="li-empty">No assemblies on this load yet.</p> }
                 </div>
                 @if (selectedShipmentId === s.id) { <div class="sel-hint"><mat-icon>arrow_forward</mat-icon>Selected — add ready assemblies from the right</div> }
+
+                <!-- MTR / traceability rollup -->
+                @if (mtrFor === s.id) {
+                  <div class="mtr" (click)="$event.stopPropagation()">
+                    @if (!mtr) {
+                      <div class="mtr-loading"><mat-spinner diameter="18"></mat-spinner>Building MTR package…</div>
+                    } @else {
+                      <div class="mtr-head">
+                        <mat-icon>verified</mat-icon><strong>MTR package</strong>
+                        <span class="mtr-sum ok">{{ mtr.summary.covered }}/{{ mtr.summary.items }} items covered</span>
+                        @if (mtr.summary.missing > 0) { <span class="mtr-sum bad">{{ mtr.summary.missing }} missing heat numbers</span> }
+                      </div>
+                      @for (it of mtr.items; track it.itemId) {
+                        <div class="mtr-row" [class.gap]="!it.covered">
+                          <span class="mtr-mark">{{ it.mark || it.name }}</span>
+                          @if (it.covered) {
+                            <span class="mtr-lots">
+                              @for (l of it.lots; track l.lotNumber) {
+                                <span class="heat" [title]="(l.material || '') + (l.supplier ? ' · ' + l.supplier : '') + (l.certReference ? ' · cert ' + l.certReference : '')">{{ l.heatNumber || l.lotNumber }}</span>
+                              }
+                            </span>
+                          } @else {
+                            <span class="mtr-miss"><mat-icon>warning</mat-icon>no heat number — assign on the Assemblies tab</span>
+                          }
+                        </div>
+                      }
+                    }
+                  </div>
+                }
               </div>
             }
           }
@@ -160,6 +192,23 @@ interface ReadyRow { nodeId: string; mark: string; readyUnits: number; weightKg:
     .qa-hold { display: inline-flex; align-items: center; gap: 3px; background: var(--danger-bg); color: var(--danger-text); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
     .qa-hold mat-icon { font-size: 13px; width: 13px; height: 13px; }
     .sel-hint { display: flex; align-items: center; gap: 5px; color: var(--clay-primary); font-size: 12px; font-weight: 600; margin-top: 8px; }
+
+    /* ── MTR / traceability rollup ── */
+    .mtr { margin-top: 10px; border-top: 1px dashed var(--clay-border); padding-top: 8px; }
+    .mtr-loading { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--clay-text-muted); padding: 6px 0; }
+    .mtr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+    .mtr-head mat-icon { font-size: 16px; width: 16px; height: 16px; color: var(--clay-primary); }
+    .mtr-head strong { font-size: 12.5px; color: var(--clay-text); }
+    .mtr-sum { border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+    .mtr-sum.ok { background: var(--success-bg); color: var(--success-text); }
+    .mtr-sum.bad { background: var(--danger-bg); color: var(--danger-text); }
+    .mtr-row { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; font-size: 12px; flex-wrap: wrap; }
+    .mtr-row.gap { color: var(--danger-text); }
+    .mtr-mark { font-weight: 700; color: var(--clay-text); font-family: 'Space Grotesk', monospace; min-width: 60px; }
+    .mtr-lots { display: flex; gap: 4px; flex-wrap: wrap; }
+    .heat { background: var(--info-bg); color: var(--clay-primary); border-radius: var(--clay-radius-xs); padding: 0 7px; font-size: 11px; font-weight: 700; font-family: 'Space Grotesk', monospace; }
+    .mtr-miss { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--danger-text); }
+    .mtr-miss mat-icon { font-size: 14px; width: 14px; height: 14px; }
     .sel-hint mat-icon { font-size: 15px; width: 15px; height: 15px; }
     .ready { background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 9px 12px; margin-bottom: 8px; box-shadow: var(--clay-shadow-soft); }
     .ready.allocated { opacity: .65; }
@@ -170,6 +219,20 @@ interface ReadyRow { nodeId: string; mark: string; readyUnits: number; weightKg:
   `],
 })
 export class ProjectShippingComponent implements OnInit {
+  // ── MTR / traceability rollup ──
+  mtrFor: string | null = null;
+  mtr: ShipmentTraceability | null = null;
+
+  toggleMtr(s: Shipment): void {
+    if (this.mtrFor === s.id) { this.mtrFor = null; this.mtr = null; return; }
+    this.mtrFor = s.id;
+    this.mtr = null;
+    this.svc.shipmentTraceability(this.store.id(), s.id).subscribe({
+      next: (t) => { if (this.mtrFor === s.id) this.mtr = t; },
+      error: () => { if (this.mtrFor === s.id) this.mtrFor = null; },
+    });
+  }
+
   store = inject(ProjectWorkspaceStore);
   private svc = inject(ProjectsService);
   private shippingSvc = inject(ShippingService);

@@ -39,6 +39,13 @@ export class ProjectImportController {
     return this.importService.getImportDetail(id, importId);
   }
 
+  @Get(':id/imports/:importId/revision')
+  @RequirePermissions('projects.view')
+  @ApiOperation({ summary: 'Revision diff of this import (added/changed/missing vs the prior tree) + production impact per affected piece' })
+  getRevision(@Param('id') id: string, @Param('importId') importId: string) {
+    return this.importService.getImportRevision(id, importId);
+  }
+
   @Post(':id/imports/:importId/retry')
   @RequirePermissions('projects.import')
   @ApiOperation({ summary: 'Retry a failed import (conversion-only when the structure already extracted, otherwise the full pipeline from the stored source)' })

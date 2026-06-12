@@ -100,6 +100,14 @@ export class ImportFile extends TenantOwnedEntity {
   @Column({ name: 'created_by_name', type: 'varchar', length: 200, nullable: true })
   createdByName: string | null;
 
+  /**
+   * Revision diff captured at import time (added/changed/missing vs the tree
+   * as it stood BEFORE this import) — see projects/revision-diff.ts. Computed
+   * during the pipeline because the tree mutates right after.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  revision: Record<string, unknown> | null;
+
   /** Links to the existing conversion pipeline job that produced the GLB. */
   @Column({ name: 'conversion_job_id', type: 'uuid', nullable: true })
   conversionJobId: string | null;

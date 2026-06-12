@@ -6,7 +6,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectWorkspaceStore, IMPORT_STAGE_LABELS } from './project-workspace.store';
-import { ProjectsService, ImportFileRow, ImportDetail } from '../core/services/projects.service';
+import { ProjectsService, ImportFileRow, ImportDetail, ImportRevision } from '../core/services/projects.service';
 
 interface StepDef { key: string; label: string; icon: string; }
 
@@ -179,6 +179,53 @@ interface StepDef { key: string; label: string; icon: string; }
                           @if (c.durationMs) { <span class="chip">{{ (c.durationMs / 1000) | number:'1.0-1' }}s</span> }
                         </div>
                       }
+
+                      <!-- Revision diff + production impact -->
+                      @if (revision(); as rev) {
+                        @if (rev.diff; as diff) {
+                          <div class="rev">
+                            <div class="rev-head">
+                              <mat-icon>difference</mat-icon>
+                              <strong>{{ diff.initial ? 'Initial import' : 'Revision changes' }}</strong>
+                              @if (!diff.initial) {
+                                <span class="chip add">+{{ diff.counts.added }} new</span>
+                                <span class="chip chg">~{{ diff.counts.changed }} changed</span>
+                                <span class="chip del">−{{ diff.counts.missing }} not in file</span>
+                                <span class="chip">{{ diff.counts.unchanged }} unchanged</span>
+                              } @else {
+                                <span class="chip add">{{ diff.counts.added }} nodes loaded</span>
+                              }
+                            </div>
+
+                            @if (rev.impact && rev.impact.summary.pieces > 0) {
+                              <div class="imp-summary">
+                                <span class="muted">Production impact:</span>
+                                @if (rev.impact.summary.critical > 0) { <span class="sev sev-critical">{{ rev.impact.summary.critical }} shipped</span> }
+                                @if (rev.impact.summary.high > 0) { <span class="sev sev-high">{{ rev.impact.summary.high }} with work recorded</span> }
+                                @if (rev.impact.summary.medium > 0) { <span class="sev sev-medium">{{ rev.impact.summary.medium }} on released orders</span> }
+                                @if (rev.impact.summary.none > 0) { <span class="sev sev-none">{{ rev.impact.summary.none }} not in production</span> }
+                              </div>
+                              <div class="imp-rows">
+                                @for (r of rev.impact.rows.slice(0, 30); track r.guid) {
+                                  <div class="imp-row">
+                                    <span class="sev sev-{{ r.severity }} dot" [matTooltip]="sevTooltip(r.severity)"></span>
+                                    <span class="imp-mark">{{ r.mark || r.name }}</span>
+                                    <span class="imp-kind">{{ r.kind === 'missing' ? 'removed from file' : deltasLabel(r.deltas) }}</span>
+                                    <span class="spacer"></span>
+                                    @if (r.shippedQty > 0) { <span class="chip del">{{ r.shippedQty }} shipped</span> }
+                                    @for (w of r.workOrders.slice(0, 2); track w.orderNumber) {
+                                      <span class="chip" [matTooltip]="w.orderNumber + ' · ' + w.status">{{ w.productionOrder || w.orderNumber }}: {{ w.unitsDone }}/{{ w.unitsTotal }}</span>
+                                    }
+                                  </div>
+                                }
+                                @if (rev.impact.rows.length > 30) { <p class="muted">+ {{ rev.impact.rows.length - 30 }} more affected pieces</p> }
+                              </div>
+                            } @else if (!diff.initial && (diff.counts.changed > 0 || diff.counts.missing > 0)) {
+                              <p class="muted">No production recorded against the affected pieces yet.</p>
+                            }
+                          </div>
+                        }
+                      }
                     } @else { <div class="empty sm"><mat-spinner diameter="20"></mat-spinner></div> }
                   } @else { <div class="empty sm"><mat-spinner diameter="20"></mat-spinner></div> }
                 </div>
@@ -305,6 +352,27 @@ interface StepDef { key: string; label: string; icon: string; }
     .tl-msg { margin: 2px 0 0; font-size: 12.5px; color: var(--clay-text-secondary); word-break: break-word; }
     .conv-stats { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 
+    /* Revision diff + impact */
+    .rev { margin-top: 14px; border-top: 1px dashed var(--clay-border); padding-top: 12px; }
+    .rev-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .rev-head mat-icon { font-size: 18px; width: 18px; height: 18px; color: var(--clay-primary); }
+    .rev-head strong { font-size: 13px; color: var(--clay-text); }
+    .chip.add { background: var(--success-bg); color: var(--success-text); }
+    .chip.chg { background: var(--warning-bg); color: var(--warning-text); }
+    .chip.del { background: var(--danger-bg); color: var(--danger-text); }
+    .imp-summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 8px; }
+    .sev { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
+    .sev.dot { width: 10px; height: 10px; padding: 0; border-radius: 50%; flex-shrink: 0; }
+    .sev-critical { background: var(--danger-text); color: #fff; }
+    .sev-high { background: var(--danger-bg); color: var(--danger-text); }
+    .sev-medium { background: var(--warning-bg); color: var(--warning-text); }
+    .sev-none { background: var(--clay-bg-warm); color: var(--clay-text-muted); }
+    .imp-rows { display: flex; flex-direction: column; gap: 4px; }
+    .imp-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 0; flex-wrap: wrap; }
+    .imp-mark { font-weight: 700; color: var(--clay-text); }
+    .imp-kind { color: var(--clay-text-secondary); }
+    .spacer { flex: 1; }
+
     .empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 20px; text-align: center; color: var(--clay-text-muted); }
     .empty.sm { padding: 16px; }
     .empty mat-icon { font-size: 38px; width: 38px; height: 38px; opacity: .5; }
@@ -330,6 +398,7 @@ export class ProjectMonitoringComponent implements OnDestroy {
 
   readonly expanded = signal<string | null>(null);
   readonly detail = signal<ImportDetail | null>(null);
+  readonly revision = signal<ImportRevision | null>(null);
   /** stage:progress snapshot of the expanded row — refetch the timeline when it moves. */
   private lastSnapshot = '';
   private refetchFx = effect(() => {
@@ -397,9 +466,10 @@ export class ProjectMonitoringComponent implements OnDestroy {
   stageLabel(stage: string): string { return IMPORT_STAGE_LABELS[stage] ?? stage; }
 
   toggle(id: string): void {
-    if (this.expanded() === id) { this.expanded.set(null); this.detail.set(null); this.lastSnapshot = ''; return; }
+    if (this.expanded() === id) { this.expanded.set(null); this.detail.set(null); this.revision.set(null); this.lastSnapshot = ''; return; }
     this.expanded.set(id);
     this.detail.set(null);
+    this.revision.set(null);
     this.lastSnapshot = '';
   }
 
@@ -408,6 +478,24 @@ export class ProjectMonitoringComponent implements OnDestroy {
       next: (d) => { if (this.expanded() === d.file.id) this.detail.set(d); },
       error: () => {},
     });
+    this.svc.importRevision(this.store.id(), id).subscribe({
+      next: (r) => { if (this.expanded() === id) this.revision.set(r); },
+      error: () => {},
+    });
+  }
+
+  deltasLabel(deltas: { field: string }[] | null): string {
+    if (!deltas?.length) return 'changed';
+    return 'changed: ' + deltas.map((d) => d.field).join(', ');
+  }
+
+  sevTooltip(s: string): string {
+    return {
+      critical: 'Already shipped — recall/replace decision needed',
+      high: 'Work already recorded on this piece',
+      medium: 'On a released order, no work recorded yet',
+      none: 'Not in production',
+    }[s] ?? s;
   }
 
   retry(row: ImportFileRow, ev: Event): void {

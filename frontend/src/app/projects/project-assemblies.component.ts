@@ -6,7 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ThreeViewerComponent } from '../shared/components/three-viewer/three-viewer.component';
 import { ProjectWorkspaceStore } from './project-workspace.store';
-import { ProjectsService, AssemblyNode, NodeType } from '../core/services/projects.service';
+import { ProjectsService, AssemblyNode, NodeType, NodeDocument, NodeLotRow, LotOption } from '../core/services/projects.service';
 
 /** Dimension-like IFC property keys surfaced in the detail panel. */
 const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius', 'length', 'weight', 'area', 'volume', 'perimeter', 'elevation'];
@@ -115,6 +115,52 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
               } @else {
                 <p class="d-empty">No dimension data was found for this item in the IFC file.</p>
               }
+
+              <!-- Shop drawings / documents on this piece -->
+              <div class="ext-sec">
+                <div class="ext-head">
+                  <mat-icon>picture_as_pdf</mat-icon><strong>Drawings &amp; documents</strong>
+                  <span class="ext-spacer"></span>
+                  <input #docInput type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp" (change)="onDocFile($event)">
+                  <button class="mini-btn" (click)="docInput.click()" [disabled]="docBusy()">
+                    <mat-icon>upload_file</mat-icon>{{ docBusy() ? 'Uploading…' : 'Attach' }}
+                  </button>
+                </div>
+                @for (d of docs(); track d.id) {
+                  <div class="ext-row">
+                    <mat-icon class="ext-ic">{{ d.contentType === 'application/pdf' ? 'picture_as_pdf' : 'image' }}</mat-icon>
+                    <button class="ext-link" (click)="openDoc(d)" [title]="d.originalName">{{ d.label || d.originalName }}</button>
+                    <span class="ext-meta">{{ fmtBytes(d.size) }}</span>
+                    <button class="ext-x" (click)="deleteDoc(d)" title="Remove"><mat-icon>close</mat-icon></button>
+                  </div>
+                } @empty {
+                  <p class="ext-empty">No documents yet — attach the shop drawing so the floor sees it with the piece.</p>
+                }
+              </div>
+
+              <!-- Heat-number traceability -->
+              <div class="ext-sec">
+                <div class="ext-head"><mat-icon>tag</mat-icon><strong>Heat numbers</strong></div>
+                @for (l of lots(); track l.id) {
+                  <div class="ext-row">
+                    <span class="heat">{{ l.heat_number || l.lot_number }}</span>
+                    <span class="ext-meta trunc">{{ l.material_code || l.material_name || '' }}{{ l.supplier ? ' · ' + l.supplier : '' }}{{ l.cert_reference ? ' · cert ' + l.cert_reference : '' }}</span>
+                    <span class="ext-spacer"></span>
+                    <button class="ext-x" (click)="removeLot(l)" title="Unassign"><mat-icon>close</mat-icon></button>
+                  </div>
+                } @empty {
+                  <p class="ext-empty">No heat number assigned to this piece.</p>
+                }
+                <div class="lot-add">
+                  <select class="lot-sel" [(ngModel)]="lotPick">
+                    <option value="">Assign a lot / heat #…</option>
+                    @for (o of lotOptions(); track o.id) {
+                      <option [value]="o.id">{{ o.heat_number || o.lot_number }}{{ o.material_code ? ' · ' + o.material_code : '' }}{{ o.supplier ? ' · ' + o.supplier : '' }}</option>
+                    }
+                  </select>
+                  <button class="mini-btn" (click)="assignLot()" [disabled]="!lotPick || lotBusy()">Assign</button>
+                </div>
+              </div>
             </div>
           } @else {
             <div class="detail-card hint">
@@ -202,6 +248,30 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
     .d-val { font-size: 13px; font-weight: 600; color: var(--clay-text); font-family: 'Space Grotesk', 'Inter', sans-serif; overflow-wrap: anywhere; }
     .d-empty { margin: 10px 0 0; font-size: 12px; color: var(--clay-text-muted); }
 
+    /* ── Per-piece extras: drawings + heat numbers ── */
+    .ext-sec { margin-top: 12px; border-top: 1px dashed var(--clay-border); padding-top: 10px; }
+    .ext-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+    .ext-head mat-icon { font-size: 16px; width: 16px; height: 16px; color: var(--clay-primary); }
+    .ext-head strong { font-size: 12.5px; color: var(--clay-text); }
+    .ext-spacer { flex: 1; }
+    .mini-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--clay-border); background: var(--clay-surface); color: var(--clay-text-secondary); border-radius: var(--clay-radius-xs); padding: 4px 9px; font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .mini-btn mat-icon { font-size: 14px; width: 14px; height: 14px; }
+    .mini-btn:hover:not(:disabled) { border-color: var(--clay-primary); color: var(--clay-primary); }
+    .mini-btn:disabled { opacity: .55; cursor: default; }
+    .ext-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12.5px; min-width: 0; }
+    .ext-ic { font-size: 16px; width: 16px; height: 16px; color: var(--clay-text-muted); flex-shrink: 0; }
+    .ext-link { background: none; border: none; color: var(--clay-primary); font-weight: 600; font-size: 12.5px; cursor: pointer; font-family: inherit; padding: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+    .ext-link:hover { text-decoration: underline; }
+    .ext-meta { color: var(--clay-text-muted); font-size: 11.5px; flex-shrink: 1; }
+    .ext-meta.trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ext-x { background: none; border: none; color: var(--clay-text-muted); cursor: pointer; display: flex; padding: 2px; flex-shrink: 0; }
+    .ext-x mat-icon { font-size: 14px; width: 14px; height: 14px; }
+    .ext-x:hover { color: var(--danger-text); }
+    .ext-empty { margin: 2px 0 4px; font-size: 11.5px; color: var(--clay-text-muted); font-style: italic; }
+    .heat { background: var(--info-bg); color: var(--clay-primary); border-radius: var(--clay-radius-xs); padding: 1px 8px; font-size: 11.5px; font-weight: 700; font-family: 'Space Grotesk', monospace; flex-shrink: 0; }
+    .lot-add { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .lot-sel { flex: 1; min-width: 0; border: 1px solid var(--clay-border); border-radius: var(--clay-radius-xs); background: var(--clay-surface); color: var(--clay-text); padding: 5px 8px; font-size: 12px; font-family: inherit; }
+
     @media (max-width: 960px) {
       .layout { flex-direction: column; height: auto; }
       .tree-pane { height: 440px; flex: none; min-width: 0; }
@@ -275,6 +345,15 @@ export class ProjectAssembliesComponent implements OnInit {
   private pendingFocus: string | null = null;
   private focusApplied = false;
 
+  // ── Per-piece extras: shop drawings + heat numbers ──
+  readonly docs = signal<NodeDocument[]>([]);
+  readonly lots = signal<NodeLotRow[]>([]);
+  readonly lotOptions = signal<LotOption[]>([]);
+  readonly docBusy = signal(false);
+  readonly lotBusy = signal(false);
+  lotPick = '';
+  private lotOptionsLoaded = false;
+
   constructor() {
     // Apply a ?focus=<nodeId> deep-link once nodes load.
     effect(() => {
@@ -284,6 +363,78 @@ export class ProjectAssembliesComponent implements OnInit {
         if (node) { this.select(node); this.focusApplied = true; this.scrollSelectedIntoView(); }
       }
     });
+    // Load the selected piece's documents + heat numbers whenever selection changes.
+    effect(() => {
+      const id = this.selectedNodeId();
+      this.docs.set([]);
+      this.lots.set([]);
+      this.lotPick = '';
+      if (!id) return;
+      this.svc.nodeDocuments(this.store.id(), id).subscribe({ next: (d) => { if (this.selectedNodeId() === id) this.docs.set(d); }, error: () => {} });
+      this.svc.nodeLots(this.store.id(), id).subscribe({ next: (l) => { if (this.selectedNodeId() === id) this.lots.set(l); }, error: () => {} });
+      if (!this.lotOptionsLoaded) {
+        this.lotOptionsLoaded = true;
+        this.svc.availableLots(this.store.id()).subscribe({ next: (o) => this.lotOptions.set(o), error: () => {} });
+      }
+    });
+  }
+
+  // ── Documents ──
+  onDocFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    const nodeId = this.selectedNodeId();
+    input.value = '';
+    if (!file || !nodeId) return;
+    this.docBusy.set(true);
+    this.svc.uploadNodeDocument(this.store.id(), nodeId, file).subscribe({
+      next: (doc) => { this.docBusy.set(false); if (this.selectedNodeId() === nodeId) this.docs.set([doc, ...this.docs()]); },
+      error: () => this.docBusy.set(false),
+    });
+  }
+  openDoc(d: NodeDocument): void {
+    this.svc.nodeDocumentBlob(this.store.id(), d.id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      },
+      error: () => {},
+    });
+  }
+  deleteDoc(d: NodeDocument): void {
+    this.svc.deleteNodeDocument(this.store.id(), d.id).subscribe({
+      next: () => this.docs.set(this.docs().filter((x) => x.id !== d.id)),
+      error: () => {},
+    });
+  }
+
+  // ── Heat numbers ──
+  assignLot(): void {
+    const nodeId = this.selectedNodeId();
+    if (!nodeId || !this.lotPick) return;
+    this.lotBusy.set(true);
+    this.svc.assignLot(this.store.id(), nodeId, { materialLotId: this.lotPick }).subscribe({
+      next: () => {
+        this.lotBusy.set(false);
+        this.lotPick = '';
+        this.svc.nodeLots(this.store.id(), nodeId).subscribe({ next: (l) => { if (this.selectedNodeId() === nodeId) this.lots.set(l); }, error: () => {} });
+      },
+      error: () => this.lotBusy.set(false),
+    });
+  }
+  removeLot(l: NodeLotRow): void {
+    this.svc.unassignLot(this.store.id(), l.id).subscribe({
+      next: () => this.lots.set(this.lots().filter((x) => x.id !== l.id)),
+      error: () => {},
+    });
+  }
+
+  fmtBytes(n: number | null): string {
+    if (n == null) return '';
+    if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`;
+    if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+    return `${n} B`;
   }
 
   ngOnInit(): void {

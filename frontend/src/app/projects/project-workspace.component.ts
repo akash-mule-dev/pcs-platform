@@ -265,8 +265,10 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
   readonly tabs: WorkspaceTab[] = [
     { path: 'overview', label: 'Overview', icon: 'dashboard' },
     { path: 'assemblies', label: 'Assemblies & 3D', icon: 'account_tree' },
+    { path: 'materials', label: 'Materials', icon: 'category' },
     { path: 'orders', label: 'Work Orders', icon: 'receipt_long' },
     { path: 'monitoring', label: 'Monitoring', icon: 'monitor_heart' },
+    { path: 'reports', label: 'Reports', icon: 'payments' },
   ];
 
   ngOnInit(): void {
