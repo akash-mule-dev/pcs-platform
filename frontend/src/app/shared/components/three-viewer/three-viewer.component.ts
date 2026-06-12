@@ -105,7 +105,12 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() set highlightNames(names: string[]) {
     this._highlight = new Set(names || []);
     this.applyHighlight();
+    if (this.autoFocus && this.controls) this.focusOnHighlight();
   }
+
+  /** Fly the camera to frame the highlighted meshes (zoom-to-selection), so tiny
+   *  parts are findable. Opt-in — other viewer usages keep a fixed camera. */
+  @Input() autoFocus = false;
 
   loading = false;
   loadProgress = 0;
@@ -126,6 +131,11 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   private originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
   private _highlight = new Set<string>();
   private _highlightActive = false;
+  private camAnim: {
+    fromPos: THREE.Vector3; toPos: THREE.Vector3;
+    fromTgt: THREE.Vector3; toTgt: THREE.Vector3;
+    start: number; duration: number;
+  } | null = null;
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -177,8 +187,10 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.enablePan = true;
-    this.controls.minDistance = 0.5;
+    this.controls.minDistance = 0.1;
     this.controls.maxDistance = 50;
+    // A user grab takes over from any in-flight fly-to animation.
+    this.controls.addEventListener('start', () => { this.camAnim = null; });
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -219,8 +231,49 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private animate(): void {
     this.animationId = requestAnimationFrame(() => this.animate());
+    if (this.camAnim) {
+      const a = this.camAnim;
+      const t = Math.min(1, (performance.now() - a.start) / a.duration);
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; // ease-in-out cubic
+      this.camera.position.lerpVectors(a.fromPos, a.toPos, e);
+      this.controls.target.lerpVectors(a.fromTgt, a.toTgt, e);
+      if (t >= 1) this.camAnim = null;
+    }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /** Zoom-to-selection: frame the highlighted meshes' bounding sphere, keeping
+   *  the current view direction so the user doesn't lose orientation. */
+  private focusOnHighlight(): void {
+    if (!this.currentModel || this._highlight.size === 0) return;
+    this.currentModel.updateWorldMatrix(true, true);
+    const box = new THREE.Box3();
+    let found = false;
+    this.currentModel.traverse((c) => {
+      if (c instanceof THREE.Mesh && this._highlight.has(c.name)) { box.expandByObject(c); found = true; }
+    });
+    if (!found || box.isEmpty()) return;
+
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(sphere.radius, 0.01);
+    const vFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.camera.aspect);
+    const fitDist = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.15;
+    const distance = THREE.MathUtils.clamp(fitDist, this.controls.minDistance + 0.05, this.controls.maxDistance);
+
+    const dir = this.camera.position.clone().sub(this.controls.target);
+    if (dir.lengthSq() < 1e-6) dir.set(3, 2, 5);
+    dir.normalize();
+
+    this.camAnim = {
+      fromPos: this.camera.position.clone(),
+      toPos: sphere.center.clone().add(dir.multiplyScalar(distance)),
+      fromTgt: this.controls.target.clone(),
+      toTgt: sphere.center.clone(),
+      start: performance.now(),
+      duration: 600,
+    };
   }
 
   loadModel(url: string): void {
@@ -229,6 +282,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     this.error = null;
 
     // Remove existing model
+    this.camAnim = null;
     if (this.currentModel) {
       this.scene.remove(this.currentModel);
       this.currentModel = null;
@@ -266,7 +320,10 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
 
         this.applyQualityOverlay();
         this.applyRenderMode();
-        if (this._highlight.size > 0) this.applyHighlight();
+        if (this._highlight.size > 0) {
+          this.applyHighlight();
+          if (this.autoFocus) this.focusOnHighlight();
+        }
         this.loadProgress = 0;
         this.loading = false;
         this.modelLoaded.emit();

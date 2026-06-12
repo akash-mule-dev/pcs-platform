@@ -77,7 +77,7 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
                 <mat-icon>{{ isolate() ? 'fullscreen' : 'filter_center_focus' }}</mat-icon>{{ isolate() ? 'Show full model' : 'Isolate selected' }}
               </button>
             </div>
-            <div class="viewer-box"><app-three-viewer [modelUrl]="url" [highlightNames]="isolate() ? [] : highlightGuids()" (meshClicked)="onMeshClicked($event)"></app-three-viewer></div>
+            <div class="viewer-box"><app-three-viewer [modelUrl]="url" [highlightNames]="isolate() ? [] : highlightGuids()" [autoFocus]="true" (meshClicked)="onMeshClicked($event)"></app-three-viewer></div>
           } @else {
             <div class="noviewer">
               <mat-icon>view_in_ar</mat-icon>
@@ -125,17 +125,17 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
        (search bar + viewer always stay on screen). */
     .layout { display: flex; gap: 16px; align-items: stretch; height: calc(100vh - 332px); min-height: 480px; }
 
-    /* ── Tree card ── */
+    /* ── Tree card (fixed width — the 3D viewer gets the remaining space) ── */
     .tree-pane {
-      flex: 1; min-width: 0; display: flex; flex-direction: column;
+      flex: 0 1 440px; min-width: 340px; display: flex; flex-direction: column;
       background: var(--clay-surface); border: 1px solid var(--clay-border);
       border-radius: var(--clay-radius); box-shadow: var(--clay-shadow-soft); overflow: hidden;
     }
     .tree-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--clay-border); flex-shrink: 0; }
     .spacer { flex: 1; }
-    .tree-search { display: flex; align-items: center; gap: 5px; background: var(--clay-bg); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 5px 9px; }
+    .tree-search { display: flex; align-items: center; gap: 5px; background: var(--clay-bg); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 5px 9px; flex: 1 1 140px; min-width: 120px; }
     .tree-search mat-icon { font-size: 17px; width: 17px; height: 17px; color: var(--clay-text-muted); }
-    .tree-search input { border: none; outline: none; background: transparent; font-size: 13px; color: var(--clay-text); font-family: inherit; width: 200px; }
+    .tree-search input { border: none; outline: none; background: transparent; font-size: 13px; color: var(--clay-text); font-family: inherit; width: 100%; min-width: 0; }
     .tree-search .clear { background: none; border: none; color: var(--clay-text-muted); cursor: pointer; font-size: 15px; font-weight: 700; padding: 0 2px; }
     .search-info { margin: 0; padding: 7px 14px; font-size: 12px; color: var(--clay-text-muted); border-bottom: 1px solid var(--clay-border); flex-shrink: 0; }
     .tree-tools { font-size: 12px; color: var(--clay-text-muted); white-space: nowrap; }
@@ -159,7 +159,7 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
     .meta { color: var(--clay-text-muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; } .meta.grade { color: var(--success-text); }
 
     /* ── Viewer + details column ── */
-    .viewer-pane { width: 480px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+    .viewer-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
     .viewer-tools { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
     .vt-hint { font-size: 12px; color: var(--clay-text-muted); }
     .viewer-box { flex: 1 1 auto; min-height: 240px; }
@@ -192,8 +192,8 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
 
     @media (max-width: 960px) {
       .layout { flex-direction: column; height: auto; }
-      .tree-pane { height: 440px; flex: none; }
-      .viewer-pane { width: 100%; }
+      .tree-pane { height: 440px; flex: none; min-width: 0; }
+      .viewer-pane { width: 100%; flex: none; }
       .viewer-box { flex: none; height: 320px; }
       .detail-card { max-height: none; }
     }
