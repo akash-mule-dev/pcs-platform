@@ -503,6 +503,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
       { label: 'Traceability', icon: 'qr_code_2', route: '/traceability', feature: 'traceability' },
     ] },
     { label: 'Quality', icon: 'verified', expanded: false, items: [
+      { label: 'Insights', icon: 'insights', route: '/quality-insights', feature: 'quality-analysis' },
       { label: 'QC Reports', icon: 'fact_check', route: '/quality-reports', feature: 'quality-reports' },
       { label: 'Report Templates', icon: 'dashboard_customize', route: '/templates', feature: 'templates' },
       { label: 'NCR / CAPA', icon: 'report_problem', route: '/ncr', feature: 'ncr' },

@@ -61,10 +61,71 @@ export interface CreateProject {
   dueDate?: string | null;
 }
 
-export interface ImportResult {
+/** Response of POST import-ifc: the upload is stored; processing continues async. */
+export interface ImportStarted {
   importFileId: string;
+  originalName: string;
+  status: ImportStatus;
+  stage: ImportStage;
+  progress: number;
+}
+
+export type ImportStatus = 'uploaded' | 'extracting' | 'converting' | 'completed' | 'failed';
+export type ImportStage = 'uploaded' | 'extracting' | 'persisting' | 'converting' | 'completed' | 'failed';
+
+/** One uploaded package + its live pipeline position (the monitoring row). */
+export interface ImportFileRow {
+  id: string;
+  projectId: string;
+  originalName: string;
+  format: string;
+  size: number | null;
+  status: ImportStatus;
+  stage: ImportStage;
+  progress: number;
   nodeCount: number;
-  counts: Record<string, number>;
+  modelId: string | null;
+  conversionJobId: string | null;
+  error: string | null;
+  createdByName: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One line of an import's pipeline history. */
+export interface ImportEventRow {
+  id: string;
+  stage: ImportStage;
+  status: ImportStatus;
+  progress: number;
+  message: string;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface ImportDetail {
+  file: ImportFileRow;
+  events: ImportEventRow[];
+  conversion: { id: string; status: string; progress: number; error: string | null; durationMs: number | null; trianglesAfter: number | null; outputSize: number | null } | null;
+}
+
+/** Live `import:progress` websocket payload (room: project:<id>). */
+export interface ImportProgressEvent {
+  importFileId: string;
+  projectId: string;
+  status: ImportStatus;
+  stage: ImportStage;
+  progress: number;
+  originalName: string;
+  nodeCount: number;
+  modelId: string | null;
+  conversionJobId: string | null;
+  error: string | null;
+  message: string | null;
+  at: string;
 }
 
 /** Design summary — what the project IS. Production progress lives per order. */
@@ -179,8 +240,10 @@ export interface AuditStageRow {
   assignedUser: { id: string; name: string } | null;
   station: { id: string; name: string } | null;
   timeSeconds: number; timeEntries: number;
-  /** Quality stage that cannot complete while the assembly has open NCRs. */
+  /** Quality stage held by the gate (open NCRs, unsigned failures, missing inspection). */
   gateBlocked: boolean;
+  /** Human-readable reason the gate holds. */
+  gateReason?: string | null;
 }
 export interface AuditItem {
   nodeId: string | null; workOrderId: string; workOrderNumber: string;
@@ -260,14 +323,34 @@ export class ProjectsService {
     return this.http.get<AssemblyNode[]>(`${this.base}/${id}/nodes`);
   }
 
-  /** Upload an IFC file and extract its assembly tree; emits HttpEvents for progress. */
-  importIfc(projectId: string, file: File): Observable<HttpEvent<ImportResult>> {
+  /**
+   * Upload an IFC. Emits HttpEvents for live upload %; the response arrives as
+   * soon as the file is stored — extraction/conversion continue asynchronously
+   * (track them via imports()/importDetail() + the import:progress socket event).
+   */
+  importIfc(projectId: string, file: File): Observable<HttpEvent<ImportStarted>> {
     const fd = new FormData();
     fd.append('file', file);
     const req = new HttpRequest('POST', `${this.base}/${projectId}/import-ifc`, fd, {
       reportProgress: true,
     });
-    return this.http.request<ImportResult>(req);
+    return this.http.request<ImportStarted>(req);
+  }
+
+  // ── Import pipeline monitoring ──
+  /** Every uploaded package with its live stage/progress + final status (newest first). */
+  imports(projectId: string): Observable<ImportFileRow[]> {
+    return this.http.get<ImportFileRow[]>(`${this.base}/${projectId}/imports`);
+  }
+
+  /** One import + its full pipeline event timeline. */
+  importDetail(projectId: string, importId: string): Observable<ImportDetail> {
+    return this.http.get<ImportDetail>(`${this.base}/${projectId}/imports/${importId}`);
+  }
+
+  /** Retry a failed import (conversion-only, or the full pipeline from the stored source). */
+  retryImport(projectId: string, importId: string): Observable<ImportStarted> {
+    return this.http.post<ImportStarted>(`${this.base}/${projectId}/imports/${importId}/retry`, {});
   }
 
   /** Processes available for work-order routing (tolerant of array or paged responses). */

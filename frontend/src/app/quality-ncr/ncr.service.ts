@@ -19,6 +19,10 @@ export interface NcrRow {
   assignedTo?: string | null;
   closedAt?: string | null;
   createdAt?: string;
+  /** Optimistic-concurrency version — send back as expectedVersion on PATCH. */
+  version?: number;
+  /** Photo evidence storage keys (fetch via getEvidence). */
+  attachments?: string[] | null;
   /** Present on GET /ncr/:id — legal next statuses for guided transitions. */
   allowedTransitions?: string[];
 }
@@ -56,6 +60,16 @@ export class NcrApiService {
   updateNcr(id: string, body: any): Observable<NcrRow> { return this.api.patch(`/ncr/${id}`, body); }
   listEvents(id: string): Observable<NcrEventRow[]> { return this.api.get(`/ncr/${id}/events`); }
   addComment(id: string, note: string): Observable<NcrEventRow> { return this.api.post(`/ncr/${id}/comments`, { note }); }
+
+  uploadEvidence(id: string, file: File): Observable<NcrRow> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    // ApiService only sends JSON — post FormData via its underlying client path.
+    return this.api.postForm<NcrRow>(`/ncr/${id}/evidence`, form);
+  }
+  getEvidence(id: string, index: number): Observable<Blob> {
+    return this.api.getBlob(`/ncr/${id}/evidence/${index}`);
+  }
 
   listCapa(ncrId?: string): Observable<any> { return this.api.get('/capa', ncrId ? { ncrId } : undefined); }
   createCapa(body: any): Observable<any> { return this.api.post('/capa', body); }

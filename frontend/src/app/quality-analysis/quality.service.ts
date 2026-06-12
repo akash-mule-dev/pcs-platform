@@ -23,6 +23,8 @@ export interface QualityDataEntry {
   signoffDate?: string | null;
   signoffNotes?: string | null;
   attachments?: string[] | null;
+  assemblyNodeId?: string | null;
+  projectId?: string | null;
   createdAt: string;
 }
 
@@ -97,5 +99,17 @@ export class QualityService {
   /** Stored evidence image as a Blob (streams via the API with auth). */
   getEvidence(id: string, index: number): Observable<Blob> {
     return this.api.getBlob(`/quality-data/${id}/evidence/${index}`);
+  }
+
+  /** SPC: characteristics list (no meshName) or XmR chart for one characteristic. */
+  getSpcChart(modelId: string, meshName?: string): Observable<any> {
+    const params: Record<string, string> = { modelId };
+    if (meshName) params['meshName'] = meshName;
+    return this.api.get<any>('/spc/control-chart', params);
+  }
+
+  /** Org-level quality KPIs (FPY, NCR aging, Pareto, time-to-close). */
+  getInsights(): Observable<any> {
+    return this.api.get<any>('/quality-data/insights');
   }
 }

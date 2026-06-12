@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsUUID, IsObject, IsIn, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsUUID, IsObject, IsIn, IsInt, Min, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { NcrStatus, NcrSeverity, NcrDisposition } from '../entities/ncr.entity.js';
 
@@ -27,6 +28,8 @@ export class UpdateNcrDto {
   @ApiPropertyOptional({ enum: NcrDisposition }) @IsOptional() @IsEnum(NcrDisposition) disposition?: NcrDisposition;
   @ApiPropertyOptional() @IsOptional() @IsString() dispositionNote?: string;
   @ApiPropertyOptional({ type: Object }) @IsOptional() @IsObject() dataJson?: Record<string, any>;
+  @ApiPropertyOptional({ description: 'Optimistic concurrency guard: the version this edit was based on (409 on mismatch)' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) expectedVersion?: number;
 }
 
 /** List filters — everything optional; `open=true` means not closed/cancelled. */
@@ -41,6 +44,10 @@ export class NcrFilterDto {
   @IsOptional() @IsIn(['true', 'false']) open?: string;
   @ApiPropertyOptional({ description: 'Search in number/title' })
   @IsOptional() @IsString() @MaxLength(120) q?: string;
+  @ApiPropertyOptional({ description: 'Page size (default 500, max 1000)' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) limit?: number;
+  @ApiPropertyOptional({ description: 'Rows to skip' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) offset?: number;
 }
 
 export class NcrCommentDto {

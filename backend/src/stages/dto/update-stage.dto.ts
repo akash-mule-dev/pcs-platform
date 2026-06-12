@@ -7,4 +7,6 @@ export class UpdateStageDto {
   @ApiPropertyOptional() @IsInt() @IsOptional() targetTimeSeconds?: number;
   @ApiPropertyOptional() @IsString() @IsOptional() description?: string;
   @ApiPropertyOptional() @IsBoolean() @IsOptional() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Hold point: stage needs a recorded inspection to complete' })
+  @IsBoolean() @IsOptional() requiresInspection?: boolean;
 }

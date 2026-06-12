@@ -86,6 +86,12 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
     [project.id, userOrg, modelId],
   );
   const nodeId = node.rows[0].id;
+  const node2 = await db.query(
+    `INSERT INTO assembly_nodes (project_id, organization_id, node_type, name, mark, quantity, depth, sort_index, model_id, mesh_name)
+     VALUES ($1,$2,'assembly','B2003','B2003',1,0,1,$3,'B2003-mesh') RETURNING id`,
+    [project.id, userOrg, modelId],
+  );
+  const node2Id = node2.rows[0].id;
 
   // ── Inspections: identity stamping + auto-fail ─────────────────────────────
   r = await P('/quality-data', { modelId, meshName: 'm1', status: 'pass', measurementValue: 13, toleranceMin: 12, toleranceMax: 14 });
@@ -150,8 +156,9 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
   r = await U(`/ncr/${ncr1.id}`, { status: 'open' });
   assert(r.status === 400, 'investigation → open rejected');
 
-  r = await U(`/ncr/${ncr1.id}`, { status: 'disposition', disposition: 'rework', dispositionNote: 'grind + reweld' });
-  assert((await j(r)).disposition === 'rework', 'disposition recorded');
+  // (use_as_is here — the rework disposition's re-inspection rule has its own block below)
+  r = await U(`/ncr/${ncr1.id}`, { status: 'disposition', disposition: 'use_as_is', dispositionNote: 'within tolerance stack-up' });
+  assert((await j(r)).disposition === 'use_as_is', 'disposition recorded');
 
   r = await U(`/ncr/${ncr1.id}`, { status: 'cancelled' });
   assert(r.status === 400, 'cancel after disposition rejected');
@@ -222,6 +229,120 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
   assert(!!verified.verifiedBy && !!verified.verifiedAt, 'verification stamps verifier');
   r = await U(`/capa/${capa.id}`, { status: 'closed' });
   assert((await j(r)).status === 'closed', 'verified CAPA closes');
+
+  // ── Idempotent creates (offline replay safety) ─────────────────────────────
+  const ck = crypto.randomUUID();
+  r = await P('/quality-data', { modelId, meshName: 'idem', status: 'pass', clientKey: ck });
+  const idem1 = await j(r);
+  r = await P('/quality-data', { modelId, meshName: 'idem', status: 'pass', clientKey: ck });
+  const idem2 = await j(r);
+  assert(idem1.id === idem2.id, 'same clientKey replay returns the original row');
+
+  // ── Optimistic concurrency on NCRs ─────────────────────────────────────────
+  r = await G(`/ncr/${ncr2.id}`);
+  const v = (await j(r)).version;
+  assert(Number.isInteger(v), `NCR carries a version (${v})`);
+  r = await U(`/ncr/${ncr2.id}`, { title: 'Paint blistering (stale write)', expectedVersion: v + 5 });
+  assert(r.status === 409, 'stale expectedVersion rejected with 409');
+  r = await U(`/ncr/${ncr2.id}`, { title: 'Paint blistering — south rail', expectedVersion: v });
+  assert((await j(r)).title.includes('south rail'), 'matching expectedVersion writes');
+
+  // ── Pagination ─────────────────────────────────────────────────────────────
+  r = await G('/ncr?limit=1');
+  assert((await j(r)).length === 1, 'limit=1 caps the NCR list');
+
+  // ── NCR photo evidence ─────────────────────────────────────────────────────
+  const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex');
+  const form = new FormData();
+  form.append('file', new Blob([png], { type: 'image/png' }), 'defect.png');
+  r = await fetch(`${A}/ncr/${ncr2.id}/evidence`, { method: 'POST', headers: { authorization: H.authorization }, body: form });
+  const withPhoto = await j(r);
+  assert(r.status === 201 && (withPhoto.attachments?.length ?? 0) === 1, 'NCR photo attached');
+  r = await fetch(`${A}/ncr/${ncr2.id}/evidence/0`, { headers: { authorization: H.authorization } });
+  assert(r.ok && (r.headers.get('content-type') || '').includes('image/png'), 'NCR photo streams back as image/png');
+  const badForm = new FormData();
+  badForm.append('file', new Blob([Buffer.from('not an image')], { type: 'text/plain' }), 'notes.txt');
+  r = await fetch(`${A}/ncr/${ncr2.id}/evidence`, { method: 'POST', headers: { authorization: H.authorization }, body: badForm });
+  assert(r.status === 400, 'non-image NCR evidence rejected');
+
+  // ── Stage quality gates (NCR → unresolved failure → hold point) ───────────
+  r = await P('/processes/standard', {});
+  const proc = await j(r);
+  assert(!!proc.id, 'standard process for gate tests');
+  r = await P(`/projects/${project.id}/orders`, { processId: proc.id, quantity: 1 });
+  const order = await j(r);
+  assert(!!order.id, `production order created ${order.number}`);
+  r = await G(`/orders/${order.id}/audit`);
+  let audit = await j(r);
+  const qcCol = audit.stages.find((s) => /qc|quality|inspect/i.test(s.name));
+  assert(!!qcCol, `process has a quality stage (${qcCol?.name})`);
+  const item1 = audit.items.find((i) => i.mark === 'B2001');
+  const item2 = audit.items.find((i) => i.mark === 'B2003');
+  assert(!!item1 && !!item2, 'both assemblies in the order');
+  const qcRow1 = item1.stages.find((s) => s.stageId === qcCol.id);
+  assert(qcRow1?.gateBlocked === true && /NCR/i.test(qcRow1?.gateReason ?? ''), 'audit pre-warns: B2001 QC gate-blocked by open NCR');
+
+  const bulkQc = (nodeIds) => U(`/orders/${order.id}/stages/bulk`, { stageId: qcCol.id, nodeIds, status: 'completed' });
+  r = await bulkQc([nodeId]);
+  let bulkRes = await j(r);
+  assert(bulkRes.updated === 0 && /open NCR/i.test(bulkRes.failed[0]?.message ?? ''), 'QC completion blocked by open NCR');
+
+  // Close the open NCR (use-as-is) — next blocker should be the unsigned failure.
+  r = await U(`/ncr/${ncr2.id}`, { status: 'disposition', disposition: 'use_as_is' });
+  await j(r);
+  r = await U(`/ncr/${ncr2.id}`, { status: 'closed' });
+  assert((await j(r)).status === 'closed', 'paint NCR closed (use-as-is)');
+
+  r = await bulkQc([nodeId]);
+  bulkRes = await j(r);
+  assert(bulkRes.updated === 0 && /awaiting sign-off/i.test(bulkRes.failed[0]?.message ?? ''), 'QC completion blocked by unsigned failed inspection');
+
+  r = await U(`/quality-data/${nodeQa.id}/signoff`, { status: 'approved', notes: 'accepted as concession' });
+  assert((await j(r)).signoffStatus === 'approved', 'failed inspection approved (concession)');
+
+  r = await bulkQc([nodeId]);
+  bulkRes = await j(r);
+  assert(bulkRes.updated === 1, 'QC stage completes once NCRs closed + failures resolved');
+
+  // Hold point: stage requires a recorded inspection.
+  await db.query(`UPDATE stages SET requires_inspection = true WHERE id = $1`, [qcCol.id]);
+  r = await bulkQc([node2Id]);
+  bulkRes = await j(r);
+  assert(bulkRes.updated === 0 && /requires a recorded inspection/i.test(bulkRes.failed[0]?.message ?? ''), 'hold-point stage blocks uninspected assembly');
+  r = await P(`/projects/${project.id}/nodes/${node2Id}/quality`, { status: 'pass', notes: 'visual OK' });
+  assert(r.status === 201, 'inspection recorded on B2003');
+  r = await bulkQc([node2Id]);
+  bulkRes = await j(r);
+  assert(bulkRes.updated === 1, 'hold-point stage completes after inspection');
+  // Reset the flag — /processes/standard may be shared with other suites.
+  await db.query(`UPDATE stages SET requires_inspection = false WHERE id = $1`, [qcCol.id]);
+
+  // ── Rework loop: rework disposition demands a post-disposition re-inspection ──
+  r = await P('/ncr', { title: 'Weld undercut — rework', assemblyNodeId: nodeId, projectId: project.id, severity: 'medium' });
+  const reworkNcr = await j(r);
+  r = await U(`/ncr/${reworkNcr.id}`, { status: 'disposition', disposition: 'rework', dispositionNote: 'grind + reweld' });
+  await j(r);
+  r = await U(`/ncr/${reworkNcr.id}`, { status: 'closed' });
+  assert(r.status === 400 && /Rework must be verified/i.test((await r.text())), 'rework NCR cannot close without re-inspection');
+  r = await P(`/projects/${project.id}/nodes/${nodeId}/quality`, { status: 'pass', notes: 're-inspected after reweld' });
+  assert(r.status === 201, 're-inspection recorded');
+  r = await U(`/ncr/${reworkNcr.id}`, { status: 'closed' });
+  assert((await j(r)).status === 'closed', 'rework NCR closes after verified re-inspection');
+
+  // ── SPC (XmR) + insights ───────────────────────────────────────────────────
+  r = await G(`/spc/control-chart?modelId=${modelId}`);
+  const spcPicker = await j(r);
+  assert(Array.isArray(spcPicker.characteristics) && spcPicker.characteristics.length > 0, 'SPC lists characteristics when no mesh picked');
+  const mesh = spcPicker.characteristics[0].meshName;
+  r = await G(`/spc/control-chart?modelId=${modelId}&meshName=${encodeURIComponent(mesh)}`);
+  const spcChart = await j(r);
+  assert(spcChart.count >= 1 && !!spcChart.sigmaMethod, `SPC chart computed (n=${spcChart.count}, σ via ${spcChart.sigmaMethod})`);
+
+  r = await G('/quality-data/insights');
+  const insights = await j(r);
+  assert(insights.firstPassYield && typeof insights.firstPassYield.inspectedNodes === 'number', 'insights: first-pass yield');
+  assert(insights.ncrAging && typeof insights.ncrAging.under7 === 'number', 'insights: NCR aging buckets');
+  assert(Array.isArray(insights.topDefects), 'insights: defect Pareto');
 
   // ── Tenant isolation: numbering + reads ────────────────────────────────────
   // Provision a second tenant via the platform operator, then verify nothing

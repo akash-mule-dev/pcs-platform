@@ -7,5 +7,5 @@ import { CreateQualityDataDto } from './create-quality-data.dto.js';
  * a finding to a different part would falsify the trail.
  */
 export class UpdateQualityDataDto extends PartialType(
-  OmitType(CreateQualityDataDto, ['modelId', 'assemblyNodeId', 'projectId'] as const),
+  OmitType(CreateQualityDataDto, ['modelId', 'assemblyNodeId', 'projectId', 'clientKey'] as const),
 ) {}

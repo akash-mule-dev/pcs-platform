@@ -14,7 +14,7 @@ import {
   CreateNcrInput,
   CreatedNcr,
 } from './qaApi';
-import { qaOfflineQueue } from './qaOfflineQueue';
+import { qaOfflineQueue, uuid4 } from './qaOfflineQueue';
 
 export type QualityStatus = 'pass' | 'fail' | 'warning';
 
@@ -38,6 +38,8 @@ export interface CreateQualityInput {
   measurementUnit?: string;
   toleranceMin?: number;
   toleranceMax?: number;
+  /** Idempotency key (uuid) — replays of the same create return the original row. */
+  clientKey?: string;
 }
 
 export interface QualitySummary {
@@ -116,16 +118,31 @@ export function useQualityData(modelId: string | null) {
 
   const create = useCallback(
     async (input: CreateQualityInput, evidenceUri?: string): Promise<ARQualityEntry> => {
+      // Every create carries an idempotency key, so a request that dies after
+      // the server write can be retried (or queued) without duplicating rows.
+      const keyed: CreateQualityInput = { ...input, clientKey: input.clientKey ?? uuid4() };
       if (!offlineService.isOnline) {
-        await qaOfflineQueue.enqueue(input, evidenceUri);
-        const optimistic = optimisticEntry(input);
+        await qaOfflineQueue.enqueue(keyed, evidenceUri);
+        const optimistic = optimisticEntry(keyed);
         setEntries((prev) => [optimistic, ...prev]);
         return optimistic;
       }
-      const created = await createQuality(input);
+      let created: ARQualityEntry;
+      try {
+        created = await createQuality(keyed);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '';
+        if (/HTTP 4\d\d/.test(msg)) throw e; // validation — surface to the user
+        // Network blip mid-request: queue the keyed create (idempotent) instead of losing it.
+        await qaOfflineQueue.enqueue(keyed, evidenceUri);
+        const optimistic = optimisticEntry(keyed);
+        setEntries((prev) => [optimistic, ...prev]);
+        return optimistic;
+      }
       if (evidenceUri) {
-        // Entry is saved even if the image upload fails — it can be re-attached.
-        try { await apiUploadEvidence(created.id, evidenceUri); } catch { /* retryable */ }
+        // Entry is saved even if the image upload fails — queue the image for retry.
+        try { await apiUploadEvidence(created.id, evidenceUri); }
+        catch { await qaOfflineQueue.enqueueEvidence(created.id, evidenceUri); }
       }
       await refresh();
       return created;

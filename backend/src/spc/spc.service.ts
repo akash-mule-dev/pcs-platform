@@ -3,79 +3,84 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { QualityData } from '../quality-data/quality-data.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import { consensusSpec, xmrChart } from './spc-math.js';
 
 /**
  * Statistical Process Control over quality inspection measurements.
- * Produces a control chart (mean, ±3σ control limits), spec limits + Cp/Cpk
- * from tolerances, and basic rule violations (beyond 3σ, run of 8 one side).
- * Tenant-scoped: only the caller's organization's measurements are charted.
+ * Individuals (XmR) chart: sigma from the average moving range, Western
+ * Electric rules 1–4, spec limits + Cp/Cpk from the series' consensus
+ * tolerances. Tenant-scoped.
+ *
+ * Without a meshName the endpoint lists the model's measurable
+ * CHARACTERISTICS (mesh × unit, with counts) so the UI can offer a picker —
+ * mixing different characteristics into one chart is statistically
+ * meaningless.
  */
 @Injectable()
 export class SpcService {
   constructor(@InjectRepository(QualityData) private readonly qdRepo: Repository<QualityData>) {}
 
-  async controlChart(modelId?: string, meshName?: string) {
+  private scopedWhere(modelId?: string, meshName?: string): Record<string, any> {
     const where: any = { isActive: true };
     if (modelId) where.modelId = modelId;
     if (meshName) where.meshName = meshName;
     const org = TenantContext.getOrganizationId();
     if (org) where.organizationId = org;
+    return where;
+  }
 
-    const rows = await this.qdRepo.find({ where, order: { inspectionDate: 'ASC' } as any, take: 500 });
-    const measured = rows.filter((r) => r.measurementValue !== null && r.measurementValue !== undefined);
-    const values = measured.map((r) => Number(r.measurementValue));
-    const n = values.length;
-    if (n === 0) return { count: 0, points: [], violations: [], message: 'No measurement data for this selection' };
+  /** Measurable characteristics (mesh × unit) for a model, for the chart picker. */
+  async characteristics(modelId?: string) {
+    const qb = this.qdRepo.createQueryBuilder('qd')
+      .select('qd.mesh_name', 'meshName')
+      .addSelect('qd.measurement_unit', 'unit')
+      .addSelect('COUNT(*)', 'count')
+      .addSelect('MAX(qd.inspection_date)', 'lastAt')
+      .where('qd.is_active = true')
+      .andWhere('qd.measurement_value IS NOT NULL');
+    if (modelId) qb.andWhere('qd.model_id = :modelId', { modelId });
+    const org = TenantContext.getOrganizationId();
+    if (org) qb.andWhere('qd.organization_id = :org', { org });
+    const rows = await qb
+      .groupBy('qd.mesh_name')
+      .addGroupBy('qd.measurement_unit')
+      .orderBy('COUNT(*)', 'DESC')
+      .limit(50)
+      .getRawMany();
+    return rows.map((r) => ({
+      meshName: r.meshName,
+      unit: r.unit ?? null,
+      count: parseInt(r.count, 10) || 0,
+      lastAt: r.lastAt ?? null,
+    }));
+  }
 
-    const mean = values.reduce((a, b) => a + b, 0) / n;
-    const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / (n > 1 ? n - 1 : 1);
-    const sigma = Math.sqrt(variance);
-    const ucl = mean + 3 * sigma;
-    const lcl = mean - 3 * sigma;
-
-    const tol = measured.find((r) => r.toleranceMin != null || r.toleranceMax != null);
-    const usl = tol && tol.toleranceMax != null ? Number(tol.toleranceMax) : null;
-    const lsl = tol && tol.toleranceMin != null ? Number(tol.toleranceMin) : null;
-    let cp: number | null = null;
-    let cpk: number | null = null;
-    if (usl !== null && lsl !== null && sigma > 0) {
-      cp = (usl - lsl) / (6 * sigma);
-      cpk = Math.min(usl - mean, mean - lsl) / (3 * sigma);
-    }
-
-    const points = measured.map((r, i) => {
-      const v = Number(r.measurementValue);
+  async controlChart(modelId?: string, meshName?: string) {
+    // No characteristic picked → return the picker data instead of a mixed chart.
+    if (!meshName) {
+      const list = await this.characteristics(modelId);
       return {
-        index: i + 1,
-        value: Number(v.toFixed(4)),
-        date: r.inspectionDate || r.createdAt,
-        outOfControl: v > ucl || v < lcl,
-        outOfSpec: (usl !== null && v > usl) || (lsl !== null && v < lsl),
+        count: 0,
+        points: [],
+        violations: [],
+        characteristics: list,
+        message: list.length
+          ? 'Pick a characteristic (meshName) to chart'
+          : 'No measurement data for this selection',
       };
-    });
-
-    const violations: any[] = [];
-    points.forEach((p) => { if (p.outOfControl) violations.push({ index: p.index, rule: 'beyond_3sigma', value: p.value }); });
-    let run = 0;
-    let side = 0;
-    for (const p of points) {
-      const s = p.value >= mean ? 1 : -1;
-      if (s === side) run++; else { side = s; run = 1; }
-      if (run >= 8) violations.push({ index: p.index, rule: 'run_of_8_one_side' });
     }
 
-    return {
-      count: n,
-      mean: Number(mean.toFixed(4)),
-      sigma: Number(sigma.toFixed(4)),
-      ucl: Number(ucl.toFixed(4)),
-      lcl: Number(lcl.toFixed(4)),
-      usl, lsl,
-      cp: cp !== null ? Number(cp.toFixed(3)) : null,
-      cpk: cpk !== null ? Number(cpk.toFixed(3)) : null,
-      inControl: violations.length === 0,
-      points,
-      violations,
-    };
+    const rows = await this.qdRepo.find({
+      where: this.scopedWhere(modelId, meshName),
+      order: { inspectionDate: 'ASC', createdAt: 'ASC' } as any,
+      take: 500,
+    });
+    const measured = rows.filter((r) => r.measurementValue !== null && r.measurementValue !== undefined);
+    const spec = consensusSpec(measured);
+    const chart = xmrChart(
+      measured.map((r) => ({ value: Number(r.measurementValue), date: r.inspectionDate || r.createdAt })),
+      spec,
+    );
+    return { meshName, ...chart };
   }
 }

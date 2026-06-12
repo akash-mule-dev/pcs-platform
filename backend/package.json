@@ -20,7 +20,7 @@
     "test:rbac": "node --experimental-strip-types src/rbac/permission-catalog.test.ts",
     "test:rbac:e2e": "node test/rbac-roles.e2e.mjs",
     "test:e2e:orders": "node scripts/order-audit-e2e.mjs",
-    "test:quality": "node --experimental-strip-types src/quality-data/quality-math.test.ts && node --experimental-strip-types src/quality-ncr/ncr-workflow.test.ts",
+    "test:quality": "node --experimental-strip-types src/quality-data/quality-math.test.ts && node --experimental-strip-types src/quality-ncr/ncr-workflow.test.ts && node --experimental-strip-types src/work-orders/qc-gate.test.ts && node --experimental-strip-types src/spc/spc-math.test.ts",
     "test:e2e:quality": "node scripts/quality-e2e.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

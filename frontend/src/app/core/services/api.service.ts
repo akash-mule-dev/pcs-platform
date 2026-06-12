@@ -39,6 +39,11 @@ export class ApiService {
     return this.http.get(`${this.baseUrl}${path}`, { responseType: 'blob' });
   }
 
+  /** POST multipart form data (file uploads) — browser sets the boundary header. */
+  postForm<T>(path: string, form: FormData): Observable<T> {
+    return this.http.post<T>(`${this.baseUrl}${path}`, form);
+  }
+
   post<T>(path: string, body: any = {}): Observable<T> {
     return this.http.post<T>(`${this.baseUrl}${path}`, body);
   }

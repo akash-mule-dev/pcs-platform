@@ -20,6 +20,7 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
 import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
 import { PermissionsService } from '../core/services/permissions.service';
+import { NcrApiService } from '../quality-ncr/ncr.service';
 import { QualityService, QualityDataEntry, QualitySummary } from './quality.service';
 import { ModelMediaService } from '../core/services/model-media.service';
 import { environment } from '../../environments/environment';
@@ -435,7 +436,7 @@ interface Model3D {
                           <button mat-icon-button color="primary" (click)="approveSignoff(entry.id)" matTooltip="Approve">
                             <mat-icon>check</mat-icon>
                           </button>
-                          <button mat-icon-button color="warn" (click)="rejectSignoff(entry.id)" matTooltip="Reject">
+                          <button mat-icon-button color="warn" (click)="rejectSignoff(entry)" matTooltip="Reject">
                             <mat-icon>close</mat-icon>
                           </button>
                         </div>
@@ -464,6 +465,45 @@ interface Model3D {
               [options]="trendChartOptions"
               type="line">
             </canvas>
+          </mat-card-content>
+        </mat-card>
+      }
+
+      <!-- SPC: individuals (XmR) control chart per characteristic -->
+      @if (selectedModel && spcCharacteristics.length > 0) {
+        <mat-card class="trends-card">
+          <mat-card-header>
+            <mat-card-title>SPC Control Chart (XmR)</mat-card-title>
+            <div class="spc-pick">
+              <mat-form-field appearance="outline" class="spc-select">
+                <mat-label>Characteristic</mat-label>
+                <mat-select [(ngModel)]="spcMesh" (selectionChange)="loadSpcChart()">
+                  @for (c of spcCharacteristics; track c.meshName + (c.unit || '')) {
+                    <mat-option [value]="c.meshName">{{ c.meshName }} ({{ c.count }} pts{{ c.unit ? ', ' + c.unit : '' }})</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            </div>
+          </mat-card-header>
+          <mat-card-content>
+            @if (spc) {
+              <div class="spc-stats">
+                <span>n = {{ spc.count }}</span>
+                <span>x̄ = {{ spc.mean }}</span>
+                <span>σ ({{ spc.sigmaMethod === 'moving_range' ? 'MR' : 's' }}) = {{ spc.sigma }}</span>
+                @if (spc.cp !== null) { <span>Cp = {{ spc.cp }}</span> }
+                @if (spc.cpk !== null) { <span>Cpk = {{ spc.cpk }}</span> }
+                <span class="spc-flag" [class.bad]="!spc.inControl">{{ spc.inControl ? 'In control' : spc.violations.length + ' rule violation(s)' }}</span>
+              </div>
+              <canvas baseChart
+                [datasets]="spcChartData.datasets"
+                [labels]="spcChartData.labels"
+                [options]="spcChartOptions"
+                type="line">
+              </canvas>
+            } @else {
+              <p class="spc-empty">Pick a characteristic to chart its measurements.</p>
+            }
           </mat-card-content>
         </mat-card>
       }
@@ -624,6 +664,12 @@ interface Model3D {
     /* Phase 6: Trends */
     .trends-card { margin-top: 20px; padding: 16px; }
     .trends-card canvas { max-height: 300px; }
+    .spc-pick { margin-left: auto; }
+    .spc-select { width: 280px; }
+    .spc-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--clay-text-secondary, #475569); margin-bottom: 8px; font-family: 'Space Grotesk', monospace; }
+    .spc-flag { font-weight: 700; color: var(--success-text, #166534); }
+    .spc-flag.bad { color: var(--danger-text, #b91c1c); }
+    .spc-empty { color: var(--clay-text-muted, #64748b); font-size: 13px; }
 
     /* Phase 6: Defect Patterns */
     .patterns-card { max-height: 250px; overflow-y: auto; }
@@ -689,6 +735,18 @@ export class QualityAnalysisComponent implements OnInit, OnDestroy {
   defectPatterns: any[] = [];
   pendingSignoffs: QualityDataEntry[] = [];
 
+  // SPC (XmR) chart state
+  spcCharacteristics: { meshName: string; unit: string | null; count: number }[] = [];
+  spcMesh: string | null = null;
+  spc: any = null;
+  spcChartData: ChartConfiguration<'line'>['data'] = { labels: [], datasets: [] };
+  spcChartOptions: ChartConfiguration<'line'>['options'] = {
+    responsive: true,
+    plugins: { legend: { position: 'bottom' } },
+    scales: { y: { title: { display: true, text: 'Measurement' } } },
+    elements: { line: { tension: 0 } },
+  };
+
   // Per-part inspection
   allParts: string[] = [];
   selectedPart: string | null = null;
@@ -708,6 +766,7 @@ export class QualityAnalysisComponent implements OnInit, OnDestroy {
     private permissions: PermissionsService,
     private snackBar: MatSnackBar,
     private modelMedia: ModelMediaService,
+    private ncrApi: NcrApiService,
   ) {}
 
   ngOnInit(): void {
@@ -814,6 +873,64 @@ export class QualityAnalysisComponent implements OnInit, OnDestroy {
     this.qualityService.getPendingSignoffs(modelId).subscribe({
       next: (data) => this.pendingSignoffs = data || [],
     });
+
+    // SPC: which characteristics have measurements?
+    this.spcCharacteristics = [];
+    this.spcMesh = null;
+    this.spc = null;
+    this.qualityService.getSpcChart(modelId).subscribe({
+      next: (res) => {
+        this.spcCharacteristics = res?.characteristics ?? [];
+        if (this.spcCharacteristics.length) {
+          this.spcMesh = this.spcCharacteristics[0].meshName;
+          this.loadSpcChart();
+        }
+      },
+      error: () => { /* SPC is best-effort */ },
+    });
+  }
+
+  loadSpcChart(): void {
+    if (!this.selectedModel || !this.spcMesh) return;
+    this.qualityService.getSpcChart(this.selectedModel.id, this.spcMesh).subscribe({
+      next: (res) => {
+        this.spc = res?.count ? res : null;
+        if (this.spc) this.buildSpcChart(this.spc);
+      },
+      error: () => (this.spc = null),
+    });
+  }
+
+  private buildSpcChart(spc: any): void {
+    const cs = getComputedStyle(document.documentElement);
+    const line = (v: number, label: string, color: string, dash: number[] = [6, 4]) => ({
+      label,
+      data: spc.points.map(() => v),
+      borderColor: color,
+      borderDash: dash,
+      pointRadius: 0,
+      fill: false,
+    });
+    const danger = cs.getPropertyValue('--danger').trim() || '#dc2626';
+    const warning = cs.getPropertyValue('--warning').trim() || '#d97706';
+    const primary = cs.getPropertyValue('--clay-primary').trim() || '#2563eb';
+    const datasets: any[] = [
+      {
+        label: 'Value',
+        data: spc.points.map((p: any) => p.value),
+        borderColor: primary,
+        backgroundColor: primary,
+        pointRadius: spc.points.map((p: any) => (p.outOfControl || p.outOfSpec ? 5 : 3)),
+        pointBackgroundColor: spc.points.map((p: any) => (p.outOfControl || p.outOfSpec ? danger : primary)),
+        fill: false,
+      },
+      line(spc.mean, 'x̄', '#64748b', [2, 2]),
+      line(spc.ucl, 'UCL (+3σ)', warning),
+      line(spc.lcl, 'LCL (−3σ)', warning),
+    ];
+    if (spc.usl !== null) datasets.push(line(spc.usl, 'USL', danger));
+    if (spc.lsl !== null) datasets.push(line(spc.lsl, 'LSL', danger));
+    this.spcChartData = { labels: spc.points.map((p: any) => String(p.index)), datasets };
   }
 
   private buildTrendChart(data: { date: string; status: string; count: string }[]): void {
@@ -852,13 +969,31 @@ export class QualityAnalysisComponent implements OnInit, OnDestroy {
     });
   }
 
-  rejectSignoff(id: string): void {
-    this.qualityService.signoff(id, 'rejected').subscribe({
+  /** Rejecting a failure usually means the defect stands — offer to raise the NCR right away. */
+  rejectSignoff(entry: QualityDataEntry): void {
+    this.qualityService.signoff(entry.id, 'rejected').subscribe({
       next: () => {
-        this.snackBar.open('Rejected', 'Close', { duration: 2000 });
         if (this.selectedModel) this.loadQualityData(this.selectedModel.id);
+        const ref = this.snackBar.open('Rejected — raise an NCR for this defect?', 'Raise NCR', { duration: 8000 });
+        ref.onAction().subscribe(() => this.raiseNcrFromEntry(entry));
       },
       error: (e) => this.snackBar.open(e?.error?.message || 'Sign-off failed', 'Close', { duration: 3500 }),
+    });
+  }
+
+  private raiseNcrFromEntry(entry: QualityDataEntry): void {
+    const label = entry.regionLabel || entry.meshName;
+    this.ncrApi.createNcr({
+      title: `${label} — rejected inspection${entry.defectType ? ` (${entry.defectType})` : ''}`,
+      description: entry.notes || undefined,
+      severity: entry.severity || 'medium',
+      qualityDataId: entry.id,
+      assemblyNodeId: entry.assemblyNodeId || undefined,
+      projectId: entry.projectId || undefined,
+      dataJson: { source: 'signoff-rejection', modelId: entry.modelId, meshName: entry.meshName },
+    }).subscribe({
+      next: (n) => this.snackBar.open(`NCR ${n?.number ?? ''} raised`, 'Close', { duration: 3500 }),
+      error: (e) => this.snackBar.open(e?.error?.message || 'Could not raise NCR', 'Close', { duration: 4000 }),
     });
   }
 

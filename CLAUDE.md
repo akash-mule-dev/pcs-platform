@@ -123,8 +123,20 @@ out-of-tolerance → failed entries queue for sign-off → raise NCR → investi
 close (or CAPA) → gates lift** (work-order quality stages + shipping both block on open NCRs).
 
 - **Pure rule modules** (unit-tested, no Nest/TypeORM): `quality-data/quality-math.ts`
-  (tolerance evaluation + auto-fail + sign-off rules) and `quality-ncr/ncr-workflow.ts`
-  (NCR/CAPA state machines). `npm run test:quality` runs both.
+  (tolerance evaluation + auto-fail + sign-off rules), `quality-ncr/ncr-workflow.ts`
+  (NCR/CAPA state machines), `work-orders/qc-gate.ts` (stage gate incl. inspection rules) and
+  `spc/spc-math.ts` (XmR charts + Western Electric rules). `npm run test:quality` runs all four.
+- **Stage quality gates** (work-orders + order bulk/board paths): a quality-named stage cannot
+  COMPLETE while the assembly has (1) open NCRs, or (2) failed inspections not yet signed off
+  (approve = formal concession); a stage flagged `stages.requires_inspection` (hold point — set
+  in the stage dialog) additionally needs ≥1 acceptable inspection recorded. Audit endpoints
+  return `gateBlocked` + human `gateReason` per stage row for pre-warn chips/tooltips.
+- **Rework verification:** closing an NCR dispositioned `rework` that is pinned to an assembly
+  requires a passing re-inspection recorded AFTER the disposition (`ncrs.dispositioned_at`).
+- **Concurrency & idempotency:** NCR PATCHes accept `expectedVersion` (409 on mismatch — web +
+  mobile reload on conflict); quality-data creates accept a `clientKey` uuid so offline-queue
+  replays return the original row (unique `(org, client_key)`), and the mobile AR queue retries
+  failed evidence uploads as separate queue items.
 - **Identity is server-stamped, never client-supplied:** `inspector`/`inspectorUserId` default
   from the JWT on create; `PATCH /quality-data/:id/signoff` ignores any client `signoffBy` and
   stamps `signoffBy`/`signoffByUserId` from the authenticated user. Sign-off needs the dedicated
@@ -144,10 +156,15 @@ close (or CAPA) → gates lift** (work-order quality stages + shipping both bloc
   `quality-alert` websocket event; high/critical failures + raised NCRs notify the org's
   admin/manager/supervisors, assignments notify the assignee, sign-off decisions notify the
   inspector. All best-effort (never fails the write). Sign-off/NCR/CAPA mutations are audit-logged.
-- **Evidence uploads** (`POST /quality-data/:id/evidence`) accept JPEG/PNG/WebP only (≤10 MB);
-  the web inspection detail fetches them as authed blobs.
+- **Evidence uploads** (`POST /quality-data/:id/evidence`, `POST /ncr/:id/evidence`) accept
+  JPEG/PNG/WebP only (≤10 MB); web fetches them as authed blobs. Rejecting a sign-off offers a
+  pre-filled "Raise NCR" on web + mobile AR; the web NCR detail has a print view (browser → PDF).
+- **Analytics:** `GET /quality-data/insights` (FPY, NCR aging/time-to-close, defect Pareto —
+  web page `/quality-insights`); `GET /spc/control-chart` returns a characteristics picker
+  without `meshName`, else an XmR chart (σ from average moving range, WE rules 1–4, Cp/Cpk).
 - **Regression suites:** `npm run test:quality` (pure rules), `npm run test:e2e:quality`
-  (51-assertion live suite incl. tenant isolation — scratch DB, mirrors `test:e2e:orders`),
+  (80-assertion live suite: identity, workflow, gates, rework loop, idempotency, versioning,
+  evidence, SPC/insights, tenant isolation — scratch DB, mirrors `test:e2e:orders`),
   plus `tests/suite/11-quality-data.api.spec.ts` and `tests/phase6-quality-enhancements.api.spec.ts`.
 
 Front end: `/projects`, `/projects/:id` workspace tabs (Overview / Assemblies & 3D / Work Orders);

@@ -28,6 +28,8 @@ export interface Ncr {
   itemMark?: string | null;
   closedAt?: string | null;
   createdAt?: string;
+  /** Optimistic-concurrency version — send back as expectedVersion on update. */
+  version?: number;
   /** Present on GET /ncr/:id — legal next statuses (drives the action buttons). */
   allowedTransitions?: string[];
 }
@@ -86,8 +88,8 @@ export const ncrService = {
   create(body: CreateNcrInput): Promise<Ncr> {
     return api.post<Ncr>('/ncr', body);
   },
-  /** Transition / disposition — server validates against the workflow state machine. */
-  update(id: string, body: { status?: string; disposition?: string; dispositionNote?: string }): Promise<Ncr> {
+  /** Transition / disposition — server validates workflow + optimistic version (409 when stale). */
+  update(id: string, body: { status?: string; disposition?: string; dispositionNote?: string; expectedVersion?: number }): Promise<Ncr> {
     return api.patch<Ncr>(`/ncr/${id}`, body);
   },
   events(id: string): Promise<NcrEvent[]> {

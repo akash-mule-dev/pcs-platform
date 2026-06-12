@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatTableModule } from '@angular/material/table';
@@ -126,9 +126,27 @@ const TRANSITION_VERBS: Record<string, string> = {
                 @if (selected.disposition) { <span class="meta"><mat-icon class="mi">gavel</mat-icon>{{ selected.disposition }}</span> }
               </div>
             </div>
-            <button mat-icon-button (click)="selected = null"><mat-icon>close</mat-icon></button>
+            <div class="head-actions">
+              <button mat-icon-button matTooltip="Print / save as PDF" (click)="printNcr()"><mat-icon>print</mat-icon></button>
+              <button mat-icon-button (click)="closeDetail()"><mat-icon>close</mat-icon></button>
+            </div>
           </div>
           @if (selected.description) { <p class="desc">{{ selected.description }}</p> }
+
+          <!-- Photo evidence -->
+          @if (evidenceUrls.length || canCreate) {
+            <div class="evidence-row">
+              @for (url of evidenceUrls; track url) {
+                <a [href]="url" target="_blank" rel="noopener"><img [src]="url" alt="NCR evidence" /></a>
+              }
+              @if (canCreate) {
+                <input #photoInput type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="onPhotoPicked($event)">
+                <button mat-stroked-button class="attach-btn" [disabled]="busy" (click)="photoInput.click()">
+                  <mat-icon>add_a_photo</mat-icon> Photo
+                </button>
+              }
+            </div>
+          }
 
           <!-- Guided workflow -->
           @if (canManage) {
@@ -247,6 +265,10 @@ const TRANSITION_VERBS: Record<string, string> = {
     .panel { background: var(--clay-surface, #fff); border: 1px solid var(--clay-border, #e2e8f0); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
     .panel h3 { margin: 0 0 4px; font-size: 15px; }
     .detail-head { display: flex; justify-content: space-between; align-items: flex-start; }
+    .head-actions { display: flex; gap: 2px; }
+    .evidence-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 2px; }
+    .evidence-row img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--clay-border, #e2e8f0); }
+    .attach-btn { height: 40px; }
     .meta-line { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
     .meta { color: var(--clay-text-muted, #64748b); font-size: 12px; display: inline-flex; align-items: center; gap: 2px; }
     .mi { font-size: 14px; width: 14px; height: 14px; }
@@ -296,7 +318,7 @@ const TRANSITION_VERBS: Record<string, string> = {
     .empty { text-align: center; color: var(--clay-text-muted, #64748b); padding: 16px; }
   `],
 })
-export class NcrComponent implements OnInit {
+export class NcrComponent implements OnInit, OnDestroy {
   readonly severities = SEVERITIES;
   readonly dispositions = DISPOSITIONS;
   readonly capaTypes = CAPA_TYPES;
@@ -325,6 +347,7 @@ export class NcrComponent implements OnInit {
   allowedTransitions: string[] = [];
   edit: any = { disposition: null, dispositionNote: '' };
   events: NcrEventRow[] = [];
+  evidenceUrls: string[] = [];
   newComment = '';
   capas: any[] = [];
   showAddCapa = false;
@@ -339,6 +362,10 @@ export class NcrComponent implements OnInit {
     this.canCreate = this.permissions.can('ncr.create');
     this.canManage = this.permissions.can('ncr.manage');
     this.load();
+  }
+
+  ngOnDestroy(): void {
+    this.clearEvidence();
   }
 
   statusLabel(s: string): string { return STATUS_LABELS[s] ?? s; }
@@ -390,10 +417,16 @@ export class NcrComponent implements OnInit {
     this.selected = n;
     this.allowedTransitions = [];
     this.events = [];
+    this.clearEvidence();
     this.edit = { disposition: n.disposition || null, dispositionNote: n.dispositionNote || '' };
     this.showAddCapa = false;
     this.refreshDetail(n.id);
     this.loadCapas();
+  }
+
+  closeDetail(): void {
+    this.selected = null;
+    this.clearEvidence();
   }
 
   private refreshDetail(id: string): void {
@@ -402,19 +435,113 @@ export class NcrComponent implements OnInit {
         this.selected = full;
         this.allowedTransitions = full.allowedTransitions ?? [];
         this.edit = { disposition: full.disposition || null, dispositionNote: full.dispositionNote || '' };
+        this.loadEvidence(full);
       },
       error: () => {},
     });
     this.api.listEvents(id).subscribe({ next: (ev) => (this.events = ev ?? []), error: () => (this.events = []) });
   }
 
+  private loadEvidence(n: NcrRow): void {
+    this.clearEvidence();
+    const count = n.attachments?.length ?? 0;
+    for (let i = 0; i < count; i++) {
+      this.api.getEvidence(n.id, i).subscribe({
+        next: (blob) => this.evidenceUrls.push(URL.createObjectURL(blob)),
+        error: () => { /* evidence is best-effort */ },
+      });
+    }
+  }
+
+  private clearEvidence(): void {
+    for (const url of this.evidenceUrls) URL.revokeObjectURL(url);
+    this.evidenceUrls = [];
+  }
+
+  onPhotoPicked(ev: Event): void {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || !this.selected) return;
+    this.busy = true;
+    this.api.uploadEvidence(this.selected.id, file).subscribe({
+      next: () => { this.busy = false; this.snack.open('Photo attached', 'OK', { duration: 2000 }); this.refreshDetail(this.selected!.id); },
+      error: (e) => { this.busy = false; this.snack.open(e?.error?.message || 'Upload failed', 'Dismiss', { duration: 4000 }); },
+    });
+  }
+
+  /** 409 = someone else changed the NCR — reload so the user acts on fresh state. */
+  private handleMutationError(e: any): void {
+    if (e?.status === 409) {
+      this.snack.open(e?.error?.message || 'This NCR changed elsewhere — reloaded it.', 'OK', { duration: 4500 });
+      if (this.selected) { this.refreshDetail(this.selected.id); this.load(); }
+      return;
+    }
+    this.snack.open(e?.error?.message || 'Update failed', 'Dismiss', { duration: 4500 });
+  }
+
+  /** Customer-facing printable nonconformance report (browser print → PDF). */
+  printNcr(): void {
+    const n = this.selected;
+    if (!n) return;
+    const esc = (s: any) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const cap = (s: any) => esc(String(s ?? '').replace(/_/g, ' '));
+    const rows = (label: string, value: string) =>
+      value ? `<tr><th>${label}</th><td>${value}</td></tr>` : '';
+    const timeline = this.events.map((e) => {
+      const what = e.type === 'created' ? 'Raised'
+        : e.type === 'status_change' ? `${cap(e.fromStatus)} → ${cap(e.toStatus)}`
+        : e.type === 'disposition' ? `Disposition: ${esc(e.note)}`
+        : esc(e.note);
+      const when = e.createdAt ? new Date(e.createdAt).toLocaleString() : '';
+      return `<tr><td>${when}</td><td>${cap(e.type)}</td><td>${what}</td><td>${esc(e.actorName ?? '')}</td></tr>`;
+    }).join('');
+    const capas = this.capas.map((c) =>
+      `<tr><td>${esc(c.title)}</td><td>${cap(c.type)}</td><td>${cap(c.status)}</td><td>${c.dueDate ? new Date(c.dueDate).toLocaleDateString() : ''}</td></tr>`,
+    ).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(n.number)}</title>
+      <style>
+        body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; color: #111; margin: 32px; }
+        h1 { font-size: 20px; margin: 0 0 2px; } .sub { color: #555; font-size: 12px; margin-bottom: 18px; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 18px; font-size: 12.5px; }
+        th, td { border: 1px solid #ccc; padding: 6px 9px; text-align: left; vertical-align: top; }
+        th { background: #f3f4f6; width: 160px; font-weight: 600; }
+        h2 { font-size: 14px; margin: 18px 0 6px; }
+        .tl th { width: auto; }
+        @media print { body { margin: 12mm; } }
+      </style></head><body>
+      <h1>Nonconformance Report ${esc(n.number)}</h1>
+      <div class="sub">Status: ${cap(n.status)} · Severity: ${cap(n.severity)} · Printed ${new Date().toLocaleString()}</div>
+      <table>
+        ${rows('Title', esc(n.title))}
+        ${rows('Description', esc(n.description ?? ''))}
+        ${rows('Project', esc(n.projectName ?? ''))}
+        ${rows('Item', esc(n.itemMark ?? ''))}
+        ${rows('Disposition', n.disposition ? `${cap(n.disposition)}${n.dispositionNote ? ' — ' + esc(n.dispositionNote) : ''}` : '')}
+        ${rows('Raised', n.createdAt ? new Date(n.createdAt).toLocaleString() : '')}
+        ${rows('Closed', n.closedAt ? new Date(n.closedAt).toLocaleString() : '')}
+      </table>
+      ${timeline ? `<h2>Timeline</h2><table class="tl"><tr><th>When</th><th>Action</th><th>Detail</th><th>By</th></tr>${timeline}</table>` : ''}
+      ${capas ? `<h2>Corrective / Preventive Actions</h2><table class="tl"><tr><th>Title</th><th>Type</th><th>Status</th><th>Due</th></tr>${capas}</table>` : ''}
+      <script>window.onload = () => window.print();</script>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { this.snack.open('Pop-up blocked — allow pop-ups to print', 'OK', { duration: 4000 }); return; }
+    w.document.write(html);
+    w.document.close();
+  }
+
   /** Record the disposition decision without changing status. */
   saveDisposition(): void {
     if (!this.selected) return;
     this.busy = true;
-    this.api.updateNcr(this.selected.id, { disposition: this.edit.disposition, dispositionNote: this.edit.dispositionNote || undefined }).subscribe({
+    this.api.updateNcr(this.selected.id, {
+      disposition: this.edit.disposition,
+      dispositionNote: this.edit.dispositionNote || undefined,
+      expectedVersion: this.selected.version,
+    }).subscribe({
       next: () => { this.busy = false; this.snack.open('Disposition recorded', 'OK', { duration: 2000 }); this.refreshDetail(this.selected!.id); this.load(); },
-      error: (e) => { this.busy = false; this.snack.open(e?.error?.message || 'Update failed', 'Dismiss', { duration: 4000 }); },
+      error: (e) => { this.busy = false; this.handleMutationError(e); },
     });
   }
 
@@ -422,7 +549,7 @@ export class NcrComponent implements OnInit {
   transition(to: string): void {
     if (!this.selected) return;
     this.busy = true;
-    const body: any = { status: to };
+    const body: any = { status: to, expectedVersion: this.selected.version };
     // Allow disposition to ride along when closing straight from the form.
     if (to === 'closed' && this.edit.disposition && this.edit.disposition !== this.selected.disposition) {
       body.disposition = this.edit.disposition;
@@ -430,7 +557,7 @@ export class NcrComponent implements OnInit {
     }
     this.api.updateNcr(this.selected.id, body).subscribe({
       next: () => { this.busy = false; this.snack.open(`NCR ${this.statusLabel(to).toLowerCase()}`, 'OK', { duration: 2000 }); this.refreshDetail(this.selected!.id); this.load(); },
-      error: (e) => { this.busy = false; this.snack.open(e?.error?.message || 'Transition failed', 'Dismiss', { duration: 4500 }); },
+      error: (e) => { this.busy = false; this.handleMutationError(e); },
     });
   }
 

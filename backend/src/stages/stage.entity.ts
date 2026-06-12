@@ -30,6 +30,14 @@ export class Stage extends TenantOwnedEntity {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  /**
+   * Hold point: when true, the quality gate additionally requires at least one
+   * acceptable inspection on the assembly before this stage can be completed
+   * (see work-orders/qc-gate.ts). Meaningful on quality stages.
+   */
+  @Column({ name: 'requires_inspection', type: 'boolean', default: false })
+  requiresInspection: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

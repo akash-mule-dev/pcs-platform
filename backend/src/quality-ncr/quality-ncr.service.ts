@@ -1,6 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import type { StorageProvider } from '../storage/storage.interface.js';
+import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
+import { EVIDENCE_EXTENSIONS, EVIDENCE_MIME_TYPES } from '../quality-data/evidence.constants.js';
 import { Ncr, NcrStatus } from './entities/ncr.entity.js';
 import { Capa, CapaStatus } from './entities/capa.entity.js';
 import { NcrEvent, NcrEventType } from './entities/ncr-event.entity.js';
@@ -19,6 +25,7 @@ export class QualityNcrService {
     @InjectRepository(Capa) private readonly capaRepo: Repository<Capa>,
     @InjectRepository(NcrEvent) private readonly eventRepo: Repository<NcrEvent>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     private readonly audit: AuditService,
     private readonly notify: QualityNotifyService,
   ) {}
@@ -144,6 +151,9 @@ export class QualityNcrService {
     if (filter.assignedTo) qb.andWhere('n.assigned_to = :assignee', { assignee: filter.assignedTo });
     if (filter.open === 'true') qb.andWhere('n.status NOT IN (:...done)', { done: [NcrStatus.CLOSED, NcrStatus.CANCELLED] });
     if (filter.q) qb.andWhere('(n.number ILIKE :q OR n.title ILIKE :q)', { q: `%${filter.q}%` });
+    // Bounded by default so the endpoint stays fast as history accumulates.
+    qb.take(Math.min(Math.max(filter.limit ?? 500, 1), 1000));
+    if (filter.offset) qb.skip(Math.max(filter.offset, 0));
     const rows = await qb.getMany();
 
     const projectIds = [...new Set(rows.map((r) => r.projectId).filter((x): x is string => !!x))];
@@ -181,19 +191,32 @@ export class QualityNcrService {
     const prevAssignee = n.assignedTo;
     const prevDisposition = n.disposition;
 
-    if (dto.assignedTo) {
-      await this.assertLinksValid({ assignedTo: dto.assignedTo });
+    // Optimistic concurrency: a stale client must reload before mutating.
+    if (dto.expectedVersion !== undefined && dto.expectedVersion !== n.version) {
+      throw new ConflictException('This NCR was modified by someone else — reload and try again.');
+    }
+    const { expectedVersion: _ev, ...changes } = dto;
+
+    if (changes.assignedTo) {
+      await this.assertLinksValid({ assignedTo: changes.assignedTo });
     }
 
-    if (dto.status !== undefined && dto.status !== fromStatus) {
-      const err = ncrTransitionError(fromStatus, dto.status, dto.disposition ?? n.disposition);
+    if (changes.status !== undefined && changes.status !== fromStatus) {
+      const err = ncrTransitionError(fromStatus, changes.status, changes.disposition ?? n.disposition);
       if (err) throw new BadRequestException(err);
+      if (changes.status === NcrStatus.CLOSED) {
+        await this.assertReworkVerified(n, changes.disposition ?? n.disposition);
+      }
     }
 
-    Object.assign(n, dto);
+    Object.assign(n, changes);
 
-    if (dto.status !== undefined && dto.status !== fromStatus) {
-      if (dto.status === NcrStatus.CLOSED) {
+    if (changes.disposition !== undefined && changes.disposition !== prevDisposition) {
+      n.dispositionedAt = new Date();
+    }
+
+    if (changes.status !== undefined && changes.status !== fromStatus) {
+      if (changes.status === NcrStatus.CLOSED) {
         n.closedAt = new Date();
         n.closedBy = actor.id;
       } else if (fromStatus === NcrStatus.CLOSED) {
@@ -206,26 +229,26 @@ export class QualityNcrService {
     const saved = await this.ncrRepo.save(n);
 
     // Timeline + audit + notifications (after the write).
-    if (dto.status !== undefined && dto.status !== fromStatus) {
+    if (changes.status !== undefined && changes.status !== fromStatus) {
       await this.recordEvent(id, NcrEventType.STATUS_CHANGE, {
-        fromStatus, toStatus: dto.status, note: dto.dispositionNote ?? null,
+        fromStatus, toStatus: changes.status, note: changes.dispositionNote ?? null,
       }, actor);
       await this.notify.ncrEvent({
         ncrId: id, number: saved.number, title: saved.title, severity: saved.severity,
-        kind: 'status', status: dto.status, actorUserId: actor.id,
+        kind: 'status', status: changes.status, actorUserId: actor.id,
       });
     }
-    if (dto.disposition !== undefined && dto.disposition !== prevDisposition) {
+    if (changes.disposition !== undefined && changes.disposition !== prevDisposition) {
       await this.recordEvent(id, NcrEventType.DISPOSITION, {
-        note: `${dto.disposition}${dto.dispositionNote ? ` — ${dto.dispositionNote}` : ''}`,
+        note: `${changes.disposition}${changes.dispositionNote ? ` — ${changes.dispositionNote}` : ''}`,
       }, actor);
     }
-    if (dto.assignedTo !== undefined && dto.assignedTo !== prevAssignee) {
-      await this.recordEvent(id, NcrEventType.ASSIGNMENT, { note: dto.assignedTo ? 'Reassigned' : 'Unassigned' }, actor);
-      if (dto.assignedTo) {
+    if (changes.assignedTo !== undefined && changes.assignedTo !== prevAssignee) {
+      await this.recordEvent(id, NcrEventType.ASSIGNMENT, { note: changes.assignedTo ? 'Reassigned' : 'Unassigned' }, actor);
+      if (changes.assignedTo) {
         await this.notify.ncrEvent({
           ncrId: id, number: saved.number, title: saved.title, severity: saved.severity,
-          kind: 'assigned', actorUserId: actor.id, assignedTo: dto.assignedTo,
+          kind: 'assigned', actorUserId: actor.id, assignedTo: changes.assignedTo,
         });
       }
     }
@@ -235,9 +258,36 @@ export class QualityNcrService {
       entityType: 'ncr',
       entityId: id,
       oldValues: { status: fromStatus, disposition: prevDisposition, assignedTo: prevAssignee },
-      newValues: { ...dto },
+      newValues: { ...changes },
     });
     return saved;
+  }
+
+  /**
+   * Rework must be PROVEN before the NCR closes: when the disposition is
+   * `rework` and the NCR is pinned to an assembly, a passing (or warning)
+   * re-inspection recorded AFTER the disposition decision is required.
+   */
+  private async assertReworkVerified(n: Ncr, disposition: string | null | undefined): Promise<void> {
+    if (disposition !== 'rework' || !n.assemblyNodeId) return;
+    const since = n.dispositionedAt ?? n.createdAt;
+    const [row] = await this.ncrRepo.query(
+      `SELECT 1 FROM quality_data
+        WHERE assembly_node_id = $1 AND organization_id = $2 AND is_active = true
+          AND status IN ('pass','warning') AND created_at > $3
+        LIMIT 1`,
+      [n.assemblyNodeId, this.org, since],
+    );
+    if (!row) {
+      const [node]: { mark: string | null; name: string | null }[] = await this.ncrRepo.query(
+        `SELECT mark, name FROM assembly_nodes WHERE id = $1 LIMIT 1`,
+        [n.assemblyNodeId],
+      );
+      const label = node?.mark || node?.name || 'the assembly';
+      throw new BadRequestException(
+        `Rework must be verified: record a passing re-inspection on ${label} (after the rework disposition) before closing this NCR.`,
+      );
+    }
   }
 
   /** Append-only timeline (creation, transitions, dispositions, assignments, comments). */
@@ -246,7 +296,38 @@ export class QualityNcrService {
     return this.eventRepo.find({
       where: { ncrId, organizationId: this.org } as any,
       order: { createdAt: 'ASC' } as any,
+      take: 1000,
     });
+  }
+
+  // ── NCR evidence images ─────────────────────────────────────────────────────
+
+  /** Attach a photo to the NCR itself (same storage pattern as quality-data evidence). */
+  async addEvidence(id: string, file: Express.Multer.File): Promise<Ncr> {
+    const n = await this.getNcr(id);
+    const ext = (path.extname(file.originalname) || '.jpg').toLowerCase();
+    const mimeOk = EVIDENCE_MIME_TYPES.includes((file.mimetype || '').toLowerCase());
+    const extOk = EVIDENCE_EXTENSIONS.includes(ext);
+    if (!mimeOk || !extOk) {
+      try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
+      throw new BadRequestException('Evidence must be a JPEG, PNG or WebP image');
+    }
+    const key = `ncr-evidence/${n.id}/${crypto.randomUUID()}${ext}`;
+    await this.storage.upload(file.path, key, file.mimetype || 'image/jpeg');
+    try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
+    n.attachments = [...(n.attachments ?? []), key];
+    const saved = await this.ncrRepo.save(n);
+    await this.recordEvent(id, NcrEventType.COMMENT, { note: 'Photo evidence attached' });
+    return saved;
+  }
+
+  /** Stream a stored NCR evidence attachment by its index. */
+  async getEvidenceStream(id: string, index: number): Promise<{ stream: NodeJS.ReadableStream; key: string }> {
+    const n = await this.getNcr(id);
+    const key = n.attachments?.[index];
+    if (!key) throw new NotFoundException('Evidence not found');
+    const stream = await this.storage.download(key);
+    return { stream, key };
   }
 
   async addComment(ncrId: string, note: string): Promise<NcrEvent> {

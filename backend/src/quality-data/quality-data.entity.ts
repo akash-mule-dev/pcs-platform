@@ -16,9 +16,18 @@ import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 @Index(['organizationId', 'projectId'])
 @Index(['organizationId', 'assemblyNodeId'])
 @Index(['organizationId', 'signoffStatus', 'status'])
+@Index('UQ_quality_data_org_client_key', ['organizationId', 'clientKey'], { unique: true })
 export class QualityData extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  /**
+   * Client-generated idempotency key: offline queues replay creates after
+   * network drops; the unique (org, client_key) index turns a double-replay
+   * into "return the already-saved row" instead of a duplicate record.
+   */
+  @Column({ name: 'client_key', type: 'uuid', nullable: true })
+  clientKey: string | null;
 
   @Column({ name: 'model_id', type: 'uuid' })
   modelId: string;

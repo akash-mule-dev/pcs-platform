@@ -16,6 +16,7 @@ import { CreateQualityDataDto } from './dto/create-quality-data.dto.js';
 import { UpdateQualityDataDto } from './dto/update-quality-data.dto.js';
 import { BulkCreateQualityDataDto } from './dto/bulk-create-quality-data.dto.js';
 import { SignoffQualityDataDto } from './dto/signoff-quality-data.dto.js';
+import { QualityInsightsService } from './quality-insights.service.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
@@ -31,7 +32,10 @@ const STAGING_DIR = path.join(os.tmpdir(), 'pcs-uploads');
 @RequirePermissions('quality-analysis.view')
 @Controller('api/quality-data')
 export class QualityDataController {
-  constructor(private readonly service: QualityDataService) {}
+  constructor(
+    private readonly service: QualityDataService,
+    private readonly insightsService: QualityInsightsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List quality inspection data' })
@@ -80,6 +84,12 @@ export class QualityDataController {
   @ApiOperation({ summary: 'Get quality data pending sign-off' })
   getPendingSignoffs(@Query('modelId') modelId?: string) {
     return this.service.getPendingSignoffs(modelId);
+  }
+
+  @Get('insights')
+  @ApiOperation({ summary: 'Org-level quality KPIs: FPY, NCR aging, time-to-close, defect Pareto' })
+  getInsights() {
+    return this.insightsService.insights();
   }
 
   // --- :id param route must come AFTER all static segments ---

@@ -19,4 +19,6 @@ export class CreateQualityDataDto {
   @ApiPropertyOptional() @IsNumber() @IsOptional() toleranceMax?: number;
   @ApiPropertyOptional() @IsUUID() @IsOptional() assemblyNodeId?: string;
   @ApiPropertyOptional() @IsUUID() @IsOptional() projectId?: string;
+  @ApiPropertyOptional({ description: 'Idempotency key (uuid): replays of the same create return the original row' })
+  @IsUUID() @IsOptional() clientKey?: string;
 }

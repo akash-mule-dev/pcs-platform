@@ -17,9 +17,9 @@ import { User } from '../auth/entities/user.entity.js';
 import { AuditService } from '../audit/audit.service.js';
 import { QualityNotifyService } from '../quality-notify/quality-notify.service.js';
 
-/** Evidence uploads must be images — keep in step with the controller's interceptor. */
-export const EVIDENCE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-export const EVIDENCE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+import { EVIDENCE_EXTENSIONS, EVIDENCE_MIME_TYPES } from './evidence.constants.js';
+// Re-exported for existing imports (controller, tests).
+export { EVIDENCE_EXTENSIONS, EVIDENCE_MIME_TYPES };
 
 @Injectable()
 export class QualityDataService {
@@ -231,13 +231,34 @@ export class QualityDataService {
     }
   }
 
-  /** Create one inspection entry (auto-fails out-of-tolerance measurements). */
+  /**
+   * Create one inspection entry (auto-fails out-of-tolerance measurements).
+   * Idempotent on `clientKey`: a replayed create (offline queue, network retry)
+   * returns the already-saved row instead of duplicating it.
+   */
   async create(dto: CreateQualityDataDto): Promise<QualityData> {
+    if (dto.clientKey) {
+      const existing = await this.repo.findOne({
+        where: { clientKey: dto.clientKey, organizationId: this.org ?? undefined } as any,
+      });
+      if (existing) return existing;
+    }
     await this.assertLinksValid(dto);
     const user = await this.currentUser();
-    const saved = await this.repo.save(this.repo.create(await this.prepare(dto, user)));
-    await this.afterCreate(saved, dto);
-    return saved;
+    try {
+      const saved = await this.repo.save(this.repo.create(await this.prepare(dto, user)));
+      await this.afterCreate(saved, dto);
+      return saved;
+    } catch (e: any) {
+      // Unique (org, client_key) race: another replay won — return its row.
+      if (e?.code === '23505' && dto.clientKey) {
+        const existing = await this.repo.findOne({
+          where: { clientKey: dto.clientKey, organizationId: this.org ?? undefined } as any,
+        });
+        if (existing) return existing;
+      }
+      throw e;
+    }
   }
 
   /** Bulk create — same identity stamping + auto-fail rule as single create. */

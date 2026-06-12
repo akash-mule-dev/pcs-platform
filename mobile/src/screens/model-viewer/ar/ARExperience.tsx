@@ -168,22 +168,6 @@ export default function ARExperience({
     [createQuality, modelId, inspectorName],
   );
 
-  const handleSignoff = useCallback(
-    (entry: ARQualityEntry) => {
-      // Decisions need the dedicated permission; identity is stamped server-side.
-      if (!can('quality-analysis.signoff')) {
-        Alert.alert('Sign-off', 'Your role cannot approve/reject inspections — a reviewer with sign-off permission will pick this up.');
-        return;
-      }
-      Alert.alert(`Sign off — ${entry.meshName}`, `Current status: ${entry.status.toUpperCase()}`, [
-        { text: 'Approve', onPress: () => { void signoffQuality(entry.id, 'approved'); } },
-        { text: 'Reject', style: 'destructive', onPress: () => { void signoffQuality(entry.id, 'rejected'); } },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    },
-    [signoffQuality],
-  );
-
   // Set initial model on mount / when the prepared model changes.
   useEffect(() => {
     setUri(modelUri, fileName);
@@ -452,6 +436,30 @@ export default function ARExperience({
       ]);
     },
     [raiseNcr, modelId],
+  );
+
+  // ── Sign-off decisions (permission-gated; identity stamped server-side) ──
+  const handleSignoff = useCallback(
+    (entry: ARQualityEntry) => {
+      if (!can('quality-analysis.signoff')) {
+        Alert.alert('Sign-off', 'Your role cannot approve/reject inspections — a reviewer with sign-off permission will pick this up.');
+        return;
+      }
+      Alert.alert(`Sign off — ${entry.meshName}`, `Current status: ${entry.status.toUpperCase()}`, [
+        { text: 'Approve', onPress: () => { void signoffQuality(entry.id, 'approved'); } },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            await signoffQuality(entry.id, 'rejected');
+            // The defect stands — offer to raise the NCR while the part is in hand.
+            handleRaiseNcr(entry);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    },
+    [signoffQuality, handleRaiseNcr],
   );
 
   // ── Persisted registration: restore the model's last scale/rotation/render

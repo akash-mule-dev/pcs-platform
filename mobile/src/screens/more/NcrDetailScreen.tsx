@@ -21,6 +21,12 @@ const EVENT_GLYPH: Record<NcrEvent['type'], string> = {
   created: '⚑', status_change: '→', disposition: '⚖', assignment: '👤', comment: '💬',
 };
 
+/** Optimistic-lock conflicts come back as 409 / "modified by someone else". */
+function isConflict(e: any): boolean {
+  const msg = e?.message || '';
+  return /409|modified by someone else/i.test(msg);
+}
+
 export function NcrDetailScreen() {
   const route = useRoute<RouteProp<MoreStackParamList, 'NcrDetail'>>();
   const { id } = route.params;
@@ -58,10 +64,11 @@ export function NcrDetailScreen() {
     }
     setBusy(true);
     try {
-      await ncrService.update(ncr.id, { status: to });
+      await ncrService.update(ncr.id, { status: to, expectedVersion: ncr.version });
       await load();
     } catch (e: any) {
-      Alert.alert('Not allowed', e?.message || 'Transition failed');
+      Alert.alert(isConflict(e) ? 'Changed elsewhere' : 'Not allowed', e?.message || 'Transition failed');
+      if (isConflict(e)) await load(); // refresh so the next action uses current state
     } finally {
       setBusy(false);
     }
@@ -72,10 +79,11 @@ export function NcrDetailScreen() {
     setPickDisposition(false);
     setBusy(true);
     try {
-      await ncrService.update(ncr.id, { status: 'closed', disposition });
+      await ncrService.update(ncr.id, { status: 'closed', disposition, expectedVersion: ncr.version });
       await load();
     } catch (e: any) {
-      Alert.alert('Not allowed', e?.message || 'Close failed');
+      Alert.alert(isConflict(e) ? 'Changed elsewhere' : 'Not allowed', e?.message || 'Close failed');
+      if (isConflict(e)) await load();
     } finally {
       setBusy(false);
     }
