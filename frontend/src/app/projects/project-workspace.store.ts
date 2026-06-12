@@ -44,11 +44,6 @@ export class ProjectWorkspaceStore {
     return withModel?.modelId ? `${environment.apiUrl}/models/${withModel.modelId}/file` : null;
   });
   readonly openNcr = computed(() => this.quality()?.totals?.openNcr ?? 0);
-  readonly isOverdue = computed(() => {
-    const p = this.project();
-    if (!p?.dueDate || p.status === 'completed' || p.status === 'archived') return false;
-    return new Date(p.dueDate).getTime() < Date.now();
-  });
 
   /** Point the store at a project; resets and reloads when the id changes. */
   init(id: string): void {

@@ -54,7 +54,6 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
             <div><dt>Client</dt><dd>{{ project()?.clientName || '—' }}</dd></div>
             <div><dt>Job number</dt><dd class="mono">{{ project()?.projectNumber || '—' }}</dd></div>
             <div><dt>Process</dt><dd>{{ processName() }}</dd></div>
-            <div><dt>Due date</dt><dd [class.overdue]="store.isOverdue()">{{ project()?.dueDate ? (project()!.dueDate | date:'mediumDate') : '—' }}</dd></div>
             <div><dt>Created</dt><dd>{{ project()?.createdAt | date:'mediumDate' }}</dd></div>
           </dl>
           @if (project()?.description) { <p class="desc">{{ project()?.description }}</p> }
@@ -108,7 +107,6 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
     .details dt { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--clay-text-muted); margin-bottom: 3px; }
     .details dd { margin: 0; font-size: 14px; color: var(--clay-text); }
     .details dd.mono { font-family: 'Space Grotesk', monospace; }
-    .details dd.overdue { color: var(--danger-text); font-weight: 600; }
     .desc { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--clay-border); font-size: 13px; color: var(--clay-text-secondary); line-height: 1.55; }
 
     .empty-ctas { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }

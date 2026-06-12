@@ -7,7 +7,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import { ProjectsService, Project, ProjectStatus, CreateProject } from '../core/services/projects.service';
+import { ProjectsService, Project, CreateProject } from '../core/services/projects.service';
 
 export interface ProjectEditData {
   project: Project;
@@ -41,18 +41,6 @@ export interface ProjectEditData {
           <mat-form-field appearance="outline">
             <mat-label>Client</mat-label>
             <input matInput formControlName="clientName">
-          </mat-form-field>
-        </div>
-        <div class="row">
-          <mat-form-field appearance="outline">
-            <mat-label>Status</mat-label>
-            <mat-select formControlName="status">
-              @for (s of statuses; track s.value) { <mat-option [value]="s.value">{{ s.label }}</mat-option> }
-            </mat-select>
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Due date</mat-label>
-            <input matInput type="date" formControlName="dueDate">
           </mat-form-field>
         </div>
         <mat-form-field appearance="outline">
@@ -92,13 +80,6 @@ export class ProjectEditDialogComponent implements OnInit {
   private dialogRef = inject(MatDialogRef<ProjectEditDialogComponent>);
   private data = inject<ProjectEditData>(MAT_DIALOG_DATA);
 
-  statuses: { value: ProjectStatus; label: string }[] = [
-    { value: 'planning', label: 'Planning' },
-    { value: 'active', label: 'Active' },
-    { value: 'on_hold', label: 'On hold' },
-    { value: 'completed', label: 'Completed' },
-    { value: 'archived', label: 'Archived' },
-  ];
   processes: { id: string; name: string }[] = [];
   saving = false;
   error: string | null = null;
@@ -107,8 +88,6 @@ export class ProjectEditDialogComponent implements OnInit {
     name: ['', Validators.required],
     projectNumber: [''],
     clientName: [''],
-    status: ['planning' as ProjectStatus],
-    dueDate: [''],
     processId: [''],
     description: [''],
   });
@@ -119,21 +98,10 @@ export class ProjectEditDialogComponent implements OnInit {
       name: p.name,
       projectNumber: p.projectNumber ?? '',
       clientName: p.clientName ?? '',
-      status: p.status,
-      dueDate: this.toDateInput(p.dueDate),
       processId: p.processId ?? '',
       description: p.description ?? '',
     });
     this.svc.listProcesses().subscribe({ next: (ps) => (this.processes = ps), error: () => {} });
-  }
-
-  /** ISO timestamp → local YYYY-MM-DD for a <input type="date"> (avoids the
-   *  UTC off-by-one that substring(0,10) causes for users behind/ahead of UTC). */
-  private toDateInput(iso: string | null): string {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 10);
   }
 
   async save(): Promise<void> {
@@ -147,8 +115,6 @@ export class ProjectEditDialogComponent implements OnInit {
       name: (v.name ?? '').trim(),
       projectNumber: v.projectNumber?.trim() || null,
       clientName: v.clientName?.trim() || null,
-      status: (v.status as ProjectStatus) ?? undefined,
-      dueDate: v.dueDate || null,
       processId: v.processId || null,
       description: v.description?.trim() || null,
     };

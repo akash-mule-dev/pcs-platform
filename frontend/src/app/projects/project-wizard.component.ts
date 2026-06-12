@@ -42,10 +42,6 @@ import { ProjectsService, Project, CreateProject, ImportResult } from '../core/s
               </mat-form-field>
             </div>
             <mat-form-field appearance="outline">
-              <mat-label>Due date</mat-label>
-              <input matInput type="date" formControlName="dueDate">
-            </mat-form-field>
-            <mat-form-field appearance="outline">
               <mat-label>Process (stage routing)</mat-label>
               <mat-select formControlName="processId">
                 <mat-option [value]="''">— none —</mat-option>
@@ -146,7 +142,6 @@ export class ProjectWizardComponent implements OnInit {
     name: ['', Validators.required],
     projectNumber: [''],
     clientName: [''],
-    dueDate: [''],
     description: [''],
     processId: [''],
   });
@@ -174,7 +169,6 @@ export class ProjectWizardComponent implements OnInit {
     const dto: CreateProject = { name: (v.name ?? '').trim() };
     if (v.projectNumber) dto.projectNumber = v.projectNumber;
     if (v.clientName) dto.clientName = v.clientName;
-    if (v.dueDate) dto.dueDate = v.dueDate;
     if (v.description) dto.description = v.description;
     if (v.processId) dto.processId = v.processId;
     return dto;
