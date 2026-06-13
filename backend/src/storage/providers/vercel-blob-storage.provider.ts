@@ -65,31 +65,45 @@ export class VercelBlobStorageProvider implements StorageProvider {
   }
 
   async upload(filePath: string, key: string, mimeType: string): Promise<string> {
-    const pathname = this.fullKey(key);
     const size = fs.statSync(filePath).size;
     const large = size > this.multipartThreshold;
     // Small files: a single PUT with a Buffer (simple, reliable). Large files:
     // a streamed multipart upload so we never hold the whole file in memory.
     const body = large ? fs.createReadStream(filePath) : fs.readFileSync(filePath);
-
-    await put(pathname, body, {
-      access: this.access,
-      token: this.token,
-      addRandomSuffix: false, // pathname === key
-      allowOverwrite: true, // retries / stable keys (thumbnails) re-upload the same path
-      contentType: mimeType || 'application/octet-stream',
-      multipart: large,
-    });
-
+    await this.putBlob(key, body, mimeType, size, large);
     // Mirror the S3/Azure providers: the source temp file is no longer needed.
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch {
       /* best-effort cleanup */
     }
-    this.logger.log(`Uploaded to Vercel Blob: ${pathname} (${size} bytes)`);
-    // Persist the SAME key the caller passed (the prefix is re-applied on read).
     return key;
+  }
+
+  async uploadBuffer(data: Buffer, key: string, mimeType: string): Promise<string> {
+    const large = data.length > this.multipartThreshold;
+    await this.putBlob(key, data, mimeType, data.length, large);
+    return key;
+  }
+
+  /** Single PUT path shared by upload()/uploadBuffer(). */
+  private async putBlob(
+    key: string,
+    body: Buffer | NodeJS.ReadableStream,
+    mimeType: string,
+    size: number,
+    multipart: boolean,
+  ): Promise<void> {
+    const pathname = this.fullKey(key);
+    await put(pathname, body as any, {
+      access: this.access,
+      token: this.token,
+      addRandomSuffix: false, // pathname === key
+      allowOverwrite: true, // retries / stable keys (thumbnails) re-upload the same path
+      contentType: mimeType || 'application/octet-stream',
+      multipart,
+    });
+    this.logger.log(`Uploaded to Vercel Blob: ${pathname} (${size} bytes)`);
   }
 
   async download(key: string): Promise<NodeJS.ReadableStream> {

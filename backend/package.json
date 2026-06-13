@@ -32,6 +32,7 @@
     "test:e2e:projects": "node scripts/projects-value-e2e.mjs",
     "test:revision": "node --experimental-strip-types src/projects/revision-diff.test.ts",
     "test:package": "node --experimental-strip-types src/projects/package-import-math.test.ts",
+    "test:storage": "node --experimental-strip-types src/storage/storage-keys.test.ts",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",

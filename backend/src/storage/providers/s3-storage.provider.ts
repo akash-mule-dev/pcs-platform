@@ -62,6 +62,18 @@ export class S3StorageProvider implements StorageProvider {
     return key;
   }
 
+  async uploadBuffer(data: Buffer, key: string, mimeType: string): Promise<string> {
+    const fullKey = this.fullKey(key);
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: fullKey,
+      Body: data,
+      ContentType: mimeType || 'application/octet-stream',
+    }));
+    this.logger.log(`Uploaded to S3: ${fullKey} (${data.length} bytes)`);
+    return key;
+  }
+
   async download(key: string): Promise<NodeJS.ReadableStream> {
     const result = await this.client.send(new GetObjectCommand({
       Bucket: this.bucket,

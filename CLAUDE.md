@@ -58,7 +58,7 @@ backend/src/
   processes/ stages/       # a Process is an ordered list of Stages (the routing)
   work-orders/             # WorkOrder + WorkOrderStage — the stage-execution engine
   lines/ stations/ workforce/ equipment/ scheduling/ time-tracking/ traceability/ quality-* /
-  storage/                 # pluggable StorageProvider (local | s3 | azure | vercel-blob), STORAGE_TYPE env
+  storage/                 # pluggable StorageProvider (vercel-blob default | s3 | azure — NO local disk), STORAGE_TYPE env
   cad-conversion/          # spawns convert-*.mjs + extract-ifc-structure.mjs (web-ifc / assimp)
   conversion/              # async 3D→GLB pipeline: ConversionJob + queue (inline|BullMQ) + processor
   models/                  # Model3D (GLB) records + file streaming endpoints
@@ -339,17 +339,30 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
 - **Module cycles:** none today — `projects`, `work-orders` and `shipping` reference each other's
   entities only (via their own `TypeOrmModule.forFeature`), not each other's modules. Keep new
   cross-module deps acyclic where possible.
-- **File storage — blobs NEVER live in Postgres.** Every uploaded artifact (IFC/ZIP import
-  sources, GLB models, shop drawings, thumbnails, QA evidence, coordination files) goes through
-  the `StorageProvider` (`storage/`); Neon only ever stores the `storage_key`/`file_name` pointer
-  (varchar). Pick the backend with `STORAGE_TYPE` (`local | s3 | azure | vercel-blob`). **Dev/prod
-  use `vercel-blob`** (`providers/vercel-blob-storage.provider.ts`) — durable Vercel Blob, keyed
-  by pathname like S3/Azure, token from `PCS_DEV_BLOB_READ_WRITE_TOKEN` (or `BLOB_READ_WRITE_TOKEN`).
-  The PCS store is **private**, so files are streamed back through the API (`download → pipe`,
-  e.g. `GET /api/models/:id/file`) via the server-side token, never a public URL. Round-trip
-  check: `node scripts/verify-blob.cjs` (needs the token in env). Note: on Vercel, the serverless
-  request body cap (~4.5 MB) limits server-proxied uploads — for packages above that, upload the
-  client straight to Blob and hand the backend the key.
+- **File storage — blobs NEVER live in Postgres, and NEVER on local disk.** Every uploaded
+  artifact (IFC/ZIP import sources, GLB models, shop drawings, thumbnails, QA evidence,
+  coordination files) goes through the `StorageProvider` (`storage/`) into REMOTE object storage;
+  Neon only ever stores the `storage_key`/`file_name` pointer (varchar). There is **no local-disk
+  provider** — `STORAGE_TYPE` is `vercel-blob` (default) | `s3` | `azure`. **Dev/prod use
+  `vercel-blob`** (`providers/vercel-blob-storage.provider.ts`) — durable Vercel Blob, keyed by
+  pathname like S3/Azure, token from `PCS_DEV_BLOB_READ_WRITE_TOKEN` (or `BLOB_READ_WRITE_TOKEN`).
+  Bytes already in memory (a freshly uploaded package, ZIP-extracted drawings) go straight to the
+  store via `storage.uploadBuffer(buffer, key, mime)` — they never touch disk. Temp files under
+  `os.tmpdir()` are only transient scratch for the spawned extractor/converter (which need a file
+  path) and are always cleaned up. **Key layout is tenant-partitioned and centralized in
+  `storage/storage-keys.ts` (`StorageKeys`) — never hand-write key strings.** Every blob lives
+  under its org: `<orgId>/{imports,documents,models,conversions,quality/{evidence,ncr},coordination,media}/…`
+  (`media/` is the future home for screenshots/videos). GLBs are `<org>/models/<id>.glb`, thumbnails
+  `<org>/models/<id>/thumbnail.png`. Conversion is org-aware end-to-end: `conversion_jobs.organization_id`
+  is stamped at creation so the background processor/BullMQ worker writes the GLB under the right
+  tenant and dedupe stays org-scoped. Legacy flat keys (pre-layout) still resolve because the DB
+  stores the exact key; only new writes adopt the layout (no migration). Unit test: `npm run test:storage`. The PCS store is **private**, so files are streamed back through
+  the API (`download → pipe`, e.g. `GET /api/models/:id/file`) via the server-side token, never a
+  public URL. Original packages are re-downloadable: `GET /api/projects/:id/imports/:importId/source`
+  (Monitoring tab + Package Monitor history have a download button). Round-trip check:
+  `node scripts/verify-blob.cjs` (needs the token in env). Note: on Vercel, the serverless request
+  body cap (~4.5 MB) limits server-proxied uploads — for packages above that, upload the client
+  straight to Blob and hand the backend the key.
 - **Frontend:** standalone components, lazy `loadComponent` routes in `app.routes.ts`, services under
   `core/services` calling `environment.apiUrl`. Reuse `ThreeViewerComponent` for any 3D model view.
   Add new menu items to `navGroups` in `layout/layout.component.ts`.

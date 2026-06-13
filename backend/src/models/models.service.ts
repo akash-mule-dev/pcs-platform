@@ -7,7 +7,10 @@ import { UpdateModelDto } from './dto/update-model.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
+import { StorageKeys, orgOfKey } from '../storage/storage-keys.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 
 @Injectable()
@@ -37,10 +40,13 @@ export class ModelsService {
     return item;
   }
 
-  async create(dto: CreateModelDto, file: Express.Multer.File): Promise<Model3D> {
-    const storageKey = file.filename;
+  async create(dto: CreateModelDto, file: Express.Multer.File, organizationId?: string | null): Promise<Model3D> {
+    // Tenant-partitioned key under <org>/models/. In a background conversion the
+    // org is passed in (the job carries it); in a request it falls back to the
+    // tenant context. The model row stores the full key, so reads need no org.
+    const org = organizationId ?? TenantContext.getOrganizationId() ?? null;
+    const storageKey = StorageKeys.model(org, crypto.randomUUID());
 
-    // Upload to storage provider (for local, file is already in place from multer)
     await this.storage.upload(file.path, storageKey, file.mimetype);
 
     const model = this.repo.create({
@@ -49,7 +55,7 @@ export class ModelsService {
       modelType: dto.modelType || 'assembly',
       fileName: storageKey,
       originalName: file.originalname,
-      filePath: storageKey, // Now stores the storage key, not a filesystem path
+      filePath: storageKey, // stores the storage key, not a filesystem path
       fileSize: file.size,
       mimeType: file.mimetype,
       fileFormat: path.extname(file.originalname).replace('.', '').toLowerCase(),
@@ -78,7 +84,10 @@ export class ModelsService {
   /** Store a client-captured thumbnail PNG and record its storage key on the model. */
   async setThumbnail(id: string, file: Express.Multer.File): Promise<Model3D> {
     const model = await this.findOne(id);
-    const key = `thumbnails/${model.id}.png`;
+    // Keep the thumbnail beside its model under the SAME org prefix (derived from
+    // the model's own key; legacy flat-key models fall back to the tenant ctx).
+    const org = orgOfKey(model.fileName) ?? TenantContext.getOrganizationId() ?? null;
+    const key = StorageKeys.modelThumbnail(org, model.id);
     await this.storage.upload(file.path, key, file.mimetype || 'image/png');
     try { fs.unlinkSync(file.path); } catch { /* ignore */ }
     model.thumbnailPath = key;

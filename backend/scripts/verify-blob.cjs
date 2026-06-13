@@ -39,6 +39,16 @@ const ok = (label, cond) => { cond ? (pass++, console.log(`  ✓ ${label}`)) : (
   ok('getUrl() returns a vercel-storage URL', !!url && /^https:\/\/.+vercel-storage\.com\//.test(url));
   ok('URL pathname matches the key', !!url && new URL(url).pathname === `/${smallKey}`);
 
+  // 1b. uploadBuffer → memory straight to Blob (no local temp file)
+  console.log('\n[1b] uploadBuffer (memory → Blob, no disk)');
+  const bufKey = `import-sources/verify-${run}-buf.bin`;
+  const memBuf = crypto.randomBytes(64 * 1024);
+  const retBufKey = await provider.uploadBuffer(memBuf, bufKey, 'application/octet-stream');
+  ok('uploadBuffer returns the key', retBufKey === bufKey);
+  const bufBack = await drain(await provider.download(bufKey));
+  ok('uploadBuffer round-trip byte-identical', sha(bufBack) === sha(memBuf));
+  await provider.delete(bufKey);
+
   // 2. Large file → streamed multipart upload
   console.log('\n[2] Large file (streamed multipart, threshold=1MB)');
   const largeBuf = crypto.randomBytes(2 * 1024 * 1024); // 2MB

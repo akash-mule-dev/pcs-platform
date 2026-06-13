@@ -1,8 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { AssemblyDocument } from './assembly-document.entity.js';
@@ -10,6 +8,7 @@ import { AssemblyNode } from './assembly-node.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
+import { StorageKeys } from '../storage/storage-keys.js';
 
 const ALLOWED = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp']);
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -70,20 +69,14 @@ export class ProjectDocumentService {
     if (file.size > MAX_BYTES) throw new BadRequestException('Document exceeds the 20 MB limit');
 
     const ext = path.extname(file.originalname) || (file.mimetype === 'application/pdf' ? '.pdf' : '.bin');
-    const key = `assembly-docs/${crypto.randomUUID()}${ext}`;
+    const key = StorageKeys.document(org, crypto.randomUUID(), ext);
 
-    // Storage uploads from a path; multer may give us a buffer (memory storage).
-    let srcPath = file.path;
-    let staged: string | null = null;
-    if (!srcPath) {
-      staged = path.join(os.tmpdir(), `pcs-doc-${crypto.randomUUID()}${ext}`);
-      fs.writeFileSync(staged, file.buffer);
-      srcPath = staged;
-    }
-    try {
-      await this.storage.upload(srcPath, key, file.mimetype);
-    } finally {
-      if (staged) { try { fs.unlinkSync(staged); } catch { /* ignore */ } }
+    // Straight to the object store — buffer (memory multer) goes without a temp
+    // file; a disk-staged upload is consumed (and cleaned up) by the provider.
+    if (file.buffer && file.buffer.length) {
+      await this.storage.uploadBuffer(file.buffer, key, file.mimetype);
+    } else {
+      await this.storage.upload(file.path, key, file.mimetype);
     }
 
     const createdByName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || null;
