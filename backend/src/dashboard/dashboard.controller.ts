@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Query, Request, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -27,6 +27,15 @@ export class DashboardController {
   @ApiOperation({ summary: 'Live status of active entries' })
   getLiveStatus() {
     return this.service.getLiveStatus();
+  }
+
+  // No @CacheTTL here: the response is per-user and the memory cache is keyed
+  // by URL, so caching it would serve one operator's stats to another.
+  @Get('my-day')
+  @RequirePermissions('dashboard.view')
+  @ApiOperation({ summary: "Authenticated user's stats for today (mobile home)" })
+  getMyDay(@Request() req: any) {
+    return this.service.getMyDay(req.user?.id);
   }
 
   @Get('operator-performance')

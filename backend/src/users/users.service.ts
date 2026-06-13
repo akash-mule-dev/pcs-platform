@@ -195,6 +195,11 @@ export class UsersService {
     if (dto.mobileNo !== undefined) user.mobileNo = dto.mobileNo;
     if (dto.firstName !== undefined) user.firstName = dto.firstName;
     if (dto.lastName !== undefined) user.lastName = dto.lastName;
+    if (dto.hourlyRate !== undefined && Number(dto.hourlyRate) !== Number(user.hourlyRate ?? 0)) {
+      oldValues['hourlyRate'] = user.hourlyRate;
+      newValues['hourlyRate'] = dto.hourlyRate;
+      user.hourlyRate = dto.hourlyRate;
+    }
     await this.userRepo.save(user);
     await this.audit.log({
       userId: this.currentUserId,

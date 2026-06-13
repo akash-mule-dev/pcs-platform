@@ -29,7 +29,7 @@ import { UpdateModelDto } from './dto/update-model.dto.js';
 import { PageOptionsDto } from '../common/dto/pagination.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
-import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
+import { RequireAnyPermission, RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
 
 // Use a temp directory for multer staging; storage provider handles final destination
@@ -43,7 +43,8 @@ export class ModelsController {
   constructor(private readonly service: ModelsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List 3D models' })
+  @RequireAnyPermission('coordination.view', 'quality-analysis.view', 'projects.view')
+  @ApiOperation({ summary: 'List 3D models (needs any 3D-consuming view permission)' })
   findAll(
     @Query() pageOptions: PageOptionsDto,
     @Query('modelType') modelType?: string,
@@ -52,6 +53,7 @@ export class ModelsController {
   }
 
   @Get(':id')
+  @RequireAnyPermission('coordination.view', 'quality-analysis.view', 'projects.view')
   @ApiOperation({ summary: 'Get 3D model by ID' })
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
@@ -130,6 +132,7 @@ export class ModelsController {
   }
 
   @Post(':id/thumbnail')
+  @RequireAnyPermission('coordination.view', 'quality-analysis.view', 'projects.view')
   @ApiOperation({ summary: 'Upload/replace the model thumbnail (captured client-side from the viewer)' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] } })

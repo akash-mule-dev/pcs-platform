@@ -31,6 +31,11 @@ import { MatSnackBar } from '@angular/material/snack-bar';
           <input matInput type="number" [(ngModel)]="form.targetTimeSeconds" min="0">
         </mat-form-field>
         <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Hourly rate (costing)</mat-label>
+          <input matInput type="number" [(ngModel)]="form.hourlyRate" min="0" placeholder="0 = org default">
+          <mat-hint>Standard labor rate for this stage. Used when the clocked worker has no personal rate.</mat-hint>
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Description</mat-label>
           <textarea matInput [(ngModel)]="form.description" rows="3" placeholder="Optional notes about this stage"></textarea>
         </mat-form-field>
@@ -55,7 +60,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 })
 export class StageDialogComponent {
   isEdit = false;
-  form = { name: '', targetTimeSeconds: 600, description: '', requiresInspection: false };
+  form = { name: '', targetTimeSeconds: 600, description: '', requiresInspection: false, hourlyRate: 0 };
 
   constructor(
     public dialogRef: MatDialogRef<StageDialogComponent>,
@@ -69,7 +74,8 @@ export class StageDialogComponent {
         name: data.stage.name,
         targetTimeSeconds: data.stage.targetTimeSeconds,
         description: data.stage.description || '',
-        requiresInspection: !!data.stage.requiresInspection
+        requiresInspection: !!data.stage.requiresInspection,
+        hourlyRate: Number(data.stage.hourlyRate) || 0
       };
     }
   }

@@ -41,6 +41,7 @@ import { SpcModule } from './spc/spc.module.js';
 import { ProjectsModule } from './projects/projects.module.js';
 import { ShippingModule } from './shipping/shipping.module.js';
 import { ProductionOrdersModule } from './projects/production-orders.module.js';
+import { MaterialPlanningModule } from './projects/material-planning.module.js';
 import { QualityReportsModule } from './quality-reports/quality-reports.module.js';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
 
@@ -92,6 +93,7 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
     ProjectsModule,
     ShippingModule,
     ProductionOrdersModule,
+    MaterialPlanningModule,
     QualityReportsModule,
   ],
   providers: [

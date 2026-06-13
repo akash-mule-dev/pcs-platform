@@ -6,9 +6,19 @@ export type TabParamList = {
   Projects: undefined;
   WorkOrders: undefined;
   Timer: undefined;
-  Models: undefined;
   More: undefined;
   Profile: undefined;
+};
+
+// ── 3D / AR viewer screens ──
+// There is no standalone 3D/AR tab: these screens are registered in BOTH the
+// Projects and Work Orders stacks so AR/3D inspection stays reachable in
+// context (from an assembly or part) without leaving the current flow.
+export type ViewerScreenParams = {
+  ModelView: { modelId: string; modelName: string; fileUrl: string };
+  ARView: { modelId: string; fileUrl: string; meshNames?: string[]; partLabel?: string };
+  VRView: { modelId: string; modelName: string; fileUrl: string };
+  QualityView: { modelId: string; modelName: string; fileUrl: string };
 };
 
 // ── Work Orders Stack (nested in tab) ──
@@ -32,7 +42,7 @@ export type WorkOrdersStackParamList = {
   };
   WorkOrderList: undefined;
   WorkOrderDetail: { workOrderId: string };
-};
+} & ViewerScreenParams;
 
 // ── Projects Stack (nested in tab) ──
 export type ProjectsStackParamList = {
@@ -51,21 +61,12 @@ export type ProjectsStackParamList = {
     lengthMm?: number | null;
     weightKg?: number | null;
   };
-};
+} & ViewerScreenParams;
 
 // ── Time Tracking Stack (nested in tab) ──
 export type TimeTrackingStackParamList = {
   TimerMain: undefined;
   History: undefined;
-};
-
-// ── Models Stack (nested in tab) ──
-export type ModelsStackParamList = {
-  ModelList: undefined;
-  ModelView: { modelId: string; modelName: string; fileUrl: string };
-  ARView: { modelId: string; fileUrl: string; meshNames?: string[]; partLabel?: string };
-  VRView: { modelId: string; modelName: string; fileUrl: string };
-  QualityView: { modelId: string; modelName: string; fileUrl: string };
 };
 
 // ── More Stack (nested in tab) ──
@@ -74,9 +75,7 @@ export type MoreStackParamList = {
   NcrList: undefined;
   NcrCreate: { projectId?: string; nodeId?: string; title?: string; description?: string; severity?: string; qualityDataId?: string } | undefined;
   NcrDetail: { id: string };
-  EquipmentList: undefined;
   MaterialList: undefined;
-  WorkforceList: undefined;
 };
 
 // ── Root Navigator ──

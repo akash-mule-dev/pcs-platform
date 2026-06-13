@@ -237,14 +237,13 @@ export function AssemblyDetailScreen() {
     if (!node?.modelId) return;
     try {
       const meshes = await projectsService.getNodeMeshes(projectId, nodeId).catch(() => [] as string[]);
-      (navigation.getParent() as any)?.navigate('Models', {
-        screen: 'ARView',
-        params: {
-          modelId: node.modelId,
-          fileUrl: `${environment.apiUrl}/models/${node.modelId}/file`,
-          meshNames: meshes && meshes.length ? meshes : undefined,
-          partLabel: mark,
-        },
+      // ARView is registered in this same stack (Projects/WorkOrders) — there
+      // is no standalone 3D/AR tab.
+      navigation.navigate('ARView', {
+        modelId: node.modelId,
+        fileUrl: `${environment.apiUrl}/models/${node.modelId}/file`,
+        meshNames: meshes && meshes.length ? meshes : undefined,
+        partLabel: mark,
       });
     } catch { /* ignore */ }
   };

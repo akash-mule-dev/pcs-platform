@@ -83,6 +83,13 @@ import { AssignableRole, RolesApiService } from '../../core/services/roles.servi
               }
             </mat-form-field>
           }
+          @if (data) {
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Hourly rate (costing)</mat-label>
+              <input matInput type="number" min="0" [(ngModel)]="form.hourlyRate" name="hourlyRate">
+              <mat-hint>Personal labor rate. 0 = use the stage rate / org default.</mat-hint>
+            </mat-form-field>
+          }
         </form>
       </div>
 
@@ -119,7 +126,8 @@ export class UserFormComponent implements OnInit {
         email: data.email || '',
         employeeId: data.employeeId,
         roleId: data.role?.id || data.roleId,
-        password: ''
+        password: '',
+        hourlyRate: Number(data.hourlyRate) || 0
       };
     }
   }
@@ -145,6 +153,8 @@ export class UserFormComponent implements OnInit {
     const body: any = { ...this.form };
     if (!body.password) delete body.password;
     if (!body.email) delete body.email;
+    if (!this.data) delete body.hourlyRate; // update-only field
+    else body.hourlyRate = Number(body.hourlyRate) || 0;
 
     this.loadingService.show();
     const obs = this.data

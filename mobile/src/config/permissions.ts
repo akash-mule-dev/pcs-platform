@@ -8,7 +8,7 @@ import { api } from '../services/api.service';
  * the app never hardcodes role names.
  */
 export type Role = string;
-export type TabKey = 'Dashboard' | 'Projects' | 'WorkOrders' | 'Timer' | 'Models' | 'More' | 'Profile';
+export type TabKey = 'Dashboard' | 'Projects' | 'WorkOrders' | 'Timer' | 'More' | 'Profile';
 
 export interface MyAccess {
   role: { id: string; name: string; isSystem: boolean };
@@ -21,7 +21,6 @@ const TAB_FEATURE_MAP: Record<TabKey, string> = {
   Projects:   'projects',
   WorkOrders: 'work-orders',
   Timer:      'time-tracking',
-  Models:     'quality-analysis',
   More:       '_always_visible',
   Profile:    '_always_visible',
 };

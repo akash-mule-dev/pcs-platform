@@ -84,6 +84,40 @@ export class DashboardService {
     };
   }
 
+  /**
+   * Per-user "my day" stats (mobile home screen). Computed server-side so the
+   * numbers share definitions — and the midnight boundary — with getSummary,
+   * instead of each client re-deriving them from raw history.
+   * An entry counts toward "today" when it FINISHED today.
+   */
+  async getMyDay(userId: string) {
+    const empty = { trackedSeconds: 0, entriesCompleted: 0, workOrdersWorked: 0 };
+    if (!userId) return empty;
+    const org = TenantContext.getOrganizationId();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    try {
+      const qb = this.teRepo.createQueryBuilder('te')
+        .leftJoin('te.workOrderStage', 'wos')
+        .select('COALESCE(SUM(te.duration_seconds), 0)', 'trackedSeconds')
+        .addSelect('COUNT(te.id)', 'entriesCompleted')
+        .addSelect('COUNT(DISTINCT wos.work_order_id)', 'workOrdersWorked')
+        .where('te.user_id = :userId', { userId })
+        .andWhere('te.end_time IS NOT NULL')
+        .andWhere('te.end_time >= :today', { today });
+      if (org) qb.andWhere('te.organization_id = :org', { org });
+      const row = await qb.getRawOne();
+      return {
+        trackedSeconds: parseInt(row?.trackedSeconds, 10) || 0,
+        entriesCompleted: parseInt(row?.entriesCompleted, 10) || 0,
+        workOrdersWorked: parseInt(row?.workOrdersWorked, 10) || 0,
+      };
+    } catch (err) {
+      this.logger.error(`getMyDay failed: ${(err as Error).message}`);
+      return empty;
+    }
+  }
+
   async getLiveStatus() {
     // Select only the columns the dashboard "Live Stage Status" table reads.
     // Using an explicit QueryBuilder (instead of `find` with eager relations)

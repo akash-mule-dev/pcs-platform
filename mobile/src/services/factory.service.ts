@@ -45,25 +45,6 @@ export interface NcrEvent {
   createdAt: string;
 }
 
-export interface Equipment {
-  id: string;
-  code: string;
-  name: string;
-  type?: string | null;
-  status: string;
-  isActive?: boolean;
-  lineId?: string | null;
-  stationId?: string | null;
-}
-
-export interface Skill {
-  id: string;
-  code: string;
-  name: string;
-  category?: string | null;
-  description?: string | null;
-}
-
 /** Payload for raising an NCR from the floor (POST /ncr). */
 export interface CreateNcrInput {
   title: string;
@@ -97,17 +78,5 @@ export const ncrService = {
   },
   addComment(id: string, note: string): Promise<NcrEvent> {
     return api.post<NcrEvent>(`/ncr/${id}/comments`, { note });
-  },
-};
-
-export const equipmentService = {
-  getAll(params?: Record<string, string | number>): Promise<Equipment[]> {
-    return api.getList<Equipment>('/equipment', params);
-  },
-};
-
-export const skillsService = {
-  getAll(): Promise<Skill[]> {
-    return api.getList<Skill>('/skills');
   },
 };

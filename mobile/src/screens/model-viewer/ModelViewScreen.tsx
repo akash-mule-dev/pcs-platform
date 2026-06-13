@@ -8,9 +8,9 @@ import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { Colors } from '../../theme/colors';
-import { ModelsStackParamList } from '../../navigation/types';
+import { ViewerScreenParams } from '../../navigation/types';
 
-type Route = RouteProp<ModelsStackParamList, 'ModelView'>;
+type Route = RouteProp<ViewerScreenParams, 'ModelView'>;
 
 const VIEWER_HTML = `<!DOCTYPE html>
 <html>

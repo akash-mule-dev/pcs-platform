@@ -9,9 +9,9 @@ import {
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
-import { ModelsStackParamList } from '../../navigation/types';
+import { ViewerScreenParams } from '../../navigation/types';
 
-type Route = RouteProp<ModelsStackParamList, 'VRView'>;
+type Route = RouteProp<ViewerScreenParams, 'VRView'>;
 type Vec3 = [number, number, number];
 
 // Lazy-load ViroVRSceneNavigator — crashes in Expo Go

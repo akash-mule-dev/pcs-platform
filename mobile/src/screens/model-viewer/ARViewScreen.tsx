@@ -18,14 +18,14 @@ import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
-import { ModelsStackParamList } from '../../navigation/types';
+import { ViewerScreenParams } from '../../navigation/types';
 import { useRemoteModel } from './ar/useRemoteModel';
 import ARExperience from './ar/ARExperience';
 import TrackingModePicker from './ar/TrackingModePicker';
 import { TrackingMode } from './ar/types';
 
-type Route = RouteProp<ModelsStackParamList, 'ARView'>;
-type Nav = NativeStackNavigationProp<ModelsStackParamList, 'ARView'>;
+type Route = RouteProp<ViewerScreenParams, 'ARView'>;
+type Nav = NativeStackNavigationProp<ViewerScreenParams, 'ARView'>;
 
 // Detect whether the native Viro module is present (absent in Expo Go / web).
 let viroAvailable = false;

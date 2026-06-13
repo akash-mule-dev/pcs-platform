@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsEmail, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateUserDto {
@@ -9,4 +9,6 @@ export class UpdateUserDto {
   @ApiPropertyOptional() @IsUUID() @IsOptional() roleId?: string;
   @ApiPropertyOptional() @IsBoolean() @IsOptional() isActive?: boolean;
   @ApiPropertyOptional() @IsString() @IsOptional() password?: string;
+  @ApiPropertyOptional({ description: 'Costing: personal labor rate (currency/hour). 0/empty = stage/org default applies.' })
+  @IsNumber() @Min(0) @IsOptional() hourlyRate?: number;
 }

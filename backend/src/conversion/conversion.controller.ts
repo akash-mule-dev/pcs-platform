@@ -15,7 +15,7 @@ import { CreateConversionDto } from './dto/create-conversion.dto.js';
 import { SUPPORTED_INPUT_EXTS, SUPPORTED_FORMATS } from './converters/converter.registry.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
-import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
+import { RequireAnyPermission, RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
 const STAGING_DIR = path.join(os.tmpdir(), 'pcs-conversion-staging');
 
@@ -167,6 +167,7 @@ export class ConversionController {
   }
 
   @Get()
+  @RequireAnyPermission('coordination.view', 'projects.view')
   @ApiOperation({ summary: 'List recent conversion jobs' })
   async list() {
     const jobs = await this.service.findAll();
@@ -196,6 +197,7 @@ export class ConversionController {
   }
 
   @Get(':id')
+  @RequireAnyPermission('coordination.view', 'projects.view')
   @ApiOperation({ summary: 'Get conversion job status' })
   async getJob(@Param('id') id: string) {
     const job = await this.service.findOne(id);

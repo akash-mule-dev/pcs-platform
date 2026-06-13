@@ -62,7 +62,10 @@ const QC_PERMS = [
   check('seeded admin belongs to the default org (single-boot fresh DB)', !!admin.user?.organizationId, admin.user?.organizationId);
 
   let r = await req('GET', '/auth/permissions', { token: admin.accessToken });
-  check('tenant admin permissions = [*]', r.data?.permissions?.includes('*'), r.data);
+  // /auth/permissions returns EXPANDED concrete keys — never raw wildcards —
+  // so clients can't mis-grant platform features (the Organizations-sidebar bug).
+  check('tenant admin permissions are expanded (no raw *)', !r.data?.permissions?.includes('*') && r.data?.permissions?.includes('users.delete'), r.data?.permissions?.slice(0, 5));
+  check('tenant admin does NOT receive organizations.* (sidebar regression)', !r.data?.permissions?.some((p) => p.startsWith('organizations.')), r.data?.permissions?.filter((p) => p.startsWith('organizations.')));
   r = await req('GET', '/organizations', { token: admin.accessToken });
   check('tenant admin DENIED listing organizations (403)', r.status === 403, r.status);
   r = await req('POST', '/organizations', { token: admin.accessToken, body: { name: 'Nope Inc', slug: 'nope-inc' } });
@@ -93,7 +96,7 @@ const QC_PERMS = [
   const owner = await login('owner@eterio.ca', 'owner-pass-1');
   check('bootstrap admin can sign in, stamped with new org', owner.user?.organizationId === org1.id, owner.user?.organizationId);
   r = await req('GET', '/auth/permissions', { token: owner.accessToken });
-  check('bootstrap admin holds tenant wildcard', r.data?.permissions?.includes('*'));
+  check('bootstrap admin holds full expanded tenant set (no platform keys)', r.data?.permissions?.includes('users.delete') && !r.data?.permissions?.some((p) => p.startsWith('organizations.')), r.data?.permissions?.length);
 
   // ── 4. Roles & catalog inside the tenant ───────────────────────────────────
   r = await req('GET', '/rbac/catalog', { token: owner.accessToken });

@@ -2,6 +2,7 @@ import { Injectable, NestInterceptor, ExecutionContext, CallHandler, SetMetadata
 import { Observable, of } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Reflector } from '@nestjs/core';
+import { TenantContext } from '../tenant/tenant-context.js';
 
 const CACHE_TTL_KEY = 'cache_ttl';
 export const CacheTTL = (seconds: number) => SetMetadata(CACHE_TTL_KEY, seconds);
@@ -22,7 +23,10 @@ export class MemoryCacheInterceptor implements NestInterceptor {
     if (!ttl) return next.handle();
 
     const request = context.switchToHttp().getRequest();
-    const key = `${request.method}:${request.url}`;
+    // Scope the key by tenant: the same URL serves different data per org, so a
+    // URL-only key would hand one organization's cached payload to another.
+    const org = TenantContext.getOrganizationId() ?? 'global';
+    const key = `${request.method}:${request.url}:${org}`;
 
     const cached = this.cache.get(key);
     if (cached && cached.expiry > Date.now()) {

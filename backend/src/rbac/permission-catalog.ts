@@ -135,7 +135,8 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
   {
     key: 'costing', label: 'Costing', category: 'Production',
     actions: [
-      { action: 'view', label: 'View', description: 'See work order cost breakdowns', defaultRoles: MS },
+      { action: 'view', label: 'View', description: 'See work order cost breakdowns and material requirements', defaultRoles: MS },
+      { action: 'manage', label: 'Manage settings', description: 'Edit costing settings (default labor rate, overhead %, currency)', defaultRoles: M },
     ],
   },
 

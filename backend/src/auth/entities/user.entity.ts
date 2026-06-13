@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { Role } from './role.entity.js';
 import { Exclude } from 'class-transformer';
+import { numericTransformer } from '../../common/transformers/numeric.transformer.js';
 
 @Entity('users')
 export class User {
@@ -50,6 +51,13 @@ export class User {
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
+
+  /**
+   * Costing: this person's labor rate (currency/hour). Falls back to the
+   * stage's rate, then the org default (costing settings) when unset/0.
+   */
+  @Column({ name: 'hourly_rate', type: 'numeric', precision: 10, scale: 2, nullable: true, transformer: numericTransformer })
+  hourlyRate: number | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

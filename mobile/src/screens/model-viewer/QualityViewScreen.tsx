@@ -13,9 +13,9 @@ import { WebView } from 'react-native-webview';
 import { Colors } from '../../theme/colors';
 import { api } from '../../services/api.service';
 import { QualityEntry } from '../../types';
-import { ModelsStackParamList } from '../../navigation/types';
+import { ViewerScreenParams } from '../../navigation/types';
 
-type Route = RouteProp<ModelsStackParamList, 'QualityView'>;
+type Route = RouteProp<ViewerScreenParams, 'QualityView'>;
 
 function buildQualityViewerHtml(fileUrl: string, qualityJson: string): string {
   return `<!DOCTYPE html>

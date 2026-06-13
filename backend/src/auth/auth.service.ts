@@ -6,6 +6,7 @@ import * as bcrypt from 'bcryptjs';
 import { User } from './entities/user.entity.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RolePermissionsResolver } from '../rbac/role-permissions.resolver.js';
+import { expandGrants } from '../rbac/permission-catalog.js';
 
 @Injectable()
 export class AuthService {
@@ -67,9 +68,13 @@ export class AuthService {
   }
 
   /**
-   * The CALLER's effective access: role + fine-grained permission keys
-   * (may include the `*` wildcard for the system admin role).
-   * This is what the web portal and mobile app gate their UI with.
+   * The CALLER's effective access: role + fine-grained permission keys.
+   *
+   * Wildcards are EXPANDED server-side into concrete catalog keys — the `*`
+   * tenant wildcard excludes platform-scoped features (organizations), and
+   * only this code knows that distinction. Clients (web sidebar/route guards,
+   * mobile tabs) must never re-interpret wildcard semantics themselves;
+   * shipping concrete keys makes their checks trivially correct.
    */
   async getMyAccess(principal: { id: string; roleId?: string | null; role?: string | null }) {
     const access = await this.permissionsResolver.resolveForUser(principal);
@@ -79,7 +84,7 @@ export class AuthService {
         name: access.role.name,
         isSystem: access.role.isSystem,
       },
-      permissions: [...access.permissions].sort(),
+      permissions: expandGrants(access.permissions).sort(),
     };
   }
 }

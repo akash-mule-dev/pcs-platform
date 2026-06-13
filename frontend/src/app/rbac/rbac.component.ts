@@ -301,16 +301,26 @@ export class RbacComponent implements OnInit {
     return candidate.slice(0, 49);
   }
 
-  /** Expand `*` / `feature.*` into concrete catalog keys for matrix display. */
+  /**
+   * Expand `*` / `feature.*` into concrete catalog keys for matrix display.
+   * Mirrors the backend: the tenant `*` wildcard NEVER covers platform-scoped
+   * features (organizations) — only an explicit grant does.
+   */
   private expand(perms: string[]): string[] {
     if (!this.catalog) return perms;
     const out = new Set<string>();
-    const all = this.catalog.features.flatMap((f) => f.actions.map((a) => `${f.key}.${a.action}`));
+    const tenant = this.catalog.features
+      .filter((f) => !f.platform)
+      .flatMap((f) => f.actions.map((a) => `${f.key}.${a.action}`));
     for (const p of perms) {
-      if (p === this.catalog.wildcard) return all;
+      if (p === this.catalog.wildcard) {
+        tenant.forEach((k) => out.add(k));
+        continue;
+      }
       if (p.endsWith('.*')) {
         const key = p.slice(0, -2);
-        for (const k of all) if (k.startsWith(`${key}.`)) out.add(k);
+        const feature = this.catalog.features.find((f) => f.key === key);
+        feature?.actions.forEach((a) => out.add(`${key}.${a.action}`));
       } else {
         out.add(p);
       }

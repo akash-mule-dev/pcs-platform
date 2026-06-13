@@ -227,9 +227,13 @@ export function PartViewerScreen() {
         <TouchableOpacity
           style={styles.arBtn}
           onPress={() =>
-            navigation.getParent()?.navigate('Models', {
-              screen: 'ARView',
-              params: { modelId, fileUrl, meshNames: meshNames && meshNames.length ? meshNames : undefined, partLabel: title },
+            // ARView is registered in this same stack (Projects/WorkOrders) —
+            // there is no standalone 3D/AR tab.
+            navigation.navigate('ARView', {
+              modelId,
+              fileUrl,
+              meshNames: meshNames && meshNames.length ? meshNames : undefined,
+              partLabel: title,
             })
           }
         >

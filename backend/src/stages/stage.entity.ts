@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, Unique } from 'typeorm';
 import { Process } from '../processes/process.entity.js';
 import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
+import { numericTransformer } from '../common/transformers/numeric.transformer.js';
 
 @Entity('stages')
 @Unique(['processId', 'sequence'])
@@ -37,6 +38,14 @@ export class Stage extends TenantOwnedEntity {
    */
   @Column({ name: 'requires_inspection', type: 'boolean', default: false })
   requiresInspection: boolean;
+
+  /**
+   * Costing: standard labor rate for work at THIS stage (currency/hour), e.g.
+   * welding ≠ painting. Used when the clocked worker has no personal rate;
+   * unset/0 falls through to the org default (costing settings).
+   */
+  @Column({ name: 'hourly_rate', type: 'numeric', precision: 10, scale: 2, nullable: true, transformer: numericTransformer })
+  hourlyRate: number | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
