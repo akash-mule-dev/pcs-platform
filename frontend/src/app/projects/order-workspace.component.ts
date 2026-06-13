@@ -40,6 +40,10 @@ interface OrderTab { path: string; label: string; icon: string; }
               @if (t.path === 'quality' && store.openNcr() > 0) { <span class="tab-badge bad">{{ store.openNcr() }}</span> }
             </a>
           }
+          <!-- Shipping belongs to the work order itself, not the project route. -->
+          <a class="tab out" [routerLink]="['/work-orders', orderId, 'shipping']" title="Shipping (work-order page)">
+            <mat-icon>local_shipping</mat-icon><span>Shipping</span><mat-icon class="ext">open_in_new</mat-icon>
+          </a>
         </nav>
       </header>
 
@@ -71,6 +75,8 @@ interface OrderTab { path: string; label: string; icon: string; }
     .tab.active { color: var(--clay-primary); border-bottom-color: var(--clay-primary); }
     .tab-badge { background: var(--info-bg); color: var(--clay-primary); border-radius: 999px; padding: 1px 7px; font-size: 11px; font-weight: 700; }
     .tab-badge.bad { background: var(--danger-bg); color: var(--danger-text); }
+    .tab.out { margin-left: auto; }
+    .tab.out .ext { font-size: 13px; width: 13px; height: 13px; opacity: .6; }
 
     .ows-body { min-height: 160px; }
   `],
@@ -91,7 +97,6 @@ export class OrderWorkspaceComponent implements OnInit, OnDestroy {
     { path: 'materials', label: 'Materials', icon: 'category' },
     { path: 'costs', label: 'Costs', icon: 'payments' },
     { path: 'quality', label: 'Quality', icon: 'verified' },
-    { path: 'shipping', label: 'Shipping', icon: 'local_shipping' },
   ];
 
   ngOnInit(): void {

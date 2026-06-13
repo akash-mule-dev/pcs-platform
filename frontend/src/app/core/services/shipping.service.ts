@@ -15,6 +15,7 @@ export interface ShipmentItem {
 
 export interface Shipment {
   id: string;
+  productionOrderId: string | null;
   projectId: string;
   shipmentNumber: string;
   status: ShipmentStatus;
@@ -28,12 +29,27 @@ export interface Shipment {
 }
 
 export interface CreateShipment {
-  projectId: string;
+  productionOrderId: string;
   shipmentNumber: string;
   destination?: string;
   carrier?: string;
   plannedDate?: string;
   notes?: string;
+}
+
+/** A production-complete assembly of one work order, with its ship allocation. */
+export interface ShipReadyRow {
+  nodeId: string;
+  mark: string | null;
+  name: string | null;
+  profile: string | null;
+  weightKg: number | null;
+  completedQty: number;
+  shippedQty: number;
+  allocatedQty: number;
+  availableQty: number;
+  openNcr: number;
+  blocked: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -42,8 +58,18 @@ export class ShippingService {
 
   constructor(private http: HttpClient) {}
 
+  /** Loads for one work order (production order). */
+  listByOrder(orderId: string): Observable<Shipment[]> {
+    return this.http.get<Shipment[]>(this.base, { params: { orderId } });
+  }
+
   listByProject(projectId: string): Observable<Shipment[]> {
     return this.http.get<Shipment[]>(this.base, { params: { projectId } });
+  }
+
+  /** Ship board for one work order: each assembly's complete/shipped/allocated/available units. */
+  shipBoard(orderId: string): Observable<ShipReadyRow[]> {
+    return this.http.get<ShipReadyRow[]>(`${this.base}/board`, { params: { orderId } });
   }
 
   create(dto: CreateShipment): Observable<Shipment> {
@@ -81,6 +107,7 @@ export interface DeliveryNoteItem {
 export interface DeliveryNote {
   organization: { name: string };
   project: { id: string; name: string | null; number: string | null; client: string | null };
+  order: { id: string | null; number: string | null; customerName: string | null };
   shipment: { id: string; number: string; status: string; destination: string | null; carrier: string | null; plannedDate: string | null; shippedAt: string | null; notes: string | null };
   items: DeliveryNoteItem[];
   totals: { lines: number; pieces: number; weightKg: number };

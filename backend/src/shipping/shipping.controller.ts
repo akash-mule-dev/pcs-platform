@@ -17,9 +17,19 @@ export class ShippingController {
 
   @Get()
   @RequirePermissions('shipping.view')
-  @ApiOperation({ summary: 'List shipments (optionally filtered by project)' })
-  findAll(@Query('projectId') projectId?: string) {
-    return projectId ? this.service.findByProject(projectId) : this.service.findAll();
+  @ApiOperation({ summary: 'List shipments (filter by work order via orderId, or by project)' })
+  findAll(@Query('orderId') orderId?: string, @Query('projectId') projectId?: string) {
+    if (orderId) return this.service.findByOrder(orderId);
+    if (projectId) return this.service.findByProject(projectId);
+    return this.service.findAll();
+  }
+
+  @Get('board')
+  @RequirePermissions('shipping.view')
+  @ApiOperation({ summary: "Ship board for one work order: each assembly's complete / shipped / allocated / available units" })
+  shipBoard(@Query('orderId') orderId: string) {
+    if (!orderId) throw new BadRequestException('orderId is required');
+    return this.service.shipBoard(orderId);
   }
 
   @Get(':id/delivery-note')

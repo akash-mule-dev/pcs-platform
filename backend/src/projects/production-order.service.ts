@@ -441,19 +441,22 @@ export class ProductionOrderService {
 
   /**
    * Ship-readiness per assembly node, in THREE batch queries — mirrors the
-   * ShippingService gate exactly: production-complete units (across ALL the
-   * node's work orders), minus shipped, minus allocated-to-open-loads; an open
-   * NCR blocks shipping outright.
+   * ShippingService gate exactly, scoped to ONE work order (production order):
+   * production-complete units made by THIS order, minus what's shipped on its
+   * loads, minus what's allocated to its open loads; an open NCR blocks
+   * shipping outright. Scoping to the order is what keeps the counts correct
+   * when one design is fabricated by more than one run.
    */
   private async shipStatusByNode(
     nodeIds: string[],
     ncrByNode: Map<string, number>,
+    productionOrderId: string,
   ): Promise<Map<string, { status: 'in_production' | 'blocked_ncr' | 'ready' | 'allocated' | 'shipped'; readyQty: number; shippedQty: number; allocatedQty: number; completedQty: number }>> {
     const out = new Map<string, { status: 'in_production' | 'blocked_ncr' | 'ready' | 'allocated' | 'shipped'; readyQty: number; shippedQty: number; allocatedQty: number; completedQty: number }>();
     if (!nodeIds.length) return out;
     const org = this.org;
 
-    // Production-complete units per node (same math as ShippingService.completedUnits).
+    // Production-complete units per node, made by THIS order's work orders.
     const completedRows: { nid: string; units: string }[] = await this.orderRepo.query(
       `SELECT nid, SUM(units)::int AS units FROM (
          SELECT w.assembly_node_id AS nid,
@@ -462,24 +465,26 @@ export class ProductionOrderService {
                      ELSE COALESCE(MIN(LEAST(s.qty_done, COALESCE(s.qty_total, 0))), 0) END AS units
            FROM work_orders w
            JOIN work_order_stages s ON s.work_order_id = w.id AND s.status <> 'skipped'
-          WHERE w.organization_id = $1 AND w.assembly_node_id = ANY($2)
+          WHERE w.organization_id = $1 AND w.assembly_node_id = ANY($2) AND w.production_order_id = $3
           GROUP BY w.id, w.assembly_node_id, w.quantity
        ) t GROUP BY nid`,
-      [org, nodeIds],
+      [org, nodeIds, productionOrderId],
     );
     const shippedRows: { nid: string; qty: string }[] = await this.orderRepo.query(
       `SELECT it.assembly_node_id AS nid, COALESCE(SUM(it.quantity), 0)::int AS qty
          FROM shipment_items it JOIN shipments sh ON sh.id = it.shipment_id
-        WHERE it.organization_id = $1 AND it.assembly_node_id = ANY($2) AND sh.status IN ('shipped','delivered')
+        WHERE it.organization_id = $1 AND it.assembly_node_id = ANY($2) AND sh.production_order_id = $3
+          AND sh.status IN ('shipped','delivered')
         GROUP BY it.assembly_node_id`,
-      [org, nodeIds],
+      [org, nodeIds, productionOrderId],
     );
     const plannedRows: { nid: string; qty: string }[] = await this.orderRepo.query(
       `SELECT it.assembly_node_id AS nid, COALESCE(SUM(it.quantity), 0)::int AS qty
          FROM shipment_items it JOIN shipments sh ON sh.id = it.shipment_id
-        WHERE it.organization_id = $1 AND it.assembly_node_id = ANY($2) AND sh.status NOT IN ('shipped','delivered','cancelled')
+        WHERE it.organization_id = $1 AND it.assembly_node_id = ANY($2) AND sh.production_order_id = $3
+          AND sh.status NOT IN ('shipped','delivered','cancelled')
         GROUP BY it.assembly_node_id`,
-      [org, nodeIds],
+      [org, nodeIds, productionOrderId],
     );
     const completedBy = new Map(completedRows.map((r) => [r.nid, Number(r.units)]));
     const shippedBy = new Map(shippedRows.map((r) => [r.nid, Number(r.qty)]));
@@ -756,7 +761,7 @@ export class ProductionOrderService {
     const timeByWos = new Map(timeAgg.map((t) => [t.wos_id, { seconds: Number(t.seconds), entries: Number(t.entries) }]));
     const ncrByNode = await this.openNcrCountByNode(nodeIds);
     const inspByNode = await this.inspectionsByNode(nodeIds);
-    const shipByNode = await this.shipStatusByNode(nodeIds, ncrByNode);
+    const shipByNode = await this.shipStatusByNode(nodeIds, ncrByNode, orderId);
 
     const rowsByWo = new Map<string, WorkOrderStage[]>();
     for (const r of rows) {
@@ -933,7 +938,7 @@ export class ProductionOrderService {
 
     const ncrs = await this.ncrRepo.find({ where: { assemblyNodeId: nodeId, organizationId: org }, order: { createdAt: 'DESC' }, take: 20 });
     const openNcrCount = ncrs.filter((n) => String(n.status) !== 'closed' && String(n.status) !== 'cancelled').length;
-    const ship = (await this.shipStatusByNode([nodeId], new Map([[nodeId, openNcrCount]]))).get(nodeId);
+    const ship = (await this.shipStatusByNode([nodeId], new Map([[nodeId, openNcrCount]]), orderId)).get(nodeId);
     const nodeInspections = (await this.inspectionsByNode([nodeId])).get(nodeId) ?? [];
     const nodeRow = await this.nodeRepo.findOne({ where: { id: nodeId, organizationId: org } });
     const nodeMark = nodeRow?.mark || nodeRow?.name || wo.orderNumber;
