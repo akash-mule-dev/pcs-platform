@@ -306,7 +306,15 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
   from the tenant `*` wildcard, ungrantable to custom roles, and held only by the org-less
   `platform-admin` system role (seed login `platform@pcs.com`) — a tenant admin can never manage
   other tenants or grant platform-admin. `POST /api/organizations` accepts an `initialAdmin`
-  block to bootstrap a new tenant's first admin transactionally. Role/user/org mutations are
+  block to bootstrap a new tenant's first admin transactionally.
+  **Support impersonation:** `organizations.impersonate` (platform) — `POST /api/organizations/:id/impersonate`
+  mints a 30-min JWT scoped to the tenant as its admin, carrying `impersonation:true`/`impersonatedBy`
+  (so it's audited + bannered, still platform-blocked); web stores it over a backed-up platform token
+  with an Exit banner (`AuthService.start/stopImpersonation`). Live suite `npm run test:support:e2e`.
+  **Company self-service:** tenant feature `company` (`view`=manager/supervisor, `manage`=admin);
+  `GET/PATCH /api/company` operate on the caller's OWN org (name/description + `settings.profile`),
+  audited as entityType `company`, platform org guarded; web page `/company`.
+  Role/user/org mutations are
   written to the audit log. Regression suites: `npm run test:rbac` (catalog unit tests) and
   `npm run test:rbac:e2e` (62-assertion live suite, needs a freshly seeded API).
   The old `@Roles`/RolesGuard + `auth/permissions.config.ts` are deprecated shims — don't add usages.

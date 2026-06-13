@@ -43,6 +43,7 @@ import { ShippingModule } from './shipping/shipping.module.js';
 import { ProductionOrdersModule } from './projects/production-orders.module.js';
 import { MaterialPlanningModule } from './projects/material-planning.module.js';
 import { QualityReportsModule } from './quality-reports/quality-reports.module.js';
+import { LibraryModule } from './library/library.module.js';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
 
 @Module({
@@ -89,6 +90,7 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
     QualityNcrModule,
     SchedulingModule,
     RbacModule,
+    LibraryModule,
     SpcModule,
     ProjectsModule,
     ShippingModule,

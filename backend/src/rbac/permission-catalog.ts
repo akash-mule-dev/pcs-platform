@@ -268,12 +268,28 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
       { action: 'delete', label: 'Delete', description: 'Delete custom roles', defaultRoles: NONE },
     ],
   },
+  {
+    key: 'company', label: 'Company Info', category: 'Administration',
+    actions: [
+      { action: 'view', label: 'View', description: "See this company's profile (name, contact, address)", defaultRoles: MS },
+      { action: 'manage', label: 'Edit', description: "Edit this company's profile details", defaultRoles: NONE },
+    ],
+  },
   // ── Platform (cross-tenant — held only by platform-admin) ─────────────────
   {
     key: 'organizations', label: 'Organizations', category: 'Platform', platform: true,
     actions: [
       { action: 'view', label: 'View', description: 'See all tenant organizations (platform operators)', defaultRoles: NONE },
       { action: 'manage', label: 'Manage', description: 'Provision and edit tenant organizations (platform operators)', defaultRoles: NONE },
+      { action: 'impersonate', label: 'Support login', description: 'Open a time-limited support session inside a tenant to investigate issues', defaultRoles: NONE },
+    ],
+  },
+  {
+    key: 'library', label: 'Shared Library', category: 'Platform', platform: true,
+    actions: [
+      { action: 'view', label: 'View', description: 'Browse the shared library of default processes & templates', defaultRoles: NONE },
+      { action: 'manage', label: 'Manage', description: 'Author and edit shared library content', defaultRoles: NONE },
+      { action: 'publish', label: 'Publish', description: 'Publish library content into tenant organizations', defaultRoles: NONE },
     ],
   },
 ];

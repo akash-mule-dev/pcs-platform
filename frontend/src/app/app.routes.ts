@@ -148,6 +148,16 @@ export const routes: Routes = [
         loadComponent: () => import('./organizations/organizations.component').then(m => m.OrganizationsComponent)
       },
       {
+        path: 'library',
+        canActivate: [featureGuard('library')],
+        loadComponent: () => import('./library/library.component').then(m => m.LibraryComponent)
+      },
+      {
+        path: 'company',
+        canActivate: [featureGuard('company')],
+        loadComponent: () => import('./company/company.component').then(m => m.CompanyComponent)
+      },
+      {
         path: 'costing',
         canActivate: [featureGuard('costing')],
         loadComponent: () => import('./costing/costing.component').then(m => m.CostingComponent)

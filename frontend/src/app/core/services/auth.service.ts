@@ -72,8 +72,45 @@ export class AuthService {
   logout(): void {
     localStorage.removeItem('pcs_token');
     localStorage.removeItem('pcs_user');
+    localStorage.removeItem('pcs_impersonation');
+    localStorage.removeItem('pcs_token_platform');
+    localStorage.removeItem('pcs_user_platform');
     this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
+  }
+
+  /** Are we currently inside a support (impersonation) session? */
+  get impersonation(): { organizationName: string } | null {
+    const raw = localStorage.getItem('pcs_impersonation');
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  /**
+   * Enter a support session: back up the platform token/user, then swap in the
+   * impersonation token returned by POST /organizations/:id/impersonate.
+   */
+  startImpersonation(res: { accessToken: string; user: any; organization: { name: string } }): void {
+    const curToken = localStorage.getItem('pcs_token');
+    const curUser = localStorage.getItem('pcs_user');
+    if (curToken) localStorage.setItem('pcs_token_platform', curToken);
+    if (curUser) localStorage.setItem('pcs_user_platform', curUser);
+    localStorage.setItem('pcs_token', res.accessToken);
+    localStorage.setItem('pcs_user', JSON.stringify(res.user));
+    localStorage.setItem('pcs_impersonation', JSON.stringify({ organizationName: res.organization.name }));
+    this.currentUserSubject.next(res.user);
+  }
+
+  /** Leave a support session and restore the platform operator's own session. */
+  stopImpersonation(): void {
+    const token = localStorage.getItem('pcs_token_platform');
+    const user = localStorage.getItem('pcs_user_platform');
+    if (token) localStorage.setItem('pcs_token', token); else localStorage.removeItem('pcs_token');
+    if (user) localStorage.setItem('pcs_user', user); else localStorage.removeItem('pcs_user');
+    localStorage.removeItem('pcs_token_platform');
+    localStorage.removeItem('pcs_user_platform');
+    localStorage.removeItem('pcs_impersonation');
+    try { this.currentUserSubject.next(user ? JSON.parse(user) : null); } catch { this.currentUserSubject.next(null); }
   }
 
   hasRole(...roles: string[]): boolean {

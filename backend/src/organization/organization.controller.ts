@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, ParseUUIDPipe, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { OrganizationService } from './organization.service.js';
 import { CreateOrganizationDto } from './dto/create-organization.dto.js';
@@ -45,5 +45,12 @@ export class OrganizationController {
   @ApiOperation({ summary: 'Update an organization' })
   update(@Param('id') id: string, @Body() dto: UpdateOrganizationDto) {
     return this.service.update(id, dto);
+  }
+
+  @Post(':id/impersonate')
+  @RequirePermissions('organizations.impersonate')
+  @ApiOperation({ summary: 'Start a time-limited support session inside a tenant (returns a scoped token)' })
+  impersonate(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.impersonate(id, { id: req.user.id, email: req.user.email, employeeId: req.user.employeeId });
   }
 }
