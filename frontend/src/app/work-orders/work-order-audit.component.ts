@@ -83,9 +83,9 @@ const PAGE = 200;
           <div class="kpis">
             <div class="kpi"><span class="kn">{{ audit.totals.itemsDone }}<em>/{{ audit.totals.items }}</em></span><span class="kl">Assemblies done</span></div>
             <div class="kpi wide">
-              <span class="kn">{{ audit.totals.unitsDone | number }}<em>/{{ audit.totals.unitsTotal | number }}</em> <b>{{ audit.totals.percent }}%</b></span>
+              <span class="kn">{{ audit.totals.percent }}%</span>
               <span class="kbar"><span class="kfill" [style.width.%]="audit.totals.percent"></span></span>
-              <span class="kl">Units through all stages</span>
+              <span class="kl">Overall progress</span>
             </div>
             <div class="kpi"><span class="kn mono">{{ fmtDur(audit.totals.totalTimeSeconds) }}</span><span class="kl">Time logged</span></div>
             <div class="kpi" [class.good]="audit.totals.readyToShip > 0">
@@ -164,7 +164,7 @@ const PAGE = 200;
                 @if (bulkMode) {
                   <span class="cb"><input type="checkbox" [checked]="allFilteredSelected()" (change)="toggleAllFiltered($any($event.target).checked)" matTooltip="Select all filtered"></span>
                 }
-                <span>Assembly</span><span class="num">Units</span><span>Progress</span><span>Status</span>
+                <span>Assembly</span><span>Progress</span><span>Status</span>
               </div>
               <div class="lrows">
                 @for (it of visible; track it.workOrderId) {
@@ -178,11 +178,10 @@ const PAGE = 200;
                       <span class="tag">{{ tagOf(it.nodeType) }}</span>
                       <span class="mk">{{ it.mark }}</span>
                       @if (it.openNcrs > 0) { <span class="ncr-dot" [matTooltip]="it.openNcrs + ' open NCR(s)'">{{ it.openNcrs }}</span> }
-                      @if (it.shipStatus === 'ready') { <mat-icon class="ship-ico ready" [matTooltip]="'Ready to ship · ' + it.shipReadyQty + ' unit(s)'">local_shipping</mat-icon> }
+                      @if (it.shipStatus === 'ready') { <mat-icon class="ship-ico ready" [matTooltip]="'Ready to ship · ' + it.shipReadyQty + ' piece(s)'">local_shipping</mat-icon> }
                       @else if (it.shipStatus === 'shipped') { <mat-icon class="ship-ico shipped" matTooltip="Shipped">done_all</mat-icon> }
                       @else if (it.shipStatus === 'allocated') { <mat-icon class="ship-ico alloc" matTooltip="Allocated to a load">schedule_send</mat-icon> }
                     </span>
-                    <span class="num">{{ it.unitsTotal }}</span>
                     <span class="lprog">
                       <span class="pbar"><span class="pfill" [class.full]="it.percent >= 100" [style.width.%]="it.percent"></span></span>
                       <em>{{ it.percent }}%</em>
@@ -222,7 +221,6 @@ const PAGE = 200;
                 @if (selItem.materialGrade) { <span class="prop"><label>Grade</label>{{ selItem.materialGrade }}</span> }
                 @if (selItem.lengthMm != null) { <span class="prop"><label>Length</label>{{ fmtLen(selItem.lengthMm) }}</span> }
                 @if (selItem.weightKg != null) { <span class="prop"><label>Weight</label>{{ fmtKg(selItem.weightKg) }}</span> }
-                <span class="prop"><label>Units/stage</label>{{ selItem.unitsDone }}/{{ selItem.unitsTotal }}</span>
                 <span class="prop"><label>Time logged</label><span class="mono">{{ fmtDur(selItem.totalTimeSeconds) }}</span></span>
                 <span class="prop"><label>Last activity</label>{{ selItem.lastActivityAt ? (selItem.lastActivityAt | date:'MMM d, HH:mm') : '—' }}</span>
               </div>
@@ -438,8 +436,8 @@ const PAGE = 200;
     .fcount { background: var(--clay-bg-warm); color: var(--clay-text-secondary); border-radius: 999px; padding: 0 6px; font-size: 10px; }
     .fchip.on .fcount { background: rgba(255,255,255,.25); color: #fff; }
 
-    .lthead, .lrow { display: grid; grid-template-columns: minmax(0, 1fr) 48px 92px 88px; gap: 8px; align-items: center; padding: 8px 12px; }
-    .ltable.bulk .lthead, .ltable.bulk .lrow { grid-template-columns: 24px minmax(0, 1fr) 48px 92px 88px; }
+    .lthead, .lrow { display: grid; grid-template-columns: minmax(0, 1fr) 92px 88px; gap: 8px; align-items: center; padding: 8px 12px; }
+    .ltable.bulk .lthead, .ltable.bulk .lrow { grid-template-columns: 24px minmax(0, 1fr) 92px 88px; }
     .lthead { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); border-top: 1px solid var(--clay-border); border-bottom: 1px solid var(--clay-border); background: var(--clay-bg-warm); }
     .lrows { max-height: 62vh; overflow-y: auto; }
     .lrow { border-bottom: 1px solid var(--clay-border); cursor: pointer; transition: background .12s; }

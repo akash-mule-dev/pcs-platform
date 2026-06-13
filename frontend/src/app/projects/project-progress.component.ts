@@ -25,8 +25,6 @@ import { ProjectsService, OrderProgress } from '../core/services/projects.servic
               <text x="60" y="76" class="d-small">complete</text>
             </svg>
             <div class="hero-meta">
-              <div class="hm"><strong>{{ prog.unitsDone }}</strong><span>units done</span></div>
-              <div class="hm"><strong>{{ prog.unitsTotal }}</strong><span>units total</span></div>
               <div class="hm"><strong>{{ prog.assemblies }}</strong><span>assemblies</span></div>
               <div class="hm"><strong class="cap">{{ statusLabel(prog.status) }}</strong><span>status</span></div>
             </div>

@@ -41,7 +41,7 @@ interface KanbanData {
  * Columns are the process stages; each card is a work order (piece mark)
  * sitting at its FIRST INCOMPLETE stage, computed live from the count-based
  * stage rows — the same numbers as the order board and dashboard funnel.
- * Cards advance automatically as stage work is recorded: step units with +1
+ * Cards advance automatically as stage work is recorded: step pieces with +1
  * or complete the whole stage with ✓ (quality gates enforced server-side).
  */
 @Component({
@@ -53,7 +53,7 @@ interface KanbanData {
       <div class="head">
         <div>
           <h1>Stage Kanban</h1>
-          <p class="sub">Every piece at its current stage — live from recorded stage counts. ✓ completes the stage, +1 steps one unit.</p>
+          <p class="sub">Every piece at its current stage — live from recorded stage counts. ✓ completes the stage, +1 steps one piece.</p>
         </div>
         <div class="head-links">
           <a class="ghost" routerLink="/work-orders"><mat-icon>space_dashboard</mat-icon>Dashboard</a>
@@ -103,7 +103,7 @@ interface KanbanData {
                 <span class="col-title">{{ col.name }}</span>
                 <span class="col-stats">
                   <span class="col-count">{{ colCards(col.name).length }}</span>
-                  @if (colUnits(col.name); as u) { <span class="col-units" matTooltip="Units done at this stage / units waiting">{{ u.done }}/{{ u.total }}</span> }
+                  @if (colUnits(col.name); as u) { <span class="col-units" matTooltip="Pieces done / total at this stage">{{ u.done }}/{{ u.total }}</span> }
                 </span>
               </div>
               <div class="col-body">
@@ -138,14 +138,14 @@ interface KanbanData {
                         </div>
                       }
                       <div class="c-actions" (click)="$event.stopPropagation()">
-                        <span class="c-overall" matTooltip="Overall progress across all stages">{{ c.overall.unitsDone }}/{{ c.overall.unitsTotal }} units · {{ c.overall.percent }}%</span>
+                        <span class="c-overall" matTooltip="Overall progress across all stages">{{ c.overall.percent }}%</span>
                         <span class="spacer"></span>
                         @if (canStep(c)) {
-                          <button class="mini" (click)="step(c)" [disabled]="busy().has(c.workOrderId)" matTooltip="Record one more unit through {{ st.name }}">+1</button>
+                          <button class="mini" (click)="step(c)" [disabled]="busy().has(c.workOrderId)" matTooltip="Record one more piece through {{ st.name }}">+1</button>
                         }
                         <button class="mini ok" (click)="complete(c)"
                                 [disabled]="busy().has(c.workOrderId)"
-                                [matTooltip]="st.gateBlocked ? 'Quality gate: open NCRs must be closed first' : 'Complete ' + st.name + ' for all units'">
+                                [matTooltip]="st.gateBlocked ? 'Quality gate: open NCRs must be closed first' : 'Complete ' + st.name + ' for all pieces'">
                           @if (st.gateBlocked) { <mat-icon>lock</mat-icon> } @else { <mat-icon>check</mat-icon> }
                         </button>
                       </div>
@@ -175,7 +175,7 @@ interface KanbanData {
                     @if (c.projectName) { <span>{{ c.projectName }}</span> }
                     <span class="mono">{{ c.productionOrderNumber || c.orderNumber }}</span>
                   </div>
-                  <div class="c-overall sm">{{ c.overall.unitsTotal }} unit(s) · all stages complete</div>
+                  <div class="c-overall sm">All stages complete</div>
                 </div>
               } @empty {
                 <div class="col-empty">Nothing finished yet</div>

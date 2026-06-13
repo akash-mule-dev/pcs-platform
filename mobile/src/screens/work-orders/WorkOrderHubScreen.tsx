@@ -99,8 +99,8 @@ export function WorkOrderHubScreen() {
           <View style={styles.kpi}><Text style={styles.kpiNum}>{counts.active}</Text><Text style={styles.kpiLbl}>Active</Text></View>
           <View style={styles.kpiDiv} />
           <View style={styles.kpi}>
-            <Text style={styles.kpiNum}>{data.kpis.unitsDone}<Text style={styles.kpiDim}>/{data.kpis.unitsTotal}</Text></Text>
-            <Text style={styles.kpiLbl}>Units done</Text>
+            <Text style={styles.kpiNum}>{data.kpis.unitsTotal ? Math.round((100 * data.kpis.unitsDone) / data.kpis.unitsTotal) : 0}<Text style={styles.kpiDim}>%</Text></Text>
+            <Text style={styles.kpiLbl}>Progress</Text>
           </View>
           <View style={styles.kpiDiv} />
           <View style={styles.kpi}><Text style={[styles.kpiNum, counts.late > 0 && styles.kpiNumWarn]}>{counts.late}</Text><Text style={styles.kpiLbl}>Late</Text></View>
@@ -155,7 +155,7 @@ export function WorkOrderHubScreen() {
         <Text style={styles.pct}>{Math.round(item.percent)}%</Text>
       </View>
       <Text style={styles.meta}>
-        {item.itemsDone}/{item.items} assemblies · {item.unitsDone}/{item.unitsTotal} units
+        {item.itemsDone}/{item.items} assemblies
         {item.dueDate ? ` · due ${new Date(item.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
       </Text>
     </TouchableOpacity>

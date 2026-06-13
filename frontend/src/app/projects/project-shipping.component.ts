@@ -116,7 +116,7 @@ interface ReadyRow { nodeId: string; mark: string; readyUnits: number; weightKg:
         <!-- Ready to ship -->
         <section class="col">
           <div class="col-head"><h2><mat-icon>checklist</mat-icon>Ready to ship</h2><span class="count">{{ ready.length }}</span></div>
-          <p class="hint">Assemblies of this work order whose units have finished every stage. Select a load on the left, then add.</p>
+          <p class="hint">Assemblies of this work order whose pieces have finished every stage. Select a load on the left, then add.</p>
           @if (heldCount() > 0) {
             <p class="banner warn"><mat-icon>warning</mat-icon>{{ heldCount() }} ready item(s) have a quality hold (failed QC or open NCR). Items with open NCRs are blocked from shipping until resolved.</p>
           }

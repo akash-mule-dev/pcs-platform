@@ -250,7 +250,7 @@ interface StepDef { key: string; label: string; icon: string; }
                                     <span class="spacer"></span>
                                     @if (r.shippedQty > 0) { <span class="chip del">{{ r.shippedQty }} shipped</span> }
                                     @for (w of r.workOrders.slice(0, 2); track w.orderNumber) {
-                                      <span class="chip" [matTooltip]="w.orderNumber + ' · ' + w.status">{{ w.productionOrder || w.orderNumber }}: {{ w.unitsDone }}/{{ w.unitsTotal }}</span>
+                                      <span class="chip" [matTooltip]="w.orderNumber + ' · ' + w.status">{{ w.productionOrder || w.orderNumber }} · {{ w.unitsTotal ? ((100 * w.unitsDone / w.unitsTotal) | number:'1.0-0') : 0 }}%</span>
                                     }
                                   </div>
                                 }

@@ -293,7 +293,6 @@ export function OrderBoardScreen() {
           </View>
           <View style={styles.bandStats}>
             <View style={styles.bandStat}><Text style={styles.bandStatNum}>{audit.totals.itemsDone}/{audit.totals.items}</Text><Text style={styles.bandStatLbl}>assemblies</Text></View>
-            <View style={styles.bandStat}><Text style={styles.bandStatNum}>{audit.totals.unitsDone}/{audit.totals.unitsTotal}</Text><Text style={styles.bandStatLbl}>units</Text></View>
             <View style={styles.bandStat}>
               <Text style={[styles.bandStatNum, audit.totals.readyToShip > 0 && { color: '#9fe3a8' }]}>{audit.totals.readyToShip}</Text>
               <Text style={styles.bandStatLbl}>ready to ship</Text>

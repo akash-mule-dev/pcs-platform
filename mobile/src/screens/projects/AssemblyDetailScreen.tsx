@@ -362,7 +362,7 @@ export function AssemblyDetailScreen() {
               </View>
             )}
           </View>
-          <Text style={styles.heroMeta}>{audit.unitsDone}/{audit.unitsTotal} units · {fmtDur(totalTime)} logged</Text>
+          <Text style={styles.heroMeta}>{Math.round(audit.percentComplete)}% complete · {fmtDur(totalTime)} logged</Text>
         </View>
       </View>
 

@@ -140,8 +140,8 @@ export function PartViewerScreen() {
     let alive = true;
     projectsService
       .getNodeMeshes(projectId, nodeId)
-      .then((names) => { if (alive) setMeshNames(names || []); })
-      .catch(() => { if (alive) setMeshNames([]); });
+      .then((names) => { console.log('[3D-DEBUG] meshNames', JSON.stringify(names)); if (alive) setMeshNames(names || []); })
+      .catch((e) => { console.log('[3D-DEBUG] meshNames ERROR', String(e?.message || e)); if (alive) setMeshNames([]); });
     return () => { alive = false; };
   }, [projectId, nodeId]);
 
@@ -154,7 +154,9 @@ export function PartViewerScreen() {
     if (fetching) return;
     setFetching(true);
     try {
+      console.log('[3D-DEBUG] GET', fileUrl);
       const res = await fetch(fileUrl);
+      console.log('[3D-DEBUG] status', res.status, 'ok', res.ok);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const base64: string = await new Promise((resolve, reject) => {
@@ -177,6 +179,7 @@ export function PartViewerScreen() {
           true;`);
       }
     } catch (err: any) {
+      console.log('[3D-DEBUG] sendModel ERROR', String(err?.message || err));
       webRef.current?.injectJavaScript(`document.getElementById('loading').innerHTML='<div id="err">Fetch error: ${String(err.message).replace(/'/g, "\\'")}</div>';true;`);
     }
     setFetching(false);
@@ -185,6 +188,7 @@ export function PartViewerScreen() {
   const onMessage = useCallback((e: WebViewMessageEvent) => {
     try {
       const msg = JSON.parse(e.nativeEvent.data);
+      console.log('[3D-DEBUG] webview msg', JSON.stringify(msg));
       if (msg.type === 'ready') sendModel();
       else if (msg.type === 'loaded' && meshNames && meshNames.length > 0 && msg.matched === 0) setNotFound(true);
     } catch {}

@@ -18,7 +18,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 /**
  * Work Orders dashboard — the shop-wide production cockpit: KPIs, the stage
- * funnel (where units are stuck), and every order with live progress. Each row
+ * funnel (where work is stuck), and every order with live progress. Each row
  * opens that order's workspace (board / progress / quality / shipping).
  */
 @Component({
@@ -55,8 +55,8 @@ const STATUS_LABEL: Record<string, string> = {
           <div class="kpi static">
             <div class="ki tone-purple"><mat-icon>widgets</mat-icon></div>
             <div class="kt">
-              <span class="kn">{{ data.kpis.unitsDone | number }}<em>/{{ data.kpis.unitsTotal | number }}</em></span>
-              <span class="kl">Units done (active orders)</span>
+              <span class="kn">{{ unitsPct() | number:'1.0-0' }}%</span>
+              <span class="kl">Production progress (active orders)</span>
               <span class="mini-bar"><span class="mini-fill" [style.width.%]="unitsPct()"></span></span>
             </div>
           </div>
@@ -77,7 +77,7 @@ const STATUS_LABEL: Record<string, string> = {
         <div class="grid">
           <!-- Stage funnel -->
           <section class="card funnel">
-            <div class="card-head"><h3>Stage funnel</h3><span class="hint">Units through each stage — active orders</span></div>
+            <div class="card-head"><h3>Stage funnel</h3><span class="hint">Progress through each stage — active orders</span></div>
             @if (data.funnel.length === 0) {
               <p class="none">No active production right now.</p>
             } @else {
