@@ -18,6 +18,24 @@ module.exports = function (options) {
     optimization: {
       splitChunks: false,
       minimize: true,
+      // TypeORM resolves entity metadata (and find-options relation/column
+      // property paths) via the runtime class name — `connection.getMetadata`
+      // and `findRelationWithPropertyPath` key off `Function.name`. Terser's
+      // default name mangling renames `WorkOrder` -> `y`, so any query using a
+      // `relations`/`where` option by name throws
+      //   `Property "process" was not found in "y". Make sure your query is correct.`
+      // ONLY in the bundled Vercel build (plain `nest start` is unbundled, so it
+      // worked locally — this is why the deployed work-order detail 500'd while
+      // the web app on a local backend was fine). Keeping class + function names
+      // preserves the metadata the ORM depends on.
+      minimizer: [
+        new (require('terser-webpack-plugin'))({
+          terserOptions: {
+            keep_classnames: true,
+            keep_fnames: true,
+          },
+        }),
+      ],
     },
     resolve: {
       ...options.resolve,
