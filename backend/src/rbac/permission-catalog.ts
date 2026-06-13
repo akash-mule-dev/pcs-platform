@@ -275,6 +275,14 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
       { action: 'manage', label: 'Edit', description: "Edit this company's profile details", defaultRoles: NONE },
     ],
   },
+  {
+    key: 'support', label: 'Support', category: 'General',
+    actions: [
+      { action: 'view', label: 'View', description: "See this company's support tickets", defaultRoles: MSO },
+      { action: 'create', label: 'Raise ticket', description: 'Contact support / open a ticket', defaultRoles: MSO },
+      { action: 'comment', label: 'Reply', description: 'Reply on a support ticket', defaultRoles: MSO },
+    ],
+  },
   // ── Platform (cross-tenant — held only by platform-admin) ─────────────────
   {
     key: 'organizations', label: 'Organizations', category: 'Platform', platform: true,
@@ -290,6 +298,13 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
       { action: 'view', label: 'View', description: 'Browse the shared library of default processes & templates', defaultRoles: NONE },
       { action: 'manage', label: 'Manage', description: 'Author and edit shared library content', defaultRoles: NONE },
       { action: 'publish', label: 'Publish', description: 'Publish library content into tenant organizations', defaultRoles: NONE },
+    ],
+  },
+  {
+    key: 'support-desk', label: 'Support Desk', category: 'Platform', platform: true,
+    actions: [
+      { action: 'view', label: 'View', description: 'See support tickets across all tenants', defaultRoles: NONE },
+      { action: 'manage', label: 'Manage', description: 'Reply, assign, change status and add internal notes', defaultRoles: NONE },
     ],
   },
 ];

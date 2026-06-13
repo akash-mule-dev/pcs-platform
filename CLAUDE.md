@@ -314,6 +314,17 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
   **Company self-service:** tenant feature `company` (`view`=manager/supervisor, `manage`=admin);
   `GET/PATCH /api/company` operate on the caller's OWN org (name/description + `settings.profile`),
   audited as entityType `company`, platform org guarded; web page `/company`.
+  **Customer support** (`backend/src/support`): a two-sided ticketing system. Customers (tenant
+  feature `support` = view/create/comment, all roles) raise tickets from a global Help modal
+  (toolbar) or `/support`; platform staff triage cross-tenant from `/support-desk` (platform
+  feature `support-desk` = view/manage). `support_tickets` (tenant-owned, global `TKT-YYYY-NNNN`,
+  status/priority/category/assignee) + `support_ticket_messages` (customer/support/system authors,
+  `internal` notes hidden from customers). Pure state machine in `support/support-workflow.ts`
+  (`npm run test:support-tickets`): customer reply reopens pending/resolved/closed→open, support
+  reply advances open→in_progress, `canTransition` guards desk status changes. Best-effort in-app
+  notifications + ws both ways; all actions audited (entityType `support_ticket`). Live suite
+  `npm run test:support-tickets:e2e` (22 assertions). `SupportService` is shared by
+  `SupportController` (org-scoped) + `SupportDeskController` (cross-tenant, org-less platform caller).
   Role/user/org mutations are
   written to the audit log. Regression suites: `npm run test:rbac` (catalog unit tests) and
   `npm run test:rbac:e2e` (62-assertion live suite, needs a freshly seeded API).

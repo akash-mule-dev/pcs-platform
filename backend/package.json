@@ -22,6 +22,8 @@
     "test:rbac:e2e": "node test/rbac-roles.e2e.mjs",
     "test:library:e2e": "node test/library.e2e.mjs",
     "test:support:e2e": "node test/support-company.e2e.mjs",
+    "test:support-tickets": "node --experimental-strip-types src/support/support-workflow.test.ts",
+    "test:support-tickets:e2e": "node test/support.e2e.mjs",
     "test:e2e:orders": "node scripts/order-audit-e2e.mjs",
     "test:quality": "node --experimental-strip-types src/quality-data/quality-math.test.ts && node --experimental-strip-types src/quality-ncr/ncr-workflow.test.ts && node --experimental-strip-types src/work-orders/qc-gate.test.ts && node --experimental-strip-types src/spc/spc-math.test.ts",
     "test:costing": "node --experimental-strip-types src/materials/inventory-math.test.ts && node --experimental-strip-types src/projects/material-requirements-math.test.ts && node --experimental-strip-types src/costing/costing-math.test.ts",

@@ -158,6 +158,16 @@ export const routes: Routes = [
         loadComponent: () => import('./company/company.component').then(m => m.CompanyComponent)
       },
       {
+        path: 'support',
+        canActivate: [featureGuard('support')],
+        loadComponent: () => import('./support/support.component').then(m => m.SupportComponent)
+      },
+      {
+        path: 'support-desk',
+        canActivate: [featureGuard('support-desk')],
+        loadComponent: () => import('./support/support-desk.component').then(m => m.SupportDeskComponent)
+      },
+      {
         path: 'costing',
         canActivate: [featureGuard('costing')],
         loadComponent: () => import('./costing/costing.component').then(m => m.CostingComponent)

@@ -12,6 +12,8 @@ import { MatInputModule } from '@angular/material/input';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { SupportTicketDialogComponent } from '../support/support-ticket-dialog.component';
 import { Subscription, Subject, debounceTime, switchMap, of } from 'rxjs';
 import { AuthService, User } from '../core/services/auth.service';
 import { NotificationService } from '../core/services/notification.service';
@@ -42,7 +44,7 @@ interface NavGroup {
     CommonModule, RouterModule, FormsModule,
     MatToolbarModule, MatListModule, MatIconModule,
     MatButtonModule, MatBadgeModule, MatFormFieldModule, MatInputModule,
-    MatAutocompleteModule, MatTooltipModule, MatMenuModule,
+    MatAutocompleteModule, MatTooltipModule, MatMenuModule, MatDialogModule,
   ],
   template: `
     <div class="layout-container">
@@ -174,6 +176,12 @@ interface NavGroup {
                   [matTooltip]="themeService.theme() === 'dark' ? 'Switch to light' : 'Switch to dark'">
             <mat-icon>{{ themeService.theme() === 'dark' ? 'light_mode' : 'dark_mode' }}</mat-icon>
           </button>
+
+          @if (canRaiseTicket) {
+            <button mat-icon-button (click)="openSupport()" matTooltip="Get help / contact support">
+              <mat-icon>support_agent</mat-icon>
+            </button>
+          }
 
           <!-- Notification Bell -->
           <button mat-icon-button (click)="navigateTo('/notifications')" matTooltip="Notifications"
@@ -528,7 +536,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
     { label: 'Administration', icon: 'settings', expanded: false, items: [
       { label: 'Organizations', icon: 'corporate_fare', route: '/organizations', feature: 'organizations' },
       { label: 'Shared Library', icon: 'auto_stories', route: '/library', feature: 'library' },
+      { label: 'Support Desk', icon: 'support_agent', route: '/support-desk', feature: 'support-desk' },
       { label: 'Company', icon: 'business', route: '/company', feature: 'company' },
+      { label: 'Support', icon: 'help_center', route: '/support', feature: 'support' },
       { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
       { label: 'Roles & Access', icon: 'admin_panel_settings', route: '/rbac', feature: 'roles' },
     ] },
@@ -558,9 +568,17 @@ export class LayoutComponent implements OnInit, OnDestroy {
     private router: Router,
     public themeService: ThemeService,
     private permissions: PermissionsService,
+    private dialog: MatDialog,
   ) {}
 
+  canRaiseTicket = false;
+
+  openSupport(): void {
+    this.dialog.open(SupportTicketDialogComponent, { data: { contextUrl: this.router.url } });
+  }
+
   ngOnInit(): void {
+    this.canRaiseTicket = this.permissions.can('support.create');
     // Auto-expand the group containing the active route so the active item is visible.
     const url = this.router.url;
     for (const g of this.navGroups) {
