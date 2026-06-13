@@ -93,7 +93,7 @@ interface KanbanData {
           <mat-icon>view_kanban</mat-icon>
           <h3>Nothing in production</h3>
           <p>Release a production order from a project and its pieces will appear here, flowing stage by stage.</p>
-          <a class="cta" routerLink="/projects">Open projects</a>
+          <a class="cta" routerLink="/work-orders" [queryParams]="{ newOrder: 1 }">New work order</a>
         </div>
       } @else {
         <div class="board">
