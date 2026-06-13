@@ -136,6 +136,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     'shipment MTR rollup covers the item via its heat number');
   assert(mtr.items[0].lots.some((l) => l.heatNumber === 'H-778899'), 'MTR lists the heat number + cert chain');
 
+  // ── 6. Delivery note / packing slip ──
+  const dn = await j(await get(`/shipments/${shipment.id}/delivery-note`));
+  assert(dn.shipment.number === shipment.shipmentNumber && dn.project.name === project.name,
+    'delivery note carries project + load header');
+  assert(dn.items.length === 1 && dn.items[0].quantity === 1, 'delivery note itemizes the shipped assemblies');
+  assert(dn.totals.lines === 1 && dn.totals.pieces === 1, 'delivery note totals match the load');
+  assert(dn.items[0].heats.some((h) => h.heatNumber === 'H-778899'),
+    'delivery note folds in the heat number (doubles as MTR cover sheet)');
+  const dnNoHeats = await j(await get(`/shipments/${shipment.id}/delivery-note?heats=false`));
+  assert(dnNoHeats.items[0].heats.length === 0, 'heats can be omitted from the slip');
+
   // ── Scoping ──
   const other = await j(await post('/projects', { name: `Value E2E B ${Date.now()}` }));
   const cross = await get(`/projects/${other.id}/imports/${imp1.id}/revision`);

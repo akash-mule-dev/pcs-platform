@@ -102,6 +102,15 @@ interface NavGroup {
         }
       </aside>
       <div class="main-content" [class.collapsed]="sidenavCollapsed">
+        @if (impersonation) {
+          <div class="impersonation-banner">
+            <mat-icon>support_agent</mat-icon>
+            <span>Support session — viewing <strong>{{ impersonation.organizationName }}</strong> as admin. Changes are audited.</span>
+            <button mat-stroked-button class="exit-btn" (click)="exitImpersonation()">
+              <mat-icon>logout</mat-icon> Exit support session
+            </button>
+          </div>
+        }
         <mat-toolbar color="primary" class="top-toolbar">
           <button mat-icon-button (click)="toggleSidenav()" matTooltip="Toggle menu">
             <mat-icon>{{ sidenavCollapsed ? 'menu' : 'menu_open' }}</mat-icon>
@@ -187,6 +196,14 @@ interface NavGroup {
     </div>
   `,
   styles: [`
+    .impersonation-banner {
+      display: flex; align-items: center; gap: 10px;
+      background: #b45309; color: #fff; padding: 8px 16px; font-size: 13px; font-weight: 500;
+    }
+    .impersonation-banner mat-icon { font-size: 18px; height: 18px; width: 18px; }
+    .impersonation-banner .exit-btn {
+      margin-left: auto; color: #fff; border-color: rgba(255,255,255,.6); line-height: 30px;
+    }
     .layout-container {
       display: flex;
       height: 100vh;
@@ -510,6 +527,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
     ] },
     { label: 'Administration', icon: 'settings', expanded: false, items: [
       { label: 'Organizations', icon: 'corporate_fare', route: '/organizations', feature: 'organizations' },
+      { label: 'Shared Library', icon: 'auto_stories', route: '/library', feature: 'library' },
+      { label: 'Company', icon: 'business', route: '/company', feature: 'company' },
       { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
       { label: 'Roles & Access', icon: 'admin_panel_settings', route: '/rbac', feature: 'roles' },
     ] },
@@ -565,6 +584,16 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.subs.forEach(s => s.unsubscribe());
+  }
+
+  get impersonation(): { organizationName: string } | null {
+    return this.auth.impersonation;
+  }
+
+  exitImpersonation(): void {
+    this.auth.stopImpersonation();
+    // Full reload restores the platform session cleanly across all stores.
+    window.location.assign('/organizations');
   }
 
   onSearchInput(): void {

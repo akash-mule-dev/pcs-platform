@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, Index } from 'typeorm';
 import { Stage } from '../stages/stage.entity.js';
 import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 
@@ -12,6 +12,16 @@ export class Process extends TenantOwnedEntity {
 
   @Column({ type: 'integer', default: 1 })
   version: number;
+
+  /**
+   * When this process was published into a tenant from the shared library, the
+   * id of the originating library process. Lets re-publish update-in-place
+   * (idempotent) and lets the UI badge it as "from library". NULL for processes
+   * authored directly in the org (incl. the library's own master copies).
+   */
+  @Index()
+  @Column({ name: 'library_origin_id', type: 'uuid', nullable: true })
+  libraryOriginId: string | null;
 
   @OneToMany(() => Stage, (stage) => stage.process, { cascade: true })
   stages: Stage[];

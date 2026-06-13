@@ -6,7 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectWorkspaceStore } from './project-workspace.store';
 import { ProjectsService, OrderBoardItem, NodeQualityStatus, ShipmentTraceability } from '../core/services/projects.service';
-import { ShippingService, Shipment, ShipmentStatus } from '../core/services/shipping.service';
+import { ShippingService, Shipment, ShipmentStatus, DeliveryNote } from '../core/services/shipping.service';
 
 /** An assembly of this work order with production-complete units available to load. */
 interface ReadyRow { nodeId: string; mark: string; readyUnits: number; weightKg: number | null; }
@@ -51,6 +51,9 @@ interface ReadyRow { nodeId: string; mark: string; readyUnits: number; weightKg:
                   <select class="st-select" [ngModel]="s.status" (ngModelChange)="changeStatus(s, $event)" (click)="$event.stopPropagation()">
                     @for (st of statuses; track st) { <option [value]="st">{{ st }}</option> }
                   </select>
+                  <button class="icon-x" (click)="printDeliveryNote(s); $event.stopPropagation()" [disabled]="!s.items.length" title="Delivery note / packing slip (PDF)">
+                    <mat-icon>receipt_long</mat-icon>
+                  </button>
                   <button class="icon-x" (click)="toggleMtr(s); $event.stopPropagation()" [title]="mtrFor === s.id ? 'Hide MTR package' : 'MTR package: heat numbers + certs per item'">
                     <mat-icon>{{ mtrFor === s.id ? 'expand_less' : 'verified' }}</mat-icon>
                   </button>
@@ -222,6 +225,91 @@ export class ProjectShippingComponent implements OnInit {
   // ── MTR / traceability rollup ──
   mtrFor: string | null = null;
   mtr: ShipmentTraceability | null = null;
+
+  /** Open a print-optimized delivery note / packing slip → browser "Save as PDF". */
+  printDeliveryNote(s: Shipment): void {
+    this.shippingSvc.deliveryNote(s.id).subscribe({
+      next: (dn) => {
+        const w = window.open('', '_blank');
+        if (!w) return;
+        w.document.write(this.deliveryNoteHtml(dn));
+        w.document.close();
+        w.focus();
+        // Give the new document a tick to lay out before invoking print.
+        setTimeout(() => w.print(), 350);
+      },
+      error: () => {},
+    });
+  }
+
+  private esc(v: unknown): string {
+    return String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  }
+
+  private deliveryNoteHtml(dn: DeliveryNote): string {
+    const fmtDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+    const rows = dn.items.map((it, i) => `
+      <tr>
+        <td class="c">${i + 1}</td>
+        <td class="mark">${this.esc(it.mark || it.name || '—')}</td>
+        <td>${this.esc(it.profile || '')}</td>
+        <td>${this.esc(it.materialGrade || '')}</td>
+        <td class="r">${it.quantity}</td>
+        <td class="r">${it.unitWeightKg != null ? it.unitWeightKg.toFixed(1) : '—'}</td>
+        <td class="r">${it.lineWeightKg != null ? it.lineWeightKg.toFixed(1) : '—'}</td>
+        <td class="heats">${it.heats.map((h) => this.esc(h.heatNumber || h.lotNumber)).join(', ')}</td>
+      </tr>`).join('');
+    const hasHeats = dn.items.some((it) => it.heats.length);
+    return `<!doctype html><html><head><meta charset="utf-8">
+<title>Delivery Note ${this.esc(dn.shipment.number)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a2b34; margin: 32px; font-size: 12px; }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #123; padding-bottom: 14px; }
+  .org { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
+  .doc-title { text-align: right; }
+  .doc-title h1 { margin: 0; font-size: 22px; letter-spacing: 1px; color: #123; }
+  .doc-title .num { font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin: 18px 0 22px; }
+  .meta .row { display: flex; gap: 8px; }
+  .meta .lbl { color: #6b7c85; font-weight: 600; min-width: 96px; text-transform: uppercase; font-size: 10px; letter-spacing: .5px; padding-top: 1px; }
+  .meta .val { font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #123; color: #fff; text-align: left; padding: 7px 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; }
+  td { padding: 6px 8px; border-bottom: 1px solid #dde3e6; }
+  td.r, th.r { text-align: right; }
+  td.c, th.c { text-align: center; width: 28px; }
+  td.mark { font-weight: 700; }
+  td.heats { font-size: 10.5px; color: #44555e; }
+  tfoot td { font-weight: 800; border-top: 2px solid #123; border-bottom: none; background: #f3f6f7; }
+  .notes { margin-top: 18px; padding: 10px 12px; background: #f7f9fa; border-left: 3px solid #123; font-size: 11px; }
+  .sign { display: flex; gap: 48px; margin-top: 44px; }
+  .sign div { flex: 1; border-top: 1px solid #8a9aa2; padding-top: 5px; font-size: 10.5px; color: #6b7c85; }
+  .foot { margin-top: 26px; font-size: 9.5px; color: #93a2a8; text-align: center; }
+  @media print { body { margin: 14mm; } .noprint { display: none; } }
+</style></head><body>
+  <div class="top">
+    <div><div class="org">${this.esc(dn.organization.name)}</div><div style="color:#6b7c85;margin-top:2px">Delivery Note / Packing Slip</div></div>
+    <div class="doc-title"><h1>DELIVERY NOTE</h1><div class="num">${this.esc(dn.shipment.number)}</div></div>
+  </div>
+  <div class="meta">
+    <div class="row"><span class="lbl">Project</span><span class="val">${this.esc(dn.project.name)}${dn.project.number ? ' (' + this.esc(dn.project.number) + ')' : ''}</span></div>
+    <div class="row"><span class="lbl">Date</span><span class="val">${fmtDate(dn.shipment.shippedAt || dn.shipment.plannedDate)}</span></div>
+    <div class="row"><span class="lbl">Client</span><span class="val">${this.esc(dn.project.client || '—')}</span></div>
+    <div class="row"><span class="lbl">Status</span><span class="val">${this.esc(dn.shipment.status)}</span></div>
+    <div class="row"><span class="lbl">Destination</span><span class="val">${this.esc(dn.shipment.destination || '—')}</span></div>
+    <div class="row"><span class="lbl">Carrier</span><span class="val">${this.esc(dn.shipment.carrier || '—')}</span></div>
+  </div>
+  <table>
+    <thead><tr><th class="c">#</th><th>Mark</th><th>Profile</th><th>Grade</th><th class="r">Qty</th><th class="r">Unit kg</th><th class="r">Line kg</th><th>${hasHeats ? 'Heat / Lot' : ''}</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td></td><td>Total</td><td></td><td></td><td class="r">${dn.totals.pieces}</td><td></td><td class="r">${dn.totals.weightKg.toFixed(1)}</td><td></td></tr></tfoot>
+  </table>
+  ${dn.shipment.notes ? `<div class="notes"><strong>Notes:</strong> ${this.esc(dn.shipment.notes)}</div>` : ''}
+  <div class="sign"><div>Dispatched by / date</div><div>Received by / date</div></div>
+  <div class="foot">${dn.totals.lines} line item(s) · generated ${new Date(dn.generatedAt).toLocaleString()}${hasHeats ? ' · heat numbers shown are mill-certified material lots (MTR on file)' : ''}</div>
+</body></html>`;
+  }
 
   toggleMtr(s: Shipment): void {
     if (this.mtrFor === s.id) { this.mtrFor = null; this.mtr = null; return; }

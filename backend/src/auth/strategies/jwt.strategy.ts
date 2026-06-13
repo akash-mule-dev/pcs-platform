@@ -23,6 +23,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       roleId: payload.roleId ?? null,
       employeeId: payload.employeeId,
       organizationId: payload.organizationId,
+      // Support impersonation: when set, this principal is a platform operator
+      // acting INSIDE a tenant. `impersonatedBy` keeps the real operator's id
+      // for audit; clients show a banner. Normal sessions omit these.
+      impersonation: payload.impersonation === true,
+      impersonatedBy: payload.impersonatedBy ?? null,
     };
   }
 }

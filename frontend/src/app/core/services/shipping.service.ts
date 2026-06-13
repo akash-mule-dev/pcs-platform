@@ -65,4 +65,24 @@ export class ShippingService {
   remove(shipmentId: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/${shipmentId}`);
   }
+
+  /** Delivery note / packing slip data (rendered as a printable view → browser PDF). */
+  deliveryNote(shipmentId: string, heats = true): Observable<DeliveryNote> {
+    return this.http.get<DeliveryNote>(`${this.base}/${shipmentId}/delivery-note`, { params: { heats: String(heats) } });
+  }
+}
+
+export interface DeliveryNoteItem {
+  mark: string | null; name: string | null; nodeType: string | null;
+  profile: string | null; materialGrade: string | null;
+  quantity: number; unitWeightKg: number | null; lineWeightKg: number | null;
+  heats: { heatNumber: string | null; lotNumber: string; certReference: string | null }[];
+}
+export interface DeliveryNote {
+  organization: { name: string };
+  project: { id: string; name: string | null; number: string | null; client: string | null };
+  shipment: { id: string; number: string; status: string; destination: string | null; carrier: string | null; plannedDate: string | null; shippedAt: string | null; notes: string | null };
+  items: DeliveryNoteItem[];
+  totals: { lines: number; pieces: number; weightKg: number };
+  generatedAt: string;
 }

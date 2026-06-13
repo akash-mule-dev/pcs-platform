@@ -9,6 +9,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { OrganizationsApiService } from './organizations.service';
 import { PermissionsService } from '../core/services/permissions.service';
+import { AuthService } from '../core/services/auth.service';
 
 @Component({
   selector: 'app-organizations',
@@ -69,6 +70,11 @@ import { PermissionsService } from '../core/services/permissions.service';
         <ng-container matColumnDef="created"><th mat-header-cell *matHeaderCellDef>Created</th><td mat-cell *matCellDef="let o">{{ o.createdAt | date:'mediumDate' }}</td></ng-container>
         <ng-container matColumnDef="actions"><th mat-header-cell *matHeaderCellDef></th>
           <td mat-cell *matCellDef="let o">
+            @if (canImpersonate && o.isActive) {
+              <button mat-button color="primary" (click)="supportLogin(o)" [disabled]="busyId === o.id">
+                <mat-icon>support_agent</mat-icon> Support login
+              </button>
+            }
             @if (canManage) { <button mat-button (click)="toggleActive(o)">{{ o.isActive ? 'Deactivate' : 'Activate' }}</button> }
           </td></ng-container>
         <tr mat-header-row *matHeaderRowDef="cols"></tr><tr mat-row *matRowDef="let r; columns: cols"></tr>
@@ -93,16 +99,38 @@ export class OrganizationsComponent implements OnInit {
   cols = ['name', 'slug', 'status', 'created', 'actions'];
   orgs: any[] = [];
   editing: any = null;
+  busyId: string | null = null;
+  canImpersonate = false;
 
   constructor(
     private api: OrganizationsApiService,
     private snack: MatSnackBar,
     private permissions: PermissionsService,
+    private auth: AuthService,
   ) {}
 
   get canManage(): boolean { return this.permissions.can('organizations.manage'); }
 
-  ngOnInit(): void { this.load(); }
+  ngOnInit(): void {
+    this.canImpersonate = this.permissions.can('organizations.impersonate');
+    this.load();
+  }
+
+  supportLogin(o: any): void {
+    this.busyId = o.id;
+    this.api.impersonate(o.id).subscribe({
+      next: (res) => {
+        const data = res?.data ?? res;
+        this.auth.startImpersonation(data);
+        // Full reload so every store re-fetches under the tenant session.
+        window.location.assign('/');
+      },
+      error: (e) => {
+        this.busyId = null;
+        this.snack.open(e?.error?.message || 'Could not start support session', 'Dismiss', { duration: 5000 });
+      },
+    });
+  }
 
   load(): void {
     this.api.list().subscribe({ next: (d) => this.orgs = Array.isArray(d) ? d : (d?.data || []), error: () => {} });

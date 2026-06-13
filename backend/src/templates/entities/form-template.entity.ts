@@ -16,6 +16,9 @@ export class FormTemplate extends TenantOwnedEntity {
   @Column({ type: 'enum', enum: TemplateType, default: TemplateType.OTHER }) type: TemplateType;
   @Column({ type: 'jsonb', nullable: true }) schema: Record<string, any> | null;
   @Column({ type: 'integer', default: 1 }) version: number;
+  /** Origin library template id when published from the shared library (idempotent re-publish + "from library" badge). */
+  @Index()
+  @Column({ name: 'library_origin_id', type: 'uuid', nullable: true }) libraryOriginId: string | null;
   @Column({ name: 'is_active', type: 'boolean', default: true }) isActive: boolean;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;

@@ -17,6 +17,15 @@ export class Organization {
   @Column({ type: 'varchar', length: 100, unique: true })
   slug: string;
 
+  /**
+   * `tenant` (default) — a normal customer organization.
+   * `platform` — the single non-billable "super company" that owns the shared
+   * library of default processes & templates. Hidden from tenant provisioning
+   * lists, undeletable, and never a target of normal tenant operations.
+   */
+  @Column({ type: 'varchar', length: 20, default: 'tenant' })
+  kind: 'tenant' | 'platform';
+
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
