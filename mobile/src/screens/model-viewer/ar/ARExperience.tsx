@@ -9,6 +9,7 @@ import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform } from 'react-native';
 import ARModelScene from './ARModelScene';
 import ToolBar from './ToolBar';
+import TrackingModeSwitcher from './TrackingModeSwitcher';
 import MeasurementPanel from './MeasurementPanel';
 import Joystick from './Joystick';
 import ScaleControls from './ScaleControls';
@@ -23,7 +24,6 @@ import { can } from '../../../config/permissions';
 import {
   Vec3,
   TrackingMode,
-  TRACKING_MODE_INFO,
   MeasurementState,
   DEFAULT_MEASUREMENTS,
 } from './types';
@@ -39,19 +39,16 @@ try {
   // handled by the host screen
 }
 
-const MODE_ACCENT: Record<TrackingMode, string> = {
-  world: '#64748b',
-  plane: '#3b82f6',
-  image: '#10b981',
-};
-
 interface ARExperienceProps {
   modelId: string;
   modelUri: string;
   fileName: string;
   wireframeUri: string | null;
   dimensions: ModelDimensions | null;
-  trackingMode: TrackingMode;
+  /** Mode the session opens in; the inspector can switch it live in-AR. */
+  initialTrackingMode: TrackingMode;
+  /** Open the (non-AR) Quality records viewer for this model. */
+  onViewRecords?: () => void;
   onBack: () => void;
 }
 
@@ -61,7 +58,8 @@ export default function ARExperience({
   fileName,
   wireframeUri,
   dimensions,
-  trackingMode,
+  initialTrackingMode,
+  onViewRecords,
   onBack,
 }: ARExperienceProps) {
   const {
@@ -89,6 +87,9 @@ export default function ARExperience({
   const [measurePanelOpen, setMeasurePanelOpen] = useState(false);
   const [trackingStatus, setTrackingStatus] = useState<string>('normal');
   const [measurements, setMeasurements] = useState<MeasurementState>(DEFAULT_MEASUREMENTS);
+  // Tracking mode is live-switchable from the in-AR segmented control so the
+  // inspector can compare World / Plane / Image anchoring without leaving AR.
+  const [trackingMode, setTrackingMode] = useState<TrackingMode>(initialTrackingMode);
 
   // Ref to the Viro navigator so we can imperatively reset the AR session
   // (clear anchors + tracking) during recovery.
@@ -489,9 +490,8 @@ export default function ARExperience({
       scale: state.scale,
       rotation: state.rotation,
       renderMode: state.renderMode,
-      trackingMode,
     });
-  }, [state.placed, state.scale, state.rotation, state.renderMode, trackingMode, modelId]);
+  }, [state.placed, state.scale, state.rotation, state.renderMode, modelId]);
 
   // World-mode recovery: drop the placement so the user can re-tap to re-drop
   // the model at the current (re-localized) camera position. Scale, rotation
@@ -500,6 +500,22 @@ export default function ARExperience({
     setPlaced(false);
     setDriftSuspected(false);
   }, [setPlaced]);
+
+  // Switch tracking mode live. Each mode anchors differently (free placement /
+  // detected plane / image marker) and configures the AR session accordingly,
+  // so we drop the current placement + measurements; the navigator is keyed by
+  // mode (below) and restarts cleanly into the new strategy. Scale, rotation
+  // and render mode are kept so the model looks the same after the switch.
+  const handleSelectMode = useCallback(
+    (mode: TrackingMode) => {
+      if (mode === trackingMode) return;
+      setTrackingMode(mode);
+      setPlaced(false);
+      setDriftSuspected(false);
+      setMeasurements(DEFAULT_MEASUREMENTS);
+    },
+    [trackingMode, setPlaced],
+  );
 
   const handleReset = () => {
     baseScaleRef.current = [0.2, 0.2, 0.2];
@@ -546,20 +562,25 @@ export default function ARExperience({
             </Text>
           </View>
 
-          <View
-            style={[
-              styles.modeBadge,
-              { backgroundColor: MODE_ACCENT[trackingMode] },
-            ]}
-          >
-            <Text style={styles.modeBadgeText}>
-              {TRACKING_MODE_INFO[trackingMode].title}
-            </Text>
+          {onViewRecords && (
+            <TouchableOpacity style={styles.recordsButton} onPress={onViewRecords}>
+              <Text style={styles.recordsButtonText}>Records</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Live tracking-mode switcher — load/compare World · Plane · Image
+              anchoring right here, no separate picker screen. */}
+          <View style={styles.switcherRow} pointerEvents="box-none">
+            <TrackingModeSwitcher value={trackingMode} onChange={handleSelectMode} />
           </View>
         </>
       )}
 
-      {/* AR Scene */}
+      {/* AR Scene. The navigator is mounted ONCE and never re-keyed: remounting
+          it tears down the GLSurfaceView + renderer on the GL thread, which
+          races and crashes (onSurfaceChanged NPE / shader-load SIGSEGV). Tracking
+          mode switches in place — trackingMode flows through viroAppProps and
+          ARModelScene swaps the scene graph (world / plane / image) live. */}
       <ViroARSceneNavigator
         ref={navigatorRef}
         autofocus={true}
@@ -664,8 +685,9 @@ export default function ARExperience({
         </View>
       )}
 
-      {/* AR-QA visualization rail — overlay mode, focus, and (LiDAR) occlusion. */}
-      {state.placed && !state.locked && (
+      {/* AR-QA visualization rail — overlay mode, focus, and (LiDAR) occlusion.
+          Hidden while the measure panel is open (they share the screen edge). */}
+      {state.placed && !state.locked && !measurePanelOpen && (
         <View style={styles.vizRail} pointerEvents="box-none">
           <TouchableOpacity
             style={[styles.vizButton, qaOverlay !== 'off' && styles.vizButtonActive]}
@@ -803,7 +825,7 @@ export default function ARExperience({
         />
       )}
 
-      {/* QA capture — available while inspecting (even when locked). */}
+      {/* QA review panel toggle — list / sign-off / evidence / NCR. */}
       {state.placed && (
         <TouchableOpacity
           style={styles.qaButton}
@@ -812,6 +834,22 @@ export default function ARExperience({
         >
           <Text style={styles.qaButtonText}>{qaPanelOpen ? 'Close QA' : 'QA'}</Text>
         </TouchableOpacity>
+      )}
+
+      {/* Primary QA action — one tap to record an inspection while scanning.
+          Bottom-center so it's thumb-reachable. Hidden in Align mode (the
+          tilt d-pad + joystick own the bottom band there) and while the QA
+          panel is open. */}
+      {state.placed && !qaPanelOpen && !precisionMode && (
+        <View style={styles.logQaWrap} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.logQaButton}
+            onPress={() => setLogFormOpen(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.logQaButtonText}>＋ Log QA</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* QA inspection panel. */}
@@ -890,25 +928,61 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     maxWidth: '100%',
   },
-  modeBadge: {
+  recordsButton: {
     position: 'absolute',
     top: 50,
     right: 16,
+    backgroundColor: 'rgba(13, 17, 23, 0.85)',
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     borderRadius: 20,
     zIndex: 20,
   },
-  modeBadgeText: {
+  recordsButtonText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+  },
+  // Dedicated full-width row under the top bar for the tracking-mode switcher,
+  // so it never collides with the corner buttons.
+  switcherRow: {
+    position: 'absolute',
+    top: 92,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 24,
+  },
+  // Primary "Log QA" floating action button (bottom-center, above the toolbar).
+  logQaWrap: {
+    position: 'absolute',
+    bottom: 160,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 26,
+  },
+  logQaButton: {
+    backgroundColor: 'rgba(16, 185, 129, 0.95)',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 26,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
+  },
+  logQaButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
   },
   // Notices stack below the top button row (QA / Lock at top: 96) so they
   // don't sit underneath those controls.
   bannerStack: {
     position: 'absolute',
-    top: 140,
+    top: 200,
     left: 16,
     right: 16,
     zIndex: 15,
@@ -977,7 +1051,7 @@ const styles = StyleSheet.create({
   },
   lockButton: {
     position: 'absolute',
-    top: 96,
+    top: 150,
     right: 16,
     backgroundColor: 'rgba(239, 68, 68, 0.92)',
     paddingVertical: 10,
@@ -992,7 +1066,7 @@ const styles = StyleSheet.create({
   },
   qaButton: {
     position: 'absolute',
-    top: 96,
+    top: 150,
     left: 16,
     backgroundColor: 'rgba(59, 130, 246, 0.92)',
     paddingVertical: 10,
@@ -1007,8 +1081,8 @@ const styles = StyleSheet.create({
   },
   vizRail: {
     position: 'absolute',
-    left: 12,
-    top: 184,
+    right: 12,
+    top: 248,
     gap: 8,
     zIndex: 18,
   },

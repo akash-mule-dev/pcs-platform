@@ -1,12 +1,13 @@
 // AR QA Inspector — hosts the ported glb-viewer AR experience.
 //
-// The previous WebXR-handoff / WebView fallback implementation was replaced
-// with glb-viewer's tested Viro-based AR (wireframe / ghost / solid overlay,
-// model + real-world rulers, dimension overlays, align/scale/tilt controls).
-// The model is downloaded from the PCS backend (`/api/models/:id/file`) and
-// prepared on-device; navigation params and the link into Quality Inspection
-// are preserved so AR remains part of the QA stage.
-import React, { useState, useCallback } from 'react';
+// Tapping "AR" on an assembly lands here: the model is downloaded + prepared
+// on-device, then the live AR session opens DIRECTLY — no intro/launch screen
+// and no blocking "Choose Tracking Mode" picker. The three tracking modes are
+// selected inline inside the AR view itself (see TrackingModeSwitcher), so the
+// inspector can load the assembly and compare World / Plane / Image stability
+// without leaving the camera. The Quality-records view stays one tap away via
+// the in-AR header.
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,8 +22,6 @@ import { Colors } from '../../theme/colors';
 import { ViewerScreenParams } from '../../navigation/types';
 import { useRemoteModel } from './ar/useRemoteModel';
 import ARExperience from './ar/ARExperience';
-import TrackingModePicker from './ar/TrackingModePicker';
-import { TrackingMode } from './ar/types';
 
 type Route = RouteProp<ViewerScreenParams, 'ARView'>;
 type Nav = NativeStackNavigationProp<ViewerScreenParams, 'ARView'>;
@@ -40,9 +39,6 @@ export function ARViewScreen() {
   const navigation = useNavigation<Nav>();
   const { modelId, fileUrl, meshNames, partLabel } = route.params;
 
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [trackingMode, setTrackingMode] = useState<TrackingMode | null>(null);
-
   const { model, loading, error, progress } = useRemoteModel(
     fileUrl,
     modelId,
@@ -50,13 +46,8 @@ export function ARViewScreen() {
     meshNames && meshNames.length ? meshNames : undefined,
   );
 
-  const startSession = useCallback(() => setPickerVisible(true), []);
-  const handleModeSelected = useCallback((mode: TrackingMode) => {
-    setTrackingMode(mode);
-    setPickerVisible(false);
-  }, []);
-  const handleBackToIntro = useCallback(() => setTrackingMode(null), []);
-
+  // Quality records (non-AR 3D viewer) — surfaced as an in-AR header action so
+  // it stays reachable now that the launch screen is gone.
   const openQualityData = useCallback(() => {
     navigation.navigate('QualityView', {
       modelId,
@@ -64,21 +55,6 @@ export function ARViewScreen() {
       fileUrl,
     });
   }, [navigation, modelId, model, fileUrl]);
-
-  // ── In the live AR session ──
-  if (trackingMode && model) {
-    return (
-      <ARExperience
-        modelId={modelId}
-        modelUri={model.uri}
-        fileName={model.fileName}
-        wireframeUri={model.wireframeUri}
-        dimensions={model.dimensions}
-        trackingMode={trackingMode}
-        onBack={handleBackToIntro}
-      />
-    );
-  }
 
   // ── Viro not available (Expo Go / web) ──
   if (!viroAvailable) {
@@ -135,39 +111,18 @@ export function ARViewScreen() {
     );
   }
 
-  // ── Ready: intro / launch screen ──
+  // ── Ready: open the live AR session directly (mode chosen inline in-AR). ──
   return (
-    <View style={styles.container}>
-      <Ionicons name="glasses-outline" size={64} color={Colors.primary} />
-      <Text style={styles.titleText}>{partLabel ? `AR · ${partLabel}` : 'AR QA Inspector'}</Text>
-      <Text style={styles.descText}>
-        {partLabel
-          ? `Only ${partLabel} is shown — overlay it on the real part and walk around to inspect it.`
-          : 'Overlay the model on your real part and walk around to inspect it.'}
-        {'\n'}Toggle wireframe edges, then measure against the physical part.
-      </Text>
-
-      <TouchableOpacity style={styles.primaryButton} onPress={startSession}>
-        <Ionicons name="scan" size={22} color={Colors.white} />
-        <Text style={styles.primaryButtonText}>Start AR Session</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.secondaryButton} onPress={openQualityData}>
-        <Ionicons name="clipboard-outline" size={20} color={Colors.primary} />
-        <Text style={styles.secondaryButtonText}>View Quality Inspection</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Text style={styles.backButtonText}>Cancel</Text>
-      </TouchableOpacity>
-
-      <TrackingModePicker
-        visible={pickerVisible}
-        fileName={model.fileName}
-        onSelect={handleModeSelected}
-        onCancel={() => setPickerVisible(false)}
-      />
-    </View>
+    <ARExperience
+      modelId={modelId}
+      modelUri={model.uri}
+      fileName={model.fileName}
+      wireframeUri={model.wireframeUri}
+      dimensions={model.dimensions}
+      initialTrackingMode="plane"
+      onViewRecords={openQualityData}
+      onBack={() => navigation.goBack()}
+    />
   );
 }
 
@@ -200,21 +155,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   primaryButtonText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
-  secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.white,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 12,
-    width: '100%',
-    gap: 10,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  secondaryButtonText: { color: Colors.text, fontSize: 15, fontWeight: '700' },
   backButton: { marginTop: 20, padding: 12 },
   backButtonText: { color: Colors.primary, fontSize: 15, fontWeight: '600' },
 });

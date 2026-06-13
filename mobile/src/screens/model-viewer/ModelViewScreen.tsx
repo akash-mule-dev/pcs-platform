@@ -100,6 +100,14 @@ window.loadModelFromBase64 = function(base64Data) {
     var loader = new GLTFLoader();
     loader.parse(bytes.buffer, '', function(gltf) {
       var model = gltf.scene;
+      // IFC-converted GLBs carry no vertex normals and no materials, so the
+      // GLTFLoader default (metallic PBR, no env map) renders invisible. Give
+      // every mesh computed normals + a lit steel material so it's visible.
+      model.traverse(function(o) {
+        if (!o.isMesh) return;
+        if (o.geometry && !(o.geometry.attributes && o.geometry.attributes.normal)) o.geometry.computeVertexNormals();
+        o.material = new THREE.MeshStandardMaterial({ color: 0x9aa2ad, metalness: 0.2, roughness: 0.75, side: THREE.DoubleSide });
+      });
       var box = new THREE.Box3().setFromObject(model);
       var center = box.getCenter(new THREE.Vector3());
       var size = box.getSize(new THREE.Vector3());
