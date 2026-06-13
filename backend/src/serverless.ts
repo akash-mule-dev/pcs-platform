@@ -19,9 +19,19 @@ async function bootstrap() {
 
   app.use(helmet());
 
+  // CORS — mirror main.ts: an explicit CORS_ORIGIN list always wins (production
+  // sets it). With no explicit list, production falls back to localhost, while
+  // non-production (dev/preview) reflects any origin so branch-preview frontend
+  // URLs (pcs-frontend-git-dev-*.vercel.app, etc.) work without per-URL config.
+  // Previously this defaulted to ['http://localhost:4200'] unconditionally, so
+  // the deployed-dev backend returned no Access-Control-Allow-Origin for the
+  // deployed frontend origin and every browser request failed CORS.
+  const isVercelProd = process.env.VERCEL_ENV === 'production';
   const corsOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
-    : ['http://localhost:4200'];
+    : isVercelProd
+      ? ['http://localhost:4200', 'http://localhost:8100']
+      : true;
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
