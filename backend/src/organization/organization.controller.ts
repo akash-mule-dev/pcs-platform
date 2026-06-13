@@ -7,11 +7,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
 
-/**
- * Platform/tenant provisioning. Gated to 'admin' for now; once a dedicated
- * platform-superadmin role exists, move these behind it so a single tenant's
- * admin can't manage other tenants (see TENANCY.md / Open Decision on roles).
- */
+/** Platform-level tenant provisioning, restricted to platform permissions. */
 @ApiTags('Organizations')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)

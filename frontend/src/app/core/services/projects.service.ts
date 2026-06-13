@@ -13,7 +13,6 @@ export interface Project {
   projectNumber: string | null;
   clientName: string | null;
   description: string | null;
-  processId: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -51,7 +50,6 @@ export type ProjectSummary = Project & { metrics: ProjectMetrics };
 
 export interface CreateProject {
   name: string;
-  processId?: string | null;
   projectNumber?: string | null;
   clientName?: string | null;
   description?: string | null;

@@ -97,13 +97,8 @@ import { ProjectWizardComponent } from './project-wizard.component';
                   <mat-icon class="chevron">chevron_right</mat-icon>
                 </div>
 
-                <!-- Insight meta line: program, tonnage, age -->
+                <!-- Insight meta line: tonnage, age -->
                 <div class="row-meta">
-                  @if (p.processId) {
-                    <span class="m program" title="Default fabrication process for new work orders"><mat-icon>account_tree</mat-icon>{{ processName(p) }}</span>
-                  } @else {
-                    <span class="m program warn" title="No process assigned — pick one when creating a work order"><mat-icon>warning</mat-icon>No process assigned</span>
-                  }
                   @if (p.metrics.tonnage.totalKg > 0) { <span class="m"><mat-icon>scale</mat-icon>{{ tonnes(p.metrics.tonnage.totalKg) }} t total</span> }
                   <span class="m muted"><mat-icon>schedule</mat-icon>Created {{ p.createdAt | date:'mediumDate' }}</span>
                 </div>
@@ -234,17 +229,8 @@ export class ProjectListComponent implements OnInit {
   loading = true;
   search = '';
 
-  /** processId → process (program) name, for the per-row "Program" insight. */
-  private processNames = new Map<string, string>();
-
   ngOnInit(): void {
-    this.svc.listProcesses().subscribe({ next: (ps) => this.processNames = new Map(ps.map((p) => [p.id, p.name])), error: () => {} });
     this.load();
-  }
-
-  /** Name of the assigned fabrication process/program (the routing new work orders follow). */
-  processName(p: ProjectSummary): string {
-    return (p.processId && this.processNames.get(p.processId)) || 'Process';
   }
 
   load(): void {
@@ -285,13 +271,10 @@ export class ProjectListComponent implements OnInit {
 
   openWizard(): void {
     this.dialog.open(ProjectWizardComponent, { width: '640px', maxWidth: '95vw' })
-      .afterClosed().subscribe((created: { id: string; navigated?: boolean } | undefined) => {
-        if (created) {
-          this.load();
-          // The wizard already routed to the Package Monitor when a file was
-          // uploaded; only open the workspace for the no-upload path.
-          if (!created.navigated) this.router.navigate(['/projects', created.id]);
-        }
+      .afterClosed().subscribe((created: { id: string } | undefined) => {
+        // The wizard owns navigation on success (Package Monitor when a file was
+        // uploaded, the project list otherwise) — here we just refresh the list.
+        if (created) this.load();
       });
   }
 

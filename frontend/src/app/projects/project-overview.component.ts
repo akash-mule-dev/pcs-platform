@@ -53,7 +53,6 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
           <dl>
             <div><dt>Client</dt><dd>{{ project()?.clientName || '—' }}</dd></div>
             <div><dt>Job number</dt><dd class="mono">{{ project()?.projectNumber || '—' }}</dd></div>
-            <div><dt>Process</dt><dd>{{ processName() }}</dd></div>
             <div><dt>Created</dt><dd>{{ project()?.createdAt | date:'mediumDate' }}</dd></div>
           </dl>
           @if (project()?.description) { <p class="desc">{{ project()?.description }}</p> }
@@ -122,12 +121,6 @@ export class ProjectOverviewComponent {
 
   project = this.store.project;
   prog = this.store.progress;
-
-  processName(): string {
-    const id = this.project()?.processId;
-    if (!id) return 'No process';
-    return this.store.processes().find((p) => p.id === id)?.name ?? '—';
-  }
 
   kg(n: number | null | undefined): string { return Math.round(n ?? 0).toLocaleString(); }
 }

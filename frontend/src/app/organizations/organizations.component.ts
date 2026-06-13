@@ -8,6 +8,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { OrganizationsApiService } from './organizations.service';
+import { PermissionsService } from '../core/services/permissions.service';
 
 @Component({
   selector: 'app-organizations',
@@ -20,7 +21,9 @@ import { OrganizationsApiService } from './organizations.service';
           <h1 class="page-title">Organizations</h1>
           <p class="page-subtitle">Tenants on this deployment — each org's production data is isolated from the others.</p>
         </div>
-        <button mat-raised-button color="primary" (click)="startNew()"><mat-icon>add</mat-icon> New Organization</button>
+        @if (canManage) {
+          <button mat-raised-button color="primary" (click)="startNew()"><mat-icon>add</mat-icon> New Organization</button>
+        }
       </div>
 
       @if (editing) {
@@ -65,7 +68,9 @@ import { OrganizationsApiService } from './organizations.service';
           <td mat-cell *matCellDef="let o"><span class="chip" [class.on]="o.isActive">{{ o.isActive ? 'Active' : 'Inactive' }}</span></td></ng-container>
         <ng-container matColumnDef="created"><th mat-header-cell *matHeaderCellDef>Created</th><td mat-cell *matCellDef="let o">{{ o.createdAt | date:'mediumDate' }}</td></ng-container>
         <ng-container matColumnDef="actions"><th mat-header-cell *matHeaderCellDef></th>
-          <td mat-cell *matCellDef="let o"><button mat-button (click)="toggleActive(o)">{{ o.isActive ? 'Deactivate' : 'Activate' }}</button></td></ng-container>
+          <td mat-cell *matCellDef="let o">
+            @if (canManage) { <button mat-button (click)="toggleActive(o)">{{ o.isActive ? 'Deactivate' : 'Activate' }}</button> }
+          </td></ng-container>
         <tr mat-header-row *matHeaderRowDef="cols"></tr><tr mat-row *matRowDef="let r; columns: cols"></tr>
       </table>
       @if (!orgs.length) { <p class="empty">No organizations yet. Create one to onboard a customer.</p> }
@@ -89,7 +94,13 @@ export class OrganizationsComponent implements OnInit {
   orgs: any[] = [];
   editing: any = null;
 
-  constructor(private api: OrganizationsApiService, private snack: MatSnackBar) {}
+  constructor(
+    private api: OrganizationsApiService,
+    private snack: MatSnackBar,
+    private permissions: PermissionsService,
+  ) {}
+
+  get canManage(): boolean { return this.permissions.can('organizations.manage'); }
 
   ngOnInit(): void { this.load(); }
 

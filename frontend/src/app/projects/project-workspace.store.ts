@@ -42,7 +42,6 @@ export class ProjectWorkspaceStore implements OnDestroy {
   readonly progress = signal<ProjectProgress | null>(null);
   readonly quality = signal<ProjectQualitySummary | null>(null);
   readonly ordersCount = signal<number>(0);
-  readonly processes = signal<{ id: string; name: string }[]>([]);
   readonly loading = signal<boolean>(true);
   readonly notFound = signal<boolean>(false);
 
@@ -101,7 +100,6 @@ export class ProjectWorkspaceStore implements OnDestroy {
     this.pipelineMessage.set(null);
     this.stopImportsPoll();
     this.joinProjectRoom(id);
-    this.loadProcesses();
     this.reload();
   }
 
@@ -144,9 +142,6 @@ export class ProjectWorkspaceStore implements OnDestroy {
   /** Production work orders (customer runs) — drives the header count and tab badge. */
   refreshOrders(): void {
     this.svc.listOrders(this.id()).subscribe({ next: (o) => this.ordersCount.set(o?.length ?? 0), error: () => {} });
-  }
-  loadProcesses(): void {
-    this.svc.listProcesses().subscribe({ next: (p) => this.processes.set(p), error: () => {} });
   }
   setProject(p: Project): void { this.project.set(p); }
 

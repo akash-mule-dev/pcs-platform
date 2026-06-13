@@ -6,7 +6,6 @@ import { MAT_DIALOG_DATA, MatDialogRef, MatDialogModule } from '@angular/materia
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
 import { ProjectsService, Project, CreateProject } from '../core/services/projects.service';
 
 export interface ProjectEditData {
@@ -14,16 +13,17 @@ export interface ProjectEditData {
 }
 
 /**
- * Edit an existing project's details — including attaching/changing the
- * fabrication Process (stage routing). Opened as a Material dialog from the
- * project detail page; resolves to the updated Project (or undefined on cancel).
+ * Edit an existing project's details (name, job number, client, description).
+ * A project carries no process — stage routing is chosen per production order —
+ * so it's not editable here. Opened as a Material dialog from the project detail
+ * page; resolves to the updated Project (or undefined on cancel).
  */
 @Component({
   selector: 'app-project-edit-dialog',
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule, MatDialogModule, MatButtonModule,
-    MatFormFieldModule, MatInputModule, MatSelectModule,
+    MatFormFieldModule, MatInputModule,
   ],
   template: `
     <h2 mat-dialog-title>Edit project</h2>
@@ -43,14 +43,6 @@ export interface ProjectEditData {
             <input matInput formControlName="clientName">
           </mat-form-field>
         </div>
-        <mat-form-field appearance="outline">
-          <mat-label>Process (stage routing)</mat-label>
-          <mat-select formControlName="processId">
-            <mat-option [value]="''">— none —</mat-option>
-            @for (p of processes; track p.id) { <mat-option [value]="p.id">{{ p.name }}</mat-option> }
-          </mat-select>
-          <mat-hint>The routing new work orders follow. Changing it doesn't alter work orders already generated.</mat-hint>
-        </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Description</mat-label>
           <textarea matInput rows="2" formControlName="description"></textarea>
@@ -80,7 +72,6 @@ export class ProjectEditDialogComponent implements OnInit {
   private dialogRef = inject(MatDialogRef<ProjectEditDialogComponent>);
   private data = inject<ProjectEditData>(MAT_DIALOG_DATA);
 
-  processes: { id: string; name: string }[] = [];
   saving = false;
   error: string | null = null;
 
@@ -88,7 +79,6 @@ export class ProjectEditDialogComponent implements OnInit {
     name: ['', Validators.required],
     projectNumber: [''],
     clientName: [''],
-    processId: [''],
     description: [''],
   });
 
@@ -98,10 +88,8 @@ export class ProjectEditDialogComponent implements OnInit {
       name: p.name,
       projectNumber: p.projectNumber ?? '',
       clientName: p.clientName ?? '',
-      processId: p.processId ?? '',
       description: p.description ?? '',
     });
-    this.svc.listProcesses().subscribe({ next: (ps) => (this.processes = ps), error: () => {} });
   }
 
   async save(): Promise<void> {
@@ -115,7 +103,6 @@ export class ProjectEditDialogComponent implements OnInit {
       name: (v.name ?? '').trim(),
       projectNumber: v.projectNumber?.trim() || null,
       clientName: v.clientName?.trim() || null,
-      processId: v.processId || null,
       description: v.description?.trim() || null,
     };
     try {

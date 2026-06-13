@@ -1,4 +1,4 @@
-# PCS Platform — Claude Code Instructions
+# PCS Platform — Codex Instructions
 
 Full-stack production-coordination / MES for steel & structural **fabrication**.
 
@@ -58,7 +58,7 @@ backend/src/
   processes/ stages/       # a Process is an ordered list of Stages (the routing)
   work-orders/             # WorkOrder + WorkOrderStage — the stage-execution engine
   lines/ stations/ workforce/ equipment/ scheduling/ time-tracking/ traceability/ quality-* /
-  storage/                 # pluggable StorageProvider (local | s3 | azure | vercel-blob), STORAGE_TYPE env
+  storage/                 # pluggable StorageProvider (local | s3 | azure), STORAGE_TYPE env
   cad-conversion/          # spawns convert-*.mjs + extract-ifc-structure.mjs (web-ifc / assimp)
   conversion/              # async 3D→GLB pipeline: ConversionJob + queue (inline|BullMQ) + processor
   models/                  # Model3D (GLB) records + file streaming endpoints
@@ -105,10 +105,7 @@ Key services & flows:
 - **IFC import — async, observable pipeline** (`ifc-import.service.ts`,
   `POST /api/projects/:id/import-ifc`): the upload is stored durably FIRST (StorageProvider
   `import-sources/…` + import_files row), the request returns immediately, then the background
-  pipeline runs `uploaded → queued → extracting → persisting → converting → completed|failed`.
-  Pipelines run through an in-process **FIFO queue with bounded concurrency**
-  (`IMPORT_PIPELINE_CONCURRENCY`, default 2) so "N packages ahead of yours" is real, and
-  `onModuleInit` re-queues imports interrupted by a restart from their stored source. Spawns
+  pipeline runs `uploaded → extracting → persisting → converting → completed|failed`: spawns
   `cad-conversion/scripts/extract-ifc-structure.mjs` (web-ifc) → normalized JSON tree →
   persisted into `assembly_nodes` **idempotently by `ifc_guid`** → GLB queued via
   `ConversionService.createJob`. Every transition updates `import_files.stage/progress`, appends
@@ -118,105 +115,21 @@ Key services & flows:
   processor (works inline + BullMQ, survives API restarts; entity-only cross-module dep).
   Monitoring API: `GET :id/imports` (history), `GET :id/imports/:importId` (timeline + conversion
   snapshot), `POST :id/imports/:importId/retry` (failed only; conversion-only or full re-run from
-  the stored source); **org-wide** `GET /api/imports/monitor` (active pipelines with queue
-  position + KPI counts) and `GET /api/imports/history` (project filter, sort, paging) in
-  `import-monitor.service/controller.ts`. `linkPendingModels` / `POST :id/resolve-models` remain
-  as the healing path. Web UI: tenant-wide **Package Monitor** page at `/package-monitor`
-  (in-progress tab with queue positions + live %, history tab with filters; nav item + projects
-  header button; the wizard routes there after an upload) and the per-project **Monitoring** tab
-  (live stage stepper + per-import event timelines), live header pipeline bar; regression suite
-  `npm run test:e2e:imports` (62 assertions incl. ws room isolation; needs a freshly seeded API +
-  `socket.io-client` resolvable for the ws checks).
-- **Multi-format & ZIP packages** (`package-import-math.ts` pure module, `npm run test:package`):
-  the import endpoint accepts IFC, geometry-only CAD/mesh formats (STEP/IGES/GLB/OBJ/STL/…,
-  converted to GLB without structure extraction) and **ZIP coordination packages** (Tekla/SDS2
-  exports: model + PDF drawings + .kss). Packages are unpacked + classified, every IFC builds the
-  tree, the largest model drives the GLB, and drawings/certs are stored as `assembly_documents`
-  with **piece-mark filename matching** ("B101 - Rev 0.pdf" attaches to mark B101; unmatched stay
-  project-level, junk skipped). `GET :id/documents?importId=` lists a package's contents (shown in
-  the Monitoring import detail). Unsupported extensions are rejected at upload with the accepted list.
+  the stored source). `linkPendingModels` / `POST :id/resolve-models` remain as the healing path.
+  Web UI: per-project **Monitoring** tab (live stage stepper + history + event timelines), live
+  header pipeline bar; regression suite `npm run test:e2e:imports` (42 assertions incl. ws room
+  isolation; needs a freshly seeded API + `socket.io-client` resolvable for the ws checks).
 - **Production orders** (`production-order.service.ts`, `POST /api/projects/:id/orders`,
   `/api/orders/:id/*`): create-and-release transactionally generates per-assembly WorkOrders +
   stages with count totals (`quantity-math.ts`: `qtyDone`/`qtyTotal` per stage). The board
   (`GET /api/orders/:id/stage-board`) and progress (`GET /api/orders/:id/progress`) are
   count-based roll-ups scoped to that order.
-- **Stage kanban** (`work-orders.service.ts#kanban`, `GET /api/work-orders/kanban?projectId&orderId&q`):
-  org-wide "where is every piece" board fed by the SAME count-based stage rows as the order board —
-  columns are the distinct stage names (ordered by sequence), each card is a work order placed at
-  its **first incomplete stage** with current-stage qty, overall units/%, NCR + late + quality-gate
-  flags. It never reads `work_orders.completed_quantity` (legacy column the count engine doesn't
-  maintain — the root cause of the old board's wrong numbers). Web page `/work-orders/kanban`:
-  project/order/search filters, per-card `+1` and complete-stage actions (server-gated; cards move
-  columns as work is recorded), live via the `stage-update`/`work-order-update` ws events.
-  Regression suite `npm run test:e2e:kanban` (21 assertions; freshly seeded API).
-- **Revision management** (`revision-diff.ts` pure module + `npm run test:revision`): every import
-  captures an added/changed/missing diff vs the prior tree (stored on `import_files.revision`,
-  summarized in the event timeline). `GET :id/imports/:importId/revision` enriches it with
-  **production impact** per affected piece (work orders touching it via ancestor rollup, units
-  done, shipped qty → severity critical/high/medium/none) — the change-order report. Shown in the
-  Monitoring tab's import detail.
-- **Earned value / progress billing** (`project-insights.service.ts`,
-  `GET :id/earned-value?orderId=`): weekly produced tonnage (WOs completed × node weight) +
-  shipped tonnage (shipped/delivered loads) with cumulative %, scoped to released orders —
-  web "Reports" tab with chart + CSV export.
-- **Per-piece extras**: `assembly_documents` (shop drawings etc., PDF/PNG/JPEG/WebP ≤20 MB via
-  StorageProvider; CRUD under `:id/nodes/:nodeId/documents`, stream at `:id/documents/:docId/file`)
-  and `piece_lot_assignments` (heat-number traceability: assign `material_lots` to nodes,
-  `GET :id/shipments/:shipmentId/traceability` = MTR rollup incl. descendants + coverage gaps).
-  Both editable from the Assemblies tab's detail panel; MTR per load on the Shipping tab.
-  Regression suite `npm run test:e2e:projects` (25 assertions; freshly seeded API).
 - **Design summary** (`project-progress.service.ts` + pure `progress-math.ts`,
   `GET /api/projects/:id/progress`): node composition + total tonnage + work-order item count —
   feeds the workspace header and the portfolio list (`GET /api/projects/summary`).
 - **Shipping gate** (`shipping.service.ts`): an assembly can be loaded once it has
   production-complete units (every non-skipped stage done across its work orders), no open NCRs,
   and unallocated quantity left; shipped totals come from shipment items.
-
-## The costing & inventory module (`materials`, `costing`, `projects/material-planning`)
-
-End-to-end flow: **import IFC → per-unit material requirement (BOM) → one-click material
-masters → receive stock (moving average) → order requirement ×qty + coverage → issue/return
-against the order → costs roll up (WO → order → project → org).**
-
-- **Inventory valuation is MOVING AVERAGE** (`materials/inventory-math.ts`, pure + unit-tested):
-  a receipt with a `unitCost` re-averages `materials.unit_cost` over total on-hand; every
-  movement **stamps `stock_movements.unit_cost` at movement time** — costing reads the ledger,
-  never today's price. All stock mutations run in one transaction with pessimistic locks on the
-  stock + material rows (insert-then-lock on the unique index for first movers). Movement types:
-  receipt / issue / scrap / adjustment / **return** (issue reversal) / reserve / release.
-  `GET /api/inventory/summary` is the one-call UI overview (on-hand, avg cost, value, low-stock).
-- **BOM = the assembly tree** (`projects/material-requirements-math.ts`, pure): part nodes
-  grouped by normalized `(profile, material_grade)` → per-unit lines (pieces, Σlength, Σweight).
-  A material master **matches a line by the same normalized pair** (`materials.profile` +
-  `material_grade` columns); `requiredQty` is expressed in the material's UoM (kg/m/ea/t,
-  unknown → kg). `POST /api/projects/:id/material-requirements/sync-materials` creates missing
-  masters (code from profile+grade, kg, cost 0). Order requirement = per-unit × `order.quantity`,
-  plus net issued (issues+scrap−returns by `stock_movements.production_order_id`), remaining,
-  and stock coverage status (`unmapped | covered | short | issued`); off-BOM issues are listed
-  as extras. Endpoints in `material-planning.controller.ts` (own module — exports
-  `MaterialRequirementsService`, entity-only deps, imported by CostingModule; keep acyclic).
-- **Costing** (`costing/costing-math.ts`, pure): `total = material + labor + overhead`.
-  Material = stamped ledger consumption. Labor = `(duration − break) × rate` with per-entry
-  rate resolution **worker (`users.hourly_rate`) → stage (`stages.hourly_rate`) → org default**;
-  overhead = % on labor. Estimates: BOM × current avg costs and `stages.target_time_seconds ×
-  qty_total × (stage rate | default)` — actual vs estimate everywhere. Settings live in
-  `organizations.settings.costing` (`{defaultLaborRate, overheadPercent, currency}`, legacy
-  `settings.laborHourlyRate` honored) via `GET/PUT /api/costing/settings` (audited;
-  `costing.manage` permission). Cost endpoints (all SQL aggregates, org-scoped, never N+1):
-  `/api/costing/work-order/:id` (+per-worker), `/order/:id` (per-assembly + per-material +
-  variance), `/project/:id`, `/orders` (org overview). Issues/returns validate refs belong to
-  the org; a work-order ref auto-stamps its production order; consumption against
-  completed/cancelled orders is rejected (returns stay allowed).
-- **Web:** Inventory page (`/materials`: avg cost/value/low-stock, receive with live new-avg
-  preview, return, adjust, per-material ledger), project **Materials** tab (per-unit BOM +
-  coverage + sync button), order **Materials** tab (×qty, one-click issue prefilled with
-  min(remaining, on-hand), issue history + returns) and **Costs** tab (actual-vs-estimate cards,
-  per-assembly/per-material breakdowns, settings inline), org `/costing` overview. Rates are
-  edited on the user form (admin) and the stage dialog.
-- **Regression suites:** `npm run test:costing` (3 pure suites, 35 assertions) and
-  `npm run test:e2e:costing` (50-assertion live suite: BOM→sync→moving average→order scaling→
-  issue guards→rate chain→overhead→roll-up agreement→closed-order guard; freshly seeded API +
-  `E2E_PG_URL` — the demo IFC has no part weights, the suite backfills them via SQL).
 
 ## The quality module (`quality-data`, `quality-ncr`, `quality-reports`, `spc`, `quality-notify`)
 
@@ -291,11 +204,8 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
   Roles are DB records: immutable org-less **system roles** (admin `*`, manager, supervisor,
   operator; permissions from the catalog) + per-organization **custom roles** (grants in
   `role_permission_grants`, managed via `/api/rbac/roles`, UI at `/rbac`). `GET /api/auth/permissions`
-  returns the caller's `{ role, permissions[] }` with wildcards EXPANDED server-side to concrete
-  catalog keys (the tenant `*` excludes platform features) — clients must never re-interpret
-  wildcard semantics themselves (that bug once showed the Organizations sidebar to tenant admins);
-  web (`PermissionsService.can/canView/canManage`, `featureGuard('<feature>')`) and mobile
-  (`config/permissions.ts`) gate on that set.
+  returns the caller's `{ role, permissions[] }`; web (`PermissionsService.can/canView/canManage`,
+  `featureGuard('<feature>')`) and mobile (`config/permissions.ts`) gate on that set (wildcard-aware).
   **Platform vs tenant:** catalog features flagged `platform: true` (organizations) are excluded
   from the tenant `*` wildcard, ungrantable to custom roles, and held only by the org-less
   `platform-admin` system role (seed login `platform@pcs.com`) — a tenant admin can never manage
@@ -314,19 +224,10 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
 - **Module cycles:** none today — `projects`, `work-orders` and `shipping` reference each other's
   entities only (via their own `TypeOrmModule.forFeature`), not each other's modules. Keep new
   cross-module deps acyclic where possible.
-- **File storage — blobs NEVER live in Postgres.** Every uploaded artifact (IFC/ZIP import
-  sources, GLB models, shop drawings, thumbnails, QA evidence, coordination files) goes through
-  the `StorageProvider` (`storage/`); Neon only ever stores the `storage_key`/`file_name` pointer
-  (varchar). Pick the backend with `STORAGE_TYPE` (`local | s3 | azure | vercel-blob`). **Dev/prod
-  use `vercel-blob`** (`providers/vercel-blob-storage.provider.ts`) — durable Vercel Blob, keyed
-  by pathname like S3/Azure, token from `PCS_DEV_BLOB_READ_WRITE_TOKEN` (or `BLOB_READ_WRITE_TOKEN`).
-  The PCS store is **private**, so files are streamed back through the API (`download → pipe`,
-  e.g. `GET /api/models/:id/file`) via the server-side token, never a public URL. Round-trip
-  check: `node scripts/verify-blob.cjs` (needs the token in env). Note: on Vercel, the serverless
-  request body cap (~4.5 MB) limits server-proxied uploads — for packages above that, upload the
-  client straight to Blob and hand the backend the key.
 - **Frontend:** standalone components, lazy `loadComponent` routes in `app.routes.ts`, services under
   `core/services` calling `environment.apiUrl`. Reuse `ThreeViewerComponent` for any 3D model view.
   Add new menu items to `navGroups` in `layout/layout.component.ts`.
 - **3D linkage:** `convert-ifc.mjs` names each GLB node by the element **GlobalId**, which equals
   `assembly_nodes.ifc_guid` / `mesh_name` — that's the join key the viewer uses to highlight a part.
+
+## Imported Claude Cowork project instructions
