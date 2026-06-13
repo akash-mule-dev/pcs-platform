@@ -42,6 +42,11 @@ export type WorkOrdersStackParamList = {
   };
   WorkOrderList: undefined;
   WorkOrderDetail: { workOrderId: string };
+  // NCR raise/view registered in-stack so they open in context (no tab jump).
+  NcrCreate: { projectId?: string; nodeId?: string; title?: string; description?: string; severity?: string; qualityDataId?: string } | undefined;
+  NcrDetail: { id: string };
+  // QC report fill page rendered in-app (WebView) instead of the device browser.
+  QcReport: { reportId: string; title?: string };
 } & ViewerScreenParams;
 
 // ── Projects Stack (nested in tab) ──
@@ -61,6 +66,11 @@ export type ProjectsStackParamList = {
     lengthMm?: number | null;
     weightKg?: number | null;
   };
+  // NCR raise/view registered in-stack so they open in context (no tab jump).
+  NcrCreate: { projectId?: string; nodeId?: string; title?: string; description?: string; severity?: string; qualityDataId?: string } | undefined;
+  NcrDetail: { id: string };
+  // QC report fill page rendered in-app (WebView) instead of the device browser.
+  QcReport: { reportId: string; title?: string };
 } & ViewerScreenParams;
 
 // ── Time Tracking Stack (nested in tab) ──

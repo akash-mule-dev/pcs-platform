@@ -30,6 +30,7 @@ import { ProjectDetailScreen } from '../screens/projects/ProjectDetailScreen';
 import { AssemblyDetailScreen } from '../screens/projects/AssemblyDetailScreen';
 import { PartViewerScreen } from '../screens/projects/PartViewerScreen';
 import { OrderBoardScreen } from '../screens/projects/OrderBoardScreen';
+import { QcReportScreen } from '../screens/projects/QcReportScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -51,6 +52,9 @@ function WorkOrdersStack() {
       <WOStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
       <WOStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <WOStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
+      <WOStack.Screen name="NcrCreate" component={NcrCreateScreen} options={{ title: 'Raise NCR' }} />
+      <WOStack.Screen name="NcrDetail" component={NcrDetailScreen} options={{ title: 'NCR' }} />
+      <WOStack.Screen name="QcReport" component={QcReportScreen} options={{ title: 'QC Report' }} />
     </WOStack.Navigator>
   );
 }
@@ -95,6 +99,9 @@ function ProjectsStack() {
       <PStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
       <PStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <PStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
+      <PStack.Screen name="NcrCreate" component={NcrCreateScreen} options={{ title: 'Raise NCR' }} />
+      <PStack.Screen name="NcrDetail" component={NcrDetailScreen} options={{ title: 'NCR' }} />
+      <PStack.Screen name="QcReport" component={QcReportScreen} options={{ title: 'QC Report' }} />
     </PStack.Navigator>
   );
 }
