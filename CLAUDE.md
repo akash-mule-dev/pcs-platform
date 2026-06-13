@@ -164,7 +164,13 @@ Key services & flows:
   and `piece_lot_assignments` (heat-number traceability: assign `material_lots` to nodes,
   `GET :id/shipments/:shipmentId/traceability` = MTR rollup incl. descendants + coverage gaps).
   Both editable from the Assemblies tab's detail panel; MTR per load on the Shipping tab.
-  Regression suite `npm run test:e2e:projects` (25 assertions; freshly seeded API).
+- **Delivery note / packing slip** (`shipping.service.ts#deliveryNote`,
+  `GET /api/shipments/:id/delivery-note?heats=`): structured packing-slip data (org+project
+  header, itemized assemblies with mark/profile/grade/qty/weight, totals, optional heat-number
+  appendix via descendant rollup). The web renders it in a print-optimized popup → browser
+  "Save as PDF" (the repo's document convention; no server PDF lib). "Delivery note" button per
+  load on the Shipping tab.
+  Regression suite `npm run test:e2e:projects` (30 assertions; freshly seeded API).
 - **Design summary** (`project-progress.service.ts` + pure `progress-math.ts`,
   `GET /api/projects/:id/progress`): node composition + total tonnage + work-order item count —
   feeds the workspace header and the portfolio list (`GET /api/projects/summary`).
@@ -304,6 +310,17 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
   written to the audit log. Regression suites: `npm run test:rbac` (catalog unit tests) and
   `npm run test:rbac:e2e` (62-assertion live suite, needs a freshly seeded API).
   The old `@Roles`/RolesGuard + `auth/permissions.config.ts` are deprecated shims — don't add usages.
+- **Shared library / "super company"** (`backend/src/library`): a single platform organization
+  (`organizations.kind = 'platform'`, slug `platform`, created idempotently by `LibraryBootstrapService`)
+  OWNS master default processes + form templates (incl. NCR/inspection). Platform admins stay org-less;
+  the platform org is purely a content home (hidden from `GET /organizations`, uneditable as a tenant).
+  **Publish = copy**: `POST /api/library/{processes,templates}/:id/publish {organizationId|allTenants}`
+  copies into tenants, idempotent by `processes/form_templates.library_origin_id` (re-publish updates
+  in place; stages reconciled by sequence, never deleted → no work-order FK breakage). New tenants are
+  auto-seeded with the whole library by `OrganizationService.create` (best-effort). Gated by the
+  platform-scoped `library` feature (`view`/`manage`/`publish`), held only by `platform-admin`; web page
+  `/library`. Pure copy logic + defaults in `library/library-content.ts` (`npm run test:library`);
+  live suite `npm run test:library:e2e` (20 assertions).
 - **TypeORM:** enum columns use `type: 'enum'` (TypeORM names the PG type `"<table>_<column>_enum"`);
   numeric columns use the `numericTransformer` so they come back as `number`, not string.
 - **Migrations & `synchronize`:** `DB_SYNCHRONIZE` defaults **ON** (including prod) — the schema is

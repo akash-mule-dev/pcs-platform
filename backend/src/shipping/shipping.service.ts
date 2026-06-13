@@ -147,4 +147,101 @@ export class ShippingService extends TenantScopedService<Shipment> {
     if (status === ShipmentStatus.SHIPPED && !shipment.shippedAt) shipment.shippedAt = new Date();
     return this.repo.save(shipment);
   }
+
+  /**
+   * Everything a printable delivery note / packing slip needs in one call:
+   * org + project header, load details, itemized assemblies (mark, profile,
+   * grade, qty, unit + line weight) and totals. Optionally folds in the heat
+   * numbers per item (incl. descendant parts) so the slip doubles as the MTR
+   * cover sheet. The web renders this in a print-optimized view → browser PDF.
+   */
+  async deliveryNote(id: string, includeHeats = true) {
+    const organizationId = TenantContext.requireOrganizationId();
+    const shipment = await this.repo.findOne({
+      where: { id, organizationId },
+      relations: ['project', 'items', 'items.assemblyNode'],
+    });
+    if (!shipment) throw new NotFoundException('Shipment not found');
+
+    const org: any[] = await this.itemRepo.query(
+      `SELECT name, slug FROM organizations WHERE id = $1`,
+      [organizationId],
+    );
+
+    // Heat numbers per shipped node, rolled up through descendant parts.
+    const heatByNode = new Map<string, { heatNumber: string | null; lotNumber: string; certReference: string | null }[]>();
+    if (includeHeats && shipment.items.length) {
+      const tree: { id: string; parent_id: string | null }[] = await this.nodeRepo.query(
+        `SELECT id, parent_id FROM assembly_nodes WHERE organization_id = $1 AND project_id = $2`,
+        [organizationId, shipment.projectId],
+      );
+      const children = new Map<string, string[]>();
+      for (const t of tree) {
+        if (!t.parent_id) continue;
+        const a = children.get(t.parent_id) ?? []; a.push(t.id); children.set(t.parent_id, a);
+      }
+      const descendants = (root: string): string[] => {
+        const out = [root];
+        for (let i = 0; i < out.length; i++) for (const c of children.get(out[i]) ?? []) out.push(c);
+        return out;
+      };
+      const lots: any[] = await this.nodeRepo.query(
+        `SELECT a.node_id, l.lot_number, l.heat_number, l.cert_reference
+           FROM piece_lot_assignments a JOIN material_lots l ON l.id = a.material_lot_id
+          WHERE a.organization_id = $1 AND a.project_id = $2`,
+        [organizationId, shipment.projectId],
+      );
+      const lotsByNode = new Map<string, any[]>();
+      for (const l of lots) { const a = lotsByNode.get(l.node_id) ?? []; a.push(l); lotsByNode.set(l.node_id, a); }
+      for (const it of shipment.items) {
+        const seen = new Set<string>();
+        const acc: { heatNumber: string | null; lotNumber: string; certReference: string | null }[] = [];
+        for (const nid of descendants(it.assemblyNodeId)) {
+          for (const l of lotsByNode.get(nid) ?? []) {
+            const k = `${l.lot_number}|${l.heat_number}`;
+            if (seen.has(k)) continue; seen.add(k);
+            acc.push({ heatNumber: l.heat_number, lotNumber: l.lot_number, certReference: l.cert_reference });
+          }
+        }
+        if (acc.length) heatByNode.set(it.assemblyNodeId, acc);
+      }
+    }
+
+    const items = shipment.items.map((it) => {
+      const n = it.assemblyNode;
+      const unitKg = n?.weightKg != null ? Number(n.weightKg) : null;
+      return {
+        mark: n?.mark ?? null,
+        name: n?.name ?? null,
+        nodeType: n?.nodeType ?? null,
+        profile: n?.profile ?? null,
+        materialGrade: n?.materialGrade ?? null,
+        quantity: it.quantity,
+        unitWeightKg: unitKg,
+        lineWeightKg: unitKg != null ? Math.round(unitKg * it.quantity * 10) / 10 : null,
+        heats: heatByNode.get(it.assemblyNodeId) ?? [],
+      };
+    });
+
+    const totalPieces = items.reduce((a, it) => a + it.quantity, 0);
+    const totalWeightKg = Math.round(items.reduce((a, it) => a + (it.lineWeightKg ?? 0), 0) * 10) / 10;
+
+    return {
+      organization: { name: org[0]?.name ?? 'Organization' },
+      project: { id: shipment.projectId, name: shipment.project?.name ?? null, number: (shipment.project as any)?.projectNumber ?? null, client: (shipment.project as any)?.clientName ?? null },
+      shipment: {
+        id: shipment.id,
+        number: shipment.shipmentNumber,
+        status: shipment.status,
+        destination: shipment.destination,
+        carrier: shipment.carrier,
+        plannedDate: shipment.plannedDate,
+        shippedAt: shipment.shippedAt,
+        notes: shipment.notes,
+      },
+      items,
+      totals: { lines: items.length, pieces: totalPieces, weightKg: totalWeightKg },
+      generatedAt: new Date().toISOString(),
+    };
+  }
 }

@@ -22,6 +22,13 @@ export class ShippingController {
     return projectId ? this.service.findByProject(projectId) : this.service.findAll();
   }
 
+  @Get(':id/delivery-note')
+  @RequirePermissions('shipping.view')
+  @ApiOperation({ summary: 'Delivery note / packing slip data (header, itemized assemblies, totals, optional heat numbers) — the web renders it as a printable PDF' })
+  deliveryNote(@Param('id') id: string, @Query('heats') heats?: string) {
+    return this.service.deliveryNote(id, heats !== 'false');
+  }
+
   @Get(':id')
   @RequirePermissions('shipping.view')
   @ApiOperation({ summary: 'Get shipment by ID' })
