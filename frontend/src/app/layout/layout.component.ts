@@ -69,11 +69,13 @@ interface NavGroup {
             }
           } @else {
             <!-- Expanded: Dashboard pinned, then collapsible groups -->
-            <a mat-list-item [routerLink]="dashboardItem.route" routerLinkActive="active-link"
-               [routerLinkActiveOptions]="{ exact: true }" (click)="closeMobileMenu()">
-              <mat-icon matListItemIcon>{{ dashboardItem.icon }}</mat-icon>
-              <span matListItemTitle>{{ dashboardItem.label }}</span>
-            </a>
+            @if (canSee(dashboardItem.feature)) {
+              <a mat-list-item [routerLink]="dashboardItem.route" routerLinkActive="active-link"
+                 [routerLinkActiveOptions]="{ exact: true }" (click)="closeMobileMenu()">
+                <mat-icon matListItemIcon>{{ dashboardItem.icon }}</mat-icon>
+                <span matListItemTitle>{{ dashboardItem.label }}</span>
+              </a>
+            }
             @for (group of visibleGroups; track group.label) {
               <div class="nav-group">
                 <button type="button" class="nav-group-header" (click)="toggleGroup(group)">
@@ -342,7 +344,7 @@ interface NavGroup {
       background: transparent; border: none; cursor: pointer;
       color: var(--clay-sidebar-text); font: inherit; text-align: left;
       border-radius: 0 var(--clay-radius-sm) var(--clay-radius-sm) 0;
-      opacity: 0.7; transition: all var(--clay-transition);
+      opacity: 0.85; transition: all var(--clay-transition);
     }
     .nav-group-header:hover { background: rgba(255, 255, 255, 0.05); opacity: 1; }
     .nav-group-header .grp-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
@@ -527,6 +529,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     ] },
     { label: 'Administration', icon: 'settings', expanded: false, items: [
       { label: 'Organizations', icon: 'corporate_fare', route: '/organizations', feature: 'organizations' },
+      { label: 'Company Insights', icon: 'insights', route: '/platform-insights', feature: 'platform-insights' },
       { label: 'Shared Library', icon: 'auto_stories', route: '/library', feature: 'library' },
       { label: 'Company', icon: 'business', route: '/company', feature: 'company' },
       { label: 'Users', icon: 'people', route: '/users', feature: 'users' },
@@ -534,8 +537,32 @@ export class LayoutComponent implements OnInit, OnDestroy {
     ] },
   ];
 
+  /**
+   * Features that belong to the org-less platform operator (super admin).
+   * Mirrors the backend catalog's `platform: true` features.
+   */
+  private readonly PLATFORM_FEATURES = new Set(['organizations', 'library', 'platform-insights']);
+
+  /** True for the org-less platform operator (super admin), outside a support session. */
+  get isPlatformUser(): boolean {
+    return this.auth.userRole === 'platform-admin' && !this.impersonation;
+  }
+
+  /**
+   * Sidebar visibility. A platform operator has no organization, so the tenant
+   * (shop-floor) pages are meaningless to them — they only manage platform-scoped
+   * features and step into a tenant via a support session. So we partition the
+   * nav: platform operators see ONLY platform items; tenant users never see
+   * platform items. (A platform-admin technically holds the tenant `*` grant, so
+   * permission checks alone would otherwise surface every tenant page.)
+   */
+  canSee(feature: string): boolean {
+    if (this.isPlatformUser !== this.PLATFORM_FEATURES.has(feature)) return false;
+    return this.permissions.canView(feature);
+  }
+
   visibleItems(group: NavGroup): (NavItem & { feature: string })[] {
-    return group.items.filter(item => this.permissions.canView(item.feature));
+    return group.items.filter(item => this.canSee(item.feature));
   }
 
   get visibleGroups(): NavGroup[] {
@@ -544,7 +571,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
   get visibleNavItems(): (NavItem & { feature: string })[] {
     const all = [this.dashboardItem, ...this.navGroups.flatMap(g => g.items)];
-    return all.filter(item => this.permissions.canView(item.feature));
+    return all.filter(item => this.canSee(item.feature));
   }
 
   toggleGroup(group: NavGroup): void {

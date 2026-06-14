@@ -159,6 +159,11 @@ export const routes: Routes = [
         loadComponent: () => import('./library/library.component').then(m => m.LibraryComponent)
       },
       {
+        path: 'platform-insights',
+        canActivate: [featureGuard('platform-insights')],
+        loadComponent: () => import('./platform-insights/platform-insights.component').then(m => m.PlatformInsightsComponent)
+      },
+      {
         path: 'company',
         canActivate: [featureGuard('company')],
         loadComponent: () => import('./company/company.component').then(m => m.CompanyComponent)

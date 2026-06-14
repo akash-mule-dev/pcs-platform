@@ -93,9 +93,9 @@ import { ProjectsService, Project, CreateProject } from '../core/services/projec
     .form mat-form-field { width: 100%; }
     .step-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
     .upload { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 16px 0; }
-    .hint { color: #6b7280; font-size: .85rem; margin: 0; }
-    .err { color: #b91c1c; font-size: .85rem; margin: 4px 0 0; }
-    .file { display: flex; align-items: center; gap: 8px; background: #f3f4f6; border-radius: 8px; padding: 6px 6px 6px 12px; }
+    .hint { color: var(--clay-text-muted); font-size: .85rem; margin: 0; }
+    .err { color: var(--error-text); font-size: .85rem; margin: 4px 0 0; }
+    .file { display: flex; align-items: center; gap: 8px; background: var(--clay-surface-hover); color: var(--clay-text); border: 1px solid var(--clay-border); border-radius: 8px; padding: 6px 6px 6px 12px; }
     .fname { font-weight: 600; }
     mat-progress-bar { width: 100%; }
   `],

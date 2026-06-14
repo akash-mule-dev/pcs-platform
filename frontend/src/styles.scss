@@ -151,18 +151,18 @@ $pcs-theme: mat.define-light-theme((
 // "The Kinetic Engine" — aerospace/glass cockpit
 // ============================================
 [data-theme="dark"] {
-  // Surfaces — deep sea foundation
-  --clay-bg: #10141a;
-  --clay-bg-warm: #181c22;
-  --clay-surface: #1c2026;
-  --clay-surface-hover: #262a31;
-  --clay-white: #31353c;
+  // Surfaces — soft slate (clearly lifted off near-black for a lighter dark mode)
+  --clay-bg: #1c222b;
+  --clay-bg-warm: #252d38;
+  --clay-surface: #2d3540;
+  --clay-surface-hover: #38414e;
+  --clay-white: #434d5c;
 
-  // Sidebar — deepest layer
-  --clay-sidebar: #0a0e14;
-  --clay-sidebar-active: #181c22;
-  --clay-sidebar-text: #8b90a0;
-  --clay-sidebar-text-hover: #c1c6d7;
+  // Sidebar — sits a touch below the content surfaces for separation
+  --clay-sidebar: #1a1f28;
+  --clay-sidebar-active: #2d3540;
+  --clay-sidebar-text: #c2c8d8;
+  --clay-sidebar-text-hover: #eef0f6;
   --clay-sidebar-text-active: #adc6ff;
   --clay-sidebar-accent: #4b8eff;
 
@@ -717,6 +717,58 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.5),
     0 0 24px rgba(173, 198, 255, 0.04) !important;
+}
+
+// --- Dark mode: Material stepper (the New Project wizard dialog) ---
+// The stepper paints its own opaque light-theme surface over the dark dialog
+// surface and uses light-theme label/icon colors, so without these overrides
+// the whole wizard renders as a white block. Keep it transparent so it inherits
+// the dialog surface, and recolor the header text/circles/connectors.
+[data-theme="dark"] {
+  .mat-stepper-horizontal,
+  .mat-stepper-vertical {
+    --mat-stepper-container-color: transparent;
+    background-color: transparent !important;
+  }
+
+  // Step labels — resting, active and selected
+  .mat-step-header .mat-step-label,
+  .mat-step-header .mat-step-label.mat-step-label-active {
+    color: var(--clay-text-secondary) !important;
+  }
+  .mat-step-header .mat-step-label.mat-step-label-selected {
+    color: var(--clay-text) !important;
+  }
+
+  // Inactive step number circle
+  .mat-step-header .mat-step-icon {
+    background-color: var(--clay-surface-hover) !important;
+    color: var(--clay-text-muted) !important;
+  }
+  // Selected / done / editing circle keeps the brand accent
+  .mat-step-header .mat-step-icon-selected,
+  .mat-step-header .mat-step-icon-state-done,
+  .mat-step-header .mat-step-icon-state-edit {
+    background-color: #4b8eff !important;
+    color: #001a41 !important;
+  }
+
+  // Connector line between steps
+  .mat-stepper-horizontal-line,
+  .mat-horizontal-stepper-header::after,
+  .mat-horizontal-stepper-header::before,
+  .mat-stepper-vertical-line::before {
+    border-top-color: var(--clay-border) !important;
+    border-left-color: var(--clay-border) !important;
+  }
+
+  // Header hover / keyboard focus highlight (Material defaults to a light grey)
+  .mat-step-header:hover:not([aria-disabled]),
+  .mat-step-header:hover[aria-disabled='false'],
+  .mat-step-header.cdk-keyboard-focused,
+  .mat-step-header.cdk-program-focused {
+    background-color: var(--clay-surface-hover) !important;
+  }
 }
 
 // Custom dialog shell (clay design system — process/stage/user/work-order forms, confirm dialog)

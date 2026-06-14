@@ -486,9 +486,12 @@ export class LoginComponent implements AfterViewInit, OnDestroy {
     this.auth.login(this.email, this.password).subscribe({
       next: () => {
         this.loading = false;
-        this.router.navigateByUrl('/').then(success => {
+        // Platform operators have no organization — land them on the tenant
+        // directory, not the (empty) production dashboard.
+        const target = this.auth.userRole === 'platform-admin' ? '/organizations' : '/';
+        this.router.navigateByUrl(target).then(success => {
           if (!success) {
-            window.location.href = '/';
+            window.location.href = target;
           }
         });
       },

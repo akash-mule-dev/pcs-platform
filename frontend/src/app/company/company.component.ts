@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -8,11 +8,12 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Company, CompanyApiService, CompanyProfile } from './company.service';
 import { PermissionsService } from '../core/services/permissions.service';
+import { LogoUploadComponent } from '../shared/components/logo-upload/logo-upload.component';
 
 @Component({
   selector: 'app-company',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatInputModule],
+  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatInputModule, LogoUploadComponent],
   template: `
     <div class="page-shell">
       <div class="page-header">
@@ -28,7 +29,9 @@ import { PermissionsService } from '../core/services/permissions.service';
       @if (company) {
         <div class="panel">
           <div class="ident">
-            <div class="logo">{{ initials(company.name) }}</div>
+            <div class="logo">
+              @if (logoUrl) { <img [src]="logoUrl" alt="Company logo" /> } @else { {{ initials(company.name) }} }
+            </div>
             <div>
               <div class="org-name">{{ company.name }}</div>
               <div class="org-slug"><code>{{ company.slug }}</code> · since {{ company.createdAt | date:'mediumDate' }}</div>
@@ -47,6 +50,12 @@ import { PermissionsService } from '../core/services/permissions.service';
             </div>
           } @else {
             <div class="form">
+              <div class="brand">
+                <label class="blabel">Company logo</label>
+                <app-logo-upload [currentUrl]="logoUrl" [busy]="logoBusy"
+                  (selected)="onLogoSelected($event)" (cleared)="onLogoRemove()"></app-logo-upload>
+                <p class="bhint">Shown across the workspace. PNG, JPG, WebP or SVG up to 5 MB.</p>
+              </div>
               <div class="frow">
                 <mat-form-field appearance="outline" class="grow"><mat-label>Company name</mat-label>
                   <input matInput [(ngModel)]="form.name"></mat-form-field>
@@ -102,7 +111,11 @@ import { PermissionsService } from '../core/services/permissions.service';
     .page-subtitle { margin: 2px 0 0; color: var(--clay-text-muted, #64748b); font-size: 13px; }
     .panel { background: var(--clay-surface, #fff); border: 1px solid var(--clay-border, #e2e8f0); border-radius: 10px; padding: 20px; }
     .ident { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
-    .logo { width: 52px; height: 52px; border-radius: 12px; background: var(--clay-primary-soft, #eff6ff); color: var(--clay-primary, #2563eb); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; }
+    .logo { width: 52px; height: 52px; border-radius: 12px; background: var(--clay-primary-soft, #eff6ff); color: var(--clay-primary, #2563eb); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; overflow: hidden; flex: none; }
+    .logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+    .brand { margin-bottom: 18px; }
+    .blabel { display: block; font-size: 13px; font-weight: 500; color: var(--clay-text, #334155); margin-bottom: 8px; }
+    .bhint { margin: 8px 0 0; font-size: 12px; color: var(--clay-text-muted, #64748b); }
     .org-name { font-size: 18px; font-weight: 600; }
     .org-slug { font-size: 12px; color: var(--clay-text-muted, #64748b); margin-top: 2px; }
     .grid { display: grid; gap: 2px; }
@@ -117,12 +130,15 @@ import { PermissionsService } from '../core/services/permissions.service';
     code { background: var(--clay-bg, #f1f5f9); padding: 1px 6px; border-radius: 4px; }
   `],
 })
-export class CompanyComponent implements OnInit {
+export class CompanyComponent implements OnInit, OnDestroy {
   company: Company | null = null;
   loaded = false;
   editing = false;
   busy = false;
   canManage = false;
+  /** Authed object URL for the current logo (null when none). */
+  logoUrl: string | null = null;
+  logoBusy = false;
   form: { name: string; description: string; profile: CompanyProfile } = { name: '', description: '', profile: {} };
 
   constructor(private api: CompanyApiService, private permissions: PermissionsService, private snack: MatSnackBar) {}
@@ -130,8 +146,42 @@ export class CompanyComponent implements OnInit {
   ngOnInit(): void {
     this.canManage = this.permissions.can('company.manage');
     this.api.get().subscribe({
-      next: (c) => { this.company = c; this.loaded = true; },
+      next: (c) => { this.company = c; this.loaded = true; if (c.hasLogo) this.fetchLogo(); },
       error: () => (this.loaded = true),
+    });
+  }
+
+  ngOnDestroy(): void {
+    if (this.logoUrl) URL.revokeObjectURL(this.logoUrl);
+  }
+
+  private fetchLogo(): void {
+    this.api.getLogo().subscribe({
+      next: (blob) => { this.setLogoUrl(URL.createObjectURL(blob)); },
+      error: () => {},
+    });
+  }
+
+  private setLogoUrl(url: string | null): void {
+    if (this.logoUrl) URL.revokeObjectURL(this.logoUrl);
+    this.logoUrl = url;
+  }
+
+  onLogoSelected(file: File): void {
+    // Show the new image instantly, then persist it to blob storage.
+    this.setLogoUrl(URL.createObjectURL(file));
+    this.logoBusy = true;
+    this.api.uploadLogo(file).subscribe({
+      next: (c) => { this.company = c; this.logoBusy = false; this.snack.open('Logo updated', 'OK', { duration: 2500 }); },
+      error: (e) => { this.logoBusy = false; this.snack.open(e?.error?.message || 'Logo upload failed', 'Dismiss', { duration: 5000 }); },
+    });
+  }
+
+  onLogoRemove(): void {
+    this.logoBusy = true;
+    this.api.removeLogo().subscribe({
+      next: (c) => { this.company = c; this.setLogoUrl(null); this.logoBusy = false; this.snack.open('Logo removed', 'OK', { duration: 2500 }); },
+      error: (e) => { this.logoBusy = false; this.snack.open(e?.error?.message || 'Could not remove logo', 'Dismiss', { duration: 5000 }); },
     });
   }
 

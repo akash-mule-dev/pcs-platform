@@ -10,7 +10,7 @@ export interface MyAccess {
 }
 
 const WILDCARD = '*';
-const PLATFORM_FEATURES = new Set(['organizations']);
+const PLATFORM_FEATURES = new Set(['organizations', 'library', 'platform-insights']);
 
 /**
  * The caller's effective fine-grained permissions, fetched from the backend
