@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -9,17 +9,16 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
-import { MatStepper, MatStepperModule } from '@angular/material/stepper';
+import { MatStepperModule } from '@angular/material/stepper';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { ProjectsService, Project, CreateProject, ImportStarted } from '../core/services/projects.service';
+import { ProjectsService, Project, CreateProject } from '../core/services/projects.service';
 
 @Component({
   selector: 'app-project-wizard',
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule, MatDialogModule, MatButtonModule, MatIconModule,
-    MatFormFieldModule, MatInputModule, MatSelectModule, MatStepperModule, MatProgressBarModule,
+    MatFormFieldModule, MatInputModule, MatStepperModule, MatProgressBarModule,
   ],
   template: `
     <h2 mat-dialog-title>New project</h2>
@@ -42,13 +41,6 @@ import { ProjectsService, Project, CreateProject, ImportStarted } from '../core/
                 <input matInput formControlName="clientName">
               </mat-form-field>
             </div>
-            <mat-form-field appearance="outline">
-              <mat-label>Process (stage routing)</mat-label>
-              <mat-select formControlName="processId">
-                <mat-option [value]="''">— none —</mat-option>
-                @for (p of processes; track p.id) { <mat-option [value]="p.id">{{ p.name }}</mat-option> }
-              </mat-select>
-            </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Description</mat-label>
               <textarea matInput rows="2" formControlName="description"></textarea>
@@ -85,26 +77,9 @@ import { ProjectsService, Project, CreateProject, ImportStarted } from '../core/
           <div class="step-actions">
             <button mat-button (click)="stepper.previous()" [disabled]="importing">Back</button>
             <button mat-button (click)="skipImport()" [disabled]="importing">Skip</button>
-            <button mat-flat-button color="primary" [disabled]="importing || !selectedFile" (click)="createAndImport(stepper)">
+            <button mat-flat-button color="primary" [disabled]="importing || !selectedFile" (click)="createAndImport()">
               {{ importing ? 'Working…' : 'Create & build tree' }}
             </button>
-          </div>
-        </mat-step>
-
-        <mat-step>
-          <ng-template matStepLabel>Review</ng-template>
-          <div class="review">
-            <mat-icon class="ok">check_circle</mat-icon>
-            <h3>{{ created?.name }}</h3>
-            @if (result) {
-              <p><strong>{{ result.originalName }}</strong> is uploaded and processing has started.</p>
-              <p class="hint">The assembly tree and 3D model are being built in the background — follow the live pipeline on the project's <strong>Monitoring</strong> tab.</p>
-            } @else {
-              <p>Project created. You can import an IFC from the project page anytime.</p>
-            }
-          </div>
-          <div class="step-actions">
-            <button mat-flat-button color="primary" (click)="finish()">Open project</button>
           </div>
         </mat-step>
       </mat-stepper>
@@ -118,19 +93,14 @@ import { ProjectsService, Project, CreateProject, ImportStarted } from '../core/
     .form mat-form-field { width: 100%; }
     .step-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
     .upload { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 16px 0; }
-    .hint { color: #6b7280; font-size: .85rem; margin: 0; }
-    .err { color: #b91c1c; font-size: .85rem; margin: 4px 0 0; }
-    .file { display: flex; align-items: center; gap: 8px; background: #f3f4f6; border-radius: 8px; padding: 6px 6px 6px 12px; }
+    .hint { color: var(--clay-text-muted); font-size: .85rem; margin: 0; }
+    .err { color: var(--error-text); font-size: .85rem; margin: 4px 0 0; }
+    .file { display: flex; align-items: center; gap: 8px; background: var(--clay-surface-hover); color: var(--clay-text); border: 1px solid var(--clay-border); border-radius: 8px; padding: 6px 6px 6px 12px; }
     .fname { font-weight: 600; }
     mat-progress-bar { width: 100%; }
-    .review { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 0; text-align: center; }
-    .review .ok { color: #059669; font-size: 44px; height: 44px; width: 44px; }
-    .review h3 { margin: 0; }
-    .counts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
-    .chip { padding: 3px 10px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: .8rem; font-weight: 600; text-transform: capitalize; }
   `],
 })
-export class ProjectWizardComponent implements OnInit {
+export class ProjectWizardComponent {
   private fb = inject(FormBuilder);
   private svc = inject(ProjectsService);
   private router = inject(Router);
@@ -141,20 +111,12 @@ export class ProjectWizardComponent implements OnInit {
     projectNumber: [''],
     clientName: [''],
     description: [''],
-    processId: [''],
   });
-
-  processes: { id: string; name: string }[] = [];
-
-  ngOnInit(): void {
-    this.svc.listProcesses().subscribe({ next: (p) => (this.processes = p), error: () => {} });
-  }
 
   selectedFile: File | null = null;
   importing = false;
   uploadProgress = 0;
   created: Project | null = null;
-  result: ImportStarted | null = null;
   error: string | null = null;
 
   onFile(event: Event): void {
@@ -168,7 +130,6 @@ export class ProjectWizardComponent implements OnInit {
     if (v.projectNumber) dto.projectNumber = v.projectNumber;
     if (v.clientName) dto.clientName = v.clientName;
     if (v.description) dto.description = v.description;
-    if (v.processId) dto.processId = v.processId;
     return dto;
   }
 
@@ -177,11 +138,12 @@ export class ProjectWizardComponent implements OnInit {
     return this.created;
   }
 
-  async createAndImport(stepper: MatStepper): Promise<void> {
+  /** Create the project + upload a package, then jump to the live Package Monitor. */
+  async createAndImport(): Promise<void> {
     this.error = null;
+    if (!this.selectedFile) return; // guarded: the button is disabled without a file
     try {
       const project = await this.ensureCreated();
-      if (!this.selectedFile) { stepper.next(); return; }
       this.importing = true;
       this.uploadProgress = 0;
       this.svc.importIfc(project.id, this.selectedFile).subscribe({
@@ -189,7 +151,6 @@ export class ProjectWizardComponent implements OnInit {
           if (ev.type === HttpEventType.UploadProgress && ev.total) {
             this.uploadProgress = Math.round((100 * ev.loaded) / ev.total);
           } else if (ev.type === HttpEventType.Response) {
-            this.result = ev.body;
             this.importing = false;
             // The package is stored and queued — take the user straight to the
             // Package Monitor so they see their upload live in the pipeline
@@ -208,18 +169,16 @@ export class ProjectWizardComponent implements OnInit {
     }
   }
 
+  /** Create the project with no package, then return to the project list. */
   async skipImport(): Promise<void> {
     this.error = null;
     try {
-      await this.ensureCreated();
-      this.finish();
+      const project = await this.ensureCreated();
+      this.dialogRef.close({ ...project, navigated: true });
+      this.router.navigate(['/projects']);
     } catch (e: any) {
       this.error = e?.error?.message || 'Could not create the project.';
     }
-  }
-
-  finish(): void {
-    this.dialogRef.close(this.created ?? undefined);
   }
 
   cancel(): void {

@@ -145,12 +145,15 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     left: 8,
-    top: 140,
+    top: 200,
     backgroundColor: 'rgba(0, 0, 0, 0.82)',
     borderRadius: 16,
     padding: 12,
     width: 210,
     gap: 6,
+    // Above the corner buttons (25) and the viz rail (18) so its toggles are
+    // never painted over while open.
+    zIndex: 28,
   },
   title: {
     color: '#ffffff',

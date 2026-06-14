@@ -41,6 +41,17 @@ module.exports = {
       ],
     },
     plugins: [
+      // Repairs the MainApplication.kt that @reactvision/react-viro corrupts on
+      // Expo SDK 52 / RN 0.76 (it prepends its package registration above the
+      // `package` declaration). See plugins/withViroMainApplicationFix.js.
+      // MUST be declared FIRST: Expo runs dangerous mods in REVERSE registration
+      // order (withMod.js — the last-registered action runs first), so declaring
+      // this before the Viro plugin makes it run AFTER Viro's mod, letting it fix
+      // the damage last.
+      [
+        "./plugins/withViroMainApplicationFix",
+        { platforms: xrMode === "VR" ? ["GVR"] : ["AR"] },
+      ],
       [
         "@reactvision/react-viro",
         {

@@ -307,6 +307,12 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
       { action: 'manage', label: 'Manage', description: 'Reply, assign, change status and add internal notes', defaultRoles: NONE },
     ],
   },
+  {
+    key: 'platform-insights', label: 'Company Insights', category: 'Platform', platform: true,
+    actions: [
+      { action: 'view', label: 'View', description: 'See cross-tenant adoption & usage analytics (how each company uses the system, which features are dormant)', defaultRoles: NONE },
+    ],
+  },
 ];
 
 /** Ordered list of category names (UI grouping). */

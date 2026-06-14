@@ -146,6 +146,13 @@ const PAGE = 25;
             <button class="ghost-btn" (click)="reloadHistory()" matTooltip="Refresh"><mat-icon>refresh</mat-icon></button>
           </div>
 
+          @if (sourceError(); as msg) {
+            <div class="dl-error">
+              <mat-icon>error_outline</mat-icon><span>{{ msg }}</span>
+              <button class="icon-btn" (click)="sourceError.set(null)" matTooltip="Dismiss"><mat-icon>close</mat-icon></button>
+            </div>
+          }
+
           @if (!loadedHistory()) {
             <div class="empty"><mat-spinner diameter="26"></mat-spinner></div>
           } @else if (history().length === 0) {
@@ -173,6 +180,10 @@ const PAGE = 25;
                   <span class="num muted">{{ fmtDuration(row.durationMs) }}</span>
                   <span class="muted">{{ row.createdByName || '—' }}</span>
                   <span class="row-actions">
+                    @if (row.storageKey) {
+                      <button class="icon-btn" (click)="downloadSource(row, $event)" [disabled]="downloading() === row.id"
+                              matTooltip="Download the original uploaded package"><mat-icon>{{ downloading() === row.id ? 'hourglass_top' : 'download' }}</mat-icon></button>
+                    }
                     @if (row.status === 'failed') {
                       <button class="icon-btn warn" (click)="retry(row, $event)" matTooltip="Retry this import"><mat-icon>replay</mat-icon></button>
                     }
@@ -295,6 +306,10 @@ const PAGE = 25;
     .icon-btn.warn { color: var(--danger-text); }
     .chev { color: var(--clay-text-muted); font-size: 19px; width: 19px; height: 19px; }
     .more { display: flex; justify-content: center; padding: 12px; }
+    .dl-error { display: flex; align-items: center; gap: 8px; margin: 12px 18px 0; padding: 8px 12px; font-size: 12.5px;
+      background: var(--danger-bg); color: var(--danger-text); border-radius: var(--clay-radius-sm); }
+    .dl-error mat-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
+    .dl-error span { flex: 1; }
 
     .empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 44px 20px; text-align: center; color: var(--clay-text-muted); }
     .empty mat-icon { font-size: 38px; width: 38px; height: 38px; opacity: .5; }
@@ -322,6 +337,9 @@ export class PackageMonitorComponent implements OnInit, OnDestroy {
   readonly projects = signal<Project[]>([]);
   readonly filterIds = signal<string[]>([]);
   readonly sort = signal<'asc' | 'desc'>('desc');
+  /** Import currently downloading, and the last download error. */
+  readonly downloading = signal<string | null>(null);
+  readonly sourceError = signal<string | null>(null);
 
   readonly activeCount = computed(() => this.monitor()?.kpis.inProgress ?? 0);
 
@@ -390,6 +408,31 @@ export class PackageMonitorComponent implements OnInit, OnDestroy {
     this.svc.retryImport(row.projectId, row.id).subscribe({
       next: () => { this.refreshMonitor(); this.reloadHistory(true); this.tab.set('live'); },
       error: () => {},
+    });
+  }
+
+  /** Re-download the original uploaded package, saving it under its original name. */
+  downloadSource(row: HistoryRow, ev: Event): void {
+    ev.stopPropagation();
+    if (this.downloading()) return;
+    this.downloading.set(row.id);
+    this.sourceError.set(null);
+    this.svc.importSourceBlob(row.projectId, row.id).subscribe({
+      next: (blob) => {
+        this.downloading.set(null);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = row.originalName || 'package';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      },
+      error: () => {
+        this.downloading.set(null);
+        this.sourceError.set(`Couldn't download "${row.originalName}" — the original package is no longer available.`);
+      },
     });
   }
 

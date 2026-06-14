@@ -67,6 +67,12 @@ export const routes: Routes = [
         loadComponent: () => import('./work-orders/work-order-kanban/work-order-kanban.component').then(m => m.WorkOrderKanbanComponent)
       },
       {
+        // Shipping is part of the WORK ORDER (production order), not the project.
+        path: 'work-orders/:id/shipping',
+        canActivate: [featureGuard('shipping')],
+        loadComponent: () => import('./work-orders/work-order-shipping.component').then(m => m.WorkOrderShippingComponent)
+      },
+      {
         // Per-order AUDIT dashboard: assemblies left, full stage trail right, bulk edit.
         path: 'work-orders/:id',
         canActivate: [featureGuard('work-orders')],
@@ -151,6 +157,11 @@ export const routes: Routes = [
         path: 'library',
         canActivate: [featureGuard('library')],
         loadComponent: () => import('./library/library.component').then(m => m.LibraryComponent)
+      },
+      {
+        path: 'platform-insights',
+        canActivate: [featureGuard('platform-insights')],
+        loadComponent: () => import('./platform-insights/platform-insights.component').then(m => m.PlatformInsightsComponent)
       },
       {
         path: 'company',

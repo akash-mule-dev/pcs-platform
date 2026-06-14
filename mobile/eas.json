@@ -3,6 +3,16 @@
     "version": ">= 3.0.0"
   },
   "build": {
+    "dev": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://backend-git-dev-akash-mule-devs-projects.vercel.app/api",
+        "EXPO_PUBLIC_WEB_URL": "https://frontend-git-dev-akash-mule-devs-projects.vercel.app"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "android": {

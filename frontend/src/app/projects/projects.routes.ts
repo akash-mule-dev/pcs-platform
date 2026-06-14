@@ -1,4 +1,5 @@
-import { Routes } from '@angular/router';
+import { Routes, Router, ActivatedRouteSnapshot } from '@angular/router';
+import { inject } from '@angular/core';
 import { ProjectWorkspaceStore } from './project-workspace.store';
 
 /**
@@ -8,9 +9,16 @@ import { ProjectWorkspaceStore } from './project-workspace.store';
  * shared by every tab rendered in its child router-outlet.
  *
  * Structure: the PROJECT is the pure design container (overview / assemblies+3D /
- * work orders). Production tracking (board, progress, quality, shipping) lives
- * INSIDE each work order: /projects/:id/orders/:orderId/(board|progress|quality|shipping).
+ * work orders). Production tracking (board, progress, quality) lives INSIDE each
+ * work order: /projects/:id/orders/:orderId/(board|progress|quality). SHIPPING is
+ * owned by the work order itself and lives at /work-orders/:orderId/shipping —
+ * the old project-nested shipping URL redirects there.
  */
+// Redirect the legacy project-nested shipping URL to the work-order's own page.
+const shippingRedirect = (route: ActivatedRouteSnapshot) => {
+  const orderId = route.parent?.paramMap.get('orderId') ?? '';
+  return inject(Router).createUrlTree(['/work-orders', orderId, 'shipping']);
+};
 export const PROJECTS_ROUTES: Routes = [
   {
     path: '',
@@ -43,7 +51,8 @@ export const PROJECTS_ROUTES: Routes = [
           // Actual vs estimated material/labor/overhead cost.
           { path: 'costs', loadComponent: () => import('./order-costs.component').then((m) => m.OrderCostsComponent) },
           { path: 'quality', loadComponent: () => import('./project-quality.component').then((m) => m.ProjectQualityComponent) },
-          { path: 'shipping', loadComponent: () => import('./project-shipping.component').then((m) => m.ProjectShippingComponent) },
+          // Shipping moved to the work order — redirect any bookmarked URL.
+          { path: 'shipping', canActivate: [shippingRedirect], loadComponent: () => import('../work-orders/work-order-shipping.component').then((m) => m.WorkOrderShippingComponent) },
         ],
       },
       // Legacy project-level production URLs → the work-orders list.

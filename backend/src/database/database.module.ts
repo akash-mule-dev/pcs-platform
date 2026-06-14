@@ -5,15 +5,22 @@ import { TenantSubscriber } from '../common/tenant/tenant.subscriber.js';
 const logger = new Logger('DatabaseModule');
 const isProduction = process.env.NODE_ENV === 'production';
 
-// DB selection by environment. In any NON-production Vercel environment
-// (preview / the dev branch), prefer the dev DB that the Neon integration
-// injected as `dev_DATABASE_URL` (pcs-dev-db). This guarantees previews never
-// hit the production DB regardless of Vercel env-var precedence (branch-scoped
-// overrides proved unreliable). Production (VERCEL_ENV=production) and local
-// both use DATABASE_URL (locally that's backend/.env).
+// DB selection by environment. Production (VERCEL_ENV=production) and local both
+// use DATABASE_URL (locally that's backend/.env). In any NON-production Vercel
+// environment (preview / the dev branch) we deliberately pin the dev DB to the
+// SAME branch the local backend uses, via the custom `PCS_DEV_DATABASE_URL`:
+// because it is NOT managed by the Neon/Vercel integration, its value can't be
+// clobbered by the integration's auto-created per-preview branch URL (the
+// `dev_DATABASE_URL` / branch-scoped `DATABASE_URL` overrides proved unreliable —
+// that's why deployed dev used to land on a separate `preview/dev` branch).
+// Fallbacks (`dev_DATABASE_URL` → `DATABASE_URL`) preserve the prior behaviour
+// when the pin isn't set, and still guarantee a preview never hits production.
 const isVercelProd = process.env.VERCEL_ENV === 'production';
-const databaseUrl =
-  (!isVercelProd && process.env['dev_DATABASE_URL']) || process.env.DATABASE_URL;
+const databaseUrl = isVercelProd
+  ? process.env.DATABASE_URL
+  : process.env.PCS_DEV_DATABASE_URL ||
+    process.env['dev_DATABASE_URL'] ||
+    process.env.DATABASE_URL;
 
 const connectionConfig = databaseUrl
   ? {

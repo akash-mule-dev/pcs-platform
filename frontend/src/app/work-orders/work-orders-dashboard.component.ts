@@ -1,11 +1,14 @@
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ProjectsService, OrdersDashboard, DashboardOrderRow, OrderStatus } from '../core/services/projects.service';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { ProjectsService, OrdersDashboard, DashboardOrderRow, OrderStatus, ProductionOrder } from '../core/services/projects.service';
+import { PermissionsService } from '../core/services/permissions.service';
+import { WorkOrderCreateDialogComponent } from './work-order-create-dialog.component';
 
 type Filter = 'all' | 'active' | 'planned' | 'in_progress' | 'completed' | 'late' | 'holds';
 
@@ -15,13 +18,13 @@ const STATUS_LABEL: Record<string, string> = {
 
 /**
  * Work Orders dashboard — the shop-wide production cockpit: KPIs, the stage
- * funnel (where units are stuck), and every order with live progress. Each row
+ * funnel (where work is stuck), and every order with live progress. Each row
  * opens that order's workspace (board / progress / quality / shipping).
  */
 @Component({
   selector: 'app-work-orders-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [CommonModule, RouterModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, MatDialogModule],
   template: `
     <div class="page">
       <div class="head">
@@ -32,7 +35,9 @@ const STATUS_LABEL: Record<string, string> = {
         <div class="head-links">
           <a class="ghost" routerLink="/work-orders/kanban"><mat-icon>view_kanban</mat-icon>Kanban</a>
           <a class="ghost" routerLink="/work-orders/legacy"><mat-icon>inventory</mat-icon>All work orders</a>
-          <a class="primary" routerLink="/projects"><mat-icon>add</mat-icon>New work order</a>
+          @if (perms.can('production-orders.create')) {
+            <button class="primary" (click)="newOrder()"><mat-icon>add</mat-icon>New work order</button>
+          }
         </div>
       </div>
 
@@ -50,8 +55,8 @@ const STATUS_LABEL: Record<string, string> = {
           <div class="kpi static">
             <div class="ki tone-purple"><mat-icon>widgets</mat-icon></div>
             <div class="kt">
-              <span class="kn">{{ data.kpis.unitsDone | number }}<em>/{{ data.kpis.unitsTotal | number }}</em></span>
-              <span class="kl">Units done (active orders)</span>
+              <span class="kn">{{ unitsPct() | number:'1.0-0' }}%</span>
+              <span class="kl">Production progress (active orders)</span>
               <span class="mini-bar"><span class="mini-fill" [style.width.%]="unitsPct()"></span></span>
             </div>
           </div>
@@ -72,7 +77,7 @@ const STATUS_LABEL: Record<string, string> = {
         <div class="grid">
           <!-- Stage funnel -->
           <section class="card funnel">
-            <div class="card-head"><h3>Stage funnel</h3><span class="hint">Units through each stage — active orders</span></div>
+            <div class="card-head"><h3>Stage funnel</h3><span class="hint">Progress through each stage — active orders</span></div>
             @if (data.funnel.length === 0) {
               <p class="none">No active production right now.</p>
             } @else {
@@ -147,7 +152,10 @@ const STATUS_LABEL: Record<string, string> = {
           } @empty {
             <div class="none table-none">
               <mat-icon>receipt_long</mat-icon>
-              <p>{{ query || filter !== 'all' ? 'No orders match.' : 'No work orders yet — open a project and create one.' }}</p>
+              <p>{{ query || filter !== 'all' ? 'No orders match.' : 'No work orders yet.' }}</p>
+              @if (!query && filter === 'all' && perms.can('production-orders.create')) {
+                <button class="es-cta" (click)="newOrder()"><mat-icon>add</mat-icon>New work order</button>
+              }
             </div>
           }
         </section>
@@ -160,11 +168,12 @@ const STATUS_LABEL: Record<string, string> = {
     .head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--clay-text); }
     .sub { margin: 4px 0 0; font-size: 13px; color: var(--clay-text-muted); }
     .head-links { display: flex; gap: 8px; flex-wrap: wrap; }
-    .head-links a { display: inline-flex; align-items: center; gap: 6px; border-radius: var(--clay-radius-sm); padding: 8px 14px; font-size: 13px; font-weight: 600; text-decoration: none; }
-    .head-links a mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .head-links a, .head-links button { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; border-radius: var(--clay-radius-sm); padding: 8px 14px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; font-family: inherit; }
+    .head-links a mat-icon, .head-links button mat-icon { font-size: 18px; width: 18px; height: 18px; }
     .head-links .ghost { border: 1px solid var(--clay-border); background: var(--clay-surface); color: var(--clay-text-secondary); }
     .head-links .ghost:hover { border-color: var(--clay-primary); color: var(--clay-primary); }
     .head-links .primary { background: var(--clay-primary); color: #fff; }
+    .head-links .primary:hover { filter: brightness(1.08); }
     .center { display: flex; justify-content: center; padding: 64px 0; }
 
     /* KPIs */
@@ -249,12 +258,19 @@ const STATUS_LABEL: Record<string, string> = {
     .late-ico { font-size: 15px; width: 15px; height: 15px; }
     .table-none { flex-direction: column; padding: 36px 0; justify-content: center; }
     .table-none mat-icon { font-size: 36px; width: 36px; height: 36px; color: var(--clay-text-muted); opacity: .5; }
+    .es-cta { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; background: var(--clay-primary); color: #fff; border: none; border-radius: var(--clay-radius-sm); padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .es-cta mat-icon { font-size: 18px; width: 18px; height: 18px; color: #fff; opacity: 1; }
+    .es-cta:hover { filter: brightness(1.08); }
 
     @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, 1fr); } .grid { grid-template-columns: 1fr; } .thead { display: none; } .trow { grid-template-columns: 1fr 1fr; } }
   `],
 })
 export class WorkOrdersDashboardComponent implements OnInit, OnDestroy {
   private svc = inject(ProjectsService);
+  private dialog = inject(MatDialog);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  perms = inject(PermissionsService);
 
   data: OrdersDashboard | null = null;
   loading = true;
@@ -277,8 +293,28 @@ export class WorkOrdersDashboardComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.load();
     this.pollTimer = setInterval(() => { if (!document.hidden) this.refresh(); }, 30000);
+
+    // Deep link from a project's Work Orders tab: ?newOrder=1[&project=<id>] opens
+    // the creation dialog here (project pre-selected). Strip the params afterwards
+    // so a refresh / back-button doesn't pop the dialog again.
+    const qp = this.route.snapshot.queryParamMap;
+    if (qp.get('newOrder') && this.perms.can('production-orders.create')) {
+      const projectId = qp.get('project') ?? undefined;
+      this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+      this.newOrder(projectId);
+    }
   }
   ngOnDestroy(): void { if (this.pollTimer) clearInterval(this.pollTimer); }
+
+  /** Open the centralised create-work-order dialog; on success jump to the new order. */
+  newOrder(projectId?: string): void {
+    this.dialog.open(WorkOrderCreateDialogComponent, {
+      width: '560px', maxWidth: '95vw', autoFocus: false,
+      data: { projectId: projectId ?? null },
+    }).afterClosed().subscribe((order: ProductionOrder | undefined) => {
+      if (order) this.router.navigate(['/work-orders', order.id]);
+    });
+  }
 
   load(): void {
     this.loading = true;

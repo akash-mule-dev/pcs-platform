@@ -3,7 +3,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ShipmentStatus } from '../shipment.entity.js';
 
 export class CreateShipmentDto {
-  @ApiProperty() @IsUUID() projectId: string;
+  // The work order (production order) this load belongs to. The project is
+  // derived from it server-side — clients never supply a projectId.
+  @ApiProperty() @IsUUID() productionOrderId: string;
   @ApiProperty() @IsString() @IsNotEmpty() shipmentNumber: string;
   @ApiPropertyOptional({ enum: ShipmentStatus }) @IsEnum(ShipmentStatus) @IsOptional() status?: ShipmentStatus;
   @ApiPropertyOptional() @IsString() @IsOptional() destination?: string;

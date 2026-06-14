@@ -99,21 +99,25 @@ export function OrderBoardScreen() {
     }
   }, [templates.length]);
 
-  const startReport = useCallback(async (t: MTemplate) => {
+  const startReport = useCallback(async (t: MTemplate, mode: 'app' | 'browser') => {
     if (tplBusy) return;
     setTplBusy(true);
     setTplError(null);
     try {
       const r = await qcReportsService.create({ templateId: t.id, productionOrderId: orderId });
-      const token = (await authService.getToken()) ?? '';
       setTplVisible(false);
-      await Linking.openURL(`${environment.webUrl}/qr/${r.id}?token=${encodeURIComponent(token)}`);
+      if (mode === 'browser') {
+        const token = (await authService.getToken()) ?? '';
+        await Linking.openURL(`${environment.webUrl}/qr/${r.id}?token=${encodeURIComponent(token)}`);
+      } else {
+        navigation.navigate('QcReport', { reportId: r.id, title: t.name });
+      }
     } catch {
       setTplError('Could not start the report.');
     } finally {
       setTplBusy(false);
     }
-  }, [tplBusy, orderId]);
+  }, [tplBusy, orderId, navigation]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -289,7 +293,6 @@ export function OrderBoardScreen() {
           </View>
           <View style={styles.bandStats}>
             <View style={styles.bandStat}><Text style={styles.bandStatNum}>{audit.totals.itemsDone}/{audit.totals.items}</Text><Text style={styles.bandStatLbl}>assemblies</Text></View>
-            <View style={styles.bandStat}><Text style={styles.bandStatNum}>{audit.totals.unitsDone}/{audit.totals.unitsTotal}</Text><Text style={styles.bandStatLbl}>units</Text></View>
             <View style={styles.bandStat}>
               <Text style={[styles.bandStatNum, audit.totals.readyToShip > 0 && { color: '#9fe3a8' }]}>{audit.totals.readyToShip}</Text>
               <Text style={styles.bandStatLbl}>ready to ship</Text>
@@ -460,7 +463,7 @@ export function OrderBoardScreen() {
                 <Text style={styles.sheetClose}>✕</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.sheetSub}>Pick a template — a blank report opens in your browser to fill against {orderNumber || 'this work order'}.</Text>
+            <Text style={styles.sheetSub}>Tap a template to fill the report in the app — or use “Browser” to open it in your phone's browser instead.</Text>
             {tplLoading ? (
               <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
             ) : templates.length === 0 ? (
@@ -468,13 +471,16 @@ export function OrderBoardScreen() {
             ) : (
               <ScrollView style={styles.sheetList}>
                 {templates.map((t) => (
-                  <TouchableOpacity key={t.id} style={styles.tplRow} disabled={tplBusy} onPress={() => startReport(t)}>
-                    <View style={{ flex: 1 }}>
+                  <View key={t.id} style={styles.tplRow}>
+                    <TouchableOpacity style={styles.tplMain} disabled={tplBusy} onPress={() => startReport(t, 'app')}>
                       <Text style={styles.tplName}>{t.name}</Text>
                       <Text style={styles.tplType}>{t.type}</Text>
-                    </View>
-                    <Text style={styles.tplGo}>{tplBusy ? '…' : '›'}</Text>
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.tplBrowser} disabled={tplBusy} onPress={() => startReport(t, 'browser')} hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}>
+                      <Ionicons name="open-outline" size={16} color={WO.textSoft} />
+                      <Text style={styles.tplBrowserTxt}>Browser</Text>
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </ScrollView>
             )}
@@ -590,8 +596,10 @@ const styles = StyleSheet.create({
   sheetSub: { fontSize: 12, color: WO.textSoft, marginTop: 4, marginBottom: 12 },
   sheetList: { marginTop: 2 },
   tplRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: WO.line },
+  tplMain: { flex: 1 },
   tplName: { fontSize: 14, fontWeight: '700', color: WO.text },
   tplType: { fontSize: 11, color: WO.textSoft, textTransform: 'capitalize', marginTop: 1 },
-  tplGo: { fontSize: 20, color: WO.accent, fontWeight: '700', paddingHorizontal: 6 },
+  tplBrowser: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: WO.line, borderRadius: 8 },
+  tplBrowserTxt: { fontSize: 11, fontWeight: '700', color: WO.textSoft },
   sheetErr: { color: WO.bad, fontSize: 12, marginTop: 10 },
 });

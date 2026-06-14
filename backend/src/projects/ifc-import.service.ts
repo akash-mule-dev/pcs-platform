@@ -24,6 +24,7 @@ import { ConversionJob } from '../conversion/conversion-job.entity.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
+import { StorageKeys } from '../storage/storage-keys.js';
 
 /** One node as emitted by extract-ifc-structure.mjs (the normalized intermediate). */
 interface ExtractedNode {
@@ -207,14 +208,12 @@ export class IfcImportService implements OnModuleInit {
       }),
     );
 
-    // Store the source durably BEFORE any processing — this is what makes the
-    // pipeline restartable/retryable and the history complete.
-    fs.mkdirSync(this.tmpDir, { recursive: true });
-    const stagePath = path.join(this.tmpDir, `${importFile.id}-upload${path.extname(originalName) || '.ifc'}`);
+    // Store the source durably BEFORE any processing — streamed straight from
+    // memory to the object store, so the uploaded package never touches local
+    // disk. This is what makes the pipeline restartable/retryable.
     try {
-      fs.writeFileSync(stagePath, data);
-      const storageKey = `import-sources/${importFile.id}${path.extname(originalName) || '.ifc'}`;
-      await this.storage.upload(stagePath, storageKey, 'application/octet-stream');
+      const storageKey = StorageKeys.importSource(organizationId, importFile.id, path.extname(originalName) || '.ifc');
+      await this.storage.uploadBuffer(data, storageKey, 'application/octet-stream');
       importFile.storageKey = storageKey;
       await this.record(importFile, {
         stage: 'uploaded',
@@ -226,8 +225,6 @@ export class IfcImportService implements OnModuleInit {
     } catch (err) {
       await this.fail(importFile, 'uploaded', err);
       throw new BadRequestException(`Could not store the uploaded file: ${this.errMsg(err)}`);
-    } finally {
-      this.safeUnlink(stagePath);
     }
 
     // Hand off to the FIFO pipeline queue: the request returns now; the
@@ -397,14 +394,9 @@ export class IfcImportService implements OnModuleInit {
         const base = path.basename(d.path);
         const ext = base.split('.').pop()!.toLowerCase();
         const buf = await (entryByPath.get(d.path) as any).buffer();
-        const staged = path.join(this.tmpDir, `${imp.id}-doc-${crypto.randomUUID()}.${ext}`);
-        fs.writeFileSync(staged, buf);
-        const key = `assembly-docs/${crypto.randomUUID()}.${ext}`;
-        try {
-          await this.storage.upload(staged, key, DOC_CONTENT_TYPES[ext] ?? 'application/octet-stream');
-        } finally {
-          this.safeUnlink(staged);
-        }
+        const key = StorageKeys.document(organizationId, crypto.randomUUID(), ext);
+        // memory → object store directly (no local temp file)
+        await this.storage.uploadBuffer(buf, key, DOC_CONTENT_TYPES[ext] ?? 'application/octet-stream');
         const nodeId = matchByPath.get(d.path) ?? null;
         if (nodeId) matched++;
         await this.docRepo.save(this.docRepo.create({
@@ -565,6 +557,8 @@ export class IfcImportService implements OnModuleInit {
       const job = await this.conversionService.createJob(
         { name: projectName || base, description: `Imported from ${imp.originalName}`, modelType: 'assembly' },
         file,
+        imp.createdById ?? undefined,
+        imp.organizationId, // background pipeline: pass the tenant explicitly (no request ctx)
       );
       return job;
     } finally {
@@ -650,6 +644,26 @@ export class IfcImportService implements OnModuleInit {
       order: { createdAt: 'DESC' },
       take: 200,
     });
+  }
+
+  /**
+   * Re-download the ORIGINAL uploaded package/source of an import — the exact
+   * IFC/ZIP/CAD file the user uploaded, streamed back from durable storage.
+   * (Imports whose source predates durable storage, or whose ephemeral copy was
+   * lost, have no `storageKey` and 404 with a clear message.)
+   */
+  async getImportSource(
+    projectId: string,
+    importFileId: string,
+  ): Promise<{ importFile: ImportFile; stream: NodeJS.ReadableStream }> {
+    const organizationId = TenantContext.requireOrganizationId();
+    const imp = await this.importRepo.findOne({ where: { id: importFileId, projectId, organizationId } });
+    if (!imp) throw new NotFoundException('Import not found');
+    if (!imp.storageKey) {
+      throw new NotFoundException('The original package for this import is no longer available to download');
+    }
+    const stream = await this.storage.download(imp.storageKey);
+    return { importFile: imp, stream };
   }
 
   /** One import + its full event timeline + a conversion-job snapshot. */

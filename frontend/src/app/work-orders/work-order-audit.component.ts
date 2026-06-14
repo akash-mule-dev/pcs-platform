@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -59,14 +59,14 @@ const PAGE = 200;
             <div class="actions">
               <button class="ghost" (click)="load()"><mat-icon>refresh</mat-icon>Refresh</button>
               <button class="ghost" [class.on]="bulkMode" (click)="toggleBulk()"><mat-icon>checklist</mat-icon>Bulk edit</button>
-              <button class="ghost" [disabled]="labelsBusy" (click)="printLabels()" matTooltip="Print QR piece-mark labels — scan them with the mobile app">
-                <mat-icon>qr_code_2</mat-icon>{{ bulkMode && selected.size > 0 ? 'Labels (' + selected.size + ')' : 'Labels' }}
+              <button class="ghost" (click)="openLabels()" matTooltip="Print QR piece-mark labels — scan them with the mobile app">
+                <mat-icon>qr_code_2</mat-icon>Labels
               </button>
               @if (audit.project) {
                 <a class="ghost" [routerLink]="['/projects', audit.project.id, 'orders', orderId, 'board']"><mat-icon>view_kanban</mat-icon>Board</a>
                 <a class="ghost" [routerLink]="['/projects', audit.project.id, 'orders', orderId, 'quality']"><mat-icon>verified</mat-icon>Quality</a>
-                <a class="ghost" [routerLink]="['/projects', audit.project.id, 'orders', orderId, 'shipping']"><mat-icon>local_shipping</mat-icon>Shipping</a>
               }
+              <a class="ghost" [routerLink]="['/work-orders', orderId, 'shipping']"><mat-icon>local_shipping</mat-icon>Shipping</a>
             </div>
           </div>
           <div class="meta">
@@ -83,9 +83,9 @@ const PAGE = 200;
           <div class="kpis">
             <div class="kpi"><span class="kn">{{ audit.totals.itemsDone }}<em>/{{ audit.totals.items }}</em></span><span class="kl">Assemblies done</span></div>
             <div class="kpi wide">
-              <span class="kn">{{ audit.totals.unitsDone | number }}<em>/{{ audit.totals.unitsTotal | number }}</em> <b>{{ audit.totals.percent }}%</b></span>
+              <span class="kn">{{ audit.totals.percent }}%</span>
               <span class="kbar"><span class="kfill" [style.width.%]="audit.totals.percent"></span></span>
-              <span class="kl">Units through all stages</span>
+              <span class="kl">Overall progress</span>
             </div>
             <div class="kpi"><span class="kn mono">{{ fmtDur(audit.totals.totalTimeSeconds) }}</span><span class="kl">Time logged</span></div>
             <div class="kpi" [class.good]="audit.totals.readyToShip > 0">
@@ -164,7 +164,7 @@ const PAGE = 200;
                 @if (bulkMode) {
                   <span class="cb"><input type="checkbox" [checked]="allFilteredSelected()" (change)="toggleAllFiltered($any($event.target).checked)" matTooltip="Select all filtered"></span>
                 }
-                <span>Assembly</span><span class="num">Units</span><span>Progress</span><span>Status</span>
+                <span>Assembly</span><span>Progress</span><span>Status</span>
               </div>
               <div class="lrows">
                 @for (it of visible; track it.workOrderId) {
@@ -178,11 +178,10 @@ const PAGE = 200;
                       <span class="tag">{{ tagOf(it.nodeType) }}</span>
                       <span class="mk">{{ it.mark }}</span>
                       @if (it.openNcrs > 0) { <span class="ncr-dot" [matTooltip]="it.openNcrs + ' open NCR(s)'">{{ it.openNcrs }}</span> }
-                      @if (it.shipStatus === 'ready') { <mat-icon class="ship-ico ready" [matTooltip]="'Ready to ship · ' + it.shipReadyQty + ' unit(s)'">local_shipping</mat-icon> }
+                      @if (it.shipStatus === 'ready') { <mat-icon class="ship-ico ready" [matTooltip]="'Ready to ship · ' + it.shipReadyQty + ' piece(s)'">local_shipping</mat-icon> }
                       @else if (it.shipStatus === 'shipped') { <mat-icon class="ship-ico shipped" matTooltip="Shipped">done_all</mat-icon> }
                       @else if (it.shipStatus === 'allocated') { <mat-icon class="ship-ico alloc" matTooltip="Allocated to a load">schedule_send</mat-icon> }
                     </span>
-                    <span class="num">{{ it.unitsTotal }}</span>
                     <span class="lprog">
                       <span class="pbar"><span class="pfill" [class.full]="it.percent >= 100" [style.width.%]="it.percent"></span></span>
                       <em>{{ it.percent }}%</em>
@@ -222,7 +221,6 @@ const PAGE = 200;
                 @if (selItem.materialGrade) { <span class="prop"><label>Grade</label>{{ selItem.materialGrade }}</span> }
                 @if (selItem.lengthMm != null) { <span class="prop"><label>Length</label>{{ fmtLen(selItem.lengthMm) }}</span> }
                 @if (selItem.weightKg != null) { <span class="prop"><label>Weight</label>{{ fmtKg(selItem.weightKg) }}</span> }
-                <span class="prop"><label>Units/stage</label>{{ selItem.unitsDone }}/{{ selItem.unitsTotal }}</span>
                 <span class="prop"><label>Time logged</label><span class="mono">{{ fmtDur(selItem.totalTimeSeconds) }}</span></span>
                 <span class="prop"><label>Last activity</label>{{ selItem.lastActivityAt ? (selItem.lastActivityAt | date:'MMM d, HH:mm') : '—' }}</span>
               </div>
@@ -353,6 +351,73 @@ const PAGE = 200;
             }
           </section>
         </div>
+
+        <!-- ── QR label picker: choose which pieces to print ── -->
+        @if (labelsOpen) {
+          <div class="modal-bd" (click)="closeLabels()">
+            <div class="modal lblmodal" (click)="$event.stopPropagation()">
+              <div class="m-head">
+                <div class="m-title">
+                  <mat-icon>qr_code_2</mat-icon>
+                  <div>
+                    <h2>Print QR labels</h2>
+                    <p>Pick the pieces to print — each label is scanned with the mobile app to open its work order.</p>
+                  </div>
+                </div>
+                <button class="m-x" (click)="closeLabels()" aria-label="Close"><mat-icon>close</mat-icon></button>
+              </div>
+
+              <div class="m-tools">
+                <div class="search">
+                  <mat-icon>search</mat-icon>
+                  <input type="text" placeholder="Search mark, profile, grade or work order…" [(ngModel)]="labelQuery">
+                  @if (labelQuery) { <button class="clear" (click)="labelQuery = ''">×</button> }
+                </div>
+              </div>
+
+              <div class="m-subtools">
+                <label class="selall">
+                  <input type="checkbox" [checked]="allLabelFilteredSelected()" [indeterminate]="someLabelFilteredSelected()" (change)="toggleAllLabels($any($event.target).checked)">
+                  <span>{{ labelQuery ? 'Select all shown' : 'Select all' }}</span>
+                </label>
+                <span class="spacer"></span>
+                <span class="m-count"><b>{{ labelSel.size }}</b> of {{ labelPool.length }} selected</span>
+                @if (labelSel.size > 0) { <button class="link" (click)="clearLabels()">Clear</button> }
+              </div>
+
+              <div class="m-list">
+                @for (it of labelFiltered; track it.workOrderId) {
+                  <label class="lblrow" [class.on]="labelSel.has(it.workOrderId)">
+                    <input type="checkbox" [checked]="labelSel.has(it.workOrderId)" (change)="toggleLabel(it)">
+                    <span class="tag">{{ tagOf(it.nodeType) }}</span>
+                    <span class="lbl-mk">{{ it.mark }}</span>
+                    <span class="lbl-spec">{{ specOf(it) }}</span>
+                    <span class="lbl-wo mono">{{ it.workOrderNumber }}</span>
+                  </label>
+                } @empty {
+                  <div class="none"><mat-icon>search_off</mat-icon><p>No pieces match your search.</p></div>
+                }
+              </div>
+
+              @if (labelError) { <p class="m-err"><mat-icon>block</mat-icon>{{ labelError }}</p> }
+
+              <div class="m-foot">
+                @if (labelExcludedCount > 0) {
+                  <span class="m-note" matTooltip="Only pieces linked to a 3D model node carry a scannable code">
+                    <mat-icon>info</mat-icon>{{ labelExcludedCount }} can't be labeled
+                  </span>
+                }
+                @if (labelSel.size > 400) { <span class="m-note warn"><mat-icon>warning</mat-icon>First 400 only</span> }
+                <span class="spacer"></span>
+                <button class="ghost" (click)="closeLabels()">Cancel</button>
+                <button class="apply" [disabled]="labelsBusy || labelSel.size === 0" (click)="printLabels()">
+                  @if (labelsBusy) { <mat-spinner diameter="14"></mat-spinner> } @else { <mat-icon>print</mat-icon> }
+                  <span>Print {{ labelPrintCount }} label{{ labelPrintCount === 1 ? '' : 's' }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        }
       }
     </div>
   `,
@@ -421,6 +486,41 @@ const PAGE = 200;
     .err { display: flex; align-items: center; gap: 6px; background: var(--danger-bg); color: var(--danger-text); border-radius: var(--clay-radius-sm); padding: 9px 12px; font-size: 13px; margin: 0 0 12px; }
     .err mat-icon { font-size: 17px; width: 17px; height: 17px; }
 
+    /* QR label picker modal */
+    .modal-bd { position: fixed; inset: 0; background: rgba(0,0,0,.42); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+    .modal { background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); box-shadow: 0 18px 50px rgba(0,0,0,.28); width: 100%; max-width: 560px; max-height: 86vh; display: flex; flex-direction: column; overflow: hidden; }
+    .m-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--clay-border); }
+    .m-title { display: flex; align-items: flex-start; gap: 11px; }
+    .m-title > mat-icon { color: var(--clay-primary); font-size: 23px; width: 23px; height: 23px; margin-top: 1px; }
+    .m-title h2 { margin: 0; font-size: 17px; font-weight: 700; color: var(--clay-text); }
+    .m-title p { margin: 3px 0 0; font-size: 12.5px; color: var(--clay-text-muted); max-width: 420px; line-height: 1.4; }
+    .m-x { background: none; border: none; color: var(--clay-text-muted); cursor: pointer; padding: 2px; border-radius: var(--clay-radius-xs); display: flex; }
+    .m-x:hover { background: var(--clay-surface-hover); color: var(--clay-text); }
+    .m-x mat-icon { font-size: 20px; width: 20px; height: 20px; }
+    .m-tools { padding: 13px 18px 0; }
+    .m-tools .search { box-sizing: border-box; }
+    .m-subtools { display: flex; align-items: center; gap: 10px; padding: 11px 18px 9px; }
+    .selall { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--clay-text-secondary); cursor: pointer; }
+    .selall input { accent-color: var(--clay-primary); cursor: pointer; width: 15px; height: 15px; }
+    .m-count { font-size: 12.5px; color: var(--clay-text-muted); }
+    .m-count b { color: var(--clay-text); font-weight: 700; }
+    .m-list { overflow-y: auto; padding: 0 10px 4px; flex: 1; min-height: 140px; }
+    .lblrow { display: grid; grid-template-columns: 22px auto minmax(0,1fr) auto; gap: 9px; align-items: center; padding: 8px; border-radius: var(--clay-radius-sm); cursor: pointer; }
+    .lblrow:hover { background: var(--clay-surface-hover); }
+    .lblrow.on { background: var(--info-bg); }
+    .lblrow input { accent-color: var(--clay-primary); cursor: pointer; width: 15px; height: 15px; }
+    .lbl-mk { font-size: 13px; font-weight: 700; color: var(--clay-text); font-family: 'Space Grotesk', monospace; white-space: nowrap; }
+    .lbl-spec { font-size: 12px; color: var(--clay-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lbl-wo { font-size: 11.5px; color: var(--clay-text-muted); white-space: nowrap; }
+    .m-err { display: flex; align-items: center; gap: 6px; background: var(--danger-bg); color: var(--danger-text); font-size: 12.5px; margin: 0; padding: 9px 18px; }
+    .m-err mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .m-foot { display: flex; align-items: center; gap: 10px; padding: 13px 18px; border-top: 1px solid var(--clay-border); background: var(--clay-bg-warm); }
+    .m-note { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--clay-text-muted); }
+    .m-note.warn { color: var(--warning-text); }
+    .m-note mat-icon { font-size: 15px; width: 15px; height: 15px; }
+    .m-foot .ghost { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--clay-border); background: var(--clay-surface); color: var(--clay-text-secondary); border-radius: var(--clay-radius-sm); padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .m-foot .ghost:hover { border-color: var(--clay-primary); color: var(--clay-primary); }
+
     /* Layout */
     .grid { display: grid; grid-template-columns: 390px minmax(0, 1fr); gap: 12px; align-items: start; }
     .card { background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); box-shadow: var(--clay-shadow-soft); }
@@ -438,8 +538,8 @@ const PAGE = 200;
     .fcount { background: var(--clay-bg-warm); color: var(--clay-text-secondary); border-radius: 999px; padding: 0 6px; font-size: 10px; }
     .fchip.on .fcount { background: rgba(255,255,255,.25); color: #fff; }
 
-    .lthead, .lrow { display: grid; grid-template-columns: minmax(0, 1fr) 48px 92px 88px; gap: 8px; align-items: center; padding: 8px 12px; }
-    .ltable.bulk .lthead, .ltable.bulk .lrow { grid-template-columns: 24px minmax(0, 1fr) 48px 92px 88px; }
+    .lthead, .lrow { display: grid; grid-template-columns: minmax(0, 1fr) 92px 88px; gap: 8px; align-items: center; padding: 8px 12px; }
+    .ltable.bulk .lthead, .ltable.bulk .lrow { grid-template-columns: 24px minmax(0, 1fr) 92px 88px; }
     .lthead { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); border-top: 1px solid var(--clay-border); border-bottom: 1px solid var(--clay-border); background: var(--clay-bg-warm); }
     .lrows { max-height: 62vh; overflow-y: auto; }
     .lrow { border-bottom: 1px solid var(--clay-border); cursor: pointer; transition: background .12s; }
@@ -703,6 +803,10 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
     this.selected.clear();
     this.bulkResult = null;
     this.error = null;
+    this.labelsOpen = false;
+    this.labelSel.clear();
+    this.labelQuery = '';
+    this.labelError = null;
   }
 
   load(): void {
@@ -968,15 +1072,72 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
 
   // ── QR piece-mark labels (scanned by the mobile app) ──
   labelsBusy = false;
+  labelsOpen = false;
+  labelQuery = '';
+  labelError: string | null = null;
+  labelSel = new Set<string>(); // workOrderIds chosen to print
+
+  /** Only pieces linked to a model node carry a scannable code. */
+  get labelPool(): AuditItem[] {
+    return this.audit ? this.audit.items.filter((i) => !!i.nodeId) : [];
+  }
+  get labelExcludedCount(): number {
+    return this.audit ? this.audit.items.length - this.labelPool.length : 0;
+  }
+  get labelFiltered(): AuditItem[] {
+    const q = this.labelQuery.trim().toLowerCase();
+    if (!q) return this.labelPool;
+    return this.labelPool.filter((i) =>
+      [i.mark, i.profile, i.materialGrade, i.workOrderNumber, i.name].some((v) => (v ?? '').toLowerCase().includes(q)));
+  }
+  get labelPrintCount(): number { return Math.min(this.labelSel.size, 400); }
+
+  /** Open the picker with everything selected (or the active bulk selection, if any). */
+  openLabels(): void {
+    if (!this.audit) return;
+    const pool = this.labelPool;
+    if (!pool.length) { this.error = 'No assemblies in this order can be labeled (none are linked to a 3D piece).'; return; }
+    this.labelQuery = '';
+    this.labelError = null;
+    const base = this.bulkMode && this.selected.size > 0
+      ? pool.filter((i) => this.selected.has(i.workOrderId))
+      : pool;
+    this.labelSel = new Set(base.map((i) => i.workOrderId));
+    this.labelsOpen = true;
+    setTimeout(() => (document.querySelector('.lblmodal input[type="text"]') as HTMLInputElement | null)?.focus(), 60);
+  }
+  closeLabels(): void { this.labelsOpen = false; this.labelError = null; }
+  toggleLabel(it: AuditItem): void {
+    if (this.labelSel.has(it.workOrderId)) this.labelSel.delete(it.workOrderId);
+    else this.labelSel.add(it.workOrderId);
+  }
+  allLabelFilteredSelected(): boolean {
+    const f = this.labelFiltered;
+    return f.length > 0 && f.every((i) => this.labelSel.has(i.workOrderId));
+  }
+  someLabelFilteredSelected(): boolean {
+    const f = this.labelFiltered;
+    const n = f.reduce((acc, i) => acc + (this.labelSel.has(i.workOrderId) ? 1 : 0), 0);
+    return n > 0 && n < f.length;
+  }
+  toggleAllLabels(checked: boolean): void {
+    for (const i of this.labelFiltered) {
+      if (checked) this.labelSel.add(i.workOrderId);
+      else this.labelSel.delete(i.workOrderId);
+    }
+  }
+  clearLabels(): void { this.labelSel.clear(); }
+  specOf(it: AuditItem): string { return [it.profile, it.materialGrade].filter((v) => !!v).join(' · ') || '—'; }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void { if (this.labelsOpen) this.closeLabels(); }
 
   async printLabels(): Promise<void> {
     if (!this.audit || this.labelsBusy) return;
-    const pool = this.bulkMode && this.selected.size > 0
-      ? this.audit.items.filter((i) => this.selected.has(i.workOrderId))
-      : this.filtered;
-    const items = pool.filter((i) => !!i.nodeId).slice(0, 400);
-    if (!items.length) { this.error = 'No assemblies to label.'; return; }
+    const items = this.labelPool.filter((i) => this.labelSel.has(i.workOrderId)).slice(0, 400);
+    if (!items.length) { this.labelError = 'Select at least one piece to label.'; return; }
     this.labelsBusy = true;
+    this.labelError = null;
     try {
       const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const projectId = this.audit.project?.id ?? '';
@@ -1003,10 +1164,11 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
         @media print { body { padding: 3mm; } }
       </style></head><body>${cards.join('')}</body></html>`;
       const w = window.open('', '_blank');
-      if (!w) { this.error = 'Allow pop-ups for this site to print labels.'; return; }
+      if (!w) { this.labelError = 'Allow pop-ups for this site to print labels.'; return; }
       w.document.write(html);
       w.document.close();
       setTimeout(() => { try { w.focus(); w.print(); } catch { /* user closed it */ } }, 450);
+      this.labelsOpen = false;
     } finally {
       this.labelsBusy = false;
     }

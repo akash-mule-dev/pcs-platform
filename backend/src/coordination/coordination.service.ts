@@ -12,6 +12,8 @@ import { ModelsService } from '../models/models.service.js';
 import { CadConversionService } from '../cad-conversion/cad-conversion.service.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
+import { StorageKeys } from '../storage/storage-keys.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 
 const EXTRACT_DIR = path.join(os.tmpdir(), 'pcs-coordination');
@@ -332,7 +334,7 @@ export class CoordinationService {
 
     for (const pdfPath of pdfPaths) {
       const originalName = path.basename(pdfPath);
-      const storageKey = `drawings/${crypto.randomUUID()}.pdf`;
+      const storageKey = StorageKeys.coordinationDrawing(TenantContext.getOrganizationId(), crypto.randomUUID());
       const stats = fs.statSync(pdfPath);
 
       await this.storage.upload(pdfPath, storageKey, 'application/pdf');

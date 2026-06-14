@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Role } from '../auth/entities/role.entity.js';
 import { User } from '../auth/entities/user.entity.js';
@@ -36,12 +36,6 @@ export class SeedService {
     // Users are the idempotency marker — system roles may already exist
     // (RbacSeedService syncs them on every boot, before --seed runs).
     const existingUsers = await this.userRepo.count();
-    if (existingUsers > 0) {
-      this.logger.log('Database already seeded, skipping');
-      return;
-    }
-
-    this.logger.log('Seeding roles and default users...');
     const defaultPassword = process.env.SEED_DEFAULT_PASSWORD || 'changeme-dev-only';
     if (!process.env.SEED_DEFAULT_PASSWORD) {
       this.logger.warn(
@@ -58,12 +52,47 @@ export class SeedService {
     // runtime via the Roles & Permissions UI (POST /api/rbac/roles).
     const roles: Record<string, Role> = {};
     for (const r of ['admin', 'manager', 'supervisor', 'operator', 'platform-admin']) {
-      const existing = await this.roleRepo.findOne({ where: { name: r } });
+      const existing = await this.roleRepo.findOne({ where: { name: r, organizationId: IsNull() } });
       roles[r] = existing
         ?? await this.roleRepo.save(
           this.roleRepo.create({ name: r, description: `Built-in ${r} role`, isSystem: true, organizationId: null }),
         );
     }
+
+    // Always ensure the requested platform operator exists, including on an
+    // already-seeded database. Existing passwords are deliberately preserved.
+    const akashEmail = 'akashmule350@gmail.com';
+    const existingAkash = await this.userRepo.findOne({ where: { email: akashEmail } });
+    if (existingAkash) {
+      existingAkash.firstName = 'Akash';
+      existingAkash.lastName = 'Mule';
+      existingAkash.mobileNo = '7066013478';
+      existingAkash.roleId = roles['platform-admin'].id;
+      existingAkash.organizationId = null;
+      existingAkash.isActive = true;
+      await this.userRepo.save(existingAkash);
+      this.logger.log(`Ensured platform admin ${akashEmail}`);
+    } else {
+      await this.userRepo.save(this.userRepo.create({
+        employeeId: 'PLATFORM-AKASH',
+        email: akashEmail,
+        mobileNo: '7066013478',
+        passwordHash: hash,
+        firstName: 'Akash',
+        lastName: 'Mule',
+        roleId: roles['platform-admin'].id,
+        organizationId: null,
+        isActive: true,
+      }));
+      this.logger.log(`Created platform admin ${akashEmail}`);
+    }
+
+    if (existingUsers > 0) {
+      this.logger.log('Default users already seeded; platform admin sync completed');
+      return;
+    }
+
+    this.logger.log('Seeding default users...');
 
     // ─── DEFAULT USERS (login accounts only) ────────────────────────────
     // EMP-000 is the org-less PLATFORM operator (provisions tenants); the
@@ -101,7 +130,7 @@ export class SeedService {
       }));
     }
 
-    this.logger.log('Seeded: 5 system roles, 13 users (incl. org-less platform@pcs.com). All business data (processes, lines, work orders) must be created via the web portal or mobile app.');
+    this.logger.log('Seeded: 5 system roles, 14 users (including two org-less platform admins). All business data (processes, lines, work orders) must be created via the web portal or mobile app.');
   }
 
 }

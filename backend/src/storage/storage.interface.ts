@@ -5,6 +5,13 @@ export interface StorageProvider {
   upload(filePath: string, key: string, mimeType: string): Promise<string>;
 
   /**
+   * Upload an in-memory buffer to storage and return the storage key — used when
+   * the bytes are already in memory (e.g. a freshly uploaded package), so they
+   * never have to touch the local disk on the way to the object store.
+   */
+  uploadBuffer(data: Buffer, key: string, mimeType: string): Promise<string>;
+
+  /**
    * Download a file from storage and return a readable stream.
    */
   download(key: string): Promise<NodeJS.ReadableStream>;

@@ -24,6 +24,7 @@ export interface Company {
   kind: string;
   isActive: boolean;
   profile: CompanyProfile;
+  hasLogo: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,4 +38,17 @@ export class CompanyApiService {
   update(body: { name?: string; description?: string; profile?: CompanyProfile }): Observable<Company> {
     return this.api.patch('/company', body);
   }
+
+  /** Fetch the company logo as an authed blob (for an object URL). */
+  getLogo(): Observable<Blob> { return this.api.getBlob('/company/logo'); }
+
+  /** Upload/replace the company logo (multipart). */
+  uploadLogo(file: File): Observable<Company> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.api.postForm('/company/logo', form);
+  }
+
+  /** Remove the company logo. */
+  removeLogo(): Observable<Company> { return this.api.delete('/company/logo'); }
 }

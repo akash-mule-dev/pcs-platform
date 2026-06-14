@@ -96,7 +96,24 @@ export function AssemblyDetailScreen() {
   const [tplLoading, setTplLoading] = useState(false);
   const [tplBusy, setTplBusy] = useState(false);
 
-  useLayoutEffect(() => { navigation.setOptions({ title: mark || 'Assembly' }); }, [navigation, mark]);
+  // Raise an NCR linked to THIS assembly (node + project + work order). Opens
+  // in-stack so "back" returns here and we stay on the current tab.
+  const openNcr = useCallback(
+    () => navigation.navigate('NcrCreate', { projectId, nodeId, title: `${mark} — quality non-conformance`, severity: 'medium' }),
+    [navigation, projectId, nodeId, mark],
+  );
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: mark || 'Assembly',
+      headerRight: () => (
+        <TouchableOpacity onPress={openNcr} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.hdrNcr}>
+          <Ionicons name="alert-circle-outline" size={18} color={Colors.danger} />
+          <Text style={styles.hdrNcrTxt}>NCR</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, mark, openNcr]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -255,14 +272,18 @@ export function AssemblyDetailScreen() {
       finally { setTplLoading(false); }
     }
   };
-  const startReport = async (t: MTemplate) => {
+  const startReport = async (t: MTemplate, mode: 'app' | 'browser') => {
     if (tplBusy) return;
     setTplBusy(true);
     try {
       const r = await qcReportsService.create({ templateId: t.id, productionOrderId: orderId, assemblyNodeId: nodeId });
-      const token = (await authService.getToken()) ?? '';
       setTplVisible(false);
-      await Linking.openURL(`${environment.webUrl}/qr/${r.id}?token=${encodeURIComponent(token)}`);
+      if (mode === 'browser') {
+        const token = (await authService.getToken()) ?? '';
+        await Linking.openURL(`${environment.webUrl}/qr/${r.id}?token=${encodeURIComponent(token)}`);
+      } else {
+        navigation.navigate('QcReport', { reportId: r.id, title: mark });
+      }
     } catch { Alert.alert('QC report', 'Could not start the report.'); }
     finally { setTplBusy(false); }
   };
@@ -287,8 +308,6 @@ export function AssemblyDetailScreen() {
       setMeasureOpen(false); await load();
     } catch { /* ignore */ } finally { setQaBusy(false); }
   };
-  const openNcr = () => (navigation.getParent() as any)?.navigate('More', { screen: 'NcrCreate', params: { projectId, nodeId, title: `${mark} — quality non-conformance`, severity: 'medium' } });
-
   const specRows = useMemo(() => {
     const out: { k: string; v: string }[] = [];
     if (audit) out.push({ k: 'Work order', v: audit.workOrderNumber });
@@ -343,7 +362,7 @@ export function AssemblyDetailScreen() {
               </View>
             )}
           </View>
-          <Text style={styles.heroMeta}>{audit.unitsDone}/{audit.unitsTotal} units · {fmtDur(totalTime)} logged</Text>
+          <Text style={styles.heroMeta}>{Math.round(audit.percentComplete)}% complete · {fmtDur(totalTime)} logged</Text>
         </View>
       </View>
 
@@ -597,7 +616,7 @@ export function AssemblyDetailScreen() {
       {audit.ncrs.length === 0 ? <Text style={styles.muted}>No NCRs raised against this assembly.</Text> : (
         <View style={styles.listGap}>
           {audit.ncrs.map((n) => (
-            <TouchableOpacity key={n.id} style={styles.rowItem} onPress={() => (navigation.getParent() as any)?.navigate('More', { screen: 'NcrDetail', params: { id: n.id } })}>
+            <TouchableOpacity key={n.id} style={styles.rowItem} onPress={() => navigation.navigate('NcrDetail', { id: n.id })}>
               <Text style={styles.ncrNum}>{n.number}</Text>
               <Text style={[styles.rowMain, { flex: 1 }]} numberOfLines={1}>{n.title}</Text>
               <View style={[styles.chip, { backgroundColor: n.status === 'closed' ? Colors.success : Colors.danger }]}>
@@ -636,19 +655,22 @@ export function AssemblyDetailScreen() {
               <Text style={styles.sheetTitle}>QC report for {mark}</Text>
               <TouchableOpacity onPress={() => setTplVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Text style={styles.sheetClose}>✕</Text></TouchableOpacity>
             </View>
-            <Text style={styles.sheetSub}>Pick a template — a blank report opens in your browser, linked to this assembly.</Text>
+            <Text style={styles.sheetSub}>Tap a template to fill it in the app (linked to this assembly) — or use “Browser” to open it in your phone's browser.</Text>
             {tplLoading ? <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} /> : templates.length === 0 ? (
               <Text style={styles.muted}>No templates yet — create one in the web portal.</Text>
             ) : (
               <ScrollView style={{ marginTop: 2 }}>
                 {templates.map((t) => (
-                  <TouchableOpacity key={t.id} style={styles.tplRow} disabled={tplBusy} onPress={() => startReport(t)}>
-                    <View style={{ flex: 1 }}>
+                  <View key={t.id} style={styles.tplRow}>
+                    <TouchableOpacity style={styles.tplMain} disabled={tplBusy} onPress={() => startReport(t, 'app')}>
                       <Text style={styles.tplName}>{t.name}</Text>
                       <Text style={styles.tplType}>{t.type}</Text>
-                    </View>
-                    <Text style={styles.tplGo}>{tplBusy ? '…' : '›'}</Text>
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.tplBrowser} disabled={tplBusy} onPress={() => startReport(t, 'browser')} hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}>
+                      <Ionicons name="open-outline" size={16} color={Colors.textSecondary} />
+                      <Text style={styles.tplBrowserTxt}>Browser</Text>
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </ScrollView>
             )}
@@ -662,6 +684,8 @@ export function AssemblyDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: WO.mist },
   content: { padding: 16, paddingBottom: 40 },
+  hdrNcr: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  hdrNcrTxt: { color: Colors.danger, fontWeight: '700', fontSize: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   muted: { color: Colors.textSecondary, marginVertical: 8 },
   err: { color: Colors.danger, fontSize: 13, marginBottom: 8 },
@@ -765,7 +789,9 @@ const styles = StyleSheet.create({
   sheetClose: { fontSize: 16, color: Colors.textSecondary, fontWeight: '700' },
   sheetSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 4, marginBottom: 10 },
   tplRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  tplMain: { flex: 1 },
   tplName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   tplType: { fontSize: 11, color: Colors.textSecondary, textTransform: 'capitalize', marginTop: 1 },
-  tplGo: { fontSize: 20, color: Colors.primary, fontWeight: '700', paddingHorizontal: 6 },
+  tplBrowser: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: Colors.border, borderRadius: 8 },
+  tplBrowserTxt: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
 });

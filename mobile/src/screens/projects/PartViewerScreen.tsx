@@ -90,6 +90,14 @@ window.loadModelFromBase64 = function(b64) {
     for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     new GLTFLoader().parse(bytes.buffer, '', function(gltf) {
       var model = gltf.scene;
+      // IFC-converted GLBs carry no vertex normals and no materials, so the
+      // GLTFLoader default (metallic PBR, no env map) renders invisible. Give
+      // every mesh computed normals + a lit steel material so it's visible.
+      model.traverse(function(o) {
+        if (!o.isMesh) return;
+        if (o.geometry && !(o.geometry.attributes && o.geometry.attributes.normal)) o.geometry.computeVertexNormals();
+        o.material = new THREE.MeshStandardMaterial({ color: 0x9aa2ad, metalness: 0.2, roughness: 0.75, side: THREE.DoubleSide });
+      });
       var iso = window._iso; var matched = 0;
       if (Array.isArray(iso) && iso.length) {
         var set = {};
@@ -102,6 +110,10 @@ window.loadModelFromBase64 = function(b64) {
           }
         });
       }
+      // Update world matrices first: setFromObject on individual leaf meshes
+      // reads matrixWorld, which is stale until the whole tree is updated — else
+      // the bbox/center is wrong and the model gets positioned off-screen.
+      model.updateMatrixWorld(true);
       var box = new THREE.Box3(), tmp = new THREE.Box3(), any = false;
       model.traverse(function(o) { if (o.isMesh && o.visible) { tmp.setFromObject(o); if (!tmp.isEmpty()) { box.union(tmp); any = true; } } });
       if (!any) { box.setFromObject(model); }

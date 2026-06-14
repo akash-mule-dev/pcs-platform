@@ -141,6 +141,7 @@ export class ConversionProcessor {
         modelType: (job.modelType as 'assembly' | 'quality') || 'assembly',
       },
       file,
+      job.organizationId, // background context: org comes from the job, not the request
     );
   }
 

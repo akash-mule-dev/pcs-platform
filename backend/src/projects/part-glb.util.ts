@@ -9,7 +9,14 @@
 // meshes/accessors/materials/textures are then GC'd via listParents(). Returns
 // the new bytes + surviving mesh count so callers can fall back to the full
 // model when nothing matched.
-import { WebIO } from '@gltf-transform/core';
+//
+// NOTE: @gltf-transform is loaded LAZILY (dynamic import inside the function),
+// not at module top-level. `vercel-build` strips node_modules/@gltf-transform
+// from the serverless bundle to stay under the size limit, and this package is
+// ESM-only so webpack externalizes it rather than bundling it — a static import
+// here therefore crashes the entire API on boot (Cannot find module). Same lazy
+// pattern as models.controller.ts. The carving feature simply isn't available on
+// the (pruned) Vercel runtime; everywhere else the import resolves normally.
 
 export interface PartGlbResult {
   data: Uint8Array;
@@ -20,6 +27,7 @@ export async function extractPartGlb(
   glbData: Uint8Array,
   meshNames: string[],
 ): Promise<PartGlbResult> {
+  const { WebIO } = await import('@gltf-transform/core');
   const io = new WebIO();
   const doc = await io.readBinary(glbData);
   const root = doc.getRoot();

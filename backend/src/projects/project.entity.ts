@@ -5,21 +5,20 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
-  ManyToOne,
-  JoinColumn,
   Index,
 } from 'typeorm';
 import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
 import { AssemblyNode } from './assembly-node.entity.js';
 import { ImportFile } from './import-file.entity.js';
-import { Process } from '../processes/process.entity.js';
 
 /**
  * A fabrication project (job / contract). The top-level container a customer
  * creates and uploads an IFC/CAD file against. Its full structure lives in
  * `assembly_nodes` (one self-referencing tree); source files in `import_files`.
- * A pure design container: lifecycle status and due dates live on each
- * production order, not here.
+ * A pure design container: it carries no process — stage routing is chosen
+ * per production order (and flows onto that order's work orders), since one
+ * design can back many orders with different routings. Lifecycle status and
+ * due dates also live on each production order, not here.
  */
 @Entity('projects')
 @Index(['organizationId', 'projectNumber'])
@@ -38,14 +37,6 @@ export class Project extends TenantOwnedEntity {
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
-
-  /** The fabrication process (stage routing) attached to this project. */
-  @Column({ name: 'process_id', type: 'uuid', nullable: true })
-  processId: string | null;
-
-  @ManyToOne(() => Process, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'process_id' })
-  process: Process | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;

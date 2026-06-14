@@ -6,6 +6,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
+import { StorageKeys } from '../storage/storage-keys.js';
 import { EVIDENCE_EXTENSIONS, EVIDENCE_MIME_TYPES } from '../quality-data/evidence.constants.js';
 import { Ncr, NcrStatus } from './entities/ncr.entity.js';
 import { Capa, CapaStatus } from './entities/capa.entity.js';
@@ -312,7 +313,7 @@ export class QualityNcrService {
       try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
       throw new BadRequestException('Evidence must be a JPEG, PNG or WebP image');
     }
-    const key = `ncr-evidence/${n.id}/${crypto.randomUUID()}${ext}`;
+    const key = StorageKeys.ncrEvidence(n.organizationId ?? TenantContext.getOrganizationId(), n.id, crypto.randomUUID(), ext);
     await this.storage.upload(file.path, key, file.mimetype || 'image/jpeg');
     try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
     n.attachments = [...(n.attachments ?? []), key];

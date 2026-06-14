@@ -13,7 +13,6 @@ export interface Project {
   projectNumber: string | null;
   clientName: string | null;
   description: string | null;
-  processId: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -51,7 +50,6 @@ export type ProjectSummary = Project & { metrics: ProjectMetrics };
 
 export interface CreateProject {
   name: string;
-  processId?: string | null;
   projectNumber?: string | null;
   clientName?: string | null;
   description?: string | null;
@@ -83,6 +81,8 @@ export interface ImportFileRow {
   modelId: string | null;
   conversionJobId: string | null;
   error: string | null;
+  /** Durable storage pointer — present ⇒ the original package can be re-downloaded. */
+  storageKey?: string | null;
   createdByName: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -440,6 +440,11 @@ export class ProjectsService {
   /** Retry a failed import (conversion-only, or the full pipeline from the stored source). */
   retryImport(projectId: string, importId: string): Observable<ImportStarted> {
     return this.http.post<ImportStarted>(`${this.base}/${projectId}/imports/${importId}/retry`, {});
+  }
+
+  /** Re-download the ORIGINAL uploaded package/source file of an import (authed blob). */
+  importSourceBlob(projectId: string, importId: string): Observable<Blob> {
+    return this.http.get(`${this.base}/${projectId}/imports/${importId}/source`, { responseType: 'blob' });
   }
 
   /** Revision diff of an import (added/changed/missing) + production impact per piece. */

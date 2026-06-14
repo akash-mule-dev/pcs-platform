@@ -24,6 +24,15 @@ export class ConversionJob {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  /**
+   * Owning organization — stamped at creation so the background processor/worker
+   * (which has no request context) can write the GLB under the tenant's prefix
+   * and dedupe stays scoped to one client. Nullable for legacy/system jobs.
+   */
+  @Index()
+  @Column({ name: 'organization_id', type: 'uuid', nullable: true })
+  organizationId: string | null;
+
   @Column({ name: 'original_name', type: 'varchar', length: 255 })
   originalName: string;
 

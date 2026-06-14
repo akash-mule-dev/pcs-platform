@@ -12,6 +12,7 @@ import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.d
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
+import { StorageKeys } from '../storage/storage-keys.js';
 import { applyAutoFail, evaluateTolerance, requiresSignoff } from './quality-math.js';
 import { User } from '../auth/entities/user.entity.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -375,7 +376,7 @@ export class QualityDataService {
       try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
       throw new BadRequestException('Evidence must be a JPEG, PNG or WebP image');
     }
-    const key = `quality-evidence/${item.id}/${crypto.randomUUID()}${ext}`;
+    const key = StorageKeys.qualityEvidence(item.organizationId ?? this.org, item.id, crypto.randomUUID(), ext);
     await this.storage.upload(file.path, key, file.mimetype || 'image/jpeg');
     try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
     item.attachments = [...(item.attachments ?? []), key];

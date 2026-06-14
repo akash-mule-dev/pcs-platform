@@ -98,6 +98,13 @@ interface StepDef { key: string; label: string; icon: string; }
           </div>
         </div>
 
+        @if (sourceError(); as msg) {
+          <div class="dl-error">
+            <mat-icon>error_outline</mat-icon><span>{{ msg }}</span>
+            <button class="ghost-btn" (click)="sourceError.set(null)" matTooltip="Dismiss"><mat-icon>close</mat-icon></button>
+          </div>
+        }
+
         @if (!store.importsLoaded()) {
           <div class="empty"><mat-spinner diameter="26"></mat-spinner></div>
         } @else if (store.imports().length === 0) {
@@ -133,6 +140,12 @@ interface StepDef { key: string; label: string; icon: string; }
                 <span class="muted" [matTooltip]="(((row.startedAt || row.createdAt) | date:'medium') || '')">{{ ago(row.startedAt || row.createdAt) }}</span>
                 <span class="num muted">{{ fmtDuration(row) }}</span>
                 <span class="row-actions">
+                  @if (row.storageKey) {
+                    <button class="ghost-btn" (click)="downloadSource(row, $event)" [disabled]="downloading() === row.id"
+                            matTooltip="Download the original uploaded package">
+                      <mat-icon>{{ downloading() === row.id ? 'hourglass_top' : 'download' }}</mat-icon>
+                    </button>
+                  }
                   @if (row.status === 'failed') {
                     <button class="ghost-btn warn" (click)="retry(row, $event)" matTooltip="Retry this import">
                       <mat-icon>replay</mat-icon><span>Retry</span>
@@ -237,7 +250,7 @@ interface StepDef { key: string; label: string; icon: string; }
                                     <span class="spacer"></span>
                                     @if (r.shippedQty > 0) { <span class="chip del">{{ r.shippedQty }} shipped</span> }
                                     @for (w of r.workOrders.slice(0, 2); track w.orderNumber) {
-                                      <span class="chip" [matTooltip]="w.orderNumber + ' · ' + w.status">{{ w.productionOrder || w.orderNumber }}: {{ w.unitsDone }}/{{ w.unitsTotal }}</span>
+                                      <span class="chip" [matTooltip]="w.orderNumber + ' · ' + w.status">{{ w.productionOrder || w.orderNumber }} · {{ w.unitsTotal ? ((100 * w.unitsDone / w.unitsTotal) | number:'1.0-0') : 0 }}%</span>
                                     }
                                   </div>
                                 }
@@ -404,6 +417,12 @@ interface StepDef { key: string; label: string; icon: string; }
     .imp-kind { color: var(--clay-text-secondary); }
     .spacer { flex: 1; }
 
+    .dl-error { display: flex; align-items: center; gap: 8px; margin: 12px 18px 0; padding: 8px 12px; font-size: 12.5px;
+      background: var(--danger-bg); color: var(--danger-text); border-radius: var(--clay-radius-sm); }
+    .dl-error mat-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
+    .dl-error span { flex: 1; }
+    .dl-error .ghost-btn { padding: 2px; border: none; background: none; color: inherit; }
+
     .empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 20px; text-align: center; color: var(--clay-text-muted); }
     .empty.sm { padding: 16px; }
     .empty mat-icon { font-size: 38px; width: 38px; height: 38px; opacity: .5; }
@@ -431,6 +450,9 @@ export class ProjectMonitoringComponent implements OnDestroy {
   readonly detail = signal<ImportDetail | null>(null);
   readonly revision = signal<ImportRevision | null>(null);
   readonly pkgDocs = signal<PackageDocumentRow[] | null>(null);
+  /** Import currently being downloaded, and the last download error message. */
+  readonly downloading = signal<string | null>(null);
+  readonly sourceError = signal<string | null>(null);
   /** stage:progress snapshot of the expanded row — refetch the timeline when it moves. */
   private lastSnapshot = '';
   private refetchFx = effect(() => {
@@ -553,6 +575,31 @@ export class ProjectMonitoringComponent implements OnDestroy {
   retry(row: ImportFileRow, ev: Event): void {
     ev.stopPropagation();
     this.store.retryImport(row.id);
+  }
+
+  /** Re-download the original uploaded package, saving it under its original name. */
+  downloadSource(row: ImportFileRow, ev: Event): void {
+    ev.stopPropagation();
+    if (this.downloading()) return;
+    this.downloading.set(row.id);
+    this.sourceError.set(null);
+    this.svc.importSourceBlob(this.store.id(), row.id).subscribe({
+      next: (blob) => {
+        this.downloading.set(null);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = row.originalName || 'package';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      },
+      error: () => {
+        this.downloading.set(null);
+        this.sourceError.set(`Couldn't download "${row.originalName}" — the original package is no longer available.`);
+      },
+    });
   }
 
   onFile(event: Event): void {

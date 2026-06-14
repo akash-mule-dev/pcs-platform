@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render } from '@testing-library/react-native';
 
 // ── Mocks ──
 
@@ -61,10 +61,16 @@ describe('ARViewScreen (host for ported AR experience)', () => {
     mockModelState = READY;
   });
 
-  it('shows the AR QA Inspector intro once the model is ready', () => {
-    const { getByText } = render(<ARViewScreen />);
-    expect(getByText('AR QA Inspector')).toBeTruthy();
-    expect(getByText('Start AR Session')).toBeTruthy();
+  it('opens the live AR experience directly once the model is ready (no launch screen)', () => {
+    const { getByTestId } = render(<ARViewScreen />);
+    expect(getByTestId('ar-experience')).toBeTruthy();
+    expect(experienceProps.modelUri).toBe('file:///cache/test-model-1.glb');
+    expect(experienceProps.wireframeUri).toBe('file:///cache/test-model-1_wireframe.glb');
+  });
+
+  it('opens in Plane mode by default; the three modes are switched inline in-AR', () => {
+    render(<ARViewScreen />);
+    expect(experienceProps.initialTrackingMode).toBe('plane');
   });
 
   it('shows a preparing state while the model downloads', () => {
@@ -81,26 +87,10 @@ describe('ARViewScreen (host for ported AR experience)', () => {
     expect(getByText('Download failed (HTTP 404)')).toBeTruthy();
   });
 
-  it('opens the tracking-mode picker when Start AR Session is pressed', () => {
-    const { getByText } = render(<ARViewScreen />);
-    fireEvent.press(getByText('Start AR Session'));
-    expect(getByText('Choose Tracking Mode')).toBeTruthy();
-  });
-
-  it('launches the AR experience with the prepared model after choosing a mode', () => {
-    const { getByText, getByTestId } = render(<ARViewScreen />);
-    fireEvent.press(getByText('Start AR Session'));
-    fireEvent.press(getByText('World Position'));
-
-    expect(getByTestId('ar-experience')).toBeTruthy();
-    expect(experienceProps.modelUri).toBe('file:///cache/test-model-1.glb');
-    expect(experienceProps.wireframeUri).toBe('file:///cache/test-model-1_wireframe.glb');
-    expect(experienceProps.trackingMode).toBe('world');
-  });
-
-  it('links into Quality Inspection for the same model', () => {
-    const { getByText } = render(<ARViewScreen />);
-    fireEvent.press(getByText('View Quality Inspection'));
+  it('hands the AR experience a records action that opens Quality Inspection for the same model', () => {
+    render(<ARViewScreen />);
+    expect(typeof experienceProps.onViewRecords).toBe('function');
+    experienceProps.onViewRecords();
     expect(mockNavigate).toHaveBeenCalledWith(
       'QualityView',
       expect.objectContaining({ modelId: 'test-model-1', fileUrl: 'https://example.com/model.glb' }),

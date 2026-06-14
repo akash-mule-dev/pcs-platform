@@ -4,12 +4,29 @@ import { In, Not, Repository } from 'typeorm';
 import { Shipment, ShipmentStatus } from './shipment.entity.js';
 import { ShipmentItem } from './shipment-item.entity.js';
 import { AssemblyNode } from '../projects/assembly-node.entity.js';
+import { ProductionOrder } from '../projects/production-order.entity.js';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
 import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
 import { TenantScopedService } from '../common/tenant/tenant-scoped.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { AddShipmentItemDto } from './dto/add-shipment-item.dto.js';
+import { CreateShipmentDto } from './dto/create-shipment.dto.js';
+
+/** A production-complete assembly of one work order, with its ship allocation. */
+export interface ShipReadyRow {
+  nodeId: string;
+  mark: string | null;
+  name: string | null;
+  profile: string | null;
+  weightKg: number | null;
+  completedQty: number;
+  shippedQty: number;
+  allocatedQty: number;
+  availableQty: number;
+  openNcr: number;
+  blocked: boolean;
+}
 
 @Injectable()
 export class ShippingService extends TenantScopedService<Shipment> {
@@ -17,11 +34,38 @@ export class ShippingService extends TenantScopedService<Shipment> {
     @InjectRepository(Shipment) repo: Repository<Shipment>,
     @InjectRepository(ShipmentItem) private readonly itemRepo: Repository<ShipmentItem>,
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
+    @InjectRepository(ProductionOrder) private readonly orderRepo: Repository<ProductionOrder>,
     @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
   ) {
     super(repo);
+  }
+
+  /**
+   * Create a load for ONE work order (production order). The project is derived
+   * from the order — shipping belongs to the work order, never the project.
+   */
+  async create(dto: CreateShipmentDto): Promise<Shipment> {
+    const organizationId = TenantContext.requireOrganizationId();
+    const order = await this.orderRepo.findOne({ where: { id: dto.productionOrderId, organizationId } });
+    if (!order) throw new NotFoundException('Work order not found');
+    const entity = this.repo.create({
+      ...(dto as any),
+      productionOrderId: order.id,
+      projectId: order.projectId,
+      organizationId,
+    });
+    return this.repo.save(entity as any);
+  }
+
+  /** Loads for one work order (production order). */
+  async findByOrder(productionOrderId: string): Promise<Shipment[]> {
+    return this.repo.find({
+      where: { productionOrderId, organizationId: TenantContext.requireOrganizationId() },
+      relations: ['items', 'items.assemblyNode'],
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async findByProject(projectId: string): Promise<Shipment[]> {
@@ -33,13 +77,17 @@ export class ShippingService extends TenantScopedService<Shipment> {
   }
 
   /**
-   * Units of an assembly that have finished production, summed across ALL its
-   * work orders (one per production order). A unit counts as complete once it
-   * has been through every non-skipped stage; for status-only stage rows (no
-   * quantity tracking) a fully completed work order counts as its quantity.
+   * Units of an assembly that have finished production. Scoped to ONE work order
+   * (production order) when `productionOrderId` is given — the count engine then
+   * reflects only that run — else summed across all the node's work orders
+   * (legacy/unscoped loads). A unit counts as complete once it has been through
+   * every non-skipped stage; for status-only stage rows a fully completed work
+   * order counts as its quantity.
    */
-  private async completedUnits(nodeId: string, organizationId: string): Promise<number> {
-    const wos = await this.woRepo.find({ where: { organizationId, assemblyNodeId: nodeId } });
+  private async completedUnits(nodeId: string, organizationId: string, productionOrderId?: string | null): Promise<number> {
+    const where: any = { organizationId, assemblyNodeId: nodeId };
+    if (productionOrderId) where.productionOrderId = productionOrderId;
+    const wos = await this.woRepo.find({ where });
     if (!wos.length) return 0;
     const rows = await this.wosRepo.find({ where: { workOrderId: In(wos.map((w) => w.id)) } });
     const byWo = new Map<string, WorkOrderStage[]>();
@@ -56,27 +104,28 @@ export class ShippingService extends TenantScopedService<Shipment> {
     return units;
   }
 
-  /** Units of this assembly already on shipped/delivered loads. */
-  private async shippedUnits(nodeId: string, organizationId: string): Promise<number> {
-    const row = await this.itemRepo
+  /** Units of this assembly already on shipped/delivered loads (of one order when scoped). */
+  private async shippedUnits(nodeId: string, organizationId: string, productionOrderId?: string | null): Promise<number> {
+    const qb = this.itemRepo
       .createQueryBuilder('it')
       .innerJoin(Shipment, 's', 's.id = it.shipment_id')
       .where('it.assembly_node_id = :nodeId', { nodeId })
       .andWhere('it.organization_id = :org', { org: organizationId })
-      .andWhere('s.status IN (:...done)', { done: [ShipmentStatus.SHIPPED, ShipmentStatus.DELIVERED] })
-      .select('COALESCE(SUM(it.quantity), 0)', 'sum')
-      .getRawOne<{ sum: string }>();
+      .andWhere('s.status IN (:...done)', { done: [ShipmentStatus.SHIPPED, ShipmentStatus.DELIVERED] });
+    if (productionOrderId) qb.andWhere('s.production_order_id = :poid', { poid: productionOrderId });
+    const row = await qb.select('COALESCE(SUM(it.quantity), 0)', 'sum').getRawOne<{ sum: string }>();
     return Number(row?.sum ?? 0);
   }
 
   /**
-   * Add an assembly to a load — GATED: it must have production-complete units
-   * left to ship (work-order stages done, across the project's work orders),
-   * no open NCRs, and not already be fully allocated to other loads.
+   * Add an assembly to a load — GATED: within THIS load's work order it must have
+   * production-complete units left to ship (its stages done), no open NCRs, and
+   * not already be fully allocated to that order's other loads.
    */
   async addItem(shipmentId: string, dto: AddShipmentItemDto): Promise<ShipmentItem> {
     const organizationId = TenantContext.requireOrganizationId();
     const shipment = await this.findOne(shipmentId); // tenant check
+    const orderId = shipment.productionOrderId;
 
     const node = await this.nodeRepo.findOne({ where: { id: dto.assemblyNodeId, organizationId } });
     if (!node) throw new NotFoundException('Assembly not found');
@@ -85,7 +134,7 @@ export class ShippingService extends TenantScopedService<Shipment> {
       throw new BadRequestException(`${label} belongs to a different project than this load`);
     }
 
-    const completed = await this.completedUnits(node.id, organizationId);
+    const completed = await this.completedUnits(node.id, organizationId, orderId);
     if (completed <= 0) {
       throw new BadRequestException(`${label} cannot be shipped: its production stages are not complete yet.`);
     }
@@ -98,17 +147,17 @@ export class ShippingService extends TenantScopedService<Shipment> {
       throw new BadRequestException(`${label} has ${openNcr} open NCR${plural} — close or disposition before shipping.`);
     }
 
-    // Quantity guard: shipped so far + already planned on open loads + this add ≤ completed units.
-    const planned = await this.itemRepo
+    // Quantity guard: shipped so far + already planned on this order's open loads + this add ≤ completed units.
+    const plannedQb = this.itemRepo
       .createQueryBuilder('it')
       .innerJoin(Shipment, 's', 's.id = it.shipment_id')
       .where('it.assembly_node_id = :nodeId', { nodeId: node.id })
       .andWhere('it.organization_id = :org', { org: organizationId })
-      .andWhere('s.status NOT IN (:...closed)', { closed: [ShipmentStatus.SHIPPED, ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED] })
-      .select('COALESCE(SUM(it.quantity), 0)', 'sum')
-      .getRawOne<{ sum: string }>();
+      .andWhere('s.status NOT IN (:...closed)', { closed: [ShipmentStatus.SHIPPED, ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED] });
+    if (orderId) plannedQb.andWhere('s.production_order_id = :poid', { poid: orderId });
+    const planned = await plannedQb.select('COALESCE(SUM(it.quantity), 0)', 'sum').getRawOne<{ sum: string }>();
     const alreadyPlanned = Number(planned?.sum ?? 0);
-    const shipped = await this.shippedUnits(node.id, organizationId);
+    const shipped = await this.shippedUnits(node.id, organizationId, orderId);
     const remaining = completed - shipped - alreadyPlanned;
     const qty = dto.quantity ?? 1;
     if (qty > remaining) {
@@ -159,7 +208,7 @@ export class ShippingService extends TenantScopedService<Shipment> {
     const organizationId = TenantContext.requireOrganizationId();
     const shipment = await this.repo.findOne({
       where: { id, organizationId },
-      relations: ['project', 'items', 'items.assemblyNode'],
+      relations: ['project', 'productionOrder', 'items', 'items.assemblyNode'],
     });
     if (!shipment) throw new NotFoundException('Shipment not found');
 
@@ -229,6 +278,7 @@ export class ShippingService extends TenantScopedService<Shipment> {
     return {
       organization: { name: org[0]?.name ?? 'Organization' },
       project: { id: shipment.projectId, name: shipment.project?.name ?? null, number: (shipment.project as any)?.projectNumber ?? null, client: (shipment.project as any)?.clientName ?? null },
+      order: { id: shipment.productionOrderId, number: shipment.productionOrder?.number ?? null, customerName: shipment.productionOrder?.customerName ?? null },
       shipment: {
         id: shipment.id,
         number: shipment.shipmentNumber,
@@ -243,5 +293,86 @@ export class ShippingService extends TenantScopedService<Shipment> {
       totals: { lines: items.length, pieces: totalPieces, weightKg: totalWeightKg },
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Ship board for ONE work order (production order): every assembly this order
+   * has fabricated to production-complete, with how many units are shipped,
+   * already allocated to its open loads, and still available — plus an open-NCR
+   * block flag. Mirrors the addItem gate exactly, scoped to the order, in a few
+   * batch queries (never N+1). The web "Ready to ship" column reads this.
+   */
+  async shipBoard(productionOrderId: string): Promise<ShipReadyRow[]> {
+    const org = TenantContext.requireOrganizationId();
+    const order = await this.orderRepo.findOne({ where: { id: productionOrderId, organizationId: org } });
+    if (!order) throw new NotFoundException('Work order not found');
+
+    // Production-complete units per node, scoped to THIS order's work orders.
+    const completedRows: { nid: string; units: string }[] = await this.repo.query(
+      `SELECT nid, SUM(units)::int AS units FROM (
+         SELECT w.assembly_node_id AS nid,
+                CASE WHEN BOOL_AND(s.status = 'completed')
+                     THEN GREATEST(MIN(LEAST(s.qty_done, COALESCE(s.qty_total, 0))), w.quantity)
+                     ELSE COALESCE(MIN(LEAST(s.qty_done, COALESCE(s.qty_total, 0))), 0) END AS units
+           FROM work_orders w
+           JOIN work_order_stages s ON s.work_order_id = w.id AND s.status <> 'skipped'
+          WHERE w.organization_id = $1 AND w.production_order_id = $2
+          GROUP BY w.id, w.assembly_node_id, w.quantity
+       ) t GROUP BY nid`,
+      [org, productionOrderId],
+    );
+    const completedBy = new Map(completedRows.map((r) => [r.nid, Number(r.units)]));
+    const ids = [...completedBy.keys()].filter((nid) => (completedBy.get(nid) ?? 0) > 0);
+    if (!ids.length) return [];
+
+    const shippedRows: { nid: string; qty: string }[] = await this.repo.query(
+      `SELECT it.assembly_node_id AS nid, COALESCE(SUM(it.quantity), 0)::int AS qty
+         FROM shipment_items it JOIN shipments sh ON sh.id = it.shipment_id
+        WHERE it.organization_id = $1 AND sh.production_order_id = $2 AND it.assembly_node_id = ANY($3)
+          AND sh.status IN ('shipped','delivered')
+        GROUP BY it.assembly_node_id`,
+      [org, productionOrderId, ids],
+    );
+    const plannedRows: { nid: string; qty: string }[] = await this.repo.query(
+      `SELECT it.assembly_node_id AS nid, COALESCE(SUM(it.quantity), 0)::int AS qty
+         FROM shipment_items it JOIN shipments sh ON sh.id = it.shipment_id
+        WHERE it.organization_id = $1 AND sh.production_order_id = $2 AND it.assembly_node_id = ANY($3)
+          AND sh.status NOT IN ('shipped','delivered','cancelled')
+        GROUP BY it.assembly_node_id`,
+      [org, productionOrderId, ids],
+    );
+    const ncrRows: { nid: string; cnt: string }[] = await this.repo.query(
+      `SELECT assembly_node_id AS nid, COUNT(*)::int AS cnt FROM ncrs
+        WHERE organization_id = $1 AND assembly_node_id = ANY($2) AND status NOT IN ('closed','cancelled')
+        GROUP BY assembly_node_id`,
+      [org, ids],
+    );
+    const nodes = await this.nodeRepo.find({ where: { id: In(ids), organizationId: org } });
+
+    const shippedBy = new Map(shippedRows.map((r) => [r.nid, Number(r.qty)]));
+    const plannedBy = new Map(plannedRows.map((r) => [r.nid, Number(r.qty)]));
+    const ncrBy = new Map(ncrRows.map((r) => [r.nid, Number(r.cnt)]));
+
+    const rows: ShipReadyRow[] = nodes.map((n) => {
+      const completedQty = completedBy.get(n.id) ?? 0;
+      const shippedQty = shippedBy.get(n.id) ?? 0;
+      const allocatedQty = plannedBy.get(n.id) ?? 0;
+      const openNcr = ncrBy.get(n.id) ?? 0;
+      return {
+        nodeId: n.id,
+        mark: n.mark ?? null,
+        name: n.name ?? null,
+        profile: n.profile ?? null,
+        weightKg: n.weightKg != null ? Number(n.weightKg) : null,
+        completedQty,
+        shippedQty,
+        allocatedQty,
+        availableQty: Math.max(0, completedQty - shippedQty - allocatedQty),
+        openNcr,
+        blocked: openNcr > 0,
+      };
+    });
+    rows.sort((a, b) => (a.mark || a.name || '').localeCompare(b.mark || b.name || ''));
+    return rows;
   }
 }

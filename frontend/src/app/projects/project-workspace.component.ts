@@ -1,7 +1,6 @@
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
@@ -27,7 +26,7 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
   selector: 'app-project-workspace',
   standalone: true,
   imports: [
-    CommonModule, RouterModule, FormsModule, MatIconModule, MatMenuModule,
+    CommonModule, RouterModule, MatIconModule, MatMenuModule,
     MatTooltipModule, MatProgressBarModule, MatProgressSpinnerModule, MatDialogModule,
   ],
   template: `
@@ -44,14 +43,6 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
               <div class="meta-row">
                 @if (p.projectNumber) { <span class="meta"><mat-icon>tag</mat-icon>{{ p.projectNumber }}</span> }
                 @if (p.clientName) { <span class="meta"><mat-icon>business</mat-icon>{{ p.clientName }}</span> }
-                <span class="meta proc">
-                  <mat-icon>account_tree</mat-icon>
-                  <select [ngModel]="p.processId || ''" (ngModelChange)="updateProcess($event)" [disabled]="savingProcess">
-                    <option value="">No process</option>
-                    @for (pr of store.processes(); track pr.id) { <option [value]="pr.id">{{ pr.name }}</option> }
-                  </select>
-                  @if (savingProcess) { <span class="saving">saving…</span> }
-                </span>
               </div>
             </div>
 
@@ -171,12 +162,6 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
     .meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-top: 8px; }
     .meta { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--clay-text-secondary); }
     .meta mat-icon { font-size: 16px; width: 16px; height: 16px; color: var(--clay-text-muted); }
-    .meta.proc select {
-      border: 1px solid var(--clay-border); border-radius: var(--clay-radius-xs);
-      background: var(--clay-surface); color: var(--clay-text);
-      padding: 3px 8px; font-size: 12px; font-family: inherit; cursor: pointer;
-    }
-    .meta.proc .saving { font-size: 11px; color: var(--clay-text-muted); }
 
     .actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .act-btn {
@@ -259,7 +244,6 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
   private svc = inject(ProjectsService);
   store = inject(ProjectWorkspaceStore);
 
-  savingProcess = false;
   private sub?: Subscription;
 
   readonly tabs: WorkspaceTab[] = [
@@ -297,16 +281,6 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
     const file = input.files && input.files.length ? input.files[0] : null;
     if (file) this.store.importIfc(file);
     input.value = '';
-  }
-
-  updateProcess(processId: string): void {
-    const p = this.store.project();
-    if (!p) return;
-    this.savingProcess = true;
-    this.svc.update(p.id, { processId: processId || null }).subscribe({
-      next: (updated) => { this.store.setProject(updated); this.savingProcess = false; },
-      error: () => { this.savingProcess = false; },
-    });
   }
 
   editProject(): void {

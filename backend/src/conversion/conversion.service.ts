@@ -1,6 +1,6 @@
 import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -13,6 +13,8 @@ import { CONVERSION_QUEUE } from './queue/conversion-queue.interface.js';
 import type { ConversionQueue } from './queue/conversion-queue.interface.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
+import { StorageKeys } from '../storage/storage-keys.js';
+import { TenantContext } from '../common/tenant/tenant-context.js';
 
 const CAD_EXTS = ['step', 'stp', 'iges', 'igs', 'ifc'];
 
@@ -31,8 +33,10 @@ export class ConversionService {
     dto: CreateConversionDto,
     file: Express.Multer.File,
     userId?: string,
+    organizationId?: string | null,
   ): Promise<ConversionJob> {
-    const job = await this.enqueueOne(file.path, file.originalname, file.size, dto, userId, dto.name);
+    const org = organizationId ?? TenantContext.getOrganizationId() ?? null;
+    const job = await this.enqueueOne(file.path, file.originalname, file.size, dto, userId, dto.name, org);
     this.cleanupStaging(file.path);
     if (!job) {
       throw new BadRequestException(`Unsupported file format: ${extOf(file.originalname) || '(none)'}`);
@@ -49,9 +53,11 @@ export class ConversionService {
     files: Express.Multer.File[],
     dto: CreateConversionDto,
     userId?: string,
+    organizationId?: string | null,
   ): Promise<ConversionJob[]> {
     const jobs: ConversionJob[] = [];
     const tempDirs: string[] = [];
+    const org = organizationId ?? TenantContext.getOrganizationId() ?? null;
 
     try {
       for (const file of files) {
@@ -64,11 +70,11 @@ export class ConversionService {
 
           for (const entry of this.walkFiles(dir)) {
             if (!isSupportedInput(entry)) continue;
-            const job = await this.enqueueOne(entry, path.basename(entry), fs.statSync(entry).size, dto, userId);
+            const job = await this.enqueueOne(entry, path.basename(entry), fs.statSync(entry).size, dto, userId, undefined, org);
             if (job) jobs.push(job);
           }
         } else {
-          const job = await this.enqueueOne(file.path, file.originalname, file.size, dto, userId);
+          const job = await this.enqueueOne(file.path, file.originalname, file.size, dto, userId, undefined, org);
           this.cleanupStaging(file.path);
           if (job) jobs.push(job);
         }
@@ -95,8 +101,10 @@ export class ConversionService {
     dto: CreateConversionDto,
     userId?: string,
     nameOverride?: string,
+    organizationId?: string | null,
   ): Promise<ConversionJob | null> {
     if (!isSupportedInput(originalName)) return null;
+    const org = organizationId ?? null;
 
     const fmt = extOf(originalName).replace('.', '');
     const isCad = CAD_EXTS.includes(fmt);
@@ -119,15 +127,17 @@ export class ConversionService {
       upAxis,
     };
 
-    // Dedupe: an identical file + identical options already converted -> reuse it
-    // instead of re-running the (expensive) pipeline.
+    // Dedupe: an identical file + identical options already converted -> reuse
+    // it instead of re-running the (expensive) pipeline. Scoped to the SAME org
+    // so one client never reuses (or points at) another client's GLB.
     const dedupeKey = await this.computeDedupeKey(srcPath, options);
     const prior = await this.repo.findOne({
-      where: { sourceHash: dedupeKey, status: 'completed' },
+      where: { sourceHash: dedupeKey, status: 'completed', organizationId: org ?? IsNull() },
       order: { createdAt: 'DESC' },
     });
     if (prior && prior.modelId) {
       const cloned = this.repo.create({
+        organizationId: org,
         originalName,
         sourceFormat: fmt,
         status: 'completed',
@@ -151,10 +161,11 @@ export class ConversionService {
       return this.repo.save(cloned);
     }
 
-    const sourceKey = `conversion-sources/${crypto.randomUUID()}${extOf(originalName)}`;
+    const sourceKey = StorageKeys.conversionSource(org, crypto.randomUUID(), extOf(originalName));
     await this.storage.upload(srcPath, sourceKey, 'application/octet-stream');
 
     const job = this.repo.create({
+      organizationId: org,
       originalName,
       sourceFormat: fmt,
       status: 'pending',

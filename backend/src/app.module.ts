@@ -45,6 +45,7 @@ import { MaterialPlanningModule } from './projects/material-planning.module.js';
 import { QualityReportsModule } from './quality-reports/quality-reports.module.js';
 import { LibraryModule } from './library/library.module.js';
 import { SupportModule } from './support/support.module.js';
+import { PlatformInsightsModule } from './platform-insights/platform-insights.module.js';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
 
 @Module({
@@ -99,6 +100,7 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
     ProductionOrdersModule,
     MaterialPlanningModule,
     QualityReportsModule,
+    PlatformInsightsModule,
   ],
   providers: [
     {

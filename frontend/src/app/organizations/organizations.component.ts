@@ -10,11 +10,12 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { OrganizationsApiService } from './organizations.service';
 import { PermissionsService } from '../core/services/permissions.service';
 import { AuthService } from '../core/services/auth.service';
+import { LogoUploadComponent } from '../shared/components/logo-upload/logo-upload.component';
 
 @Component({
   selector: 'app-organizations',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatTableModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatInputModule],
+  imports: [CommonModule, FormsModule, MatTableModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatInputModule, LogoUploadComponent],
   template: `
     <div class="page-shell">
       <div class="page-header">
@@ -22,20 +23,30 @@ import { AuthService } from '../core/services/auth.service';
           <h1 class="page-title">Organizations</h1>
           <p class="page-subtitle">Tenants on this deployment — each org's production data is isolated from the others.</p>
         </div>
-        <button mat-raised-button color="primary" (click)="startNew()"><mat-icon>add</mat-icon> New Organization</button>
+        @if (canManage) {
+          <button mat-raised-button color="primary" (click)="startNew()"><mat-icon>add</mat-icon> New Organization</button>
+        }
       </div>
 
       @if (editing) {
         <div class="panel">
           <h3>New organization</h3>
-          <div class="form-row">
-            <mat-form-field appearance="outline" class="grow"><mat-label>Name</mat-label>
-              <input matInput [(ngModel)]="editing.name" (ngModelChange)="onName()" placeholder="e.g. Acme Fabrication"></mat-form-field>
-            <mat-form-field appearance="outline"><mat-label>Slug</mat-label>
-              <input matInput [(ngModel)]="editing.slug" placeholder="acme-fabrication"></mat-form-field>
+          <div class="brand-row">
+            <div class="brand-logo">
+              <label class="field-label">Company logo <span class="muted">(optional)</span></label>
+              <app-logo-upload (selected)="editing.logoFile = $event" (cleared)="editing.logoFile = null"></app-logo-upload>
+            </div>
+            <div class="brand-fields">
+              <div class="form-row">
+                <mat-form-field appearance="outline" class="grow"><mat-label>Name</mat-label>
+                  <input matInput [(ngModel)]="editing.name" (ngModelChange)="onName()" placeholder="e.g. Acme Fabrication"></mat-form-field>
+                <mat-form-field appearance="outline"><mat-label>Slug</mat-label>
+                  <input matInput [(ngModel)]="editing.slug" placeholder="acme-fabrication"></mat-form-field>
+              </div>
+              <mat-form-field appearance="outline" class="full"><mat-label>Description (optional)</mat-label>
+                <input matInput [(ngModel)]="editing.description"></mat-form-field>
+            </div>
           </div>
-          <mat-form-field appearance="outline" class="full"><mat-label>Description (optional)</mat-label>
-            <input matInput [(ngModel)]="editing.description"></mat-form-field>
 
           <h4 class="sub">Initial admin account <span class="muted">(recommended — makes the tenant immediately usable)</span></h4>
           <div class="form-row">
@@ -61,7 +72,14 @@ import { AuthService } from '../core/services/auth.service';
       }
 
       <table mat-table [dataSource]="orgs" class="full mat-elevation-z1">
-        <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Name</th><td mat-cell *matCellDef="let o">{{ o.name }}</td></ng-container>
+        <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Name</th>
+          <td mat-cell *matCellDef="let o">
+            <div class="org-cell">
+              @if (logoUrls[o.id]) { <img class="row-logo" [src]="logoUrls[o.id]" alt=""> }
+              @else { <span class="row-logo initials">{{ initials(o.name) }}</span> }
+              <span>{{ o.name }}</span>
+            </div>
+          </td></ng-container>
         <ng-container matColumnDef="slug"><th mat-header-cell *matHeaderCellDef>Slug</th><td mat-cell *matCellDef="let o"><code>{{ o.slug }}</code></td></ng-container>
         <ng-container matColumnDef="status"><th mat-header-cell *matHeaderCellDef>Status</th>
           <td mat-cell *matCellDef="let o"><span class="chip" [class.on]="o.isActive">{{ o.isActive ? 'Active' : 'Inactive' }}</span></td></ng-container>
@@ -73,7 +91,7 @@ import { AuthService } from '../core/services/auth.service';
                 <mat-icon>support_agent</mat-icon> Support login
               </button>
             }
-            <button mat-button (click)="toggleActive(o)">{{ o.isActive ? 'Deactivate' : 'Activate' }}</button>
+            @if (canManage) { <button mat-button (click)="toggleActive(o)">{{ o.isActive ? 'Deactivate' : 'Activate' }}</button> }
           </td></ng-container>
         <tr mat-header-row *matHeaderRowDef="cols"></tr><tr mat-row *matRowDef="let r; columns: cols"></tr>
       </table>
@@ -85,6 +103,12 @@ import { AuthService } from '../core/services/auth.service';
     .page-title { margin:0; font-size:22px; } .page-subtitle { margin:2px 0 0; color: var(--clay-text-muted,#64748b); font-size:13px; }
     .panel { background: var(--clay-surface,#fff); border:1px solid var(--clay-border,#e2e8f0); border-radius:10px; padding:16px; margin-bottom:16px; }
     .panel h3 { margin:0 0 12px; font-size:15px; } .form-row { display:flex; flex-wrap:wrap; gap:12px; } .grow { flex:1; min-width:220px; } .full { width:100%; }
+    .brand-row { display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; margin-bottom:4px; }
+    .brand-fields { flex:1; min-width:280px; }
+    .field-label { display:block; font-size:13px; font-weight:500; color: var(--clay-text,#334155); margin-bottom:6px; }
+    .org-cell { display:flex; align-items:center; gap:10px; }
+    .row-logo { width:30px; height:30px; border-radius:7px; object-fit:contain; background:#fff; border:1px solid var(--clay-border,#e2e8f0); flex:none; }
+    .row-logo.initials { display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color: var(--clay-primary,#2563eb); background: var(--clay-primary-soft,#eff6ff); border-color:transparent; }
     .sub { margin:8px 0 10px; font-size:13px; } .muted { color: var(--clay-text-muted,#64748b); font-weight:400; font-size:12px; }
     .panel-actions { display:flex; justify-content:flex-end; gap:8px; }
     table.full { width:100%; } .empty { text-align:center; color: var(--clay-text-muted,#64748b); padding:24px; }
@@ -99,6 +123,8 @@ export class OrganizationsComponent implements OnInit {
   editing: any = null;
   busyId: string | null = null;
   canImpersonate = false;
+  /** Authed object URLs for tenant logos, keyed by org id. */
+  logoUrls: Record<string, string> = {};
 
   constructor(
     private api: OrganizationsApiService,
@@ -106,6 +132,8 @@ export class OrganizationsComponent implements OnInit {
     private permissions: PermissionsService,
     private auth: AuthService,
   ) {}
+
+  get canManage(): boolean { return this.permissions.can('organizations.manage'); }
 
   ngOnInit(): void {
     this.canImpersonate = this.permissions.can('organizations.impersonate');
@@ -129,12 +157,30 @@ export class OrganizationsComponent implements OnInit {
   }
 
   load(): void {
-    this.api.list().subscribe({ next: (d) => this.orgs = Array.isArray(d) ? d : (d?.data || []), error: () => {} });
+    this.api.list().subscribe({
+      next: (d) => { this.orgs = Array.isArray(d) ? d : (d?.data || []); this.loadLogos(); },
+      error: () => {},
+    });
+  }
+
+  /** Fetch each tenant's logo as an authed blob → object URL for the row avatar. */
+  private loadLogos(): void {
+    for (const o of this.orgs) {
+      if (!o.hasLogo || this.logoUrls[o.id]) continue;
+      this.api.getLogo(o.id).subscribe({
+        next: (blob) => { this.logoUrls[o.id] = URL.createObjectURL(blob); },
+        error: () => {},
+      });
+    }
+  }
+
+  initials(name: string): string {
+    return (name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
   }
 
   startNew(): void {
     this.editing = {
-      name: '', slug: '', description: '',
+      name: '', slug: '', description: '', logoFile: null,
       adminFirstName: '', adminLastName: '', adminEmployeeId: '', adminEmail: '', adminPassword: '',
     };
   }
@@ -166,10 +212,20 @@ export class OrganizationsComponent implements OnInit {
         employeeId: e.adminEmployeeId,
       };
     }
+    const logoFile: File | null = e.logoFile ?? null;
     this.api.create(body).subscribe({
-      next: () => {
-        this.snack.open(body.initialAdmin ? `Organization created — admin ${body.initialAdmin.email} can sign in` : 'Organization created', 'OK', { duration: 3500 });
-        this.editing = null; this.load();
+      next: (res) => {
+        const created = res?.data ?? res;
+        const msg = body.initialAdmin ? `Organization created — admin ${body.initialAdmin.email} can sign in` : 'Organization created';
+        const done = () => { this.snack.open(msg, 'OK', { duration: 3500 }); this.editing = null; this.load(); };
+        if (logoFile && created?.id) {
+          this.api.uploadLogo(created.id, logoFile).subscribe({
+            next: done,
+            error: () => { this.snack.open('Organization created, but the logo upload failed — add it from the Company page.', 'OK', { duration: 5000 }); this.editing = null; this.load(); },
+          });
+        } else {
+          done();
+        }
       },
       error: (err) => this.snack.open(err?.error?.message || 'Create failed', 'Dismiss', { duration: 4000 }),
     });

@@ -72,6 +72,15 @@ export class AzureBlobStorageProvider implements StorageProvider {
     return key;
   }
 
+  async uploadBuffer(data: Buffer, key: string, mimeType: string): Promise<string> {
+    const blobClient = this.containerClient.getBlockBlobClient(this.fullKey(key));
+    await blobClient.uploadData(data, {
+      blobHTTPHeaders: { blobContentType: mimeType || 'application/octet-stream' },
+    });
+    this.logger.log(`Uploaded to Azure Blob: ${this.fullKey(key)} (${data.length} bytes)`);
+    return key;
+  }
+
   async download(key: string): Promise<NodeJS.ReadableStream> {
     const blobClient = this.containerClient.getBlockBlobClient(this.fullKey(key));
     const response = await blobClient.download(0);

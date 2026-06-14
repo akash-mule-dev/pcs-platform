@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Param, Req, UploadedFile, UseInterceptors, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Param, Req, Res, UploadedFile, UseInterceptors, UseGuards, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { IfcImportService } from './ifc-import.service.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
@@ -44,6 +45,25 @@ export class ProjectImportController {
   @ApiOperation({ summary: 'Revision diff of this import (added/changed/missing vs the prior tree) + production impact per affected piece' })
   getRevision(@Param('id') id: string, @Param('importId') importId: string) {
     return this.importService.getImportRevision(id, importId);
+  }
+
+  @Get(':id/imports/:importId/source')
+  @RequirePermissions('projects.view')
+  @ApiOperation({ summary: 'Download the original uploaded package/source file of this import (streamed from durable storage)' })
+  async downloadSource(@Param('id') id: string, @Param('importId') importId: string, @Res() res: Response) {
+    try {
+      const { importFile, stream } = await this.importService.getImportSource(id, importId);
+      const safeName = (importFile.originalName || 'package').replace(/["\r\n]/g, '_');
+      res.set({
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${safeName}"`,
+        'Access-Control-Expose-Headers': 'Content-Disposition',
+        ...(importFile.size ? { 'Content-Length': String(importFile.size) } : {}),
+      });
+      (stream as any).pipe(res);
+    } catch (err: any) {
+      res.status(404).json({ message: err?.message || 'Original package not available' });
+    }
   }
 
   @Post(':id/imports/:importId/retry')

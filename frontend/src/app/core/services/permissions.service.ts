@@ -10,6 +10,7 @@ export interface MyAccess {
 }
 
 const WILDCARD = '*';
+const PLATFORM_FEATURES = new Set(['organizations', 'library', 'platform-insights']);
 
 /**
  * The caller's effective fine-grained permissions, fetched from the backend
@@ -78,7 +79,9 @@ export class PermissionsService {
 
   /** Fine-grained check: does the user hold this `<feature>.<action>` permission? */
   can(permission: string): boolean {
-    if (this.granted.has(WILDCARD) || this.granted.has(permission)) return true;
+    const feature = permission.slice(0, permission.lastIndexOf('.'));
+    if (this.granted.has(WILDCARD) && !PLATFORM_FEATURES.has(feature)) return true;
+    if (this.granted.has(permission)) return true;
     const dot = permission.lastIndexOf('.');
     return dot > 0 && this.granted.has(`${permission.slice(0, dot)}.*`);
   }
@@ -102,7 +105,8 @@ export class PermissionsService {
    * Prefer can('<feature>.<action>') for new, fine-grained gating.
    */
   canManage(feature: string): boolean {
-    if (this.granted.has(WILDCARD) || this.granted.has(`${feature}.*`)) return true;
+    if (this.granted.has(WILDCARD) && !PLATFORM_FEATURES.has(feature)) return true;
+    if (this.granted.has(`${feature}.*`)) return true;
     const prefix = `${feature}.`;
     for (const p of this.granted) {
       if (p.startsWith(prefix) && p !== `${feature}.view`) return true;

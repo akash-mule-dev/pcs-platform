@@ -1,10 +1,11 @@
-// Persist a model's last AR registration (scale, rotation, render mode, and
-// tracking mode) per modelId, so reopening the same physical assembly restores
-// the inspector's setup instead of starting from defaults. Placement *position*
-// is intentionally NOT restored — it's environment-specific and must be re-set
-// against the real object each session.
+// Persist a model's last AR registration (scale, rotation, render mode) per
+// modelId, so reopening the same physical assembly restores the inspector's
+// setup instead of starting from defaults. Placement *position* is intentionally
+// NOT restored — it's environment-specific and must be re-set against the real
+// object each session. Tracking mode is also NOT persisted: the session always
+// opens in the stable default and is switched inline in-AR (TrackingModeSwitcher).
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Vec3, RenderMode, TrackingMode } from './types';
+import { Vec3, RenderMode } from './types';
 
 const KEY_PREFIX = 'pcs_ar_registration:';
 
@@ -12,7 +13,6 @@ export interface SavedRegistration {
   scale: Vec3;
   rotation: Vec3;
   renderMode: RenderMode;
-  trackingMode: TrackingMode;
   savedAt: number;
 }
 
