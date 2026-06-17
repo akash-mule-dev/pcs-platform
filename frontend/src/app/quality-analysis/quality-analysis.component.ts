@@ -20,7 +20,6 @@ import { ThreeViewerComponent } from '../shared/components/three-viewer/three-vi
 import { ApiService } from '../core/services/api.service';
 import { AuthService } from '../core/services/auth.service';
 import { PermissionsService } from '../core/services/permissions.service';
-import { NcrApiService } from '../quality-ncr/ncr.service';
 import { QualityService, QualityDataEntry, QualitySummary } from './quality.service';
 import { ModelMediaService } from '../core/services/model-media.service';
 import { environment } from '../../environments/environment';
@@ -763,7 +762,6 @@ export class QualityAnalysisComponent implements OnInit, OnDestroy {
     private permissions: PermissionsService,
     private snackBar: MatSnackBar,
     private modelMedia: ModelMediaService,
-    private ncrApi: NcrApiService,
   ) {}
 
   ngOnInit(): void {
@@ -966,31 +964,15 @@ export class QualityAnalysisComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Rejecting a failure usually means the defect stands — offer to raise the NCR right away. */
+  /** Reject a failed inspection's sign-off. NCRs are raised separately via an
+   *  NCR-type QC report (Report Templates → fill → reflects in QC Reports). */
   rejectSignoff(entry: QualityDataEntry): void {
     this.qualityService.signoff(entry.id, 'rejected').subscribe({
       next: () => {
         if (this.selectedModel) this.loadQualityData(this.selectedModel.id);
-        const ref = this.snackBar.open('Rejected — raise an NCR for this defect?', 'Raise NCR', { duration: 8000 });
-        ref.onAction().subscribe(() => this.raiseNcrFromEntry(entry));
+        this.snackBar.open('Sign-off rejected', 'Close', { duration: 3000 });
       },
       error: (e) => this.snackBar.open(e?.error?.message || 'Sign-off failed', 'Close', { duration: 3500 }),
-    });
-  }
-
-  private raiseNcrFromEntry(entry: QualityDataEntry): void {
-    const label = entry.regionLabel || entry.meshName;
-    this.ncrApi.createNcr({
-      title: `${label} — rejected inspection${entry.defectType ? ` (${entry.defectType})` : ''}`,
-      description: entry.notes || undefined,
-      severity: entry.severity || 'medium',
-      qualityDataId: entry.id,
-      assemblyNodeId: entry.assemblyNodeId || undefined,
-      projectId: entry.projectId || undefined,
-      dataJson: { source: 'signoff-rejection', modelId: entry.modelId, meshName: entry.meshName },
-    }).subscribe({
-      next: (n) => this.snackBar.open(`NCR ${n?.number ?? ''} raised`, 'Close', { duration: 3500 }),
-      error: (e) => this.snackBar.open(e?.error?.message || 'Could not raise NCR', 'Close', { duration: 4000 }),
     });
   }
 

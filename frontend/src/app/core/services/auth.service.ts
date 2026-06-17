@@ -13,6 +13,7 @@ export interface User {
   employeeId: string;
   role: { id: string; name: string };
   isActive: boolean;
+  organizationId?: string | null;
 }
 
 export interface LoginResponse {

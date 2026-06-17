@@ -9,10 +9,7 @@ import { QualityEntry } from '../../../types';
 import { offlineService } from '../../../services/offline.service';
 import {
   createQuality,
-  createNcr,
   uploadEvidence as apiUploadEvidence,
-  CreateNcrInput,
-  CreatedNcr,
 } from './qaApi';
 import { qaOfflineQueue, uuid4 } from './qaOfflineQueue';
 
@@ -159,11 +156,6 @@ export function useQualityData(modelId: string | null) {
     [refresh],
   );
 
-  const raiseNcr = useCallback(
-    async (input: CreateNcrInput): Promise<CreatedNcr> => createNcr(input),
-    [],
-  );
-
   const signoff = useCallback(
     // signoffBy is accepted for call-site compatibility but ignored — the
     // backend stamps the decider's identity from the JWT (not spoofable).
@@ -182,7 +174,6 @@ export function useQualityData(modelId: string | null) {
     refresh,
     create,
     uploadEvidence,
-    raiseNcr,
     signoff,
   };
 }

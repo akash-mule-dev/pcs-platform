@@ -114,11 +114,6 @@ export const routes: Routes = [
         loadComponent: () => import('./materials/materials.component').then(m => m.MaterialsComponent)
       },
       {
-        path: 'ncr',
-        canActivate: [featureGuard('ncr')],
-        loadComponent: () => import('./quality-ncr/ncr.component').then(m => m.NcrComponent)
-      },
-      {
         path: 'quality-reports',
         canActivate: [featureGuard('quality-reports')],
         loadComponent: () => import('./quality-reports/reports-list.component').then(m => m.ReportsListComponent)

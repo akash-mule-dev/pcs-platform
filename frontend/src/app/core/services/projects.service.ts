@@ -273,15 +273,6 @@ export interface RecordQuality {
   regionLabel?: string;
 }
 
-export interface RaiseNcr {
-  title?: string;
-  description?: string;
-  severity?: QaSeverity;
-  qualityDataId?: string;
-}
-
-export interface NcrRef { id: string; number: string; title: string; status: string; severity: string; }
-
 export interface NodeQualityStatus {
   status: QaStatus | null;
   pass: number; fail: number; warning: number; total: number;
@@ -559,11 +550,6 @@ export class ProjectsService {
   /** Record a quality check on a node (server auto-fails out-of-tolerance measurements). */
   recordQuality(projectId: string, nodeId: string, body: RecordQuality): Observable<QualityEntry> {
     return this.http.post<QualityEntry>(`${this.base}/${projectId}/nodes/${nodeId}/quality`, body);
-  }
-
-  /** Raise an NCR pre-filled from a node (links node/project/work-order/quality record). */
-  raiseNodeNcr(projectId: string, nodeId: string, body: RaiseNcr): Observable<NcrRef> {
-    return this.http.post<NcrRef>(`${this.base}/${projectId}/nodes/${nodeId}/ncr`, body);
   }
 
   /** Per-node quality status + open-NCR map for the project (badges + ship gate). */

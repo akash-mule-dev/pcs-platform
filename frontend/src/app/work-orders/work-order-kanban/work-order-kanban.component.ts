@@ -9,6 +9,7 @@ import { Subscription, merge } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { ProjectsService, Project, ProductionOrder } from '../../core/services/projects.service';
+import { TourLauncherComponent } from '../../shared/components/tour-launcher/tour-launcher.component';
 
 /** Shapes returned by GET /api/work-orders/kanban (count-based, org-scoped). */
 interface KanbanStageCol { name: string; sequence: number; }
@@ -47,7 +48,7 @@ interface KanbanData {
 @Component({
   selector: 'app-work-order-kanban',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule],
+  imports: [CommonModule, RouterModule, FormsModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule, TourLauncherComponent],
   template: `
     <div class="kb">
       <div class="head">
@@ -56,13 +57,14 @@ interface KanbanData {
           <p class="sub">Every piece at its current stage — live from recorded stage counts. ✓ completes the stage, +1 steps one piece.</p>
         </div>
         <div class="head-links">
+          <app-tour-launcher tourId="kanban" [auto]="true" tooltip="Tour the Kanban board"></app-tour-launcher>
           <a class="ghost" routerLink="/work-orders"><mat-icon>space_dashboard</mat-icon>Dashboard</a>
           <a class="ghost" routerLink="/work-orders/legacy"><mat-icon>inventory</mat-icon>All work orders</a>
         </div>
       </div>
 
       <!-- Filters + totals -->
-      <div class="bar">
+      <div class="bar" data-tour="kanban-filters">
         <select class="sel" [ngModel]="projectId()" (ngModelChange)="setProject($event)">
           <option value="">All projects</option>
           @for (p of projects(); track p.id) { <option [value]="p.id">{{ p.name }}</option> }
@@ -96,7 +98,7 @@ interface KanbanData {
           <a class="cta" routerLink="/work-orders" [queryParams]="{ newOrder: 1 }">New work order</a>
         </div>
       } @else {
-        <div class="board">
+        <div class="board" data-tour="kanban-board">
           @for (col of data()!.stages; track col.name) {
             <div class="col">
               <div class="col-head">

@@ -1,4 +1,5 @@
-import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES } from '../support-workflow.js';
 
@@ -23,4 +24,7 @@ export class UpdateTicketDto {
   @ApiPropertyOptional({ enum: TICKET_PRIORITIES }) @IsOptional() @IsIn(TICKET_PRIORITIES as unknown as string[]) priority?: string;
   /** Assignee user id, or 'me' to self-assign, or null to unassign. */
   @ApiPropertyOptional() @IsOptional() @IsString() assignedToUserId?: string | null;
+  /** Optimistic concurrency guard: the version this edit was based on (409 on mismatch). */
+  @ApiPropertyOptional({ description: 'Version this edit was based on; 409 on mismatch' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) expectedVersion?: number;
 }

@@ -96,24 +96,18 @@ export function AssemblyDetailScreen() {
   const [tplLoading, setTplLoading] = useState(false);
   const [tplBusy, setTplBusy] = useState(false);
 
-  // Raise an NCR linked to THIS assembly (node + project + work order). Opens
-  // in-stack so "back" returns here and we stay on the current tab.
-  const openNcr = useCallback(
-    () => navigation.navigate('NcrCreate', { projectId, nodeId, title: `${mark} — quality non-conformance`, severity: 'medium' }),
-    [navigation, projectId, nodeId, mark],
-  );
-
   useLayoutEffect(() => {
     navigation.setOptions({
       title: mark || 'Assembly',
       headerRight: () => (
-        <TouchableOpacity onPress={openNcr} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.hdrNcr}>
-          <Ionicons name="alert-circle-outline" size={18} color={Colors.danger} />
-          <Text style={styles.hdrNcrTxt}>NCR</Text>
+        <TouchableOpacity onPress={openReportSheet} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.hdrNcr}>
+          <Ionicons name="document-text-outline" size={18} color={Colors.primary} />
+          <Text style={styles.hdrReportTxt}>QC Report</Text>
         </TouchableOpacity>
       ),
     });
-  }, [navigation, mark, openNcr]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation, mark]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -356,9 +350,9 @@ export function AssemblyDetailScreen() {
                 {audit.shipStatus === 'ready' ? `Ready to ship · ${audit.shipReadyQty}` : SHIP_META[audit.shipStatus]?.label ?? 'In production'}
               </Text>
             </View>
-            {audit.ncrs.filter((n) => n.status !== 'closed' && n.status !== 'cancelled').length > 0 && (
+            {audit.ncrs.filter((n) => n.status === 'open').length > 0 && (
               <View style={[styles.chip, { backgroundColor: Colors.danger }]}>
-                <Text style={styles.chipTxt}>{audit.ncrs.filter((n) => n.status !== 'closed' && n.status !== 'cancelled').length} NCR</Text>
+                <Text style={styles.chipTxt}>{audit.ncrs.filter((n) => n.status === 'open').length} NCR</Text>
               </View>
             )}
           </View>
@@ -556,7 +550,6 @@ export function AssemblyDetailScreen() {
             <TouchableOpacity style={[styles.qbtn, styles.qwarn]} disabled={qaBusy} onPress={() => recordQuick('warning')}><Text style={styles.qwarnT}>Warning</Text></TouchableOpacity>
             <TouchableOpacity style={[styles.qbtn, styles.qfail]} disabled={qaBusy} onPress={() => recordQuick('fail')}><Text style={styles.qfailT}>Fail</Text></TouchableOpacity>
             <TouchableOpacity style={styles.qbtn} onPress={() => setMeasureOpen((o) => !o)}><Text style={styles.qbtnT}>Measure</Text></TouchableOpacity>
-            <TouchableOpacity style={[styles.qbtn, styles.qncr]} onPress={openNcr}><Text style={styles.qncrT}>Raise NCR</Text></TouchableOpacity>
           </View>
           {measureOpen && (
             <View style={styles.measBox}>
@@ -616,10 +609,10 @@ export function AssemblyDetailScreen() {
       {audit.ncrs.length === 0 ? <Text style={styles.muted}>No NCRs raised against this assembly.</Text> : (
         <View style={styles.listGap}>
           {audit.ncrs.map((n) => (
-            <TouchableOpacity key={n.id} style={styles.rowItem} onPress={() => navigation.navigate('NcrDetail', { id: n.id })}>
+            <TouchableOpacity key={n.id} style={styles.rowItem} onPress={() => navigation.navigate('QcReport', { reportId: n.id, title: n.number })}>
               <Text style={styles.ncrNum}>{n.number}</Text>
               <Text style={[styles.rowMain, { flex: 1 }]} numberOfLines={1}>{n.title}</Text>
-              <View style={[styles.chip, { backgroundColor: n.status === 'closed' ? Colors.success : Colors.danger }]}>
+              <View style={[styles.chip, { backgroundColor: n.status === 'resolved' ? Colors.success : Colors.danger }]}>
                 <Text style={styles.chipTxt}>{n.status}</Text>
               </View>
             </TouchableOpacity>
@@ -685,7 +678,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: WO.mist },
   content: { padding: 16, paddingBottom: 40 },
   hdrNcr: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  hdrNcrTxt: { color: Colors.danger, fontWeight: '700', fontSize: 14 },
+  hdrReportTxt: { color: Colors.primary, fontWeight: '700', fontSize: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   muted: { color: Colors.textSecondary, marginVertical: 8 },
   err: { color: Colors.danger, fontSize: 13, marginBottom: 8 },

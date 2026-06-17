@@ -7,11 +7,12 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectsService, ProjectSummary } from '../core/services/projects.service';
 import { ProjectWizardComponent } from './project-wizard.component';
+import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
 @Component({
   selector: 'app-project-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MatIconModule, MatDialogModule, MatProgressSpinnerModule],
+  imports: [CommonModule, FormsModule, RouterModule, MatIconModule, MatDialogModule, MatProgressSpinnerModule, TourLauncherComponent],
   template: `
     <div class="portfolio">
       <div class="page-header">
@@ -20,10 +21,11 @@ import { ProjectWizardComponent } from './project-wizard.component';
           <p class="page-subtitle">Fabrication jobs across the shop — track production, tonnage and shipping at a glance.</p>
         </div>
         <div class="header-actions">
-          <a class="monitor-btn" routerLink="/package-monitor" title="Live import pipeline + package history across all projects">
+          <app-tour-launcher tourId="projects" [auto]="true" tooltip="Tour the Projects page"></app-tour-launcher>
+          <a class="monitor-btn" data-tour="proj-monitor" routerLink="/package-monitor" title="Live import pipeline + package history across all projects">
             <mat-icon>monitor_heart</mat-icon>Package Monitor
           </a>
-          <button class="new-btn" (click)="openWizard()"><mat-icon>add</mat-icon>New Project</button>
+          <button class="new-btn" data-tour="proj-new" (click)="openWizard()"><mat-icon>add</mat-icon>New Project</button>
         </div>
       </div>
 
@@ -59,7 +61,7 @@ import { ProjectWizardComponent } from './project-wizard.component';
 
         <!-- Toolbar: search -->
         <div class="toolbar">
-          <div class="search-box">
+          <div class="search-box" data-tour="proj-search">
             <mat-icon class="search-ico">search</mat-icon>
             <input type="text" placeholder="Search by name, job # or client…" [(ngModel)]="search" />
             @if (search) { <mat-icon class="clear" (click)="search = ''">close</mat-icon> }
@@ -70,8 +72,8 @@ import { ProjectWizardComponent } from './project-wizard.component';
           <div class="empty-state slim"><mat-icon>filter_alt_off</mat-icon><p>No projects match your filters.</p></div>
         } @else {
           <div class="proj-list">
-            @for (p of filtered(); track p.id) {
-              <div class="proj-row" (click)="open(p)">
+            @for (p of filtered(); track p.id; let i = $index) {
+              <div class="proj-row" [attr.data-tour]="i === 0 ? 'proj-row' : null" (click)="open(p)">
                 <div class="row-main">
                   <div class="col-id">
                     <mat-icon class="p-ico">foundation</mat-icon>

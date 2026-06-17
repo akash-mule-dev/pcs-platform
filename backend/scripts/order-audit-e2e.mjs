@@ -161,18 +161,31 @@ const assert = (c, m) => {
   assert(b1.shipStatus === 'ready' && b1.shipReadyQty === 2, `B1001 ready to ship (${b1.shipStatus} ${b1.shipReadyQty})`);
   assert(audit.totals.readyToShip === 1, 'totals.readyToShip = 1');
 
-  // ── NCR quality gate: pre-warn + enforcement ──
-  r = await fetch(`${A}/projects/${project.id}/nodes/${audit.items[1].nodeId}/ncr`, { method: 'POST', headers: H, body: JSON.stringify({ title: 'Weld porosity' }) });
-  assert(!!(await j(r)).number, 'NCR raised on B1002');
+  // ── NCR quality gate: an unresolved NCR-type QC report blocks the QC stage ──
+  // NCRs are template-driven reports now: make an `ncr` template, raise a report
+  // against the node, and confirm the gate pre-warns + enforces, then lifts on resolve.
+  const b2node = audit.items.find((i) => i.mark === 'B1002').nodeId;
+  r = await fetch(`${A}/templates`, { method: 'POST', headers: H, body: JSON.stringify({ name: 'E2E NCR', type: 'ncr', schema: { components: [] } }) });
+  const ncrTpl = await j(r);
+  assert(!!ncrTpl.id, 'NCR template created');
+  r = await fetch(`${A}/quality-reports`, { method: 'POST', headers: H, body: JSON.stringify({ templateId: ncrTpl.id, productionOrderId: order.id, assemblyNodeId: b2node }) });
+  const ncrReport = await j(r);
+  assert(!!ncrReport.number && ncrReport.templateType === 'ncr', 'NCR report raised on B1002');
   r = await fetch(`${A}/orders/${order.id}/audit`, { headers: H });
   audit = await j(r);
   const b2 = audit.items.find((i) => i.mark === 'B1002');
-  assert(b2.openNcrs === 1, 'B1002 has an open NCR');
+  assert(b2.openNcrs === 1, 'B1002 has an open NCR report');
   const qcRow = b2.stages.find((s) => /qc|quality|inspect/i.test(s.name));
   assert(qcRow && qcRow.gateBlocked === true, 'QC stage pre-warned as gate-blocked');
   r = await fetch(`${A}/orders/${order.id}/stages/bulk`, { method: 'PATCH', headers: H, body: JSON.stringify({ stageId: qcRow.stageId, nodeIds: [b2.nodeId], status: 'completed' }) });
   const gateRes = await j(r);
   assert(gateRes.updated === 0 && gateRes.failed.length === 1, 'bulk respects the QC gate');
+  // Resolving the NCR report lifts the gate.
+  r = await fetch(`${A}/quality-reports/${ncrReport.id}/resolve`, { method: 'POST', headers: H });
+  await j(r);
+  r = await fetch(`${A}/orders/${order.id}/audit`, { headers: H });
+  audit = await j(r);
+  assert(audit.items.find((i) => i.mark === 'B1002').openNcrs === 0, 'resolving the NCR report clears the gate');
 
   // ── Validation + status sync ──
   r = await fetch(`${A}/orders/${order.id}/stages/bulk`, { method: 'PATCH', headers: H, body: JSON.stringify({ stageId: stage1.id, nodeIds }) });

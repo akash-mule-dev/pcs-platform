@@ -47,6 +47,31 @@ export class Stage extends TenantOwnedEntity {
   @Column({ name: 'hourly_rate', type: 'numeric', precision: 10, scale: 2, nullable: true, transformer: numericTransformer })
   hourlyRate: number | null;
 
+  /**
+   * Costing (machine estimate): planned machine/work-center seconds PER UNIT at
+   * this stage — e.g. laser cut time, brake cycle. Estimate machine cost =
+   * machine_time_seconds × units × machine_rate; the earned-standard proxy uses
+   * it for board-recorded stages with no clocked station time. 0 = no machine.
+   */
+  @Column({ name: 'machine_time_seconds', type: 'integer', default: 0 })
+  machineTimeSeconds: number;
+
+  /**
+   * Costing: standard machine rate for this stage (currency/hour) — the planned
+   * work-center burden used by the machine ESTIMATE + the board proxy. Actual
+   * machine cost uses the real station's rate. Unset/0 = no machine cost.
+   */
+  @Column({ name: 'machine_rate', type: 'numeric', precision: 12, scale: 2, nullable: true, transformer: numericTransformer })
+  machineRate: number | null;
+
+  /**
+   * Costing: overhead/burden applied on THIS stage's labor, in percent (shop
+   * burden differs by operation — welding ≠ painting). NULL = use the org
+   * default (costing settings); 0 = explicitly no overhead for this stage.
+   */
+  @Column({ name: 'overhead_percent', type: 'numeric', precision: 6, scale: 2, nullable: true, transformer: numericTransformer })
+  overheadPercent: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

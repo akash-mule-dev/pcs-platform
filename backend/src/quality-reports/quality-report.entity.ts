@@ -16,6 +16,7 @@ export enum QualityReportStatus {
 @Entity('quality_reports')
 @Index(['organizationId', 'productionOrderId'])
 @Index(['organizationId', 'status'])
+@Index(['organizationId', 'assemblyNodeId'])
 @Index(['organizationId', 'number'], { unique: true })
 export class QualityReport extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
@@ -26,6 +27,12 @@ export class QualityReport extends TenantOwnedEntity {
   // Template snapshot
   @Column({ name: 'template_id', type: 'uuid', nullable: true }) templateId: string | null;
   @Column({ name: 'template_name', type: 'varchar', length: 255 }) templateName: string;
+  /**
+   * Snapshot of the template's `type` at creation (inspection | checklist | ncr |
+   * capa | other). A report whose `templateType === 'ncr'` IS a non-conformance
+   * report: it blocks the shipping + quality-stage gates while unresolved.
+   */
+  @Column({ name: 'template_type', type: 'varchar', length: 40, nullable: true }) templateType: string | null;
   @Column({ name: 'template_schema', type: 'jsonb' }) templateSchema: Record<string, any>;
 
   // What the report is about
@@ -40,6 +47,13 @@ export class QualityReport extends TenantOwnedEntity {
 
   @Column({ name: 'filled_by', type: 'uuid', nullable: true }) filledBy: string | null;
   @Column({ name: 'submitted_at', type: 'timestamp', nullable: true }) submittedAt: Date | null;
+
+  /**
+   * NCR close: an `ncr`-type report is OPEN (blocks gates) while `resolvedAt` is
+   * null, and is closed by an explicit Resolve action. Non-NCR reports ignore these.
+   */
+  @Column({ name: 'resolved_at', type: 'timestamp', nullable: true }) resolvedAt: Date | null;
+  @Column({ name: 'resolved_by', type: 'uuid', nullable: true }) resolvedBy: string | null;
 
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;

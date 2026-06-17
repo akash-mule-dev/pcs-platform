@@ -98,7 +98,7 @@ interface Insights {
                 <div class="age warn"><span class="an">{{ d.ncrAging.d7to30 }}</span><span class="al">7–30 days</span></div>
                 <div class="age bad"><span class="an">{{ d.ncrAging.over30 }}</span><span class="al">&gt; 30 days</span></div>
               </div>
-              <a class="link" routerLink="/ncr">Open the NCR workspace →</a>
+              <a class="link" routerLink="/quality-reports">Open QC Reports →</a>
             } @else { <p class="empty">Nothing open — gates are clear.</p> }
           </div>
 

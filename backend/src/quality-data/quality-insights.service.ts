@@ -63,10 +63,13 @@ export class QualityInsightsService {
     const inspectedNodes = Number(fpy?.inspected ?? 0);
     const passedFirst = Number(fpy?.passed ?? 0);
 
+    // NCRs are now NCR-type QC reports (open = unresolved). Severity rides in the
+    // filled form data (`data->>'severity'`); created_at/resolved_at drive aging.
     const sevRows: { severity: string; n: string }[] = await this.repo.query(
-      `SELECT severity, COUNT(*)::int AS n FROM ncrs
-        WHERE status NOT IN ('closed','cancelled') ${qdOrg}
-        GROUP BY severity`,
+      `SELECT COALESCE(NULLIF(data->>'severity', ''), 'unspecified') AS severity, COUNT(*)::int AS n
+         FROM quality_reports
+        WHERE template_type = 'ncr' AND resolved_at IS NULL ${qdOrg}
+        GROUP BY COALESCE(NULLIF(data->>'severity', ''), 'unspecified')`,
       p,
     );
     const openNcrBySeverity: Record<string, number> = {};
@@ -76,17 +79,17 @@ export class QualityInsightsService {
       `SELECT COUNT(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS under7,
               COUNT(*) FILTER (WHERE created_at <= now() - interval '7 days' AND created_at > now() - interval '30 days')::int AS d7to30,
               COUNT(*) FILTER (WHERE created_at <= now() - interval '30 days')::int AS over30
-         FROM ncrs
-        WHERE status NOT IN ('closed','cancelled') ${qdOrg}`,
+         FROM quality_reports
+        WHERE template_type = 'ncr' AND resolved_at IS NULL ${qdOrg}`,
       p,
     );
 
     const [closeStats] = await this.repo.query(
       `SELECT COUNT(*)::int AS n,
-              AVG(EXTRACT(EPOCH FROM (closed_at - created_at)) / 86400.0) AS avg_days
-         FROM ncrs
-        WHERE status = 'closed' AND closed_at IS NOT NULL
-          AND closed_at > now() - interval '90 days' ${qdOrg}`,
+              AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 86400.0) AS avg_days
+         FROM quality_reports
+        WHERE template_type = 'ncr' AND resolved_at IS NOT NULL
+          AND resolved_at > now() - interval '90 days' ${qdOrg}`,
       p,
     );
 

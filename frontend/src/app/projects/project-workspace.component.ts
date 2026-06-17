@@ -12,6 +12,7 @@ import { ProjectWorkspaceStore, IMPORT_STAGE_LABELS } from './project-workspace.
 import { ProjectEditDialogComponent } from './project-edit-dialog.component';
 import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/confirm-dialog.component';
 import { ProjectsService, Project } from '../core/services/projects.service';
+import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
 interface WorkspaceTab { path: string; label: string; icon: string; }
 
@@ -28,6 +29,7 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
   imports: [
     CommonModule, RouterModule, MatIconModule, MatMenuModule,
     MatTooltipModule, MatProgressBarModule, MatProgressSpinnerModule, MatDialogModule,
+    TourLauncherComponent,
   ],
   template: `
     <div class="ws">
@@ -47,8 +49,9 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
             </div>
 
             <div class="actions">
+              <app-tour-launcher tourId="project-workspace" [auto]="true" tooltip="Tour this project"></app-tour-launcher>
               <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
-              <button class="act-btn primary" (click)="fileInput.click()" [disabled]="store.importing()">
+              <button class="act-btn primary" data-tour="ws-import" (click)="fileInput.click()" [disabled]="store.importing()">
                 <mat-icon>upload_file</mat-icon><span>Import Package</span>
               </button>
               <button class="act-btn" (click)="editProject()"><mat-icon>edit</mat-icon><span>Edit</span></button>
@@ -80,7 +83,7 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
           @if (store.importError()) { <p class="import-err">{{ store.importError() }}</p> }
 
           <!-- Design stat strip (production tracking lives inside each work order) -->
-          <div class="stat-strip">
+          <div class="stat-strip" data-tour="ws-stats">
             <div class="stat">
               <span class="stat-num">{{ store.progress()?.nodes?.assembly ?? 0 }}<em>+{{ store.progress()?.nodes?.subassembly ?? 0 }}</em></span>
               <span class="stat-lbl">Assemblies</span>
@@ -108,7 +111,7 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
         }
 
         <!-- Tab bar -->
-        <nav class="tab-bar">
+        <nav class="tab-bar" data-tour="ws-tabs">
           @for (t of tabs; track t.path) {
             <a class="tab" [routerLink]="['/projects', store.id(), t.path]" routerLinkActive="active">
               <mat-icon>{{ t.icon }}</mat-icon>

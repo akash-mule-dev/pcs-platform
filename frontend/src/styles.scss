@@ -1212,3 +1212,53 @@ p:has(+ .mat-mdc-table):empty {
   background: var(--selection-bg);
   color: var(--selection-color);
 }
+
+// ============================================
+// ONBOARDING TOUR (driver.js) — match the app theme in light + dark
+// ============================================
+.driver-popover.pcs-tour {
+  background: var(--clay-surface);
+  color: var(--clay-text);
+  border: 1px solid var(--clay-border);
+  border-radius: var(--clay-radius-sm);
+  box-shadow: var(--clay-shadow-hover, 0 12px 32px rgba(0, 0, 0, 0.18));
+  max-width: 340px;
+
+  .driver-popover-title {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--clay-text);
+  }
+  .driver-popover-description {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--clay-text-secondary);
+  }
+  .driver-popover-progress-text {
+    font-size: 11px;
+    color: var(--clay-text-muted);
+  }
+  // Arrows point to the highlighted element — tint them to the popover surface.
+  .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: var(--clay-surface); }
+  .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: var(--clay-surface); }
+  .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: var(--clay-surface); }
+  .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: var(--clay-surface); }
+
+  .driver-popover-footer button {
+    text-shadow: none;
+    border-radius: var(--clay-radius-xs);
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    background: var(--clay-surface-hover);
+    color: var(--clay-text-secondary);
+    border: 1px solid var(--clay-border);
+  }
+  .driver-popover-footer button.driver-popover-next-btn {
+    background: var(--clay-primary);
+    color: #fff;
+    border-color: var(--clay-primary);
+  }
+}

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Not, Repository } from 'typeorm';
+import { EntityManager, In, IsNull, Repository } from 'typeorm';
 import { ProductionOrder, ProductionOrderStatus } from './production-order.entity.js';
 import { Project } from './project.entity.js';
 import { AssemblyNode, AssemblyNodeType } from './assembly-node.entity.js';
@@ -8,7 +8,7 @@ import { WorkOrder, WorkOrderStatus } from '../work-orders/work-order.entity.js'
 import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
 import { StageEvent } from '../work-orders/stage-event.entity.js';
 import { Stage } from '../stages/stage.entity.js';
-import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
+import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { inspectionGateError, isQualityStageName, qcGateMessage, InspectionSnapshot } from '../work-orders/qc-gate.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
@@ -32,7 +32,7 @@ export class ProductionOrderService {
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(StageEvent) private readonly eventRepo: Repository<StageEvent>,
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
-    @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
+    @InjectRepository(QualityReport) private readonly reportRepo: Repository<QualityReport>,
     private readonly events: EventsGateway,
   ) {}
 
@@ -200,14 +200,13 @@ export class ProductionOrderService {
     );
     const aggByOrder = new Map<string, any>(agg.map((a) => [a.oid, a]));
 
-    // Quality holds: open NCRs linked (via their work order) to each order.
+    // Quality holds: open (unresolved) NCR reports linked to each order.
     const ncrAgg: any[] = await this.orderRepo.query(
-      `SELECT w.production_order_id AS oid, COUNT(n.id)::int AS open_ncrs
-         FROM ncrs n
-         JOIN work_orders w ON w.id = n.work_order_id
-        WHERE n.organization_id = $1 AND n.status NOT IN ('closed','cancelled')
-          AND w.production_order_id IS NOT NULL
-        GROUP BY w.production_order_id`,
+      `SELECT production_order_id AS oid, COUNT(id)::int AS open_ncrs
+         FROM quality_reports
+        WHERE organization_id = $1 AND template_type = 'ncr' AND resolved_at IS NULL
+          AND production_order_id IS NOT NULL
+        GROUP BY production_order_id`,
       [org],
     );
     const ncrByOrder = new Map<string, number>(ncrAgg.map((a) => [a.oid, Number(a.open_ncrs)]));
@@ -316,15 +315,15 @@ export class ProductionOrderService {
 
     this.applyStageInput(wos, input);
 
-    // Quality gate: a quality stage can't reach COMPLETED while its assembly has open NCRs.
+    // Quality gate: a quality stage can't reach COMPLETED while its assembly has open NCR reports.
     if (
       wos.status === WorkOrderStageStatus.COMPLETED &&
       prevStatus !== WorkOrderStageStatus.COMPLETED &&
       wo.assemblyNodeId &&
       isQualityStageName(wos.stage?.name)
     ) {
-      const open = await this.ncrRepo.count({
-        where: { assemblyNodeId: wo.assemblyNodeId, organizationId: org, status: Not(In([NcrStatus.CLOSED, NcrStatus.CANCELLED])) },
+      const open = await this.reportRepo.count({
+        where: { assemblyNodeId: wo.assemblyNodeId, organizationId: org, templateType: 'ncr', resolvedAt: IsNull() },
       });
       if (open > 0) {
         // Speak in shop terms: the part mark, not the internal WO number.
@@ -407,14 +406,14 @@ export class ProductionOrderService {
     wos.completedAt = wos.status === WorkOrderStageStatus.COMPLETED ? (wos.completedAt ?? new Date()) : null;
   }
 
-  /** Open-NCR counts per assembly node, in ONE query (the bulk QC gate). */
+  /** Open NCR-report counts per assembly node, in ONE query (the bulk QC gate). */
   private async openNcrCountByNode(nodeIds: string[]): Promise<Map<string, number>> {
     if (!nodeIds.length) return new Map();
-    const rows: { nid: string; cnt: string }[] = await this.ncrRepo.query(
+    const rows: { nid: string; cnt: string }[] = await this.reportRepo.query(
       `SELECT assembly_node_id AS nid, COUNT(*)::int AS cnt
-         FROM ncrs
+         FROM quality_reports
         WHERE organization_id = $1 AND assembly_node_id = ANY($2)
-          AND status NOT IN ('closed','cancelled')
+          AND template_type = 'ncr' AND resolved_at IS NULL
         GROUP BY assembly_node_id`,
       [this.org, nodeIds],
     );
@@ -425,7 +424,7 @@ export class ProductionOrderService {
   private async inspectionsByNode(nodeIds: string[]): Promise<Map<string, InspectionSnapshot[]>> {
     const map = new Map<string, InspectionSnapshot[]>();
     if (!nodeIds.length) return map;
-    const rows: { nid: string; status: string; signoff_status: string | null }[] = await this.ncrRepo.query(
+    const rows: { nid: string; status: string; signoff_status: string | null }[] = await this.reportRepo.query(
       `SELECT assembly_node_id AS nid, status, signoff_status
          FROM quality_data
         WHERE organization_id = $1 AND assembly_node_id = ANY($2) AND is_active = true`,
@@ -936,8 +935,8 @@ export class ProductionOrderService {
     const wo = await this.woRepo.findOne({ where: { productionOrderId: orderId, assemblyNodeId: nodeId, organizationId: org } });
     if (!wo) throw new NotFoundException('This assembly is not part of this work order');
 
-    const ncrs = await this.ncrRepo.find({ where: { assemblyNodeId: nodeId, organizationId: org }, order: { createdAt: 'DESC' }, take: 20 });
-    const openNcrCount = ncrs.filter((n) => String(n.status) !== 'closed' && String(n.status) !== 'cancelled').length;
+    const ncrs = await this.reportRepo.find({ where: { assemblyNodeId: nodeId, organizationId: org, templateType: 'ncr' }, order: { createdAt: 'DESC' }, take: 20 });
+    const openNcrCount = ncrs.filter((n) => !n.resolvedAt).length;
     const ship = (await this.shipStatusByNode([nodeId], new Map([[nodeId, openNcrCount]]), orderId)).get(nodeId);
     const nodeInspections = (await this.inspectionsByNode([nodeId])).get(nodeId) ?? [];
     const nodeRow = await this.nodeRepo.findOne({ where: { id: nodeId, organizationId: org } });
@@ -1049,7 +1048,7 @@ export class ProductionOrderService {
         notes: e.notes ?? null,
         inputMethod: e.input_method ?? null,
       })),
-      ncrs: ncrs.map((n) => ({ id: n.id, number: n.number, title: n.title, status: String(n.status), severity: String(n.severity), createdAt: n.createdAt })),
+      ncrs: ncrs.map((n) => ({ id: n.id, number: n.number, title: n.templateName, status: n.resolvedAt ? 'resolved' : 'open', severity: (n.data?.['severity'] as string) ?? null, createdAt: n.createdAt })),
     };
   }
 }

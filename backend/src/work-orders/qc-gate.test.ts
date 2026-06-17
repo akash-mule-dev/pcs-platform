@@ -8,7 +8,6 @@ import {
   countUnresolvedFailures,
   hasAcceptableInspection,
   inspectionGateError,
-  isOpenNcrStatus,
   isQualityStageName,
   qcGateMessage,
 } from './qc-gate.ts';
@@ -31,14 +30,9 @@ ok('quality stage name detection', () => {
   }
 });
 
-ok('open NCR statuses', () => {
-  assert.ok(isOpenNcrStatus('open') && isOpenNcrStatus('investigation') && isOpenNcrStatus('disposition'));
-  assert.ok(!isOpenNcrStatus('closed') && !isOpenNcrStatus('cancelled'));
-});
-
 ok('NCR gate message pluralizes', () => {
-  assert.match(qcGateMessage('B1001', 1), /1 open NCR\./);
-  assert.match(qcGateMessage('B1001', 2), /2 open NCRs\./);
+  assert.match(qcGateMessage('B1001', 1), /1 open NCR report\./);
+  assert.match(qcGateMessage('B1001', 2), /2 open NCR reports\./);
 });
 
 ok('unresolved failures: pending + rejected count, approved does not', () => {

@@ -1,21 +1,24 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatInputModule } from '@angular/material/input';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { SupportApiService, SupportMeta, TicketDetail, TicketSummary } from './support.service';
+import { SupportApiService, SupportMeta, TicketDetail, TicketMessage, TicketSummary } from './support.service';
 import { SupportTicketDialogComponent } from './support-ticket-dialog.component';
 import { PermissionsService } from '../core/services/permissions.service';
+import { RealtimeService } from '../core/services/realtime.service';
 
 @Component({
   selector: 'app-support',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatSelectModule, MatInputModule, MatDialogModule],
+  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatSelectModule, MatInputModule, MatDialogModule, MatTooltipModule],
   template: `
     <div class="page-shell">
       <div class="page-header">
@@ -76,6 +79,13 @@ import { PermissionsService } from '../core/services/permissions.service';
                       · {{ m.createdAt | date:'short' }}
                     </div>
                     <div class="m-body">{{ m.body }}</div>
+                    @if (m.attachmentCount) {
+                      <div class="attachments">
+                        @for (i of counter(m.attachmentCount); track i) {
+                          <button class="att" (click)="openAttachment(m, i)"><mat-icon>attachment</mat-icon> Attachment {{ i + 1 }}</button>
+                        }
+                      </div>
+                    }
                   </div>
                 }
               }
@@ -87,9 +97,18 @@ import { PermissionsService } from '../core/services/permissions.service';
                   <mat-label>Write a reply</mat-label>
                   <textarea matInput [(ngModel)]="replyBody" rows="3"></textarea>
                 </mat-form-field>
+                @if (selectedFile) {
+                  <div class="file-chip"><mat-icon>attach_file</mat-icon> {{ selectedFile.name }}
+                    <button class="x" (click)="clearFile()"><mat-icon>close</mat-icon></button>
+                  </div>
+                }
                 <div class="reply-actions">
-                  <button mat-button (click)="close()" [disabled]="busy">Close ticket</button>
-                  <button mat-raised-button color="primary" [disabled]="!replyBody.trim() || busy" (click)="send()">Send reply</button>
+                  <div class="left">
+                    <button mat-button (click)="close()" [disabled]="busy">Close ticket</button>
+                    <button mat-icon-button matTooltip="Attach an image or PDF" (click)="fileInput.click()" [disabled]="busy"><mat-icon>attach_file</mat-icon></button>
+                    <input #fileInput type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" (change)="onFile($event)">
+                  </div>
+                  <button mat-raised-button color="primary" [disabled]="(!replyBody.trim() && !selectedFile) || busy" (click)="send()">Send reply</button>
                 </div>
               </div>
             } @else {
@@ -135,35 +154,60 @@ import { PermissionsService } from '../core/services/permissions.service';
     .tag-support { background: #0ea5e9; color: #fff; border-color: #0ea5e9; }
     .sys { text-align: center; font-size: 12px; color: var(--clay-text-muted, #64748b); }
     .reply { border-top: 1px solid var(--clay-border, #e2e8f0); padding-top: 10px; } .full { width: 100%; }
-    .reply-actions { display: flex; justify-content: space-between; }
+    .reply-actions { display: flex; justify-content: space-between; align-items: center; } .reply-actions .left { display: flex; align-items: center; gap: 2px; }
+    .file-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: var(--clay-primary-soft, #eff6ff); color: #1d4ed8; border-radius: 999px; padding: 3px 6px 3px 10px; margin-bottom: 8px; }
+    .file-chip mat-icon { font-size: 16px; width: 16px; height: 16px; } .file-chip .x { border: none; background: transparent; cursor: pointer; display: inline-flex; color: inherit; padding: 0; }
+    .attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .att { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; border: 1px solid var(--clay-border, #e2e8f0); background: #fff; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+    .att:hover { border-color: var(--clay-primary, #2563eb); } .att mat-icon { font-size: 15px; width: 15px; height: 15px; }
     .closed-note { color: var(--clay-text-muted, #64748b); font-size: 13px; }
     .placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; color: var(--clay-text-muted, #64748b); gap: 8px; }
     .placeholder mat-icon { font-size: 40px; width: 40px; height: 40px; }
     .empty { color: var(--clay-text-muted, #64748b); padding: 8px; }
   `],
 })
-export class SupportComponent implements OnInit {
+export class SupportComponent implements OnInit, OnDestroy {
   tickets: TicketSummary[] = [];
   selected: TicketDetail | null = null;
   meta: SupportMeta | null = null;
   statusFilter = '';
   replyBody = '';
+  selectedFile: File | null = null;
   loaded = false;
   busy = false;
   canCreate = false;
+
+  private subs: Subscription[] = [];
 
   constructor(
     private api: SupportApiService,
     private dialog: MatDialog,
     private snack: MatSnackBar,
     private permissions: PermissionsService,
+    private realtime: RealtimeService,
   ) {}
 
   ngOnInit(): void {
     this.canCreate = this.permissions.can('support.create');
     this.api.meta().subscribe({ next: (m) => (this.meta = m), error: () => {} });
     this.load();
+
+    // Live updates: the gateway derives this user's org room from the JWT, so we
+    // just join (no client-supplied org). On any change to one of the company's
+    // tickets, refresh the list and re-fetch the open thread if it's the one hit.
+    this.realtime.joinRoom('join-support-org', '');
+    this.subs.push(this.realtime.on<{ ticketId: string }>('support:changed').subscribe((e) => {
+      this.load();
+      if (this.selected && e?.ticketId === this.selected.id) this.refreshSelected();
+    }));
   }
+
+  ngOnDestroy(): void {
+    this.realtime.leaveRoom('join-support-org', 'leave-support-org', '');
+    this.subs.forEach((s) => s.unsubscribe());
+  }
+
+  counter(n: number): number[] { return Array.from({ length: n }, (_, i) => i); }
 
   label(kind: 'statuses' | 'priorities' | 'categories', value: string): string {
     return this.meta?.[kind]?.find((x) => x.value === value)?.label ?? value;
@@ -177,22 +221,47 @@ export class SupportComponent implements OnInit {
   }
 
   open(t: TicketSummary): void {
+    this.selectedFile = null;
     this.api.get(t.id).subscribe({ next: (d) => (this.selected = d), error: () => {} });
+  }
+
+  private refreshSelected(): void {
+    if (!this.selected) return;
+    this.api.get(this.selected.id).subscribe({ next: (d) => (this.selected = d), error: () => {} });
   }
 
   openNew(): void {
     this.dialog.open(SupportTicketDialogComponent, { data: {} }).afterClosed().subscribe((created) => {
-      if (created) { this.load(); this.selected = created; }
+      if (created) { this.load(); this.open(created); }
+    });
+  }
+
+  onFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.selectedFile = input.files?.[0] ?? null;
+    input.value = '';
+  }
+  clearFile(): void { this.selectedFile = null; }
+
+  openAttachment(m: TicketMessage, index: number): void {
+    if (!this.selected) return;
+    this.api.attachment(this.selected.id, m.id, index).subscribe({
+      next: (blob) => window.open(URL.createObjectURL(blob), '_blank'),
+      error: () => this.snack.open('Could not open attachment', 'Dismiss', { duration: 3000 }),
     });
   }
 
   send(): void {
-    if (!this.selected || !this.replyBody.trim()) return;
+    if (!this.selected || (!this.replyBody.trim() && !this.selectedFile)) return;
     this.busy = true;
-    this.api.reply(this.selected.id, this.replyBody.trim()).subscribe({
-      next: (d) => { this.busy = false; this.selected = d; this.replyBody = ''; this.load(); },
-      error: (e) => { this.busy = false; this.snack.open(e?.error?.message || 'Reply failed', 'Dismiss', { duration: 4000 }); },
-    });
+    const body = this.replyBody.trim();
+    const done = (d: TicketDetail) => { this.busy = false; this.selected = d; this.replyBody = ''; this.selectedFile = null; this.load(); };
+    const fail = (e: any) => { this.busy = false; this.snack.open(e?.error?.message || 'Reply failed', 'Dismiss', { duration: 4000 }); };
+    if (this.selectedFile) {
+      this.api.replyWithAttachment(this.selected.id, this.selectedFile, body).subscribe({ next: done, error: fail });
+    } else {
+      this.api.reply(this.selected.id, body).subscribe({ next: done, error: fail });
+    }
   }
 
   close(): void {

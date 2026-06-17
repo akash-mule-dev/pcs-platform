@@ -201,11 +201,36 @@ against the order → costs roll up (WO → order → project → org).**
   and stock coverage status (`unmapped | covered | short | issued`); off-BOM issues are listed
   as extras. Endpoints in `material-planning.controller.ts` (own module — exports
   `MaterialRequirementsService`, entity-only deps, imported by CostingModule; keep acyclic).
-- **Costing** (`costing/costing-math.ts`, pure): `total = material + labor + overhead`.
+- **Costing** (`costing/costing-math.ts`, pure): `total = material + labor + machine + overhead`.
   Material = stamped ledger consumption. Labor = `(duration − break) × rate` with per-entry
-  rate resolution **worker (`users.hourly_rate`) → stage (`stages.hourly_rate`) → org default**;
-  overhead = % on labor. Estimates: BOM × current avg costs and `stages.target_time_seconds ×
-  qty_total × (stage rate | default)` — actual vs estimate everywhere. Settings live in
+  rate resolution **stamped `time_entries.labor_rate` → worker (`users.hourly_rate`) → stage
+  (`stages.hourly_rate`) → org default**. The labor rate is **FROZEN at clock-out** onto
+  `time_entries.labor_rate` (worker/stage only — the org default stays a live read-time fallback,
+  so setting it later still flows to un-rated entries), the labor analog of
+  `stock_movements.unit_cost`, so a later rate change never rewrites historical labor cost. The
+  per-WO view splits clocked labor into **productive / setup (`time_entries.is_setup`) / rework
+  (`is_rework`) / idle (`idle_seconds` overlay)** (`splitLabor`). **Machine = attended station time
+  × the work-center rate** — `stations.machine_rate` (the costing driver; `equipment.hourly_rate`
+  is asset-level only, a hint for setting it), FROZEN onto `time_entries.machine_rate` at clock-out
+  (`COALESCE(machine_rate, station's live rate)`); machine ESTIMATE = `stages.machine_time_seconds
+  × qty_total × stages.machine_rate` (`machineByKey` / `machineEstimateByWorkOrder`). Work driven
+  purely from the order board / kanban (counts, no clock-in/out) would otherwise read $0 labor +
+  machine, so an **earned-standard proxy** (labor: `stage target × qty_done × stage|default rate`;
+  machine: `stage machine time × qty_done × stage machine rate`) is added for in-progress/completed
+  stages with NO time entries (`proxyByKey`, flagged estimated, consistent across
+  WO/order/project/overview roll-ups). Overhead = **per-stage % on labor** (`stages.overhead_percent`
+  → org default; each stage's labor × its own burden, so welding ≠ painting — `overheadByKey` on
+  clocked labor + the proxy/estimate carry their own; `composeTotals` takes the explicit per-stage
+  amount). **Material is per-WO too**: directly
+  PINNED consumption (`stock_movements.work_order_id`) PLUS an ALLOCATED share of the order-level
+  bulk issues (no WO pin), spread across the WOs by their **per-WO BOM estimate** → subtree weight →
+  equal (`MaterialRequirementsService.bomEstimateByNode` walks each WO assembly node's part subtree;
+  `costing.service#materialAllocation` + pure `allocateProportionally` split it penny-exact). The
+  order's headline material is unchanged (bulk is redistributed, not invented): items expose
+  `materialCost` (pinned) + `allocatedMaterialCost` + `estimatedMaterialCost`, and
+  `unattributedMaterialCost`/`allocatedMaterialTotal` show how much bulk got spread. Estimates: BOM ×
+  current avg costs (per WO via the node subtree, per order via the whole tree) and
+  `stages.target_time_seconds × qty_total × (stage rate | default)` — actual vs estimate everywhere. Settings live in
   `organizations.settings.costing` (`{defaultLaborRate, overheadPercent, currency}`, legacy
   `settings.laborHourlyRate` honored) via `GET/PUT /api/costing/settings` (audited;
   `costing.manage` permission). Cost endpoints (all SQL aggregates, org-scoped, never N+1):
@@ -319,13 +344,29 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
   (toolbar) or `/support`; platform staff triage cross-tenant from `/support-desk` (platform
   feature `support-desk` = view/manage). `support_tickets` (tenant-owned, global `TKT-YYYY-NNNN`,
   status/priority/category/assignee) + `support_ticket_messages` (customer/support/system authors,
-  `internal` notes hidden from customers). Pure state machine in `support/support-workflow.ts`
-  (`npm run test:support-tickets`): customer reply reopens pending/resolved/closed→open, support
-  reply advances open→in_progress, `canTransition` guards desk status changes. Best-effort in-app
-  notifications + ws both ways; all actions audited (entityType `support_ticket`). Live suite
-  `npm run test:support-tickets:e2e` (22 assertions). `SupportService` is shared by
-  `SupportController` (org-scoped) + `SupportDeskController` (cross-tenant, org-less platform caller).
-  Role/user/org mutations are
+  `internal` notes hidden from customers, optional `attachments` storage-key array). Pure state
+  machine in `support/support-workflow.ts` (`npm run test:support-tickets`): customer reply reopens
+  pending/resolved/closed→open, support reply advances open→in_progress, `canTransition` guards desk
+  status changes. **Attachments** (image/PDF ≤10 MB via the shared `StorageProvider`, keyed
+  `<org>/support/<ticketId>/…` through `StorageKeys.supportAttachment`): `POST :id/attachments`
+  (multipart `file` + optional `body`/`internal`) posts a message carrying the file; streamed back as
+  authed blobs at `…/messages/:messageId/attachments/:index` (customer path org-scoped + refuses
+  internal-note files; desk path sees all). **Triage is concurrency-safe**: `PATCH` accepts
+  `expectedVersion` (409 on mismatch, like NCRs) and assignment is validated to the platform-staff
+  pool (`GET /support-desk/agents`; a ticket can never be assigned to a tenant user). **Real-time
+  is ws both ways** via `EventsGateway.emitSupportEvent`, which fans a single metadata-only
+  `support:changed` signal (id/number/status/action — never message bodies) to two **token-scoped**
+  rooms: `support-org:<orgId>` (the org comes from the handshake JWT, so a client only ever joins
+  its OWN tenant) and `support-desk` (joined only by org-less platform operators). The gateway
+  verifies the handshake JWT (`WebsocketModule` registers `JwtModule`; the web client sends it via
+  `io(..., { auth })`); recipients reload their list + re-fetch the open thread through their own
+  permission-scoped endpoint, so internal notes never leave the API. Best-effort in-app
+  notifications too; all actions audited (entityType `support_ticket`). RLS for the support tables is
+  enrolled by the `SupportTicketsRls` migration (the generic `TenantRls` ran before they existed).
+  Live suite `npm run test:support-tickets:e2e`
+  (~33 assertions incl. agents, assignment guard, version conflict, attachment visibility).
+  `SupportService` is shared by `SupportController` (org-scoped) + `SupportDeskController`
+  (cross-tenant, org-less platform caller). Role/user/org mutations are
   written to the audit log. Regression suites: `npm run test:rbac` (catalog unit tests) and
   `npm run test:rbac:e2e` (62-assertion live suite, needs a freshly seeded API).
   The old `@Roles`/RolesGuard + `auth/permissions.config.ts` are deprecated shims — don't add usages.

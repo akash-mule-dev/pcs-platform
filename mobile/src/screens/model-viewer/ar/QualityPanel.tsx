@@ -13,8 +13,6 @@ interface Props {
   onSignoff: (entry: ARQualityEntry) => void;
   /** Capture an AR snapshot and attach it to this entry as evidence. */
   onCaptureEvidence?: (entry: ARQualityEntry) => void;
-  /** Raise an NCR from this (failed) entry. */
-  onRaiseNcr?: (entry: ARQualityEntry) => void;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -30,7 +28,6 @@ export default function QualityPanel({
   onLogNew,
   onSignoff,
   onCaptureEvidence,
-  onRaiseNcr,
 }: Props) {
   const s = summarize(entries);
 
@@ -66,29 +63,17 @@ export default function QualityPanel({
                 {e.defectType ? ` · ${e.defectType}` : ''}
                 {e.severity ? ` · ${e.severity}` : ''}
               </Text>
-              {(onCaptureEvidence || (onRaiseNcr && e.status === 'fail')) &&
-                !e.id.startsWith('pending-') && (
-                  <View style={styles.actionRow}>
-                    {onCaptureEvidence && (
-                      <TouchableOpacity
-                        style={styles.actionChip}
-                        onPress={() => onCaptureEvidence(e)}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                      >
-                        <Text style={styles.actionChipText}>📷 Evidence</Text>
-                      </TouchableOpacity>
-                    )}
-                    {onRaiseNcr && e.status === 'fail' && (
-                      <TouchableOpacity
-                        style={[styles.actionChip, styles.ncrChip]}
-                        onPress={() => onRaiseNcr(e)}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                      >
-                        <Text style={[styles.actionChipText, styles.ncrChipText]}>⚑ NCR</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
+              {onCaptureEvidence && !e.id.startsWith('pending-') && (
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.actionChip}
+                    onPress={() => onCaptureEvidence(e)}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Text style={styles.actionChipText}>📷 Evidence</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
             {e.signoffStatus && e.signoffStatus !== 'pending' && (
               <Text

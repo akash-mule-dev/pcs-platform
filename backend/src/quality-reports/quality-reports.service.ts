@@ -61,6 +61,7 @@ export class QualityReportsService {
           number: `${prefix}${String(base + 1).padStart(4, '0')}`,
           templateId: template.id,
           templateName: template.name,
+          templateType: template.type ?? null,
           templateSchema: template.schema ?? { components: [] },
           productionOrderId: order.id,
           projectId: order.projectId,
@@ -111,6 +112,32 @@ export class QualityReportsService {
         r.filledBy = this.userId ?? r.filledBy;
       }
     }
+    return this.repo.save(r);
+  }
+
+  /**
+   * Resolve (close) an NCR report — lifts the shipping + quality-stage gates for
+   * its assembly. Only meaningful for `ncr`-type reports.
+   */
+  async resolve(id: string): Promise<QualityReport> {
+    const r = await this.repo.findOne({ where: { id, organizationId: this.org } });
+    if (!r) throw new NotFoundException('Report not found');
+    if (r.templateType !== 'ncr') throw new BadRequestException('Only NCR reports can be resolved');
+    if (!r.resolvedAt) {
+      r.resolvedAt = new Date();
+      r.resolvedBy = this.userId;
+      await this.repo.save(r);
+    }
+    return r;
+  }
+
+  /** Reopen a resolved NCR report (re-blocks its gates). */
+  async reopen(id: string): Promise<QualityReport> {
+    const r = await this.repo.findOne({ where: { id, organizationId: this.org } });
+    if (!r) throw new NotFoundException('Report not found');
+    if (r.templateType !== 'ncr') throw new BadRequestException('Only NCR reports can be reopened');
+    r.resolvedAt = null;
+    r.resolvedBy = null;
     return this.repo.save(r);
   }
 

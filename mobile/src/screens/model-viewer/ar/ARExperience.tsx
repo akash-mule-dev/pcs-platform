@@ -111,7 +111,6 @@ export default function ARExperience({
     pendingCount,
     create: createQuality,
     uploadEvidence,
-    raiseNcr,
     signoff: signoffQuality,
   } = useQualityData(modelId);
   const [qaPanelOpen, setQaPanelOpen] = useState(false);
@@ -405,41 +404,9 @@ export default function ARExperience({
     [uploadEvidence],
   );
 
-  // ── Raise an NCR from a failed inspection ──
-  const handleRaiseNcr = useCallback(
-    (entry: ARQualityEntry) => {
-      Alert.alert('Raise NCR', `Create a non-conformance report for "${entry.meshName}"?`, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Raise',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const ncr = await raiseNcr({
-                title: `AR QA: ${entry.meshName} failed inspection`,
-                description: entry.notes ?? undefined,
-                severity: (entry.severity as any) ?? 'medium',
-                dataJson: {
-                  source: 'ar-inspection',
-                  modelId,
-                  meshName: entry.meshName,
-                  qualityEntryId: entry.id,
-                  measurement: entry.measurement,
-                  defectType: entry.defectType,
-                },
-              });
-              Alert.alert('NCR raised', `${ncr.number} created.`);
-            } catch (e) {
-              Alert.alert('Could not raise NCR', e instanceof Error ? e.message : 'Failed to raise NCR');
-            }
-          },
-        },
-      ]);
-    },
-    [raiseNcr, modelId],
-  );
-
   // ── Sign-off decisions (permission-gated; identity stamped server-side) ──
+  // NCRs are raised separately via an NCR-type QC report (Report Templates →
+  // fill → reflects in QC Reports), not from the AR sign-off flow.
   const handleSignoff = useCallback(
     (entry: ARQualityEntry) => {
       if (!can('quality-analysis.signoff')) {
@@ -448,19 +415,11 @@ export default function ARExperience({
       }
       Alert.alert(`Sign off — ${entry.meshName}`, `Current status: ${entry.status.toUpperCase()}`, [
         { text: 'Approve', onPress: () => { void signoffQuality(entry.id, 'approved'); } },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: async () => {
-            await signoffQuality(entry.id, 'rejected');
-            // The defect stands — offer to raise the NCR while the part is in hand.
-            handleRaiseNcr(entry);
-          },
-        },
+        { text: 'Reject', style: 'destructive', onPress: () => { void signoffQuality(entry.id, 'rejected'); } },
         { text: 'Cancel', style: 'cancel' },
       ]);
     },
-    [signoffQuality, handleRaiseNcr],
+    [signoffQuality],
   );
 
   // ── Persisted registration: restore the model's last scale/rotation/render
@@ -861,7 +820,6 @@ export default function ARExperience({
           onLogNew={() => setLogFormOpen(true)}
           onSignoff={handleSignoff}
           onCaptureEvidence={handleCaptureEvidence}
-          onRaiseNcr={handleRaiseNcr}
         />
       )}
 

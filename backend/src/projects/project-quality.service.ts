@@ -3,12 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AssemblyNode } from './assembly-node.entity.js';
 import { QualityData } from '../quality-data/quality-data.entity.js';
-import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
-import { WorkOrder } from '../work-orders/work-order.entity.js';
+import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { QualityDataService } from '../quality-data/quality-data.service.js';
-import { QualityNcrService } from '../quality-ncr/quality-ncr.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
-import { RecordNodeQualityDto, RaiseNodeNcrDto } from './dto/node-quality.dto.js';
+import { RecordNodeQualityDto } from './dto/node-quality.dto.js';
 
 export interface NodeQualitySummary {
   status: 'pass' | 'warning' | 'fail' | null;
@@ -22,19 +20,18 @@ export interface NodeQualitySummary {
 
 /**
  * Fabrication-scoped quality: ties the existing model+mesh quality records and
- * NCRs to the assembly node being inspected, so a worker can inspect a part /
- * assembly and raise an NCR in context. Reuses QualityDataService (auto-fail on
- * tolerance) and QualityNcrService (numbering, raisedBy). Tenant-scoped.
+ * NCR reports (NCR-type QC reports) to the assembly node being inspected, so a
+ * worker can inspect a part / assembly in context. Reuses QualityDataService
+ * (auto-fail on tolerance). Tenant-scoped. NCRs are raised through the normal
+ * template-driven QC-report flow, not from here.
  */
 @Injectable()
 export class ProjectQualityService {
   constructor(
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
     @InjectRepository(QualityData) private readonly qdRepo: Repository<QualityData>,
-    @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
-    @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
+    @InjectRepository(QualityReport) private readonly reportRepo: Repository<QualityReport>,
     private readonly qualityData: QualityDataService,
-    private readonly ncr: QualityNcrService,
   ) {}
 
   private get org(): string {
@@ -94,42 +91,13 @@ export class ProjectQualityService {
     });
   }
 
-  /** Raise an NCR pre-filled from the node (links node/project/work-order/quality record). */
-  async raiseNodeNcr(projectId: string, nodeId: string, dto: RaiseNodeNcrDto): Promise<Ncr> {
-    const node = await this.getNode(projectId, nodeId);
-    const wo = await this.woRepo.findOne({ where: { assemblyNodeId: node.id, organizationId: this.org } });
-    let severity = dto.severity;
-    if (!severity && dto.qualityDataId) {
-      const qd = await this.qdRepo.findOne({ where: { id: dto.qualityDataId, organizationId: this.org } });
-      severity = qd?.severity ?? undefined;
-    }
-    const label = node.mark || node.name || 'item';
-    return this.ncr.createNcr({
-      title: dto.title || `${label} — quality non-conformance`,
-      description: dto.description,
-      severity,
-      workOrderId: wo?.id ?? undefined,
-      assemblyNodeId: node.id,
-      projectId,
-      qualityDataId: dto.qualityDataId,
-      dataJson: {
-        source: 'fabrication-qa',
-        projectId,
-        assemblyNodeId: node.id,
-        mark: node.mark,
-        meshName: this.meshKey(node),
-        qualityDataId: dto.qualityDataId ?? null,
-      },
-    } as any);
-  }
-
   /** Per-node quality status + open-NCR map for badges and the shipping gate. */
   async projectQualitySummary(
     projectId: string,
   ): Promise<{ nodes: Record<string, NodeQualitySummary>; totals: { inspected: number; failed: number; openNcr: number } }> {
     const org = this.org;
     const rows = await this.qdRepo.find({ where: { projectId, organizationId: org, isActive: true } });
-    const ncrs = await this.ncrRepo.find({ where: { projectId, organizationId: org } });
+    const ncrs = await this.reportRepo.find({ where: { projectId, organizationId: org, templateType: 'ncr' } });
 
     const nodes: Record<string, NodeQualitySummary> = {};
     const ensure = (id: string): NodeQualitySummary =>
@@ -151,7 +119,7 @@ export class ProjectQualityService {
 
     let openNcrTotal = 0;
     for (const n of ncrs) {
-      if (n.status === NcrStatus.CLOSED || n.status === NcrStatus.CANCELLED) continue;
+      if (n.resolvedAt) continue;
       openNcrTotal++;
       if (n.assemblyNodeId) ensure(n.assemblyNodeId).openNcr++;
     }

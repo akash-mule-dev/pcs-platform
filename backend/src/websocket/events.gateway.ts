@@ -1,6 +1,10 @@
 import { WebSocketGateway, WebSocketServer, OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Injectable, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+
+/** Authenticated principal derived from the socket handshake JWT (if present). */
+interface SocketAuth { userId: string; organizationId: string | null; role: string | null; }
 
 /**
  * Keys stripped from every socket payload. WebSocket emits do NOT pass through
@@ -50,11 +54,29 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   @WebSocketServer()
   server: Server;
 
+  constructor(private readonly jwt: JwtService) {}
+
   afterInit(_server: Server) {
     this.logger.log('WebSocket gateway initialized');
   }
 
+  /**
+   * Verify the handshake JWT (same secret as HTTP auth) and stash the principal
+   * on `client.data.auth`. Verification is best-effort: an anonymous socket is
+   * still allowed to connect (so the existing project/conversion/user feeds keep
+   * working), but the sensitive support rooms below refuse to join without it.
+   */
   handleConnection(client: Socket) {
+    try {
+      const raw = client.handshake?.auth?.token
+        || String(client.handshake?.headers?.authorization || '').replace(/^Bearer\s+/i, '');
+      if (raw) {
+        const p: any = this.jwt.verify(raw);
+        client.data.auth = { userId: p.sub, organizationId: p.organizationId ?? null, role: p.role ?? null } as SocketAuth;
+      }
+    } catch {
+      // Invalid/expired token → treated as anonymous (no support-room access).
+    }
     this.logger.debug(`Client connected: ${client.id}`);
   }
 
@@ -99,6 +121,40 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   @SubscribeMessage('leave-project')
   handleLeaveProject(client: Socket, projectId: string) {
     if (typeof projectId === 'string' && projectId) client.leave(`project:${projectId}`);
+  }
+
+  /**
+   * Support real-time rooms (two-sided ticketing). Two room kinds, BOTH derived
+   * from the authenticated handshake — never from client-supplied values:
+   *  - `support-org:<orgId>` — a tenant's own queue; the org comes from the JWT,
+   *    so a client can only ever join its OWN tenant room.
+   *  - `support-desk`        — the platform-wide queue; joined only by org-less
+   *    platform operators (the only principals who hold `support-desk.view`).
+   * Payloads are metadata only (id/number/status); clients re-fetch the thread
+   * through their own permission-scoped endpoint, so internal notes never leak.
+   */
+  @SubscribeMessage('join-support-org')
+  handleJoinSupportOrg(client: Socket) {
+    const org = (client.data?.auth as SocketAuth | undefined)?.organizationId;
+    if (org) client.join(`support-org:${org}`);
+  }
+
+  @SubscribeMessage('leave-support-org')
+  handleLeaveSupportOrg(client: Socket) {
+    const org = (client.data?.auth as SocketAuth | undefined)?.organizationId;
+    if (org) client.leave(`support-org:${org}`);
+  }
+
+  @SubscribeMessage('join-support-desk')
+  handleJoinSupportDesk(client: Socket) {
+    const auth = client.data?.auth as SocketAuth | undefined;
+    // The desk is platform-only; platform operators are org-less.
+    if (auth && !auth.organizationId) client.join('support-desk');
+  }
+
+  @SubscribeMessage('leave-support-desk')
+  handleLeaveSupportDesk(client: Socket) {
+    client.leave('support-desk');
   }
 
   // --- Existing events (payloads sanitized before broadcast) ---
@@ -166,6 +222,28 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   }) {
     if (this.server) {
       this.server.to(`project:${data.projectId}`).emit('import:progress', sanitize(data));
+    }
+  }
+
+  /**
+   * Support ticket change — fan a lightweight `support:changed` signal to the
+   * affected tenant's room and the platform desk room. The payload carries only
+   * non-sensitive metadata (id/number/status/action); recipients reload their
+   * list and, if the changed ticket is the one open, re-fetch the thread via
+   * their own permission-scoped endpoint — so internal notes never leave the API.
+   */
+  emitSupportEvent(data: {
+    ticketId: string;
+    organizationId: string | null;
+    number: string;
+    status: string;
+    action: string;
+  }) {
+    if (!this.server) return;
+    const payload = sanitize(data);
+    this.server.to('support-desk').emit('support:changed', payload);
+    if (data.organizationId) {
+      this.server.to(`support-org:${data.organizationId}`).emit('support:changed', payload);
     }
   }
 

@@ -44,8 +44,7 @@ const FEATURES: FeatureDef[] = [
   { key: 'lots', label: 'Heat / Lot Traceability', category: 'Materials', table: 'material_lots' },
   // Quality
   { key: 'inspections', label: 'Quality Inspections', category: 'Quality', table: 'quality_data' },
-  { key: 'ncrs', label: 'NCRs', category: 'Quality', table: 'ncrs' },
-  { key: 'capas', label: 'CAPAs', category: 'Quality', table: 'capas' },
+  { key: 'qc_reports', label: 'QC Reports', category: 'Quality', table: 'quality_reports' },
   // Configuration / setup
   { key: 'processes', label: 'Processes (Routing)', category: 'Configuration', table: 'processes' },
   { key: 'equipment', label: 'Equipment', category: 'Configuration', table: 'equipment' },
@@ -99,7 +98,9 @@ export class PlatformInsightsService {
     const [userRows, featureRows, auditRows, woseRows, trendRows] = await Promise.all([
       this.ds.query(
         `SELECT organization_id AS org, COUNT(*)::int AS users,
-                COUNT(*) FILTER (WHERE is_active)::int AS active
+                COUNT(*) FILTER (WHERE is_active)::int AS active,
+                COUNT(*) FILTER (WHERE last_login_at > now() - interval '${ACTIVE_WINDOW_DAYS} days')::int AS logged30,
+                MAX(last_login_at) AS last_login
            FROM users WHERE organization_id IS NOT NULL GROUP BY organization_id`,
       ),
       this.ds.query(this.featureUsageSql(false)),
@@ -122,8 +123,8 @@ export class PlatformInsightsService {
       ),
     ]);
 
-    const userBy = new Map<string, { users: number; active: number }>();
-    for (const u of userRows) userBy.set(u.org, { users: u.users, active: u.active });
+    const userBy = new Map<string, { users: number; active: number; logged30: number; lastLogin: any }>();
+    for (const u of userRows) userBy.set(u.org, { users: u.users, active: u.active, logged30: u.logged30, lastLogin: u.last_login });
 
     const auditBy = new Map<string, { last: any; e30: number; e7: number }>();
     for (const a of auditRows) auditBy.set(a.org, { last: a.last_at, e30: a.e30, e7: a.e7 });
@@ -156,20 +157,26 @@ export class PlatformInsightsService {
       const records = recordsBy.get(o.id) ?? {};
       const featuresUsed = FEATURES.filter((f) => (records[f.key] ?? 0) > 0).length;
       const audit = auditBy.get(o.id);
-      const candidates = [lastByOrg.get(o.id), audit?.last ? new Date(audit.last).getTime() : undefined, woseBy.get(o.id) ? new Date(woseBy.get(o.id)).getTime() : undefined].filter(
-        (x): x is number => typeof x === 'number',
-      );
+      const u = userBy.get(o.id) ?? { users: 0, active: 0, logged30: 0, lastLogin: null };
+      const lastLoginAt = iso(u.lastLogin);
+      const candidates = [
+        lastByOrg.get(o.id),
+        audit?.last ? new Date(audit.last).getTime() : undefined,
+        woseBy.get(o.id) ? new Date(woseBy.get(o.id)).getTime() : undefined,
+        u.lastLogin ? new Date(u.lastLogin).getTime() : undefined,
+      ].filter((x): x is number => typeof x === 'number');
       const lastActivityAt = candidates.length ? iso(Math.max(...candidates)) : null;
-      const u = userBy.get(o.id) ?? { users: 0, active: 0 };
       return {
         ...o,
         users: u.users,
         activeUsers: u.active,
+        usersActive30d: u.logged30,
         records,
         featuresUsed,
         featuresTotal: FEATURES.length,
         events30d: audit?.e30 ?? 0,
         events7d: audit?.e7 ?? 0,
+        lastLoginAt,
         lastActivityAt,
         status: this.statusOf(featuresUsed, lastActivityAt),
       };
@@ -196,6 +203,7 @@ export class PlatformInsightsService {
         inactiveTenants: tenants.length - activeTenants,
         users: tenants.reduce((s, t) => s + t.users, 0),
         activeUsers: tenants.reduce((s, t) => s + t.activeUsers, 0),
+        usersLoggedIn30d: tenants.reduce((s, t) => s + t.usersActive30d, 0),
         activeLast30d: tenants.filter((t) => t.status === 'active').length,
         idleTenants: tenants.filter((t) => t.status === 'idle').length,
         dormantTenants: tenants.filter((t) => t.status === 'dormant').length,
@@ -221,7 +229,9 @@ export class PlatformInsightsService {
 
     const [userTotals, byRole, featureRows, activity, trendRows, byType, topUsers] = await Promise.all([
       this.ds.query(
-        `SELECT COUNT(*)::int AS users, COUNT(*) FILTER (WHERE is_active)::int AS active
+        `SELECT COUNT(*)::int AS users, COUNT(*) FILTER (WHERE is_active)::int AS active,
+                COUNT(*) FILTER (WHERE last_login_at > now() - interval '${ACTIVE_WINDOW_DAYS} days')::int AS logged30,
+                MAX(last_login_at) AS last_login
            FROM users WHERE organization_id = $1`,
         [orgId],
       ),
@@ -255,10 +265,11 @@ export class PlatformInsightsService {
         [orgId],
       ),
       this.ds.query(
-        `SELECT u.id, u.first_name AS "firstName", u.last_name AS "lastName", u.email, COUNT(*)::int AS events
+        `SELECT u.id, u.first_name AS "firstName", u.last_name AS "lastName", u.email,
+                u.last_login_at AS "lastLoginAt", COUNT(*)::int AS events
            FROM audit_logs a JOIN users u ON u.id = a.user_id
           WHERE u.organization_id = $1 AND a.created_at > now() - interval '90 days'
-          GROUP BY u.id, u.first_name, u.last_name, u.email ORDER BY events DESC LIMIT 8`,
+          GROUP BY u.id, u.first_name, u.last_name, u.email, u.last_login_at ORDER BY events DESC LIMIT 8`,
         [orgId],
       ),
     ]);
@@ -280,8 +291,14 @@ export class PlatformInsightsService {
     const featuresUsed = features.filter((f) => f.used).length;
 
     const act = activity[0] ?? {};
+    const ut = userTotals[0] ?? {};
+    const lastLoginAt = iso(ut.last_login);
     const featureLast = features.map((f) => (f.lastAt ? new Date(f.lastAt).getTime() : 0));
-    const lastCandidates = [act.last_at ? new Date(act.last_at).getTime() : 0, ...featureLast].filter((x) => x > 0);
+    const lastCandidates = [
+      act.last_at ? new Date(act.last_at).getTime() : 0,
+      ut.last_login ? new Date(ut.last_login).getTime() : 0,
+      ...featureLast,
+    ].filter((x) => x > 0);
     const lastActivityAt = lastCandidates.length ? iso(Math.max(...lastCandidates)) : null;
 
     return {
@@ -296,8 +313,10 @@ export class PlatformInsightsService {
       },
       status: this.statusOf(featuresUsed, lastActivityAt),
       users: {
-        total: userTotals[0]?.users ?? 0,
-        active: userTotals[0]?.active ?? 0,
+        total: ut.users ?? 0,
+        active: ut.active ?? 0,
+        loggedIn30d: ut.logged30 ?? 0,
+        lastLoginAt,
         byRole: byRole.map((b: any) => ({ role: b.role, count: b.count })),
       },
       adoption: { featuresUsed, featuresTotal: FEATURES.length },
@@ -314,6 +333,7 @@ export class PlatformInsightsService {
           name: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || 'Unknown',
           email: u.email,
           events: u.events,
+          lastLoginAt: iso(u.lastLoginAt),
         })),
       },
     };

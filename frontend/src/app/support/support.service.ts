@@ -9,6 +9,7 @@ export interface TicketMessage {
   body: string;
   internal: boolean;
   createdAt: string;
+  attachmentCount?: number;
 }
 export interface TicketSummary {
   id: string;
@@ -24,16 +25,22 @@ export interface TicketSummary {
   organizationName?: string | null;
   lastMessageAt: string | null;
   createdAt: string;
+  firstResponseAt?: string | null;
+  awaitingFirstResponse?: boolean;
 }
+export interface PagedTickets { items: TicketSummary[]; total: number; limit: number; offset: number; }
 export interface TicketDetail extends TicketSummary {
   description: string;
   raisedByEmail: string | null;
   contextUrl: string | null;
   appVersion: string | null;
+  firstResponseAt?: string | null;
   resolvedAt: string | null;
   closedAt: string | null;
+  version?: number;
   messages: TicketMessage[];
 }
+export interface SupportAgent { id: string; name: string | null; }
 export interface SupportMeta {
   statuses: { value: string; label: string }[];
   priorities: { value: string; label: string }[];
@@ -53,4 +60,14 @@ export class SupportApiService {
   }
   reply(id: string, body: string): Observable<TicketDetail> { return this.api.post(`/support/tickets/${id}/messages`, { body }); }
   close(id: string): Observable<TicketDetail> { return this.api.post(`/support/tickets/${id}/close`, {}); }
+
+  replyWithAttachment(id: string, file: File, body?: string): Observable<TicketDetail> {
+    const form = new FormData();
+    form.append('file', file);
+    if (body) form.append('body', body);
+    return this.api.postForm(`/support/tickets/${id}/attachments`, form);
+  }
+  attachment(ticketId: string, messageId: string, index: number): Observable<Blob> {
+    return this.api.getBlob(`/support/tickets/${ticketId}/messages/${messageId}/attachments/${index}`);
+  }
 }

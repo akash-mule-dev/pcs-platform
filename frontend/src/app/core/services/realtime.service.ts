@@ -26,7 +26,13 @@ export class RealtimeService implements OnDestroy {
   private ensureSocket(): Socket {
     if (this.socket) return this.socket;
     const wsUrl = environment.apiUrl.replace('/api', '');
-    this.socket = io(wsUrl, { transports: ['websocket', 'polling'] });
+    // Send the JWT on the handshake so the gateway can scope sensitive rooms
+    // (support queues) to the authenticated tenant. The function form runs on
+    // every (re)connect, so a refreshed token is always used.
+    this.socket = io(wsUrl, {
+      transports: ['websocket', 'polling'],
+      auth: (cb) => cb({ token: localStorage.getItem('pcs_token') || '' }),
+    });
     this.socket.on('connect', () => {
       for (const { joinEvent, payload } of this.rooms.values()) this.socket?.emit(joinEvent, payload);
     });

@@ -54,9 +54,6 @@ export interface MRecordQuality {
   toleranceMin?: number;
   toleranceMax?: number;
 }
-export interface MRaiseNcr { title?: string; description?: string; severity?: string; qualityDataId?: string }
-export interface MNcrRef { id: string; number: string; title: string; status: string; severity: string }
-
 export const projectsService = {
   list: () => api.getList<MProject>('/projects'),
   getNodes: (projectId: string) => api.getList<MNode>(`/projects/${projectId}/nodes`),
@@ -66,8 +63,6 @@ export const projectsService = {
     api.get<MQualityEntry[]>(`/projects/${projectId}/nodes/${nodeId}/quality`),
   recordNodeQuality: (projectId: string, nodeId: string, body: MRecordQuality) =>
     api.post<MQualityEntry>(`/projects/${projectId}/nodes/${nodeId}/quality`, body),
-  raiseNodeNcr: (projectId: string, nodeId: string, body: MRaiseNcr) =>
-    api.post<MNcrRef>(`/projects/${projectId}/nodes/${nodeId}/ncr`, body),
 };
 
 // ── Production orders (per-customer/run instances of a project) ──

@@ -29,6 +29,10 @@ export class AuthService {
     if (!valid) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    // Record the login for engagement analytics (best-effort — a write hiccup
+    // must never block a valid sign-in). Support-impersonation sessions are
+    // minted elsewhere and intentionally don't touch this.
+    this.userRepo.update(user.id, { lastLoginAt: new Date() }).catch(() => {});
     const payload = {
       sub: user.id,
       email: user.email,

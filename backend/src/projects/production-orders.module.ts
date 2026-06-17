@@ -7,13 +7,13 @@ import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage } from '../work-orders/work-order-stage.entity.js';
 import { StageEvent } from '../work-orders/stage-event.entity.js';
 import { Stage } from '../stages/stage.entity.js';
-import { Ncr } from '../quality-ncr/entities/ncr.entity.js';
+import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { ProductionOrderService } from './production-order.service.js';
 import { ProductionOrderController } from './production-order.controller.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ProductionOrder, Project, AssemblyNode, WorkOrder, WorkOrderStage, StageEvent, Stage, Ncr]),
+    TypeOrmModule.forFeature([ProductionOrder, Project, AssemblyNode, WorkOrder, WorkOrderStage, StageEvent, Stage, QualityReport]),
   ],
   controllers: [ProductionOrderController],
   providers: [ProductionOrderService],

@@ -15,6 +15,7 @@
  *     conversions/<id>.<ext>                  conversion input sources
  *     quality/evidence/<entryId>/<id>.<ext>   inspection evidence photos
  *     quality/ncr/<ncrId>/<id>.<ext>          NCR evidence photos
+ *     support/<ticketId>/<id>.<ext>           support-ticket attachments (img/pdf)
  *     coordination/drawings/<id>.pdf          coordination drawings
  *     media/<kind>/<id>.<ext>                 FUTURE: screenshots, videos, captures …
  *
@@ -55,6 +56,9 @@ export const StorageKeys = {
 
   qualityEvidence: (organizationId: string | null | undefined, entryId: string, id: string, ext?: string): string =>
     `${org(organizationId)}/quality/evidence/${entryId}/${id}${dot(ext)}`,
+
+  supportAttachment: (organizationId: string | null | undefined, ticketId: string, id: string, ext?: string): string =>
+    `${org(organizationId)}/support/${ticketId}/${id}${dot(ext)}`,
 
   ncrEvidence: (organizationId: string | null | undefined, ncrId: string, id: string, ext?: string): string =>
     `${org(organizationId)}/quality/ncr/${ncrId}/${id}${dot(ext)}`,

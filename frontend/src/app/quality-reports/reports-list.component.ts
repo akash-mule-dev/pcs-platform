@@ -79,11 +79,15 @@ import { ProjectsService, DashboardOrderRow } from '../core/services/projects.se
           @for (r of filtered(); track r.id) {
             <a class="trow" [routerLink]="['/qr', r.id]" target="_blank">
               <span class="t-num">{{ r.number }}</span>
-              <span class="t-tpl">{{ r.templateName }}</span>
+              <span class="t-tpl">{{ r.templateName }}@if (r.templateType === 'ncr') { <span class="ncr-tag">NCR</span> }</span>
               <span class="t-wo">{{ r.orderNumber || '—' }}</span>
               <span class="t-proj">{{ r.projectName || '—' }}</span>
               <span class="t-item">{{ r.itemMark || '—' }}</span>
-              <span><span class="pill st-{{ r.status }}">{{ r.status === 'submitted' ? 'Submitted' : 'Draft' }}</span></span>
+              @if (r.templateType === 'ncr') {
+                <span><span class="pill" [class.st-open]="!r.resolvedAt" [class.st-submitted]="r.resolvedAt">{{ r.resolvedAt ? 'Resolved' : 'Open NCR' }}</span></span>
+              } @else {
+                <span><span class="pill st-{{ r.status }}">{{ r.status === 'submitted' ? 'Submitted' : 'Draft' }}</span></span>
+              }
               <span class="t-date">{{ (r.submittedAt || r.createdAt) | date:'MMM d, HH:mm' }}</span>
               <span class="t-open">Open<mat-icon>chevron_right</mat-icon></span>
             </a>
@@ -143,6 +147,8 @@ import { ProjectsService, DashboardOrderRow } from '../core/services/projects.se
     .pill { padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
     .st-draft { background: var(--warning-bg); color: var(--warning-text); }
     .st-submitted { background: var(--success-bg); color: var(--success-text); }
+    .st-open { background: var(--danger-bg); color: var(--danger-text); }
+    .ncr-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; background: var(--danger-bg); color: var(--danger-text); vertical-align: middle; }
     .t-date { font-size: 12px; color: var(--clay-text-muted); }
     .t-open { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; color: var(--clay-primary); justify-content: flex-end; }
     .t-open mat-icon { font-size: 16px; width: 16px; height: 16px; }

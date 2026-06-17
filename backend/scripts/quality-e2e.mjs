@@ -1,11 +1,12 @@
 /**
- * Quality module E2E suite (inspections, sign-off, NCR lifecycle, CAPA, SPC).
+ * Quality module E2E suite (inspections, sign-off, NCR-as-QC-report, gates, SPC).
  *
  * Exercises the quality endpoints end to end against a RUNNING API:
  * record inspections (auto-fail + identity stamping) → sign-off permission +
- * stamping → NCR raise (numbering, events) → workflow state machine (legal +
- * illegal transitions, disposition-gated close, reopen) → comments/timeline →
- * CAPA verify-before-close → list filters → tenant isolation of numbering.
+ * stamping → raise an NCR-type QC report (template-driven) → resolve/reopen →
+ * quality-stage gates (open NCR report → unsigned failure → hold point) →
+ * insights → tenant isolation. NCRs are QC reports whose template type is `ncr`;
+ * they block gates while unresolved and lift on Resolve.
  *
  * ⚠ Run against a SCRATCH database only — it writes fixtures via SQL.
  *
@@ -140,95 +141,39 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
   const nodeQa = await j(r);
   assert(r.status === 201 && nodeQa.assemblyNodeId === nodeId, 'node-scoped inspection recorded');
 
-  r = await P(`/projects/${project.id}/nodes/${nodeId}/ncr`, { qualityDataId: nodeQa.id });
+  // NCRs are NCR-type QC reports now. Make an `ncr` template + a production order
+  // to scope reports against, then raise a report against the node.
+  r = await P('/templates', { name: 'E2E NCR', type: 'ncr', schema: { components: [] } });
+  const ncrTpl = await j(r);
+  assert(!!ncrTpl.id && ncrTpl.type === 'ncr', 'NCR template created');
+  r = await P('/processes/standard', {});
+  const proc = await j(r);
+  assert(!!proc.id, 'standard process for gate tests');
+  r = await P(`/projects/${project.id}/orders`, { processId: proc.id, quantity: 1 });
+  const order = await j(r);
+  assert(!!order.id, `production order created ${order.number}`);
+  r = await P('/quality-reports', { templateId: ncrTpl.id, productionOrderId: order.id, assemblyNodeId: nodeId });
   const ncr1 = await j(r);
-  assert(/^NCR-\d{4}-0*1$/.test(ncr1.number), `NCR numbering starts at 0001 per org (${ncr1.number})`);
-  assert(ncr1.severity === 'high', 'NCR severity inherited from quality record');
-  assert(!!ncr1.raisedBy, 'raisedBy stamped from JWT');
+  assert(/^QR-\d{4}-\d{4}$/.test(ncr1.number) && ncr1.templateType === 'ncr', `NCR report numbered as a QC report (${ncr1.number})`);
+  assert(!ncr1.resolvedAt, 'new NCR report is open (unresolved)');
 
-  // ── Workflow state machine ─────────────────────────────────────────────────
-  r = await U(`/ncr/${ncr1.id}`, { status: 'closed' });
-  assert(r.status === 400, 'open → closed rejected (must pass disposition)');
+  // ── Resolve / reopen lifecycle (only NCR-type reports can be resolved) ──────
+  r = await P(`/quality-reports/${ncr1.id}/resolve`, {});
+  assert(!!(await j(r)).resolvedAt, 'NCR report resolves (stamps resolvedAt)');
+  r = await P(`/quality-reports/${ncr1.id}/reopen`, {});
+  assert(!(await j(r)).resolvedAt, 'NCR report reopens (clears resolvedAt)');
+  r = await P('/templates', { name: 'E2E Inspection', type: 'inspection', schema: { components: [] } });
+  const inspTpl = await j(r);
+  r = await P('/quality-reports', { templateId: inspTpl.id, productionOrderId: order.id });
+  const inspReport = await j(r);
+  r = await P(`/quality-reports/${inspReport.id}/resolve`, {});
+  assert(r.status === 400, 'only NCR reports can be resolved');
 
-  r = await U(`/ncr/${ncr1.id}`, { status: 'investigation' });
-  assert((await j(r)).status === 'investigation', 'open → investigation');
-
-  r = await U(`/ncr/${ncr1.id}`, { status: 'open' });
-  assert(r.status === 400, 'investigation → open rejected');
-
-  // (use_as_is here — the rework disposition's re-inspection rule has its own block below)
-  r = await U(`/ncr/${ncr1.id}`, { status: 'disposition', disposition: 'use_as_is', dispositionNote: 'within tolerance stack-up' });
-  assert((await j(r)).disposition === 'use_as_is', 'disposition recorded');
-
-  r = await U(`/ncr/${ncr1.id}`, { status: 'cancelled' });
-  assert(r.status === 400, 'cancel after disposition rejected');
-
-  r = await U(`/ncr/${ncr1.id}`, { status: 'closed' });
-  const closed = await j(r);
-  assert(closed.status === 'closed' && !!closed.closedAt && !!closed.closedBy, 'disposition → closed stamps closedAt/closedBy');
-
-  r = await U(`/ncr/${ncr1.id}`, { status: 'investigation' });
-  const reopened = await j(r);
-  assert(reopened.status === 'investigation' && !reopened.closedAt && !reopened.closedBy, 'reopen clears close stamp');
-
-  r = await U(`/ncr/${ncr1.id}`, { status: 'disposition' });
-  await j(r);
-  r = await U(`/ncr/${ncr1.id}`, { status: 'closed' });
-  assert((await j(r)).status === 'closed', 're-close after reopen');
-
-  // ── Timeline + comments ────────────────────────────────────────────────────
-  r = await P(`/ncr/${ncr1.id}/comments`, { note: 'Verified weld after rework — acceptable.' });
-  assert(r.status === 201, 'comment added');
-  r = await P(`/ncr/${ncr1.id}/comments`, { note: '   ' });
-  assert(r.status === 400, 'blank comment rejected');
-
-  r = await G(`/ncr/${ncr1.id}/events`);
-  const events = await j(r);
-  const types = events.map((e) => e.type);
-  assert(types[0] === 'created', 'timeline starts with created');
-  assert(types.filter((t) => t === 'status_change').length >= 5, `timeline records every transition (${types.filter((t) => t === 'status_change').length})`);
-  assert(types.includes('disposition') && types.includes('comment'), 'timeline includes disposition + comment');
-  assert(events.every((e) => e.actorName), 'events carry actor names');
-
-  r = await G(`/ncr/${ncr1.id}`);
-  const detail = await j(r);
-  assert(Array.isArray(detail.allowedTransitions) && detail.allowedTransitions.join(',') === 'investigation', 'detail exposes legal next statuses');
-
-  // ── Gates still respect open NCRs ──────────────────────────────────────────
-  r = await P(`/projects/${project.id}/nodes/${nodeId}/ncr`, { title: 'Paint blistering' });
-  const ncr2 = await j(r);
-  assert(/^NCR-\d{4}-0*2$/.test(ncr2.number), `second NCR increments (${ncr2.number})`);
-
+  // ── Quality summary counts open NCR reports ────────────────────────────────
   r = await G(`/projects/${project.id}/quality-summary`);
   const summary = await j(r);
-  assert(summary.totals.openNcr === 1, `quality summary counts only open NCRs (got ${summary.totals.openNcr})`);
+  assert(summary.totals.openNcr === 1, `quality summary counts open NCR reports (got ${summary.totals.openNcr})`);
   assert(summary.nodes[nodeId]?.openNcr === 1 && summary.nodes[nodeId]?.status === 'fail', 'per-node rollup has open NCR + fail status');
-
-  // ── List filters ───────────────────────────────────────────────────────────
-  r = await G(`/ncr?open=true`);
-  const openList = await j(r);
-  assert(openList.length === 1 && openList[0].id === ncr2.id, 'open=true filter');
-  r = await G(`/ncr?severity=high`);
-  assert((await j(r)).every((x) => x.severity === 'high'), 'severity filter');
-  r = await G(`/ncr?q=${encodeURIComponent('Paint')}`);
-  assert((await j(r)).some((x) => x.id === ncr2.id), 'q filter matches title');
-  r = await G(`/ncr?projectId=${project.id}`);
-  const byProject = await j(r);
-  assert(byProject.length === 2 && byProject.every((x) => x.itemMark === 'B2001'), 'project filter + item mark enrichment');
-
-  // ── CAPA verify-before-close ───────────────────────────────────────────────
-  r = await P('/capa', { ncrId: ncr2.id, title: 'Improve paint booth humidity control', type: 'preventive' });
-  const capa = await j(r);
-  assert(!!capa.id, 'CAPA created');
-  r = await U(`/capa/${capa.id}`, { status: 'closed' });
-  assert(r.status === 400, 'CAPA close without verification rejected');
-  r = await U(`/capa/${capa.id}`, { status: 'in_progress' });
-  await j(r);
-  r = await U(`/capa/${capa.id}`, { status: 'verified' });
-  const verified = await j(r);
-  assert(!!verified.verifiedBy && !!verified.verifiedAt, 'verification stamps verifier');
-  r = await U(`/capa/${capa.id}`, { status: 'closed' });
-  assert((await j(r)).status === 'closed', 'verified CAPA closes');
 
   // ── Idempotent creates (offline replay safety) ─────────────────────────────
   const ck = crypto.randomUUID();
@@ -238,40 +183,7 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
   const idem2 = await j(r);
   assert(idem1.id === idem2.id, 'same clientKey replay returns the original row');
 
-  // ── Optimistic concurrency on NCRs ─────────────────────────────────────────
-  r = await G(`/ncr/${ncr2.id}`);
-  const v = (await j(r)).version;
-  assert(Number.isInteger(v), `NCR carries a version (${v})`);
-  r = await U(`/ncr/${ncr2.id}`, { title: 'Paint blistering (stale write)', expectedVersion: v + 5 });
-  assert(r.status === 409, 'stale expectedVersion rejected with 409');
-  r = await U(`/ncr/${ncr2.id}`, { title: 'Paint blistering — south rail', expectedVersion: v });
-  assert((await j(r)).title.includes('south rail'), 'matching expectedVersion writes');
-
-  // ── Pagination ─────────────────────────────────────────────────────────────
-  r = await G('/ncr?limit=1');
-  assert((await j(r)).length === 1, 'limit=1 caps the NCR list');
-
-  // ── NCR photo evidence ─────────────────────────────────────────────────────
-  const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex');
-  const form = new FormData();
-  form.append('file', new Blob([png], { type: 'image/png' }), 'defect.png');
-  r = await fetch(`${A}/ncr/${ncr2.id}/evidence`, { method: 'POST', headers: { authorization: H.authorization }, body: form });
-  const withPhoto = await j(r);
-  assert(r.status === 201 && (withPhoto.attachments?.length ?? 0) === 1, 'NCR photo attached');
-  r = await fetch(`${A}/ncr/${ncr2.id}/evidence/0`, { headers: { authorization: H.authorization } });
-  assert(r.ok && (r.headers.get('content-type') || '').includes('image/png'), 'NCR photo streams back as image/png');
-  const badForm = new FormData();
-  badForm.append('file', new Blob([Buffer.from('not an image')], { type: 'text/plain' }), 'notes.txt');
-  r = await fetch(`${A}/ncr/${ncr2.id}/evidence`, { method: 'POST', headers: { authorization: H.authorization }, body: badForm });
-  assert(r.status === 400, 'non-image NCR evidence rejected');
-
-  // ── Stage quality gates (NCR → unresolved failure → hold point) ───────────
-  r = await P('/processes/standard', {});
-  const proc = await j(r);
-  assert(!!proc.id, 'standard process for gate tests');
-  r = await P(`/projects/${project.id}/orders`, { processId: proc.id, quantity: 1 });
-  const order = await j(r);
-  assert(!!order.id, `production order created ${order.number}`);
+  // ── Stage quality gates (open NCR report → unsigned failure → hold point) ──
   r = await G(`/orders/${order.id}/audit`);
   let audit = await j(r);
   const qcCol = audit.stages.find((s) => /qc|quality|inspect/i.test(s.name));
@@ -280,18 +192,16 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
   const item2 = audit.items.find((i) => i.mark === 'B2003');
   assert(!!item1 && !!item2, 'both assemblies in the order');
   const qcRow1 = item1.stages.find((s) => s.stageId === qcCol.id);
-  assert(qcRow1?.gateBlocked === true && /NCR/i.test(qcRow1?.gateReason ?? ''), 'audit pre-warns: B2001 QC gate-blocked by open NCR');
+  assert(qcRow1?.gateBlocked === true && /NCR/i.test(qcRow1?.gateReason ?? ''), 'audit pre-warns: B2001 QC gate-blocked by open NCR report');
 
   const bulkQc = (nodeIds) => U(`/orders/${order.id}/stages/bulk`, { stageId: qcCol.id, nodeIds, status: 'completed' });
   r = await bulkQc([nodeId]);
   let bulkRes = await j(r);
-  assert(bulkRes.updated === 0 && /open NCR/i.test(bulkRes.failed[0]?.message ?? ''), 'QC completion blocked by open NCR');
+  assert(bulkRes.updated === 0 && /open NCR report/i.test(bulkRes.failed[0]?.message ?? ''), 'QC completion blocked by open NCR report');
 
-  // Close the open NCR (use-as-is) — next blocker should be the unsigned failure.
-  r = await U(`/ncr/${ncr2.id}`, { status: 'disposition', disposition: 'use_as_is' });
-  await j(r);
-  r = await U(`/ncr/${ncr2.id}`, { status: 'closed' });
-  assert((await j(r)).status === 'closed', 'paint NCR closed (use-as-is)');
+  // Resolve the NCR report — next blocker should be the unsigned failure.
+  r = await P(`/quality-reports/${ncr1.id}/resolve`, {});
+  assert(!!(await j(r)).resolvedAt, 'NCR report resolved (Resolve lifts the gate)');
 
   r = await bulkQc([nodeId]);
   bulkRes = await j(r);
@@ -302,7 +212,7 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
 
   r = await bulkQc([nodeId]);
   bulkRes = await j(r);
-  assert(bulkRes.updated === 1, 'QC stage completes once NCRs closed + failures resolved');
+  assert(bulkRes.updated === 1, 'QC stage completes once NCR reports resolved + failures resolved');
 
   // Hold point: stage requires a recorded inspection.
   await db.query(`UPDATE stages SET requires_inspection = true WHERE id = $1`, [qcCol.id]);
@@ -316,18 +226,6 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
   assert(bulkRes.updated === 1, 'hold-point stage completes after inspection');
   // Reset the flag — /processes/standard may be shared with other suites.
   await db.query(`UPDATE stages SET requires_inspection = false WHERE id = $1`, [qcCol.id]);
-
-  // ── Rework loop: rework disposition demands a post-disposition re-inspection ──
-  r = await P('/ncr', { title: 'Weld undercut — rework', assemblyNodeId: nodeId, projectId: project.id, severity: 'medium' });
-  const reworkNcr = await j(r);
-  r = await U(`/ncr/${reworkNcr.id}`, { status: 'disposition', disposition: 'rework', dispositionNote: 'grind + reweld' });
-  await j(r);
-  r = await U(`/ncr/${reworkNcr.id}`, { status: 'closed' });
-  assert(r.status === 400 && /Rework must be verified/i.test((await r.text())), 'rework NCR cannot close without re-inspection');
-  r = await P(`/projects/${project.id}/nodes/${nodeId}/quality`, { status: 'pass', notes: 're-inspected after reweld' });
-  assert(r.status === 201, 're-inspection recorded');
-  r = await U(`/ncr/${reworkNcr.id}`, { status: 'closed' });
-  assert((await j(r)).status === 'closed', 'rework NCR closes after verified re-inspection');
 
   // ── SPC (XmR) + insights ───────────────────────────────────────────────────
   r = await G(`/spc/control-chart?modelId=${modelId}`);
@@ -371,13 +269,12 @@ const get = (H) => (url) => fetch(`${A}${url}`, { headers: H });
     assert(!!isoLogin.accessToken, 'second tenant admin login');
     const H2 = { 'content-type': 'application/json', authorization: `Bearer ${isoLogin.accessToken}` };
 
-    r = await post(H2)('/ncr', { title: 'Other-tenant NCR' });
-    const otherNcr = await j(r);
-    assert(/^NCR-\d{4}-0*1$/.test(otherNcr.number), `tenant numbering independent (${otherNcr.number})`);
-    r = await get(H2)(`/ncr/${ncr2.id}`);
-    assert(r.status === 404, 'cross-tenant NCR read blocked');
-    r = await get(H2)('/ncr');
-    assert((await j(r)).length === 1, 'cross-tenant NCR list isolated');
+    // NCRs are QC reports now — verify cross-tenant isolation on quality-reports.
+    r = await get(H2)('/quality-reports');
+    const isoReports = await j(r);
+    assert(Array.isArray(isoReports) && isoReports.length === 0, 'cross-tenant QC report list isolated');
+    r = await get(H2)(`/quality-reports/${ncr1.id}`);
+    assert(r.status === 404, 'cross-tenant QC report read blocked');
     r = await get(H2)(`/quality-data/summary/${modelId}`);
     const isoSummary = await j(r);
     assert(isoSummary.total === 0, 'cross-tenant quality summary isolated');

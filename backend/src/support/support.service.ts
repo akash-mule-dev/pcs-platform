@@ -1,6 +1,11 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
 import { SupportTicket } from './entities/support-ticket.entity.js';
 import { SupportTicketMessage } from './entities/support-ticket-message.entity.js';
 import { User } from '../auth/entities/user.entity.js';
@@ -8,6 +13,12 @@ import { TenantContext } from '../common/tenant/tenant-context.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
+import type { StorageProvider } from '../storage/storage.interface.js';
+import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
+import { StorageKeys } from '../storage/storage-keys.js';
+import {
+  SUPPORT_ATTACH_EXTENSIONS, SUPPORT_ATTACH_MIME_TYPES,
+} from './support-attachments.constants.js';
 import { CreateTicketDto, ReplyDto, UpdateTicketDto } from './dto/support.dto.js';
 import {
   canTransition, CATEGORY_LABELS, isValidStatus, PRIORITY_LABELS, statusAfterCustomerReply,
@@ -28,6 +39,7 @@ export class SupportService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly events: EventsGateway,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   /** Option lists for the client dropdowns. */
@@ -58,6 +70,7 @@ export class SupportService {
 
     await this.audit.log({ userId: actor.id, action: 'create', entityType: 'support_ticket', entityId: ticket.id, newValues: { number, subject: ticket.subject, priority: ticket.priority } });
     await this.notifyPlatform(`New support ticket ${number}`, `${ticket.subject} — ${name}`, ticket.id);
+    this.notifyRealtime(ticket, 'created');
     return this.toDetail(ticket.id, { includeInternal: false });
   }
 
@@ -90,6 +103,7 @@ export class SupportService {
     const title = `Customer reply on ${ticket.number}`;
     if (ticket.assignedToUserId) await this.notifyUsers([ticket.assignedToUserId], title, ticket.subject, ticket.id);
     else await this.notifyPlatform(title, ticket.subject, ticket.id);
+    this.notifyRealtime(ticket, 'customer-reply');
     return this.toDetail(ticket.id, { includeInternal: false });
   }
 
@@ -98,12 +112,15 @@ export class SupportService {
     const ticket = await this.ticketRepo.findOne({ where: { id, organizationId: org } });
     if (!ticket) throw new NotFoundException('Ticket not found');
     await this.applyStatus(ticket, 'closed', actor, 'closed by customer');
+    this.notifyRealtime(ticket, 'closed');
     return this.toDetail(ticket.id, { includeInternal: false });
   }
 
   // ── platform desk (cross-tenant) ────────────────────────────────────────────
 
-  async listAll(filters: { status?: string; priority?: string; organizationId?: string; assignedToUserId?: string; q?: string }): Promise<any[]> {
+  async listAll(filters: { status?: string; priority?: string; organizationId?: string; assignedToUserId?: string; q?: string; limit?: number; offset?: number }): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+    const limit = Math.min(Math.max(Number(filters.limit) || 25, 1), 100);
+    const offset = Math.max(Number(filters.offset) || 0, 0);
     const qb = this.ticketRepo.createQueryBuilder('t')
       .leftJoin('organizations', 'o', 'o.id = t.organization_id')
       .addSelect('o.name', 'org_name')
@@ -113,8 +130,11 @@ export class SupportService {
     if (filters.organizationId) qb.andWhere('t.organization_id = :org', { org: filters.organizationId });
     if (filters.assignedToUserId) qb.andWhere('t.assigned_to_user_id = :a', { a: filters.assignedToUserId });
     if (filters.q) qb.andWhere('(t.subject ILIKE :q OR t.number ILIKE :q)', { q: `%${filters.q}%` });
+    const total = await qb.getCount();
+    qb.take(limit).skip(offset);
     const { entities, raw } = await qb.getRawAndEntities();
-    return entities.map((t, i) => ({ ...this.toSummary(t), organizationName: raw[i]?.org_name ?? null }));
+    const items = entities.map((t, i) => ({ ...this.toSummary(t), organizationName: raw[i]?.org_name ?? null }));
+    return { items, total, limit, offset };
   }
 
   async stats(): Promise<Record<string, number>> {
@@ -147,12 +167,17 @@ export class SupportService {
       await this.notifyUsers([ticket.raisedByUserId], `Support replied on ${ticket.number}`, ticket.subject, ticket.id);
     }
     await this.audit.log({ userId: actor.id, action: internal ? 'internal_note' : 'reply', entityType: 'support_ticket', entityId: ticket.id });
+    this.notifyRealtime(ticket, internal ? 'internal-note' : 'support-reply');
     return this.toDetail(ticket.id, { includeInternal: true });
   }
 
   async update(id: string, dto: UpdateTicketDto, actor: Actor): Promise<any> {
     const ticket = await this.ticketRepo.findOne({ where: { id } });
     if (!ticket) throw new NotFoundException('Ticket not found');
+    // Optimistic concurrency: a stale desk client must reload before mutating.
+    if (dto.expectedVersion !== undefined && dto.expectedVersion !== ticket.version) {
+      throw new ConflictException('This ticket was changed by someone else — reload and try again.');
+    }
     const before = { status: ticket.status, priority: ticket.priority, assignedToUserId: ticket.assignedToUserId };
 
     if (dto.priority && dto.priority !== ticket.priority) {
@@ -165,6 +190,9 @@ export class SupportService {
         ticket.assignedToUserId = null; ticket.assignedToName = null;
         await this.systemMessage(ticket, 'Unassigned', actor);
       } else {
+        // A ticket can only be handled by platform support staff — never a tenant user.
+        const staff = await this.platformAdminIds();
+        if (!staff.includes(targetId)) throw new BadRequestException('Tickets can only be assigned to support staff');
         const name = await this.displayName(targetId);
         ticket.assignedToUserId = targetId; ticket.assignedToName = name;
         await this.systemMessage(ticket, `Assigned to ${name}`, actor);
@@ -181,7 +209,114 @@ export class SupportService {
     }
     await this.ticketRepo.save(ticket);
     await this.audit.log({ userId: actor.id, action: 'update', entityType: 'support_ticket', entityId: ticket.id, oldValues: before, newValues: { status: ticket.status, priority: ticket.priority, assignedToUserId: ticket.assignedToUserId } });
+    this.notifyRealtime(ticket, 'triaged');
     return this.toDetail(ticket.id, { includeInternal: true });
+  }
+
+  /** Support staff available to take tickets (the platform-admin pool). */
+  async listAgents(): Promise<Array<{ id: string; name: string | null }>> {
+    const ids = await this.platformAdminIds();
+    if (!ids.length) return [];
+    const users = await this.userRepo.findBy({ id: In(ids) } as any);
+    return users
+      .map((u) => ({ id: u.id, name: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || u.employeeId }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+
+  // ── attachments ─────────────────────────────────────────────────────────────
+
+  /** Customer posts a message with a file (a screenshot of the bug, a PDF). */
+  async addCustomerAttachment(id: string, file: Express.Multer.File, body: string | undefined, actor: Actor): Promise<any> {
+    const org = TenantContext.requireOrganizationId();
+    const ticket = await this.ticketRepo.findOne({ where: { id, organizationId: org } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    const key = await this.storeAttachment(ticket, file);
+    await this.addMessage(ticket, { kind: 'customer', body: body?.trim() || '(attachment)', actor, attachments: [key] });
+    const next = statusAfterCustomerReply(ticket.status as TicketStatus);
+    if (next !== ticket.status) await this.applyStatus(ticket, next, null, 'customer reply');
+    await this.touch(ticket);
+    const title = `Customer reply on ${ticket.number}`;
+    if (ticket.assignedToUserId) await this.notifyUsers([ticket.assignedToUserId], title, ticket.subject, ticket.id);
+    else await this.notifyPlatform(title, ticket.subject, ticket.id);
+    await this.audit.log({ userId: actor.id, action: 'reply', entityType: 'support_ticket', entityId: ticket.id });
+    this.notifyRealtime(ticket, 'customer-reply');
+    return this.toDetail(ticket.id, { includeInternal: false });
+  }
+
+  /** Platform staff posts a message with a file (optionally an internal note). */
+  async addSupportAttachment(id: string, file: Express.Multer.File, body: string | undefined, internal: boolean, actor: Actor): Promise<any> {
+    const ticket = await this.ticketRepo.findOne({ where: { id } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    const key = await this.storeAttachment(ticket, file);
+    await this.addMessage(ticket, { kind: 'support', body: body?.trim() || '(attachment)', actor, internal, attachments: [key] });
+    if (!ticket.firstResponseAt && !internal) ticket.firstResponseAt = new Date();
+    if (!internal) {
+      const nextStatus = statusAfterSupportReply(ticket.status as TicketStatus);
+      if (nextStatus !== ticket.status) await this.applyStatus(ticket, nextStatus, null, 'support reply');
+    }
+    await this.touch(ticket);
+    if (!internal && ticket.raisedByUserId) {
+      await this.notifyUsers([ticket.raisedByUserId], `Support replied on ${ticket.number}`, ticket.subject, ticket.id);
+    }
+    await this.audit.log({ userId: actor.id, action: internal ? 'internal_note' : 'reply', entityType: 'support_ticket', entityId: ticket.id });
+    this.notifyRealtime(ticket, internal ? 'internal-note' : 'support-reply');
+    return this.toDetail(ticket.id, { includeInternal: true });
+  }
+
+  /** Customer attachment download — scoped to the caller's org, internal notes hidden. */
+  async getCustomerAttachmentStream(ticketId: string, messageId: string, index: number) {
+    const org = TenantContext.requireOrganizationId();
+    return this.streamAttachment(ticketId, messageId, index, { organizationId: org, includeInternal: false });
+  }
+
+  /** Desk attachment download — cross-tenant, internal notes visible. */
+  async getDeskAttachmentStream(ticketId: string, messageId: string, index: number) {
+    return this.streamAttachment(ticketId, messageId, index, { includeInternal: true });
+  }
+
+  private async streamAttachment(
+    ticketId: string, messageId: string, index: number, opts: { organizationId?: string | null; includeInternal: boolean },
+  ): Promise<{ stream: NodeJS.ReadableStream; key: string }> {
+    const where: any = { id: ticketId };
+    if (opts.organizationId) where.organizationId = opts.organizationId;
+    const ticket = await this.ticketRepo.findOne({ where });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    const msg = await this.msgRepo.findOne({ where: { id: messageId, ticketId } });
+    if (!msg) throw new NotFoundException('Attachment not found');
+    if (msg.internal && !opts.includeInternal) throw new NotFoundException('Attachment not found');
+    const key = msg.attachments?.[index];
+    if (!key) throw new NotFoundException('Attachment not found');
+    const stream = await this.storage.download(key);
+    return { stream, key };
+  }
+
+  /** Validate + persist a single uploaded file to object storage, return its key. */
+  private async storeAttachment(ticket: SupportTicket, file: Express.Multer.File): Promise<string> {
+    if (!file) throw new BadRequestException('No file uploaded');
+    const ext = (path.extname(file.originalname) || '').toLowerCase();
+    const mimeOk = SUPPORT_ATTACH_MIME_TYPES.includes((file.mimetype || '').toLowerCase());
+    const extOk = SUPPORT_ATTACH_EXTENSIONS.includes(ext);
+    if (!mimeOk || !extOk) {
+      try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
+      throw new BadRequestException('Attachment must be a JPEG, PNG, WebP image or a PDF');
+    }
+    const key = StorageKeys.supportAttachment(ticket.organizationId, ticket.id, crypto.randomUUID(), ext);
+    try {
+      await this.storage.upload(file.path, key, file.mimetype || 'application/octet-stream');
+    } finally {
+      // Always remove the staged temp file — even if the object-store upload threw.
+      try { fs.unlinkSync(file.path); } catch { /* staging cleanup best-effort */ }
+    }
+    return key;
+  }
+
+  private notifyRealtime(ticket: SupportTicket, action: string): void {
+    try {
+      this.events.emitSupportEvent({
+        ticketId: ticket.id, organizationId: ticket.organizationId,
+        number: ticket.number, status: ticket.status, action,
+      });
+    } catch (e) { this.logger.warn(`emitSupportEvent failed: ${(e as Error).message}`); }
   }
 
   // ── internals ───────────────────────────────────────────────────────────────
@@ -202,12 +337,13 @@ export class SupportService {
     return `${prefix}${Date.now().toString().slice(-6)}`;
   }
 
-  private async addMessage(ticket: SupportTicket, opts: { kind: string; body: string; actor: Actor; internal?: boolean }): Promise<void> {
+  private async addMessage(ticket: SupportTicket, opts: { kind: string; body: string; actor: Actor; internal?: boolean; attachments?: string[] }): Promise<void> {
     const name = await this.displayName(opts.actor.id);
     await this.msgRepo.save(this.msgRepo.create({
       ticketId: ticket.id, organizationId: ticket.organizationId,
       authorUserId: opts.actor.id, authorName: name, authorKind: opts.kind,
       body: opts.body.trim(), internal: !!opts.internal,
+      attachments: opts.attachments?.length ? opts.attachments : null,
     } as any));
   }
 
@@ -251,6 +387,9 @@ export class SupportService {
       id: t.id, number: t.number, subject: t.subject, category: t.category, priority: t.priority, status: t.status,
       raisedByName: t.raisedByName, assignedToName: t.assignedToName, assignedToUserId: t.assignedToUserId,
       organizationId: t.organizationId, lastMessageAt: t.lastMessageAt, createdAt: t.createdAt,
+      // SLA signals: a still-open ticket with no first response is "awaiting first reply".
+      firstResponseAt: t.firstResponseAt,
+      awaitingFirstResponse: !t.firstResponseAt && (t.status === 'open' || t.status === 'in_progress'),
     };
   }
 
@@ -273,6 +412,7 @@ export class SupportService {
       messages: messages.map((m) => ({
         id: m.id, authorName: m.authorName, authorKind: m.authorKind, body: m.body,
         internal: m.internal, createdAt: m.createdAt,
+        attachmentCount: m.attachments?.length ?? 0,
       })),
     };
   }

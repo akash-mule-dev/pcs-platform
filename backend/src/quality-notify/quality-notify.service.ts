@@ -6,7 +6,16 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { NotificationPriority, NotificationType } from '../notifications/notification.entity.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
-import { severityToPriority } from '../quality-ncr/ncr-workflow.js';
+
+/** Map a quality severity to a notification priority. */
+function severityToPriority(severity: string | null | undefined): 'low' | 'medium' | 'high' | 'critical' {
+  switch (severity) {
+    case 'critical': return 'critical';
+    case 'high': return 'high';
+    case 'low': return 'low';
+    default: return 'medium';
+  }
+}
 
 /**
  * Cross-cutting quality eventing: in-app notifications + websocket broadcasts
@@ -102,53 +111,6 @@ export class QualityNotifyService {
       }
     } catch (e) {
       this.logger.warn(`signoffDecided notification skipped: ${(e as Error).message}`);
-    }
-  }
-
-  /** NCR lifecycle broadcast + targeted notifications. */
-  async ncrEvent(input: {
-    ncrId: string;
-    number: string;
-    title: string;
-    severity?: string | null;
-    kind: 'raised' | 'status' | 'assigned';
-    status?: string;
-    actorUserId?: string | null;
-    assignedTo?: string | null;
-  }): Promise<void> {
-    try {
-      this.events.emitQualityAlert({
-        kind: `ncr-${input.kind}`,
-        ncrId: input.ncrId,
-        number: input.number,
-        severity: input.severity ?? null,
-        status: input.status ?? null,
-      });
-      if (input.kind === 'raised') {
-        const audience = await this.qaAudience(input.actorUserId);
-        if (audience.length) {
-          await this.notifications.createForUsers(audience, {
-            title: `NCR raised: ${input.number}`,
-            message: `${input.title}${input.severity ? ` — severity ${input.severity}` : ''}`,
-            type: NotificationType.QUALITY_FAIL,
-            priority: severityToPriority(input.severity) as NotificationPriority,
-            entityType: 'ncr',
-            entityId: input.ncrId,
-          });
-        }
-      } else if (input.kind === 'assigned' && input.assignedTo && input.assignedTo !== input.actorUserId) {
-        await this.notifications.create({
-          userId: input.assignedTo,
-          title: `NCR assigned to you: ${input.number}`,
-          message: input.title,
-          type: NotificationType.QUALITY_FAIL,
-          priority: severityToPriority(input.severity) as NotificationPriority,
-          entityType: 'ncr',
-          entityId: input.ncrId,
-        });
-      }
-    } catch (e) {
-      this.logger.warn(`ncrEvent notification skipped: ${(e as Error).message}`);
     }
   }
 }

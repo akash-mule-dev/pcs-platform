@@ -11,6 +11,8 @@ export interface QualityReport {
   number: string;
   templateId: string | null;
   templateName: string;
+  /** Snapshot of the template type at creation; 'ncr' reports gate shipping + quality stages. */
+  templateType: string | null;
   templateSchema: Record<string, any>;
   productionOrderId: string;
   projectId: string | null;
@@ -19,6 +21,9 @@ export interface QualityReport {
   status: QualityReportStatus;
   filledBy: string | null;
   submittedAt: string | null;
+  /** NCR close: an 'ncr' report is OPEN (blocks gates) while this is null. */
+  resolvedAt: string | null;
+  resolvedBy: string | null;
   createdAt: string;
   updatedAt: string;
   // Enriched context
@@ -68,6 +73,16 @@ export class QualityReportsService {
 
   remove(id: string): Observable<{ ok: true }> {
     return this.http.delete<{ ok: true }>(`${this.base}/${id}`);
+  }
+
+  /** Resolve (close) an NCR report — lifts its shipping + quality-stage gates. */
+  resolve(id: string): Observable<QualityReport> {
+    return this.http.post<QualityReport>(`${this.base}/${id}/resolve`, {});
+  }
+
+  /** Reopen a resolved NCR report (re-blocks its gates). */
+  reopen(id: string): Observable<QualityReport> {
+    return this.http.post<QualityReport>(`${this.base}/${id}/reopen`, {});
   }
 
   /** The shareable fill URL (used by web nav and by mobile with ?token=). */

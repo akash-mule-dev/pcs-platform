@@ -4,13 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ProjectWorkspaceStore } from './project-workspace.store';
-import { ProjectsService, AssemblyNode, NodeQualityStatus, QaStatus, QaSeverity } from '../core/services/projects.service';
+import { ProjectsService, AssemblyNode, NodeQualityStatus, QaStatus } from '../core/services/projects.service';
 import { QualityReportsService, QualityReport, ReportTemplate } from '../core/services/quality-reports.service';
 
 interface QaRow { node: AssemblyNode; q: NodeQualityStatus; flagged: boolean; }
 
-/** Quality tab: record checks / raise NCRs RIGHT HERE (search an item, act),
- *  plus the QC overview — totals + every inspected item, flagged ones first. */
+/** Quality tab: record checks RIGHT HERE (search an item, act) and start QC
+ *  reports (incl. NCR-type), plus the QC overview — totals + every inspected
+ *  item, flagged ones first. NCRs are raised as NCR-type QC reports below. */
 @Component({
   selector: 'app-project-quality',
   standalone: true,
@@ -19,7 +20,7 @@ interface QaRow { node: AssemblyNode; q: NodeQualityStatus; flagged: boolean; }
     <!-- Record a check — no need to leave the order -->
     <section class="rec">
       <div class="rec-head"><mat-icon>fact_check</mat-icon><h3>Record a check</h3>
-        <span class="rec-hint">Search an item, then mark it, save a measurement or raise an NCR. To find it visually, use <a (click)="goInspect()">Assemblies &amp; 3D</a>.</span>
+        <span class="rec-hint">Search an item, then mark it or save a measurement. To find it visually, use <a (click)="goInspect()">Assemblies &amp; 3D</a>.</span>
       </div>
       <div class="rec-row">
         <div class="picker">
@@ -40,8 +41,7 @@ interface QaRow { node: AssemblyNode; q: NodeQualityStatus; flagged: boolean; }
           <button class="qbtn pass" [disabled]="busy()" (click)="record('pass')">Pass</button>
           <button class="qbtn warn" [disabled]="busy()" (click)="record('warning')">Warning</button>
           <button class="qbtn fail" [disabled]="busy()" (click)="record('fail')">Fail</button>
-          <button class="qbtn" [disabled]="busy()" (click)="measureOpen.set(!measureOpen()); ncrOpen.set(false)">Measure…</button>
-          <button class="qbtn ncr" [disabled]="busy()" (click)="ncrOpen.set(!ncrOpen()); measureOpen.set(false)">Raise NCR…</button>
+          <button class="qbtn" [disabled]="busy()" (click)="measureOpen.set(!measureOpen())">Measure…</button>
         }
       </div>
       @if (picked() && measureOpen()) {
@@ -53,13 +53,6 @@ interface QaRow { node: AssemblyNode; q: NodeQualityStatus; flagged: boolean; }
           <input class="grow" type="text" placeholder="Defect / notes" [(ngModel)]="meas.notes">
           <button class="qbtn" [disabled]="busy() || meas.value == null" (click)="recordMeasure()">Save measurement</button>
           <span class="meas-hint">Out-of-tolerance auto-fails.</span>
-        </div>
-      }
-      @if (picked() && ncrOpen()) {
-        <div class="rec-ncr">
-          <input class="grow" type="text" placeholder="NCR title" [(ngModel)]="ncrTitle">
-          <select [(ngModel)]="ncrSeverity"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="critical">critical</option></select>
-          <button class="qbtn ncr" [disabled]="busy() || !ncrTitle" (click)="raiseNcr()">Raise</button>
         </div>
       }
       @if (msg()) { <p class="rec-msg" [class.err]="err()">{{ msg() }}</p> }
@@ -105,7 +98,7 @@ interface QaRow { node: AssemblyNode; q: NodeQualityStatus; flagged: boolean; }
       <div class="empty-state">
         <mat-icon>verified</mat-icon>
         <h3>No inspections yet</h3>
-        <p>Record the first check above — quick pass/fail, a measurement, or an NCR.</p>
+        <p>Record the first check above — quick pass/fail or a measurement — or start a QC report.</p>
       </div>
     } @else {
       <div class="kpi-grid">
@@ -296,10 +289,7 @@ export class ProjectQualityComponent implements OnInit {
   busy = signal(false);
   msg = signal<string | null>(null);
   err = signal(false);
-  ncrOpen = signal(false);
   measureOpen = signal(false);
-  ncrTitle = '';
-  ncrSeverity: QaSeverity = 'medium';
   meas: { value: number | null; unit: string; min: number | null; max: number | null; notes: string } = { value: null, unit: 'mm', min: null, max: null, notes: '' };
 
   results = computed<AssemblyNode[]>(() => {
@@ -317,10 +307,9 @@ export class ProjectQualityComponent implements OnInit {
   onQuery(v: string): void { this.q.set(v); this.openList.set(true); }
   pick(n: AssemblyNode): void {
     this.picked.set(n); this.openList.set(false); this.q.set('');
-    this.msg.set(null); this.ncrOpen.set(false); this.measureOpen.set(false);
-    this.ncrTitle = `${n.mark || n.name} — quality non-conformance`;
+    this.msg.set(null); this.measureOpen.set(false);
   }
-  clearPick(): void { this.picked.set(null); this.ncrOpen.set(false); this.measureOpen.set(false); this.msg.set(null); }
+  clearPick(): void { this.picked.set(null); this.measureOpen.set(false); this.msg.set(null); }
 
   record(status: QaStatus): void {
     const n = this.picked(); if (!n || this.busy()) return;
@@ -345,15 +334,6 @@ export class ProjectQualityComponent implements OnInit {
         this.store.refreshQuality();
       },
       error: (e) => { this.busy.set(false); this.err.set(true); this.msg.set(e?.error?.message || 'Could not record.'); },
-    });
-  }
-
-  raiseNcr(): void {
-    const n = this.picked(); if (!n || this.busy() || !this.ncrTitle) return;
-    this.busy.set(true); this.msg.set(null); this.err.set(false);
-    this.svc.raiseNodeNcr(this.store.id(), n.id, { title: this.ncrTitle, severity: this.ncrSeverity }).subscribe({
-      next: (r) => { this.busy.set(false); this.ncrOpen.set(false); this.msg.set(`Raised ${r.number} on ${n.mark || n.name}.`); this.store.refreshQuality(); },
-      error: (e) => { this.busy.set(false); this.err.set(true); this.msg.set(e?.error?.message || 'Could not raise NCR.'); },
     });
   }
 

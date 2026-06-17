@@ -6,9 +6,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TemplatesApiService } from './templates.service';
 
-const TYPES = ['inspection', 'checklist', 'ncr', 'capa', 'other'];
+const TYPES = ['inspection', 'checklist', 'ncr', 'other'];
 const TYPE_LABEL: Record<string, string> = {
-  inspection: 'Inspection', checklist: 'Checklist', ncr: 'NCR', capa: 'CAPA', other: 'Other',
+  inspection: 'Inspection', checklist: 'Checklist', ncr: 'NCR', other: 'Other',
 };
 
 // Form.io standalone bundle + the Bootstrap 4 base its templates are built on.

@@ -213,14 +213,6 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
     ],
   },
   {
-    key: 'ncr', label: 'NCR / CAPA', category: 'Quality',
-    actions: [
-      { action: 'view', label: 'View', description: 'Browse non-conformance reports and CAPAs', defaultRoles: MSO },
-      { action: 'create', label: 'Raise NCR', description: 'Raise non-conformance reports', defaultRoles: MSO },
-      { action: 'manage', label: 'Disposition', description: 'Disposition NCRs and manage CAPAs', defaultRoles: MS },
-    ],
-  },
-  {
     key: 'quality-analysis', label: '3D Quality', category: 'Quality',
     actions: [
       { action: 'view', label: 'View', description: 'See 3D quality data, trends and SPC charts', defaultRoles: MS },

@@ -52,6 +52,10 @@ export class User {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  /** Timestamp of this user's most recent successful login (engagement signal). */
+  @Column({ name: 'last_login_at', type: 'timestamp', nullable: true })
+  lastLoginAt: Date | null;
+
   /**
    * Costing: this person's labor rate (currency/hour). Falls back to the
    * stage's rate, then the org default (costing settings) when unset/0.

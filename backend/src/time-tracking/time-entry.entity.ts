@@ -3,6 +3,7 @@ import { User } from '../auth/entities/user.entity.js';
 import { WorkOrderStage } from '../work-orders/work-order-stage.entity.js';
 import { Station } from '../stations/station.entity.js';
 import { TenantOwnedEntity } from '../common/tenant/tenant-owned.entity.js';
+import { numericTransformer } from '../common/transformers/numeric.transformer.js';
 
 export enum InputMethod {
   WEB = 'web',
@@ -57,6 +58,33 @@ export class TimeEntry extends TenantOwnedEntity {
 
   @Column({ name: 'is_rework', type: 'boolean', default: false })
   isRework: boolean;
+
+  /**
+   * Setup time (machine/fixture set-up, first-off) vs run time. Costing splits
+   * labor into setup / run / rework buckets; setup is a fixed batch cost.
+   */
+  @Column({ name: 'is_setup', type: 'boolean', default: false })
+  isSetup: boolean;
+
+  /**
+   * Costing: the labor rate (currency/hour) RESOLVED + STAMPED at clock-out —
+   * the worker's personal rate, else the stage standard rate (the org default is
+   * NOT frozen here: it's a live fallback, applied at read time when this is
+   * null). This freezes a deliberate rate at the moment work happened so a later
+   * rate change never rewrites historical cost — the labor analog of
+   * stock_movements.unit_cost. Costing reads COALESCE(labor_rate, live chain).
+   */
+  @Column({ name: 'labor_rate', type: 'numeric', precision: 10, scale: 2, nullable: true, transformer: numericTransformer })
+  laborRate: number | null;
+
+  /**
+   * Costing: the machine/work-center rate (currency/hour) of this entry's
+   * station, FROZEN at clock-out (the machine analog of labor_rate). Costing
+   * reads COALESCE(machine_rate, the station's live rate); null when the entry
+   * had no station or the station has no rate.
+   */
+  @Column({ name: 'machine_rate', type: 'numeric', precision: 12, scale: 2, nullable: true, transformer: numericTransformer })
+  machineRate: number | null;
 
   @Column({ type: 'text', nullable: true })
   notes: string | null;

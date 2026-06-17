@@ -21,6 +21,7 @@ import { SearchService, SearchResults } from '../core/services/search.service';
 import { ThemeService, FONT_SIZE_OPTIONS } from '../core/services/theme.service';
 import { BUILD_INFO } from '../../build-info';
 import { PermissionsService } from '../core/services/permissions.service';
+import { TourService } from '../core/services/tour.service';
 
 interface NavItem {
   label: string;
@@ -65,6 +66,7 @@ interface NavGroup {
             @for (item of visibleNavItems; track item.route) {
               <a mat-list-item [routerLink]="item.route" routerLinkActive="active-link"
                  [routerLinkActiveOptions]="{ exact: item.route === '/' || item.route === '/work-orders' }"
+                 [attr.data-tour]="item.route"
                  [matTooltip]="item.label" matTooltipPosition="right" (click)="closeMobileMenu()">
                 <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
               </a>
@@ -73,7 +75,8 @@ interface NavGroup {
             <!-- Expanded: Dashboard pinned, then collapsible groups -->
             @if (canSee(dashboardItem.feature)) {
               <a mat-list-item [routerLink]="dashboardItem.route" routerLinkActive="active-link"
-                 [routerLinkActiveOptions]="{ exact: true }" (click)="closeMobileMenu()">
+                 [routerLinkActiveOptions]="{ exact: true }" [attr.data-tour]="dashboardItem.route"
+                 (click)="closeMobileMenu()">
                 <mat-icon matListItemIcon>{{ dashboardItem.icon }}</mat-icon>
                 <span matListItemTitle>{{ dashboardItem.label }}</span>
               </a>
@@ -88,7 +91,8 @@ interface NavGroup {
                 @if (group.expanded) {
                   @for (item of visibleItems(group); track item.route) {
                     <a mat-list-item class="nav-sub" [routerLink]="item.route" routerLinkActive="active-link"
-                       [routerLinkActiveOptions]="{ exact: item.route === '/work-orders' }" (click)="closeMobileMenu()">
+                       [routerLinkActiveOptions]="{ exact: item.route === '/work-orders' }"
+                       [attr.data-tour]="item.route" (click)="closeMobileMenu()">
                       <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
                       <span matListItemTitle>{{ item.label }}</span>
                     </a>
@@ -120,7 +124,7 @@ interface NavGroup {
             <mat-icon>{{ sidenavCollapsed ? 'menu' : 'menu_open' }}</mat-icon>
           </button>
           <!-- Global Search -->
-          <div class="search-container">
+          <div class="search-container" data-tour="global-search">
             <mat-icon class="search-icon">search</mat-icon>
             <input type="text" class="search-input" placeholder="Search orders, users..."
                    [(ngModel)]="searchQuery" (input)="onSearchInput()">
@@ -179,8 +183,13 @@ interface NavGroup {
             <mat-icon>{{ themeService.theme() === 'dark' ? 'light_mode' : 'dark_mode' }}</mat-icon>
           </button>
 
+          <!-- Onboarding tour launcher (replay anytime) -->
+          <button mat-icon-button (click)="startTour()" data-tour="tour-launcher" matTooltip="Take a tour">
+            <mat-icon>explore</mat-icon>
+          </button>
+
           @if (canRaiseTicket) {
-            <button mat-icon-button (click)="openSupport()" matTooltip="Get help / contact support">
+            <button mat-icon-button (click)="openSupport()" data-tour="support" matTooltip="Get help / contact support">
               <mat-icon>support_agent</mat-icon>
             </button>
           }
@@ -522,7 +531,6 @@ export class LayoutComponent implements OnInit, OnDestroy {
       { label: 'Insights', icon: 'insights', route: '/quality-insights', feature: 'quality-analysis' },
       { label: 'QC Reports', icon: 'fact_check', route: '/quality-reports', feature: 'quality-reports' },
       { label: 'Report Templates', icon: 'dashboard_customize', route: '/templates', feature: 'templates' },
-      { label: 'NCR / CAPA', icon: 'report_problem', route: '/ncr', feature: 'ncr' },
       { label: '3D Quality', icon: 'view_in_ar', route: '/quality-analysis', feature: 'quality-analysis' },
     ] },
     { label: 'Engineering', icon: 'hub', expanded: false, items: [
@@ -596,12 +604,19 @@ export class LayoutComponent implements OnInit, OnDestroy {
     public themeService: ThemeService,
     private permissions: PermissionsService,
     private dialog: MatDialog,
+    private tour: TourService,
   ) {}
 
   canRaiseTicket = false;
+  private tourChecked = false;
 
   openSupport(): void {
     this.dialog.open(SupportTicketDialogComponent, { data: { contextUrl: this.router.url } });
+  }
+
+  /** Replay the onboarding tour on demand (toolbar "Take a tour" button). */
+  startTour(): void {
+    this.tour.start('onboarding');
   }
 
   ngOnInit(): void {
@@ -612,7 +627,14 @@ export class LayoutComponent implements OnInit, OnDestroy {
       if (g.items.some(i => url === i.route || url.startsWith(i.route + '/'))) g.expanded = true;
     }
     this.subs.push(
-      this.auth.currentUser$.subscribe(user => this.currentUser = user),
+      this.auth.currentUser$.subscribe(user => {
+        this.currentUser = user;
+        // First-run onboarding: fire once, the first time we have a logged-in user.
+        if (user && !this.tourChecked) {
+          this.tourChecked = true;
+          this.tour.maybeAutoStart('onboarding');
+        }
+      }),
       this.notificationService.unreadCount$.subscribe(c => this.unreadCount = c),
       this.searchSubject.pipe(
         debounceTime(300),

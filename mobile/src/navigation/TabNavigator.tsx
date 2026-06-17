@@ -21,10 +21,7 @@ import { VRViewScreen } from '../screens/model-viewer/VRViewScreen';
 import { QualityViewScreen } from '../screens/model-viewer/QualityViewScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { MoreMenuScreen } from '../screens/more/MoreMenuScreen';
-import { NcrListScreen } from '../screens/more/NcrListScreen';
 import { MaterialListScreen } from '../screens/more/MaterialListScreen';
-import { NcrCreateScreen } from '../screens/more/NcrCreateScreen';
-import { NcrDetailScreen } from '../screens/more/NcrDetailScreen';
 import { ProjectListScreen } from '../screens/projects/ProjectListScreen';
 import { ProjectDetailScreen } from '../screens/projects/ProjectDetailScreen';
 import { AssemblyDetailScreen } from '../screens/projects/AssemblyDetailScreen';
@@ -52,8 +49,6 @@ function WorkOrdersStack() {
       <WOStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
       <WOStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <WOStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
-      <WOStack.Screen name="NcrCreate" component={NcrCreateScreen} options={{ title: 'Raise NCR' }} />
-      <WOStack.Screen name="NcrDetail" component={NcrDetailScreen} options={{ title: 'NCR' }} />
       <WOStack.Screen name="QcReport" component={QcReportScreen} options={{ title: 'QC Report' }} />
     </WOStack.Navigator>
   );
@@ -76,9 +71,6 @@ function MoreStackNav() {
   return (
     <MoreStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
       <MoreStack.Screen name="MoreMenu" component={MoreMenuScreen} options={{ title: 'More' }} />
-      <MoreStack.Screen name="NcrList" component={NcrListScreen} options={{ title: 'Quality / NCRs' }} />
-      <MoreStack.Screen name="NcrCreate" component={NcrCreateScreen} options={{ title: 'Raise NCR' }} />
-      <MoreStack.Screen name="NcrDetail" component={NcrDetailScreen} options={{ title: 'NCR' }} />
       <MoreStack.Screen name="MaterialList" component={MaterialListScreen} options={{ title: 'Materials' }} />
     </MoreStack.Navigator>
   );
@@ -99,8 +91,6 @@ function ProjectsStack() {
       <PStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
       <PStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <PStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
-      <PStack.Screen name="NcrCreate" component={NcrCreateScreen} options={{ title: 'Raise NCR' }} />
-      <PStack.Screen name="NcrDetail" component={NcrDetailScreen} options={{ title: 'NCR' }} />
       <PStack.Screen name="QcReport" component={QcReportScreen} options={{ title: 'QC Report' }} />
     </PStack.Navigator>
   );

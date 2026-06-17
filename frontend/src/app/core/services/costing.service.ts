@@ -13,10 +13,13 @@ export interface CostingSettings {
 export interface CostTotals {
   materialCost: number;
   laborCost: number;
+  machineCost: number;
   overheadCost: number;
   totalCost: number;
   laborSeconds?: number;
   laborHours?: number;
+  machineSeconds?: number;
+  machineHours?: number;
 }
 
 export interface CostVariance { amount: number; percent: number | null }
@@ -33,23 +36,26 @@ export interface OrderCost {
   ratesConfigured: { workersWithRate: number; stagesWithRate: number };
   actual: CostTotals;
   estimate: CostTotals & { materialUnmappedLines: number; materialUnpricedNote: boolean };
-  variance: { material: CostVariance; labor: CostVariance; total: CostVariance };
+  variance: { material: CostVariance; labor: CostVariance; machine: CostVariance; total: CostVariance };
   items: {
     workOrderId: string; orderNumber: string; mark: string; status: string;
-    laborSeconds: number; laborHours: number; laborCost: number; materialCost: number; totalCost: number;
+    laborSeconds: number; laborHours: number; laborCost: number;
+    machineHours: number; machineCost: number;
+    materialCost: number; allocatedMaterialCost: number; estimatedMaterialCost: number; totalCost: number;
   }[];
   materials: { materialId: string; code: string; name: string; unitOfMeasure: string; quantity: number; cost: number }[];
   unattributedMaterialCost: number;
+  allocatedMaterialTotal: number;
 }
 
 export interface CostingOrdersOverview {
   currency: string;
   settings: CostingSettings;
-  kpis: { orders: number; laborCost: number; materialCost: number; overheadCost?: number; totalCost: number };
+  kpis: { orders: number; laborCost: number; machineCost?: number; materialCost: number; overheadCost?: number; totalCost: number };
   orders: {
     orderId: string; number: string; customerName: string | null; quantity: number; status: string; createdAt: string;
     project: { id: string; name: string };
-    laborHours: number; materialCost: number; laborCost: number; overheadCost: number; totalCost: number;
+    laborHours: number; machineHours?: number; materialCost: number; laborCost: number; machineCost: number; overheadCost: number; totalCost: number;
   }[];
 }
 
@@ -61,8 +67,8 @@ export interface ProjectCost {
   perUnitMaterialEstimate?: number;
   actual: CostTotals;
   orders: {
-    orderId: string; number: string; customerName: string | null; quantity: number; status: string; laborHours: number;
-    materialCost: number; laborCost: number; overheadCost: number; totalCost: number; estimatedMaterialCost: number;
+    orderId: string; number: string; customerName: string | null; quantity: number; status: string; laborHours: number; machineHours?: number;
+    materialCost: number; laborCost: number; machineCost: number; overheadCost: number; totalCost: number; estimatedMaterialCost: number;
   }[];
 }
 

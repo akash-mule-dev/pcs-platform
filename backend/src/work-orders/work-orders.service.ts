@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Not } from 'typeorm';
+import { Repository, In, IsNull } from 'typeorm';
 import { WorkOrder, WorkOrderStatus } from './work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from './work-order-stage.entity.js';
 import { Stage } from '../stages/stage.entity.js';
-import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
+import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { AssemblyNode } from '../projects/assembly-node.entity.js';
 import { inspectionGateError, isQualityStageName, qcGateMessage, InspectionSnapshot } from './qc-gate.js';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto.js';
@@ -21,18 +21,19 @@ export class WorkOrdersService {
     @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
-    @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
+    @InjectRepository(QualityReport) private readonly reportRepo: Repository<QualityReport>,
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  /** Open NCRs linked to a fabricated assembly (anything not closed/cancelled blocks the quality gate). */
+  /** Open NCR reports linked to a fabricated assembly (an unresolved `ncr`-type QC report blocks the quality gate). */
   private countOpenNcrs(assemblyNodeId: string): Promise<number> {
-    return this.ncrRepo.count({
+    return this.reportRepo.count({
       where: {
         assemblyNodeId,
-        status: Not(In([NcrStatus.CLOSED, NcrStatus.CANCELLED])),
+        templateType: 'ncr',
+        resolvedAt: IsNull(),
         organizationId: TenantContext.getOrganizationId() ?? undefined,
       },
     });
@@ -173,9 +174,9 @@ export class WorkOrdersService {
     if (nodeIds.length) {
       const ncrs: any[] = await this.woRepo.query(
         `SELECT assembly_node_id AS node_id, COUNT(*)::int AS open
-           FROM ncrs
+           FROM quality_reports
           WHERE organization_id = $1 AND assembly_node_id = ANY($2::uuid[])
-            AND status NOT IN ('closed','cancelled')
+            AND template_type = 'ncr' AND resolved_at IS NULL
           GROUP BY assembly_node_id`,
         [org, nodeIds],
       );

@@ -37,7 +37,7 @@ import { PermissionsService } from '../core/services/permissions.service';
       }
 
       <div class="head-row">
-        <p class="hint"><mat-icon>functions</mat-icon>Total = material (issued&nbsp;stock) + labor (clocked&nbsp;time) + overhead ({{ cost.settings.overheadPercent }}% on labor)</p>
+        <p class="hint"><mat-icon>functions</mat-icon>Total = material (issued&nbsp;stock) + labor (clocked&nbsp;time)@if (hasMachine) { + machine (work-center&nbsp;time)} + overhead (per-stage % on labor, default {{ cost.settings.overheadPercent }}%)</p>
         @if (canManage) {
           <button class="btn outline sm" (click)="toggleSettings()"><mat-icon>settings</mat-icon>Costing settings</button>
         }
@@ -69,8 +69,17 @@ import { PermissionsService } from '../core/services/permissions.service';
           <div class="c-actual">{{ cost.actual.laborCost | currency:cost.currency }}</div>
           <div class="c-est">{{ cost.actual.laborHours | number:'1.0-1' }} h · est. {{ cost.estimate.laborCost | currency:cost.currency }} {{ varianceChip(cost.variance.labor) }}</div>
         </div>
+        @if (hasMachine) {
+          <div class="card">
+            <div class="c-label"><mat-icon>precision_manufacturing</mat-icon>Machine</div>
+            <div class="c-actual">{{ cost.actual.machineCost | currency:cost.currency }}</div>
+            <div class="c-est">{{ cost.actual.machineHours | number:'1.0-1' }} h · est. {{ cost.estimate.machineCost | currency:cost.currency }} {{ varianceChip(cost.variance.machine) }}</div>
+          </div>
+        }
         <div class="card">
-          <div class="c-label"><mat-icon>domain</mat-icon>Overhead ({{ cost.settings.overheadPercent }}%)</div>
+          <div class="c-label" [matTooltip]="effectiveOverheadPct !== cost.settings.overheadPercent ? 'Blended per-stage overhead; org default is ' + cost.settings.overheadPercent + '%' : ''">
+            <mat-icon>domain</mat-icon>Overhead ({{ effectiveOverheadPct | number:'1.0-1' }}%)
+          </div>
           <div class="c-actual">{{ cost.actual.overheadCost | currency:cost.currency }}</div>
           <div class="c-est">est. {{ cost.estimate.overheadCost | currency:cost.currency }}</div>
         </div>
@@ -101,7 +110,7 @@ import { PermissionsService } from '../core/services/permissions.service';
       } @else {
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Mark</th><th>WO</th><th>Status</th><th class="num">Labor h</th><th class="num">Labor</th><th class="num">Material</th><th class="num">Total</th></tr></thead>
+            <thead><tr><th>Mark</th><th>WO</th><th>Status</th><th class="num">Labor h</th><th class="num">Labor</th>@if (hasMachine) { <th class="num">Machine</th> }<th class="num">Material</th><th class="num">Total</th></tr></thead>
             <tbody>
               @for (it of cost.items; track it.workOrderId) {
                 <tr>
@@ -110,20 +119,24 @@ import { PermissionsService } from '../core/services/permissions.service';
                   <td><span class="chip st-{{ it.status }}">{{ it.status.replace('_', ' ') }}</span></td>
                   <td class="num">{{ it.laborHours | number:'1.0-1' }}</td>
                   <td class="num">{{ it.laborCost | currency:cost.currency }}</td>
-                  <td class="num">{{ it.materialCost | currency:cost.currency }}</td>
+                  @if (hasMachine) { <td class="num">{{ it.machineCost | currency:cost.currency }}</td> }
+                  <td class="num" [matTooltip]="materialTip(it)">{{ (it.materialCost + it.allocatedMaterialCost) | currency:cost.currency }}{{ it.allocatedMaterialCost > 0 ? ' *' : '' }}</td>
                   <td class="num strong">{{ it.totalCost | currency:cost.currency }}</td>
                 </tr>
               }
-              @if (cost.unattributedMaterialCost > 0) {
+              @if (unallocatedRemainder > 0.01) {
                 <tr class="dim">
-                  <td colspan="5"><span class="muted">Material issued to the order (not pinned to one assembly)</span></td>
-                  <td class="num">{{ cost.unattributedMaterialCost | currency:cost.currency }}</td>
+                  <td [attr.colspan]="hasMachine ? 6 : 5"><span class="muted">Material issued to the order (not allocated to an assembly)</span></td>
+                  <td class="num">{{ unallocatedRemainder | currency:cost.currency }}</td>
                   <td class="num"></td>
                 </tr>
               }
             </tbody>
           </table>
         </div>
+        @if (cost.allocatedMaterialTotal > 0) {
+          <p class="hint"><mat-icon>call_split</mat-icon><span><b>*</b> includes a share of {{ cost.allocatedMaterialTotal | currency:cost.currency }} in bulk material issued to the order (not pinned to one assembly), allocated by each assembly's BOM estimate. Hover a material value for the split.</span></p>
+        }
       }
 
       <!-- Per-material breakdown -->
@@ -223,6 +236,34 @@ export class OrderCostsComponent implements OnInit {
   sForm = { defaultLaborRate: 30, overheadPercent: 0, currency: 'USD' };
 
   get canManage(): boolean { return this.perms.can('costing.manage'); }
+  /** Show the machine column/card only when the org actually uses machine costing (rates configured). */
+  get hasMachine(): boolean {
+    return !!this.cost && ((this.cost.actual.machineCost || 0) > 0 || (this.cost.estimate.machineCost || 0) > 0);
+  }
+
+  /** Effective overhead rate = actual overhead ÷ actual labor (per-stage blended); org default when no labor yet. */
+  get effectiveOverheadPct(): number {
+    if (!this.cost) return 0;
+    const labor = this.cost.actual.laborCost || 0;
+    if (labor <= 0) return this.cost.settings.overheadPercent || 0;
+    return Math.round(((this.cost.actual.overheadCost || 0) / labor) * 1000) / 10;
+  }
+
+  /** Bulk material left over after per-assembly allocation (shown as a catch-all row). */
+  get unallocatedRemainder(): number {
+    if (!this.cost) return 0;
+    return Math.max(0, (this.cost.unattributedMaterialCost || 0) - (this.cost.allocatedMaterialTotal || 0));
+  }
+
+  /** Tooltip breaking a row's material into pinned + allocated, with the BOM estimate. */
+  materialTip(it: OrderCost['items'][number]): string {
+    const cur = this.cost?.currency || 'USD';
+    const fmt = (n: number) => `${n.toFixed(2)} ${cur}`;
+    const parts: string[] = [];
+    if ((it.allocatedMaterialCost || 0) > 0) parts.push(`pinned ${fmt(it.materialCost)} + allocated ${fmt(it.allocatedMaterialCost)}`);
+    if ((it.estimatedMaterialCost || 0) > 0) parts.push(`est. ${fmt(it.estimatedMaterialCost)}`);
+    return parts.join(' · ');
+  }
 
   ngOnInit(): void {
     this.orderId = this.route.parent?.snapshot.paramMap.get('orderId')

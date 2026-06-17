@@ -38,8 +38,10 @@ interface FeatureGroup { category: string; features: FeatureAdoption[]; }
             <div class="kpi-sub">{{ data.totals.activeTenants }} active · {{ data.totals.inactiveTenants }} inactive</div></div>
           <div class="kpi"><div class="kpi-label">Users</div><div class="kpi-value">{{ data.totals.users }}</div>
             <div class="kpi-sub">{{ data.totals.activeUsers }} active</div></div>
+          <div class="kpi good"><div class="kpi-label">Logins (30d)</div><div class="kpi-value">{{ data.totals.usersLoggedIn30d }}</div>
+            <div class="kpi-sub">of {{ data.totals.users }} users signed in</div></div>
           <div class="kpi good"><div class="kpi-label">Active (30d)</div><div class="kpi-value">{{ data.totals.activeLast30d }}</div>
-            <div class="kpi-sub">recent engagement</div></div>
+            <div class="kpi-sub">tenants engaged</div></div>
           <div class="kpi warn"><div class="kpi-label">Idle</div><div class="kpi-value">{{ data.totals.idleTenants }}</div>
             <div class="kpi-sub">no activity in 30d</div></div>
           <div class="kpi bad"><div class="kpi-label">Dormant</div><div class="kpi-value">{{ data.totals.dormantTenants }}</div>
@@ -95,7 +97,7 @@ interface FeatureGroup { category: string; features: FeatureAdoption[]; }
           <div class="panel-head"><h3>Tenants</h3><span class="muted">click a row to drill into usage</span></div>
           <table class="tbl">
             <thead><tr>
-              <th>Company</th><th>Status</th><th class="num">Users</th><th>Adoption</th><th>Last activity</th><th class="num">30d events</th><th></th>
+              <th>Company</th><th>Status</th><th class="num">Users</th><th>Adoption</th><th>Last login</th><th>Last activity</th><th class="num">30d events</th><th></th>
             </tr></thead>
             <tbody>
               @for (t of data.tenants; track t.id) {
@@ -115,6 +117,7 @@ interface FeatureGroup { category: string; features: FeatureAdoption[]; }
                       <span class="mini-txt">{{ t.featuresUsed }}/{{ t.featuresTotal }}</span>
                     </div>
                   </td>
+                  <td [matTooltip]="t.usersActive30d + ' of ' + t.users + ' users signed in (30d)'">{{ t.lastLoginAt ? relative(t.lastLoginAt) : 'never' }}</td>
                   <td>{{ t.lastActivityAt ? relative(t.lastActivityAt) : '—' }}</td>
                   <td class="num">{{ t.events30d }}</td>
                   <td><button mat-button color="primary">Details <mat-icon>chevron_right</mat-icon></button></td>
@@ -148,7 +151,8 @@ interface FeatureGroup { category: string; features: FeatureAdoption[]; }
             <div class="d-kpi"><span>{{ detail.activity.events7d }}</span><label>Events (7d)</label></div>
             <div class="d-kpi"><span>{{ detail.activity.events30d }}</span><label>Events (30d)</label></div>
           </div>
-          <p class="last-seen">Last activity: <strong>{{ detail.activity.lastActivityAt ? relative(detail.activity.lastActivityAt) : 'never' }}</strong></p>
+          <p class="last-seen">Last login: <strong>{{ detail.users.lastLoginAt ? relative(detail.users.lastLoginAt) : 'never' }}</strong>
+            · Last activity: <strong>{{ detail.activity.lastActivityAt ? relative(detail.activity.lastActivityAt) : 'never' }}</strong></p>
 
           <h4>Activity (12 weeks)</h4>
           @if (maxTrend(detail.activity.trend) > 0) {
@@ -161,14 +165,17 @@ interface FeatureGroup { category: string; features: FeatureAdoption[]; }
             </div>
           } @else { <p class="empty-inline">No recorded activity.</p> }
 
-          <h4>Team</h4>
+          <h4>Team <span class="h4-sub">{{ detail.users.loggedIn30d }}/{{ detail.users.total }} signed in (30d)</span></h4>
           <div class="chips">
             @for (r of detail.users.byRole; track r.role) { <span class="chip">{{ r.role }} · {{ r.count }}</span> }
           </div>
           @if (detail.activity.topUsers.length) {
             <div class="top-users">
               @for (u of detail.activity.topUsers; track u.id) {
-                <div class="tu"><span class="tu-name">{{ u.name }}</span><span class="tu-ev">{{ u.events }} events</span></div>
+                <div class="tu">
+                  <span class="tu-name">{{ u.name }}</span>
+                  <span class="tu-ev">{{ u.events }} events · {{ u.lastLoginAt ? 'login ' + relative(u.lastLoginAt) : 'no login' }}</span>
+                </div>
               }
             </div>
           }
@@ -255,6 +262,7 @@ interface FeatureGroup { category: string; features: FeatureAdoption[]; }
     .drawer-head { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; }
     .drawer-head h2 { margin:0 0 6px; font-size:18px; }
     .drawer h4 { margin:20px 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--clay-text-muted,#64748b); }
+    .h4-sub { font-weight:400; text-transform:none; letter-spacing:0; color:var(--clay-text-muted,#94a3b8); font-size:11px; margin-left:6px; }
     .d-kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
     .d-kpi { background:var(--clay-bg,#f8fafc); border-radius:8px; padding:10px 12px; } .d-kpi span { font-size:20px; font-weight:700; } .d-kpi label { display:block; font-size:11px; color:var(--clay-text-muted,#64748b); }
     .last-seen { font-size:13px; margin:12px 0 0; color:var(--clay-text-muted,#64748b); }

@@ -6,9 +6,6 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { QualityReportsService, QualityReport } from '../core/services/quality-reports.service';
-import { NcrApiService, NcrRow } from '../quality-ncr/ncr.service';
-
-type NcrSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 const BOOTSTRAP_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.2/css/bootstrap.min.css';
 const FORMIO_CSS = 'https://cdn.form.io/formiojs/formio.full.min.css';
@@ -50,10 +47,19 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
           @if (report) { <span class="pill st-{{ report.status }}">{{ report.status === 'submitted' ? 'Submitted' : 'Draft' }}</span> }
           @if (savedAt && !dirty) { <span class="saved"><mat-icon>cloud_done</mat-icon>Saved {{ savedAt | date:'shortTime' }}</span> }
           @if (dirty) { <span class="saved dirty"><mat-icon>cloud_upload</mat-icon>Unsaved changes</span> }
+          @if (report?.templateType === 'ncr') {
+            @if (report?.resolvedAt) {
+              <span class="pill resolved"><mat-icon>verified</mat-icon>Resolved</span>
+              <button class="btn ghost" [disabled]="busy" (click)="reopenNcr()" title="Reopen this NCR (re-blocks shipping + quality stage)">
+                <mat-icon>lock_open</mat-icon>Reopen
+              </button>
+            } @else {
+              <button class="btn resolve" [disabled]="busy" (click)="resolveNcr()" title="Resolve this NCR — lifts the shipping + quality-stage gates for this assembly">
+                <mat-icon>check_circle</mat-icon>Resolve NCR
+              </button>
+            }
+          }
           @if (report) {
-            <button class="btn ncr" [disabled]="busy" (click)="openNcr()" title="Raise a non-conformance report for this assembly">
-              <mat-icon>report_problem</mat-icon>Raise NCR
-            </button>
             <button class="btn ghost" [disabled]="busy || loading" (click)="downloadPdf()" title="Download this report as a PDF">
               <mat-icon>download</mat-icon>PDF
             </button>
@@ -65,11 +71,10 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
 
       @if (error) { <p class="banner err"><mat-icon>error</mat-icon>{{ error }}</p> }
       @if (notice) { <p class="banner ok"><mat-icon>check_circle</mat-icon>{{ notice }} <a routerLink="/quality-reports">All reports</a></p> }
-      @if (ncrCreated) {
-        <p class="banner ncr-ok">
+      @if (report?.templateType === 'ncr' && !report?.resolvedAt) {
+        <p class="banner ncr-open">
           <mat-icon>report_problem</mat-icon>
-          NCR <b>{{ ncrCreated.number }}</b> raised for {{ report?.itemMark || 'this assembly' }}.
-          <a routerLink="/ncr">Open NCRs</a>
+          This NCR is open — it blocks shipping and quality-stage completion for {{ report?.itemMark || 'this assembly' }} until resolved.
         </p>
       }
 
@@ -79,48 +84,6 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
         }
         <div #formHost class="form-host" [class.hidden]="loading"></div>
       </main>
-
-      <!-- Raise-NCR dialog: self-contained, links the NCR to this report's assembly -->
-      @if (ncrOpen) {
-        <div class="ncr-backdrop" (click)="closeNcr()">
-          <div class="ncr-modal" (click)="$event.stopPropagation()">
-            <div class="ncr-head">
-              <h2><mat-icon>report_problem</mat-icon>Raise NCR</h2>
-              <button class="ncr-x" type="button" (click)="closeNcr()" title="Close"><mat-icon>close</mat-icon></button>
-            </div>
-            <p class="ncr-ctx">
-              @if (report?.itemMark) { <span class="num">{{ report?.itemMark }}</span> }
-              @if (report?.orderNumber) { <span>· {{ report?.orderNumber }}</span> }
-              @if (report?.number) { <span>· from {{ report?.number }}</span> }
-            </p>
-
-            <label class="ncr-field">
-              <span>Title <em>*</em></span>
-              <input type="text" [(ngModel)]="ncrForm.title" maxlength="255" placeholder="Short summary of the non-conformance">
-            </label>
-            <label class="ncr-field">
-              <span>Severity</span>
-              <select [(ngModel)]="ncrForm.severity">
-                @for (s of severities; track s) { <option [value]="s">{{ s | titlecase }}</option> }
-              </select>
-            </label>
-            <label class="ncr-field">
-              <span>Description</span>
-              <textarea rows="4" [(ngModel)]="ncrForm.description" placeholder="What is wrong, where, and how it was found"></textarea>
-            </label>
-
-            @if (ncrError) { <p class="ncr-err"><mat-icon>error</mat-icon>{{ ncrError }}</p> }
-
-            <div class="ncr-actions">
-              <button class="btn ghost" type="button" [disabled]="ncrBusy" (click)="closeNcr()">Cancel</button>
-              <button class="btn danger" type="button" [disabled]="ncrBusy || !ncrForm.title.trim()" (click)="raiseNcr()">
-                @if (ncrBusy) { <mat-spinner diameter="14"></mat-spinner> } @else { <mat-icon>report_problem</mat-icon> }
-                <span>Raise NCR</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      }
     </div>
   `,
   styles: [`
@@ -151,39 +114,13 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
     .banner.err { background: #fee2e2; color: #991b1b; }
     .banner.ok { background: #dcfce7; color: #166534; }
     .banner.ok a { color: #166534; font-weight: 700; margin-left: 6px; }
-    .banner.ncr-ok { background: #fef3c7; color: #92400e; }
-    .banner.ncr-ok b { font-weight: 800; }
-    .banner.ncr-ok a { color: #92400e; font-weight: 700; margin-left: 8px; text-decoration: underline; }
+    .banner.ncr-open { background: #fef3c7; color: #92400e; }
 
-    /* Raise-NCR button + dialog */
-    .btn.ncr { background: #fff7ed; color: #b45309; border-color: #fdba74; }
-    .btn.ncr:hover:not(:disabled) { background: #ffedd5; }
-    .btn.danger { background: #dc2626; color: #fff; border-color: #dc2626; }
-    .btn.danger:disabled { opacity: .55; }
-    .ncr-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
-    .ncr-modal { background: var(--clay-surface, #fff); border-radius: 14px; box-shadow: 0 18px 48px rgba(15,23,42,.28); width: 100%; max-width: 460px; padding: 18px 20px 20px; }
-    .ncr-head { display: flex; align-items: center; justify-content: space-between; }
-    .ncr-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 17px; font-weight: 800; color: var(--clay-text, #0f172a); }
-    .ncr-head h2 mat-icon { color: #dc2626; }
-    .ncr-x { background: none; border: none; color: var(--clay-text-muted, #64748b); cursor: pointer; padding: 4px; border-radius: 8px; }
-    .ncr-x:hover { background: var(--clay-bg, #f1f5f9); }
-    .ncr-ctx { margin: 4px 0 14px; font-size: 12px; color: var(--clay-text-muted, #64748b); display: flex; gap: 6px; flex-wrap: wrap; }
-    .ncr-ctx .num { font-family: 'Space Grotesk', monospace; font-weight: 700; color: var(--clay-text-secondary, #475569); }
-    .ncr-field { display: block; margin-bottom: 12px; }
-    .ncr-field > span { display: block; font-size: 12px; font-weight: 700; color: var(--clay-text-secondary, #475569); margin-bottom: 5px; }
-    .ncr-field > span em { color: #dc2626; font-style: normal; }
-    .ncr-field input, .ncr-field select, .ncr-field textarea {
-      width: 100%; box-sizing: border-box; border: 1px solid var(--clay-border, #e2e8f0); border-radius: 9px;
-      padding: 9px 11px; font-size: 14px; color: var(--clay-text, #0f172a); background: #fff; font-family: inherit;
-    }
-    .ncr-field textarea { resize: vertical; min-height: 78px; }
-    .ncr-field input:focus, .ncr-field select:focus, .ncr-field textarea:focus {
-      border-color: var(--clay-primary, #2563eb); outline: none;
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--clay-primary, #2563eb) 18%, transparent);
-    }
-    .ncr-err { display: flex; align-items: center; gap: 6px; background: #fee2e2; color: #991b1b; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; margin: 0 0 12px; }
-    .ncr-err mat-icon { font-size: 17px; width: 17px; height: 17px; }
-    .ncr-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+    /* NCR resolve / resolved controls */
+    .btn.resolve { background: #dcfce7; color: #166534; border-color: #86efac; }
+    .btn.resolve:hover:not(:disabled) { background: #bbf7d0; }
+    .pill.resolved { display: inline-flex; align-items: center; gap: 4px; background: #dcfce7; color: #166534; }
+    .pill.resolved mat-icon { font-size: 15px; width: 15px; height: 15px; }
     .paper { background: var(--clay-surface, #fff); border: 1px solid var(--clay-border, #e2e8f0); border-radius: 12px; margin-top: 12px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
     .center { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 56px 0; color: var(--clay-text-muted, #64748b); font-size: 13px; }
     .form-host.hidden { display: none; }
@@ -248,7 +185,6 @@ export class ReportFillComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   private location = inject(Location);
   private svc = inject(QualityReportsService);
-  private ncrApi = inject(NcrApiService);
   private zone = inject(NgZone);
 
   @ViewChild('formHost', { static: true }) formHost!: ElementRef<HTMLDivElement>;
@@ -260,14 +196,6 @@ export class ReportFillComponent implements OnInit, OnDestroy {
   savedAt: Date | null = null;
   error: string | null = null;
   notice: string | null = null;
-
-  // Raise-NCR dialog state
-  readonly severities: NcrSeverity[] = ['low', 'medium', 'high', 'critical'];
-  ncrOpen = false;
-  ncrBusy = false;
-  ncrError: string | null = null;
-  ncrCreated: NcrRow | null = null;
-  ncrForm: { title: string; severity: NcrSeverity; description: string } = { title: '', severity: 'medium', description: '' };
 
   private form: any = null;
   private static formioPromise: Promise<any> | null = null;
@@ -519,56 +447,25 @@ export class ReportFillComponent implements OnInit, OnDestroy {
 </body></html>`;
   }
 
-  // ── Raise NCR ──────────────────────────────────────────────────────────
-  /** Open the dialog, pre-filling from the report context + the filled form
-   *  (an overall "reject" result bumps severity; remarks seed the description). */
-  openNcr(): void {
-    this.ncrError = null;
-    const mark = this.report?.itemMark || this.report?.orderNumber || 'assembly';
-    const { result, remarks } = this.readFormFindings();
-    const lc = (result ?? '').toLowerCase();
-    const severity: NcrSeverity = /reject|fail/.test(lc) ? 'high' : 'medium';
-    const parts = [`Raised from QC report ${this.report?.number ?? ''}`.trim() + '.'];
-    if (result) parts.push(`Inspection result: ${result}.`);
-    if (remarks) parts.push(`Remarks: ${remarks}`);
-    this.ncrForm = { title: `QC nonconformance — ${mark}`, severity, description: parts.join(' ') };
-    this.ncrOpen = true;
-  }
-
-  closeNcr(): void { this.ncrOpen = false; this.ncrBusy = false; }
-
-  raiseNcr(): void {
-    if (!this.report || this.ncrBusy) return;
-    const title = this.ncrForm.title.trim();
-    if (!title) { this.ncrError = 'A title is required.'; return; }
-    this.ncrBusy = true;
-    this.ncrError = null;
-    const body: Record<string, any> = { title, severity: this.ncrForm.severity };
-    const desc = this.ncrForm.description.trim();
-    if (desc) body['description'] = desc;
-    if (this.report.assemblyNodeId) body['assemblyNodeId'] = this.report.assemblyNodeId;
-    if (this.report.projectId) body['projectId'] = this.report.projectId;
-    this.ncrApi.createNcr(body).subscribe({
-      next: (n) => { this.ncrBusy = false; this.ncrOpen = false; this.ncrCreated = n; },
-      error: (e) => { this.ncrBusy = false; this.ncrError = e?.error?.message || 'Could not raise the NCR.'; },
+  // ── Resolve / reopen NCR report ────────────────────────────────────────
+  /** Resolve (close) this NCR report — lifts the shipping + quality-stage gates. */
+  resolveNcr(): void {
+    if (!this.report || this.busy) return;
+    this.busy = true; this.error = null;
+    this.svc.resolve(this.report.id).subscribe({
+      next: (r) => { this.busy = false; this.report = { ...this.report!, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy }; this.notice = `${this.report.number} resolved.`; },
+      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not resolve this NCR.'; },
     });
   }
 
-  /** Best-effort scrape of the filled form for an overall result + remarks,
-   *  matched by key so it works across templates (purely for prefill). */
-  private readFormFindings(): { result: string | null; remarks: string | null } {
-    let result: string | null = null;
-    let remarks: string | null = null;
-    try {
-      const data = this.form?.submission?.data ?? this.report?.data ?? {};
-      for (const [key, val] of Object.entries(data)) {
-        if (typeof val !== 'string' || !val.trim()) continue;
-        const k = key.toLowerCase();
-        if (!result && /(result|disposition|acceptance|conformance)/.test(k)) result = val;
-        else if (!remarks && /(remark|observation|comment|note|finding)/.test(k)) remarks = val;
-      }
-    } catch { /* prefill is optional */ }
-    return { result, remarks };
+  /** Reopen a resolved NCR report (re-blocks its gates). */
+  reopenNcr(): void {
+    if (!this.report || this.busy) return;
+    this.busy = true; this.error = null;
+    this.svc.reopen(this.report.id).subscribe({
+      next: (r) => { this.busy = false; this.report = { ...this.report!, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy }; this.notice = `${this.report.number} reopened.`; },
+      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not reopen this NCR.'; },
+    });
   }
 
   private ensureFormio(): Promise<any> {

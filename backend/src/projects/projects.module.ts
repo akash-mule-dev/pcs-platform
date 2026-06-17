@@ -24,17 +24,16 @@ import { ModelsModule } from '../models/models.module.js';
 import { ProjectQualityService } from './project-quality.service.js';
 import { ProjectQualityController } from './project-quality.controller.js';
 import { QualityDataModule } from '../quality-data/quality-data.module.js';
-import { QualityNcrModule } from '../quality-ncr/quality-ncr.module.js';
+import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { ConversionModule } from '../conversion/conversion.module.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Project, AssemblyNode, ImportFile, ImportFileEvent, WorkOrder, AssemblyDocument, PieceLotAssignment]),
+    TypeOrmModule.forFeature([Project, AssemblyNode, ImportFile, ImportFileEvent, WorkOrder, AssemblyDocument, PieceLotAssignment, QualityReport]),
     ConversionModule,
     ModelsModule,
     QualityDataModule,
-    QualityNcrModule,
     StorageModule,
   ],
   controllers: [ProjectsController, ProjectImportController, ImportMonitorController, ProjectInsightsController, ProjectModelController, ProjectQualityController],

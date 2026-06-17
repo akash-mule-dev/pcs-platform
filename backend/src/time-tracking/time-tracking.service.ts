@@ -9,6 +9,7 @@ import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import { resolveRate } from '../costing/costing-math.js';
 
 @Injectable()
 export class TimeTrackingService {
@@ -38,6 +39,7 @@ export class TimeTrackingService {
       workOrderStageId: dto.workOrderStageId,
       stationId: dto.stationId || null,
       inputMethod: dto.inputMethod,
+      isSetup: dto.isSetup ?? false,
       startTime: new Date(),
     });
     const saved = await this.teRepo.save(entry);
@@ -51,13 +53,27 @@ export class TimeTrackingService {
   }
 
   async clockOut(userId: string, dto: ClockOutDto): Promise<TimeEntry> {
-    const entry = await this.teRepo.findOne({ where: { id: dto.timeEntryId }, relations: ['workOrderStage'] });
+    const entry = await this.teRepo.findOne({
+      where: { id: dto.timeEntryId },
+      relations: ['user', 'workOrderStage', 'workOrderStage.stage', 'station'],
+    });
     if (!entry) throw new NotFoundException('Time entry not found');
     if (entry.endTime) throw new BadRequestException('Time entry already clocked out');
 
     entry.endTime = new Date();
     entry.durationSeconds = Math.round((entry.endTime.getTime() - entry.startTime.getTime()) / 1000);
     if (dto.notes) entry.notes = dto.notes;
+
+    // Freeze the labor rate at the moment work finished (the worker's personal
+    // rate, else the stage standard rate). The org default is intentionally NOT
+    // frozen — it's a live fallback applied at read time when this stays null —
+    // so configuring/raising the default later still flows to un-rated entries.
+    const frozen = resolveRate(entry.user?.hourlyRate, entry.workOrderStage?.stage?.hourlyRate, 0);
+    entry.laborRate = frozen > 0 ? frozen : null;
+    // Freeze this station's machine/work-center rate too (machine analog of labor_rate).
+    const machine = Number(entry.station?.machineRate) || 0;
+    entry.machineRate = machine > 0 ? machine : null;
+
     await this.teRepo.save(entry);
 
     // Update work order stage

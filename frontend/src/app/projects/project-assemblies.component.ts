@@ -4,7 +4,7 @@ import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { ThreeViewerComponent } from '../shared/components/three-viewer/three-viewer.component';
+import { ThreeViewerComponent, ViewerReferenceLength } from '../shared/components/three-viewer/three-viewer.component';
 import { ProjectWorkspaceStore } from './project-workspace.store';
 import { ProjectsService, AssemblyNode, NodeType, NodeDocument, NodeLotRow, LotOption } from '../core/services/projects.service';
 
@@ -89,7 +89,7 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
                 <mat-icon>{{ isolate() ? 'fullscreen' : 'filter_center_focus' }}</mat-icon>{{ isolate() ? 'Show full model' : 'Isolate selected' }}
               </button>
             </div>
-            <div class="viewer-box"><app-three-viewer [modelUrl]="url" [highlightNames]="isolate() ? [] : highlightGuids()" [autoFocus]="true" (meshClicked)="onMeshClicked($event)"></app-three-viewer></div>
+            <div class="viewer-box"><app-three-viewer [modelUrl]="url" [highlightNames]="isolate() ? [] : highlightGuids()" [autoFocus]="true" [showTools]="true" [referenceLengths]="referenceLengths()" (meshClicked)="onMeshClicked($event)"></app-three-viewer></div>
           } @else {
             <div class="noviewer">
               <mat-icon>view_in_ar</mat-icon>
@@ -307,6 +307,14 @@ export class ProjectAssembliesComponent implements OnInit {
     const id = this.selectedNodeId();
     return id ? this.byId().get(id) ?? null : null;
   });
+
+  /** Feed the 3D viewer known true lengths so it can self-calibrate the model's
+   *  unit scale (the GLB carries the IFC's native units) and report real mm. */
+  referenceLengths = computed<ViewerReferenceLength[]>(() =>
+    this.store.nodes()
+      .filter((n) => n.ifcGuid && n.lengthMm != null && n.lengthMm > 0)
+      .map((n) => ({ meshName: n.ifcGuid as string, lengthMm: n.lengthMm as number })),
+  );
 
   /** Measurements & identity facts for the detail panel: promoted fab columns
    *  first, then dimension-like entries from the raw IFC property bag. */

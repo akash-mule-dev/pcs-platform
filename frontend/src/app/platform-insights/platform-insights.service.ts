@@ -24,11 +24,13 @@ export interface TenantRow {
   hasLogo: boolean;
   users: number;
   activeUsers: number;
+  usersActive30d: number;
   records: Record<string, number>;
   featuresUsed: number;
   featuresTotal: number;
   events30d: number;
   events7d: number;
+  lastLoginAt: string | null;
   lastActivityAt: string | null;
   status: TenantStatus;
 }
@@ -41,6 +43,7 @@ export interface PlatformOverview {
     inactiveTenants: number;
     users: number;
     activeUsers: number;
+    usersLoggedIn30d: number;
     activeLast30d: number;
     idleTenants: number;
     dormantTenants: number;
@@ -57,7 +60,7 @@ export interface TenantInsight {
     description: string | null; hasLogo: boolean; createdAt: string;
   };
   status: TenantStatus;
-  users: { total: number; active: number; byRole: { role: string; count: number }[] };
+  users: { total: number; active: number; loggedIn30d: number; lastLoginAt: string | null; byRole: { role: string; count: number }[] };
   adoption: { featuresUsed: number; featuresTotal: number };
   features: { key: string; label: string; category: string; records: number; lastAt: string | null; used: boolean }[];
   activity: {
@@ -65,7 +68,7 @@ export interface TenantInsight {
     events7d: number; events30d: number; events90d: number;
     trend: { weekStart: string; events: number }[];
     byType: { entityType: string; action: string; count: number }[];
-    topUsers: { id: string; name: string; email: string | null; events: number }[];
+    topUsers: { id: string; name: string; email: string | null; events: number; lastLoginAt: string | null }[];
   };
 }
 

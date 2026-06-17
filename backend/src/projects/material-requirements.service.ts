@@ -10,7 +10,7 @@ import { StockMovement } from '../materials/entities/stock-movement.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import {
   aggregateRequirements, scaleRequirements, requirementKey, requiredQtyInUom, coverage,
-  RequirementLine,
+  RequirementLine, RequirementPart,
 } from './material-requirements-math.js';
 
 const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
@@ -262,5 +262,65 @@ export class MaterialRequirementsService {
         fullyIssuedLines: lines.filter((l) => l.status === 'issued').length,
       },
     };
+  }
+
+  // ── Per-node BOM (for per-work-order material estimate + allocation basis) ──
+
+  /**
+   * Estimated material cost + weight for the SUBTREE of each requested assembly
+   * node (its descendant PART nodes), valued at matched-master avg costs and
+   * scaled by the order quantity — the per-work-order analog of
+   * `orderRequirements` (one WorkOrder targets one assembly node). One node load
+   * + one material index; the tree is walked in memory (no N+1). Nodes whose
+   * subtree has no priced/matched parts come back at 0.
+   */
+  async bomEstimateByNode(
+    projectId: string,
+    nodeIds: (string | null | undefined)[],
+    orderQuantity: number,
+  ): Promise<Map<string, { estimatedCost: number; weightKg: number; mappedLines: number; unmappedLines: number }>> {
+    const result = new Map<string, { estimatedCost: number; weightKg: number; mappedLines: number; unmappedLines: number }>();
+    const ids = [...new Set(nodeIds.filter((x): x is string => !!x))];
+    if (!ids.length) return result;
+
+    const nodes = await this.nodeRepo.find({
+      where: { projectId, organizationId: this.org } as any,
+      select: ['id', 'parentId', 'nodeType', 'profile', 'materialGrade', 'lengthMm', 'weightKg', 'quantity'] as any,
+    });
+    const byId = new Map<string, AssemblyNode>();
+    const childrenOf = new Map<string, AssemblyNode[]>();
+    for (const n of nodes) {
+      byId.set(n.id, n);
+      if (n.parentId) {
+        const siblings = childrenOf.get(n.parentId);
+        if (siblings) siblings.push(n); else childrenOf.set(n.parentId, [n]);
+      }
+    }
+    const index = await this.materialIndex();
+    const factor = Math.max(0, Math.floor(orderQuantity || 0)) || 1;
+
+    for (const nodeId of ids) {
+      const root = byId.get(nodeId);
+      if (!root) { result.set(nodeId, { estimatedCost: 0, weightKg: 0, mappedLines: 0, unmappedLines: 0 }); continue; }
+      // Collect descendant PART nodes (incl. the node itself if it is a part).
+      const parts: RequirementPart[] = [];
+      const stack: AssemblyNode[] = [root];
+      while (stack.length) {
+        const n = stack.pop()!;
+        if (n.nodeType === AssemblyNodeType.PART) {
+          parts.push({ profile: n.profile, materialGrade: n.materialGrade, lengthMm: n.lengthMm, weightKg: n.weightKg, quantity: n.quantity ?? 1 });
+        }
+        for (const c of childrenOf.get(n.id) ?? []) stack.push(c);
+      }
+      const lines = scaleRequirements(aggregateRequirements(parts), factor).map((l) => this.decorateLine(l, index));
+      const mapped = lines.filter((l) => l.material);
+      result.set(nodeId, {
+        estimatedCost: round2(mapped.reduce((s, l) => s + (l.estimatedCost ?? 0), 0)),
+        weightKg: round3(lines.reduce((s, l) => s + l.totalWeightKg, 0)),
+        mappedLines: mapped.length,
+        unmappedLines: lines.length - mapped.length,
+      });
+    }
+    return result;
   }
 }

@@ -21,7 +21,6 @@ interface MenuItem {
 // Equipment and Workforce were intentionally dropped from mobile — they were
 // read-only mirrors of web admin pages with no shop-floor action on a phone.
 const ITEMS: MenuItem[] = [
-  { key: 'NcrList', label: 'Quality / NCRs', subtitle: 'Non-conformance reports', icon: 'alert-circle', feature: 'ncr' },
   { key: 'MaterialList', label: 'Materials', subtitle: 'Inventory & parts master', icon: 'layers', feature: 'materials' },
 ];
 

@@ -338,7 +338,7 @@ const PAGE = 200;
                   <p class="none-line">No NCRs raised against this assembly.</p>
                 } @else if (detail) {
                   @for (n of detail.ncrs; track n.id) {
-                    <a class="ncr-row" routerLink="/ncr">
+                    <a class="ncr-row" [routerLink]="['/qr', n.id]" target="_blank">
                       <b class="mono">{{ n.number }}</b>
                       <span class="ncr-title">{{ n.title }}</span>
                       <span class="sev sev-{{ n.severity }}">{{ n.severity }}</span>

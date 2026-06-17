@@ -6,6 +6,11 @@ import { CommonModule } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+
+/** A part's true length in mm, keyed by GLB mesh name (== ifc_guid). Used to
+ *  self-calibrate the model's unit scale so on-model measurements read in real mm. */
+export interface ViewerReferenceLength { meshName: string; lengthMm: number; }
 
 @Component({
   selector: 'app-three-viewer',
@@ -38,6 +43,39 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
         </div>
       }
       <canvas #canvas></canvas>
+      <!-- CSS2D label layer (measurement dims) — overlays the canvas, click-through -->
+      <div #labelLayer class="label-layer"></div>
+
+      @if (showTools && !loading && !error) {
+        <div class="tools">
+          <button type="button" class="tool" [class.on]="measureMode" (click)="toggleMeasure()"
+            title="Measure distance between two points">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 17.25 17.25 3 21 6.75 6.75 21 3 17.25Zm3.4-3.4 1.1-1.1-2-2 1-1 2 2 1.1-1.1-2-2 1-1 2 2 1.1-1.1-2-2 1-1 2 2 1.4-1.4-3.75-3.75L4.6 16.1l1.8 1.75Z"/></svg>
+            <span>Measure</span>
+          </button>
+          <button type="button" class="tool" [class.on]="showDimensions" (click)="toggleDimensions()"
+            title="Show bounding-box dimensions of the selected part">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 20V8h2v4h2V8h2v4h2V8h2v4h2V8h2v12H4Zm0-14V4h16v2H4Z"/></svg>
+            <span>Dimensions</span>
+          </button>
+          @if (hasMeasurements()) {
+            <button type="button" class="tool" (click)="clearMeasurements()" title="Clear all measurements">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z"/></svg>
+              <span>Clear</span>
+            </button>
+          }
+          <button type="button" class="tool" (click)="resetCamera()" title="Reset the camera view">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8Z"/></svg>
+            <span>Reset</span>
+          </button>
+        </div>
+        @if (measureMode || measureHint) {
+          <div class="measure-readout">{{ measureHint || 'Click two points to measure' }}</div>
+        }
+        @if (!calibrated && (measureMode || showDimensions)) {
+          <div class="measure-warn" title="No reference length was found to calibrate the model's unit scale. Distances assume metres and may be approximate.">~ approx — uncalibrated</div>
+        }
+      }
     </div>
   `,
   styles: [`
@@ -83,11 +121,52 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
       font-size: 16px; font-weight: 700;
       color: var(--clay-primary, #6b5ce7);
     }
+
+    /* CSS2D measurement labels overlay — never intercepts pointer events.
+       Labels are created by CSS2DRenderer outside the template, so ::ng-deep is
+       required to pierce view encapsulation (scoped under :host). */
+    .label-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4; }
+    :host ::ng-deep .dim-label {
+      background: rgba(28,32,46,0.92); color: #fff; font-size: 12px; font-weight: 600;
+      padding: 2px 7px; border-radius: 6px; white-space: nowrap; letter-spacing: .01em;
+      font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    :host ::ng-deep .dim-label.axis-x { background: rgba(198,40,40,0.94); }
+    :host ::ng-deep .dim-label.axis-y { background: rgba(46,125,50,0.94); }
+    :host ::ng-deep .dim-label.axis-z { background: rgba(21,101,192,0.94); }
+
+    /* Floating tool buttons (top-right) — opt-in via [showTools]. */
+    .tools {
+      position: absolute; top: 10px; right: 10px; z-index: 6;
+      display: flex; flex-direction: column; gap: 6px; align-items: stretch;
+    }
+    .tool {
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+      background: rgba(255,255,255,0.92); color: var(--clay-text, #3d3229);
+      border: 1px solid var(--clay-border, #e0d8cc); border-radius: 8px;
+      padding: 6px 10px; font-size: 12px; font-weight: 600; font-family: inherit;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1); transition: background .12s, color .12s, border-color .12s;
+    }
+    .tool svg { flex-shrink: 0; }
+    .tool:hover { border-color: var(--clay-primary, #6b5ce7); color: var(--clay-primary, #6b5ce7); }
+    .tool.on { background: var(--clay-primary, #6b5ce7); color: #fff; border-color: var(--clay-primary, #6b5ce7); }
+    .measure-readout {
+      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 6;
+      background: rgba(28,32,46,0.92); color: #fff; font-size: 12px; font-weight: 600;
+      padding: 5px 12px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); pointer-events: none;
+    }
+    .measure-warn {
+      position: absolute; bottom: 10px; right: 10px; z-index: 6;
+      background: rgba(245,166,35,0.95); color: #3d2c00; font-size: 11px; font-weight: 700;
+      padding: 4px 9px; border-radius: 6px; pointer-events: none;
+    }
   `]
 })
 export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('canvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('container') containerRef!: ElementRef<HTMLDivElement>;
+  @ViewChild('labelLayer') labelLayerRef!: ElementRef<HTMLDivElement>;
 
   @Input() modelUrl: string | null = null;
   @Input() qualityData: { meshName: string; status: 'pass' | 'fail' | 'warning' }[] = [];
@@ -106,15 +185,34 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     this._highlight = new Set(names || []);
     this.applyHighlight();
     if (this.autoFocus && this.controls) this.focusOnHighlight();
+    if (this.showDimensions) this.rebuildDimensions();
   }
 
   /** Fly the camera to frame the highlighted meshes (zoom-to-selection), so tiny
    *  parts are findable. Opt-in — other viewer usages keep a fixed camera. */
   @Input() autoFocus = false;
 
+  /** Show the floating measurement/dimension toolbar (Measure / Dimensions / Clear / Reset).
+   *  Opt-in so existing read-only viewer embeds are unchanged. */
+  @Input() showTools = false;
+
+  /** Known true lengths (mm) for some meshes, used to auto-calibrate the model's
+   *  unit scale so measurements read in real mm. The GLB carries the IFC's native
+   *  units (m/mm/in vary per file), so we derive mm-per-unit from these. */
+  @Input() set referenceLengths(refs: ViewerReferenceLength[]) {
+    this._refLengths = refs || [];
+    if (this.currentModel) this.calibrate();
+  }
+
   loading = false;
   loadProgress = 0;
   error: string | null = null;
+
+  // ── Measurement state (template-bound) ──
+  measureMode = false;
+  showDimensions = false;
+  measureHint = '';
+  calibrated = false;
 
   private _renderMode: 'solid' | 'xray' = 'solid';
   private renderer!: THREE.WebGLRenderer;
@@ -137,10 +235,30 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     start: number; duration: number;
   } | null = null;
 
+  // ── Measurement / dimension internals ──
+  private labelRenderer!: CSS2DRenderer;
+  /** Millimetres per *world* unit, from calibration. We calibrate directly in the
+   *  scaled world space that raycasts/bounding-boxes report in, so the model's
+   *  fit-scale and any baked GLB node scale are absorbed automatically (NaN until
+   *  calibrated → measurements show "—"). */
+  private mmPerWorldUnit = NaN;
+  private _refLengths: ViewerReferenceLength[] = [];
+  /** World-space group holding measurement markers/lines/labels (no model transform). */
+  private measureGroup = new THREE.Group();
+  /** World-space group holding the bounding-box dimension visuals. */
+  private dimGroup = new THREE.Group();
+  /** Points picked so far for the in-progress point-to-point measurement. */
+  private measurePts: THREE.Vector3[] = [];
+  /** Marker for a half-finished (1-point) measurement, so it can be undone on exit. */
+  private pendingMarker: THREE.Object3D | null = null;
+
   ngAfterViewInit(): void {
     this.initScene();
+    // Defer the first load to a fresh task: mutating view-bound state (loading)
+    // synchronously inside ngAfterViewInit would trip NG0100 in dev.
     if (this.modelUrl) {
-      this.loadModel(this.modelUrl);
+      const url = this.modelUrl;
+      queueMicrotask(() => { if (this.renderer) this.loadModel(url); });
     }
   }
 
@@ -156,6 +274,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   ngOnDestroy(): void {
     cancelAnimationFrame(this.animationId);
     this.resizeObserver?.disconnect();
+    this.clearMeasurements();
     this.controls?.dispose();
     this.renderer?.dispose();
   }
@@ -170,6 +289,10 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.shadowMap.enabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
+
+    // CSS2D label renderer for crisp measurement labels (overlays the canvas).
+    this.labelRenderer = new CSS2DRenderer({ element: this.labelLayerRef.nativeElement });
+    this.labelRenderer.setSize(container.clientWidth, container.clientHeight);
 
     // Scene — sky-gradient dome (a real skybox: blue above, soft ground below
     // the horizon) with the horizon color as the clear-color fallback.
@@ -209,6 +332,11 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     const grid = new THREE.GridHelper(10, 20, 0xb9cbdc, 0xd9e5f0);
     this.scene.add(grid);
 
+    // Measurement overlays live in world space (no model transform), so the
+    // raycast world-points they're built from line up exactly.
+    this.scene.add(this.measureGroup);
+    this.scene.add(this.dimGroup);
+
     // Click detection for mesh selection
     canvas.addEventListener('click', (event) => this.onCanvasClick(event, canvas));
 
@@ -227,6 +355,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.labelRenderer?.setSize(w, h);
   }
 
   private animate(): void {
@@ -241,6 +370,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    this.labelRenderer?.render(this.scene, this.camera);
   }
 
   /** Zoom-to-selection: frame the highlighted meshes' bounding sphere, keeping
@@ -281,8 +411,9 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     this.loadProgress = 0;
     this.error = null;
 
-    // Remove existing model
+    // Remove existing model + any measurements from the previous model
     this.camAnim = null;
+    this.clearMeasurements();
     if (this.currentModel) {
       this.scene.remove(this.currentModel);
       this.currentModel = null;
@@ -320,10 +451,12 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
 
         this.applyQualityOverlay();
         this.applyRenderMode();
+        this.calibrate();
         if (this._highlight.size > 0) {
           this.applyHighlight();
           if (this.autoFocus) this.focusOnHighlight();
         }
+        if (this.showDimensions) this.rebuildDimensions();
         this.loadProgress = 0;
         this.loading = false;
         this.modelLoaded.emit();
@@ -405,10 +538,79 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     });
 
     const intersects = this.raycaster.intersectObjects(meshes, false);
+
+    // Measure mode: clicks pick world points to measure between (not select).
+    if (this.measureMode) {
+      if (intersects.length > 0) this.addMeasurePoint(intersects[0].point.clone());
+      else this.measureHint = 'Click on the model surface to place a point';
+      return;
+    }
+
     if (intersects.length > 0) {
       const hit = intersects[0].object as THREE.Mesh;
       this.meshClicked.emit(hit.name || 'unnamed');
     }
+  }
+
+  // ── Unit calibration ──────────────────────────────────────────────────────
+  /**
+   * Derive mm-per-WORLD-unit from known part lengths. The GLB is auto-scaled to
+   * fit the view and may carry a baked node scale, so a world unit has no fixed
+   * real size — we recover it by comparing a part's true length_mm against the
+   * world length of its longest geometry edge (geometry edge × the mesh's world
+   * scale). Only clearly linear members (length ≫ section) are trusted, since a
+   * plate's longest edge isn't its "length"; the median is the calibration.
+   */
+  private calibrate(): void {
+    this.calibrated = false;
+    if (!this.currentModel || !this._refLengths.length) return;
+
+    const byName = new Map<string, number>();
+    for (const r of this._refLengths) {
+      if (r?.meshName && r.lengthMm > 0) byName.set(r.meshName, r.lengthMm);
+    }
+    if (!byName.size) return;
+
+    this.currentModel.updateWorldMatrix(true, true);
+    const ratios: number[] = [];
+    const size = new THREE.Vector3();
+    const wscale = new THREE.Vector3();
+    this.currentModel.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const lengthMm = byName.get(child.name);
+      if (lengthMm == null) return;
+      const geom = child.geometry;
+      if (!geom.boundingBox) geom.computeBoundingBox();
+      geom.boundingBox!.getSize(size);
+      const edges = [size.x, size.y, size.z].sort((a, b) => b - a); // desc
+      const longest = edges[0];
+      if (longest <= 1e-9) return;
+      // Only trust clearly linear members (length ≫ section) for calibration.
+      if (longest < edges[1] * 3) return;
+      // Geometry-local edge → world length via the mesh's (uniform) world scale.
+      child.getWorldScale(wscale);
+      const s = Math.cbrt(Math.abs(wscale.x * wscale.y * wscale.z)) || 1;
+      const worldLongest = longest * s;
+      if (worldLongest <= 1e-9) return;
+      ratios.push(lengthMm / worldLongest); // mm per world unit
+    });
+
+    if (!ratios.length) return;
+    ratios.sort((a, b) => a - b);
+    this.mmPerWorldUnit = ratios[Math.floor(ratios.length / 2)];
+    this.calibrated = true;
+  }
+
+  /** World-space distance → real millimetres (NaN until calibrated). */
+  private worldToMm(worldDist: number): number {
+    return worldDist * this.mmPerWorldUnit;
+  }
+
+  /** Human-readable length: mm under 1 m, else m with 2 decimals. */
+  private fmtLen(mm: number): string {
+    if (!isFinite(mm)) return '—';
+    if (mm >= 1000) return `${(mm / 1000).toFixed(mm >= 10000 ? 1 : 2)} m`;
+    return `${Math.round(mm)} mm`;
   }
 
   private applyRenderMode(): void {
@@ -535,6 +737,131 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
       if (child instanceof THREE.Mesh && child.name) names.push(child.name);
     });
     return names;
+  }
+
+  // ── Measurement tools (toolbar) ────────────────────────────────────────────
+  hasMeasurements(): boolean { return this.measureGroup.children.length > 0; }
+
+  toggleMeasure(): void {
+    this.measureMode = !this.measureMode;
+    if (this.measureMode) {
+      this.measureHint = 'Click two points on the model to measure';
+    } else {
+      // Abandon any half-finished measurement (single placed point).
+      if (this.pendingMarker) { this.measureGroup.remove(this.pendingMarker); this.pendingMarker = null; }
+      this.measurePts = [];
+      this.measureHint = '';
+    }
+  }
+
+  toggleDimensions(): void {
+    this.showDimensions = !this.showDimensions;
+    if (this.showDimensions) this.rebuildDimensions();
+    else this.clearDimensions();
+  }
+
+  /** Clear all point-to-point measurements (toolbar Clear / model reload / destroy). */
+  clearMeasurements(): void {
+    this.disposeGroup(this.measureGroup);
+    this.measurePts = [];
+    this.pendingMarker = null;
+    if (this.measureMode) this.measureHint = 'Click two points on the model to measure';
+  }
+
+  private addMeasurePoint(p: THREE.Vector3): void {
+    const marker = this.makeMarker(p);
+    this.measureGroup.add(marker);
+    this.measurePts.push(p);
+
+    if (this.measurePts.length === 1) {
+      this.pendingMarker = marker;
+      this.measureHint = 'Click the second point';
+      return;
+    }
+
+    // Second point — commit the segment: connecting line + distance label.
+    const [a, b] = this.measurePts;
+    const lineGeom = new THREE.BufferGeometry().setFromPoints([a, b]);
+    const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({ color: 0xff6a00, depthTest: false }));
+    line.renderOrder = 999;
+    this.measureGroup.add(line);
+
+    const mm = this.worldToMm(a.distanceTo(b));
+    const label = this.makeLabel(this.fmtLen(mm), a.clone().lerp(b, 0.5));
+    this.measureGroup.add(label);
+
+    this.measurePts = [];
+    this.pendingMarker = null;
+    this.measureHint = `Distance: ${this.fmtLen(mm)} — click to measure again`;
+  }
+
+  // ── Bounding-box dimensions of the current selection ───────────────────────
+  /** Draw an L×W×H dimension box around the highlighted meshes (or the whole
+   *  model when nothing is highlighted), labelled in real mm. */
+  private rebuildDimensions(): void {
+    this.clearDimensions();
+    if (!this.currentModel) return;
+
+    const box = new THREE.Box3();
+    let found = false;
+    if (this._highlight.size > 0) {
+      this.currentModel.traverse((c) => {
+        if (c instanceof THREE.Mesh && this._highlight.has(c.name)) { box.expandByObject(c); found = true; }
+      });
+    } else {
+      box.setFromObject(this.currentModel);
+      found = !box.isEmpty();
+    }
+    if (!found || box.isEmpty()) return;
+
+    const helper = new THREE.Box3Helper(box, new THREE.Color(0x2c3142));
+    (helper.material as THREE.LineBasicMaterial).depthTest = false;
+    helper.renderOrder = 998;
+    this.dimGroup.add(helper);
+
+    const size = box.getSize(new THREE.Vector3());
+    const min = box.min, max = box.max;
+    const cx = (min.x + max.x) / 2, cy = (min.y + max.y) / 2, cz = (min.z + max.z) / 2;
+    const tiny = 1e-4;
+    // One label per axis, placed at the midpoint of a representative box edge.
+    if (size.x > tiny) this.dimGroup.add(this.makeLabel(this.fmtLen(this.worldToMm(size.x)), new THREE.Vector3(cx, min.y, min.z), 'axis-x'));
+    if (size.y > tiny) this.dimGroup.add(this.makeLabel(this.fmtLen(this.worldToMm(size.y)), new THREE.Vector3(min.x, cy, min.z), 'axis-y'));
+    if (size.z > tiny) this.dimGroup.add(this.makeLabel(this.fmtLen(this.worldToMm(size.z)), new THREE.Vector3(min.x, min.y, cz), 'axis-z'));
+  }
+
+  // ── Shared helpers ─────────────────────────────────────────────────────────
+  private makeMarker(p: THREE.Vector3): THREE.Mesh {
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.02, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xff6a00, depthTest: false }),
+    );
+    m.position.copy(p);
+    m.renderOrder = 1000;
+    return m;
+  }
+
+  private makeLabel(text: string, pos: THREE.Vector3, cls = ''): CSS2DObject {
+    const div = document.createElement('div');
+    div.className = cls ? `dim-label ${cls}` : 'dim-label';
+    div.textContent = text;
+    const obj = new CSS2DObject(div);
+    obj.position.copy(pos);
+    return obj;
+  }
+
+  private clearDimensions(): void { this.disposeGroup(this.dimGroup); }
+
+  /** Remove + dispose every child of a measurement overlay group (frees GPU
+   *  buffers; CSS2DObject removal also detaches its DOM label). */
+  private disposeGroup(group: THREE.Group): void {
+    for (const child of group.children) {
+      const o = child as THREE.Object3D & { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[] };
+      o.geometry?.dispose?.();
+      const mat = o.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat?.dispose?.();
+    }
+    group.clear();
   }
 
   /** Capture a square PNG thumbnail of the current view (client-side, no server GL). */

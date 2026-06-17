@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProjectQualityService } from './project-quality.service.js';
-import { RecordNodeQualityDto, RaiseNodeNcrDto } from './dto/node-quality.dto.js';
+import { RecordNodeQualityDto } from './dto/node-quality.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard.js';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator.js';
@@ -32,12 +32,5 @@ export class ProjectQualityController {
   @ApiOperation({ summary: 'Record a quality check on a node (auto-fails out-of-tolerance measurements)' })
   record(@Param('id') id: string, @Param('nodeId') nodeId: string, @Body() dto: RecordNodeQualityDto) {
     return this.quality.recordNodeQuality(id, nodeId, dto);
-  }
-
-  @Post(':id/nodes/:nodeId/ncr')
-  @RequirePermissions('ncr.create')
-  @ApiOperation({ summary: 'Raise an NCR pre-filled from a node (links node/project/work-order/quality record)' })
-  raiseNcr(@Param('id') id: string, @Param('nodeId') nodeId: string, @Body() dto: RaiseNodeNcrDto) {
-    return this.quality.raiseNodeNcr(id, nodeId, dto);
   }
 }

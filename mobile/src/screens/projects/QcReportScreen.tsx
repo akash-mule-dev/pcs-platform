@@ -14,8 +14,9 @@ type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'QcReport'>;
 
 /**
  * In-app QC report screen. Renders the web /qr/:id fill page (Form.io report,
- * autosave, validation, and the Raise-NCR button) inside a WebView so inspectors
- * never leave the app for the device browser. The page reads `?token=<jwt>` into
+ * autosave, validation, and — for NCR-type reports — the Resolve/Reopen control)
+ * inside a WebView so inspectors never leave the app for the device browser. The
+ * page reads `?token=<jwt>` into
  * localStorage for the API interceptor, so DOM storage must stay enabled.
  */
 export function QcReportScreen() {

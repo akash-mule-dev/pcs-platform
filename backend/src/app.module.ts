@@ -34,7 +34,6 @@ import { WorkforceModule } from './workforce/workforce.module.js';
 import { CostingModule } from './costing/costing.module.js';
 import { TraceabilityModule } from './traceability/traceability.module.js';
 import { TemplatesModule } from './templates/templates.module.js';
-import { QualityNcrModule } from './quality-ncr/quality-ncr.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
 import { SpcModule } from './spc/spc.module.js';
@@ -89,7 +88,6 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
     CostingModule,
     TraceabilityModule,
     TemplatesModule,
-    QualityNcrModule,
     SchedulingModule,
     RbacModule,
     LibraryModule,

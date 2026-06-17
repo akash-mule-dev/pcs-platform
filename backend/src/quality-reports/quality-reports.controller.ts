@@ -53,6 +53,20 @@ export class QualityReportsController {
     return this.service.update(id, body ?? {});
   }
 
+  @Post(':id/resolve')
+  @RequirePermissions('quality-reports.update')
+  @ApiOperation({ summary: 'Resolve (close) an NCR report — lifts its shipping + quality-stage gates' })
+  resolve(@Param('id') id: string) {
+    return this.service.resolve(id);
+  }
+
+  @Post(':id/reopen')
+  @RequirePermissions('quality-reports.update')
+  @ApiOperation({ summary: 'Reopen a resolved NCR report (re-blocks its gates)' })
+  reopen(@Param('id') id: string) {
+    return this.service.reopen(id);
+  }
+
   @Delete(':id')
   @RequirePermissions('quality-reports.delete')
   @ApiOperation({ summary: 'Delete a report' })

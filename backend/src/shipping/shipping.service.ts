@@ -1,13 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { Shipment, ShipmentStatus } from './shipment.entity.js';
 import { ShipmentItem } from './shipment-item.entity.js';
 import { AssemblyNode } from '../projects/assembly-node.entity.js';
 import { ProductionOrder } from '../projects/production-order.entity.js';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from '../work-orders/work-order-stage.entity.js';
-import { Ncr, NcrStatus } from '../quality-ncr/entities/ncr.entity.js';
+import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { TenantScopedService } from '../common/tenant/tenant-scoped.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { AddShipmentItemDto } from './dto/add-shipment-item.dto.js';
@@ -37,7 +37,7 @@ export class ShippingService extends TenantScopedService<Shipment> {
     @InjectRepository(ProductionOrder) private readonly orderRepo: Repository<ProductionOrder>,
     @InjectRepository(WorkOrder) private readonly woRepo: Repository<WorkOrder>,
     @InjectRepository(WorkOrderStage) private readonly wosRepo: Repository<WorkOrderStage>,
-    @InjectRepository(Ncr) private readonly ncrRepo: Repository<Ncr>,
+    @InjectRepository(QualityReport) private readonly reportRepo: Repository<QualityReport>,
   ) {
     super(repo);
   }
@@ -139,12 +139,12 @@ export class ShippingService extends TenantScopedService<Shipment> {
       throw new BadRequestException(`${label} cannot be shipped: its production stages are not complete yet.`);
     }
 
-    const openNcr = await this.ncrRepo.count({
-      where: { assemblyNodeId: node.id, organizationId, status: Not(In([NcrStatus.CLOSED, NcrStatus.CANCELLED])) },
+    const openNcr = await this.reportRepo.count({
+      where: { assemblyNodeId: node.id, organizationId, templateType: 'ncr', resolvedAt: IsNull() },
     });
     if (openNcr > 0) {
       const plural = openNcr === 1 ? '' : 's';
-      throw new BadRequestException(`${label} has ${openNcr} open NCR${plural} — close or disposition before shipping.`);
+      throw new BadRequestException(`${label} has ${openNcr} open NCR report${plural} — resolve before shipping.`);
     }
 
     // Quantity guard: shipped so far + already planned on this order's open loads + this add ≤ completed units.
@@ -342,8 +342,8 @@ export class ShippingService extends TenantScopedService<Shipment> {
       [org, productionOrderId, ids],
     );
     const ncrRows: { nid: string; cnt: string }[] = await this.repo.query(
-      `SELECT assembly_node_id AS nid, COUNT(*)::int AS cnt FROM ncrs
-        WHERE organization_id = $1 AND assembly_node_id = ANY($2) AND status NOT IN ('closed','cancelled')
+      `SELECT assembly_node_id AS nid, COUNT(*)::int AS cnt FROM quality_reports
+        WHERE organization_id = $1 AND assembly_node_id = ANY($2) AND template_type = 'ncr' AND resolved_at IS NULL
         GROUP BY assembly_node_id`,
       [org, ids],
     );

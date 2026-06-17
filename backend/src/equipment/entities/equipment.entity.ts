@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 import { TenantOwnedEntity } from '../../common/tenant/tenant-owned.entity.js';
+import { numericTransformer } from '../../common/transformers/numeric.transformer.js';
 
 export enum EquipmentType {
   LASER = 'laser', PRESS_BRAKE = 'press_brake', CNC = 'cnc', WELDER = 'welder',
@@ -18,6 +19,8 @@ export class Equipment extends TenantOwnedEntity {
   @Column({ name: 'line_id', type: 'uuid', nullable: true }) lineId: string | null;
   @Column({ name: 'station_id', type: 'uuid', nullable: true }) stationId: string | null;
   @Column({ type: 'enum', enum: EquipmentStatus, default: EquipmentStatus.IDLE }) status: EquipmentStatus;
+  /** Costing: per-asset machine-hour rate (currency/hour) — asset analytics + a hint for setting the station's machine_rate (costing charges the station rate, not this). */
+  @Column({ name: 'hourly_rate', type: 'numeric', precision: 12, scale: 2, nullable: true, transformer: numericTransformer }) hourlyRate: number | null;
   @Column({ name: 'is_active', type: 'boolean', default: true }) isActive: boolean;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;

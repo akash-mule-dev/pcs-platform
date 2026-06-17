@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsUUID, IsNumber, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { EquipmentType, EquipmentStatus } from '../entities/equipment.entity.js';
 import { DowntimeReason } from '../entities/downtime-event.entity.js';
@@ -9,6 +9,8 @@ export class CreateEquipmentDto {
   @ApiPropertyOptional({ enum: EquipmentType }) @IsOptional() @IsEnum(EquipmentType) type?: EquipmentType;
   @ApiPropertyOptional() @IsOptional() @IsUUID() lineId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() stationId?: string;
+  @ApiPropertyOptional({ description: 'Costing: per-asset machine-hour rate (currency/hour).' })
+  @IsOptional() @IsNumber() @Min(0) hourlyRate?: number;
 }
 export class UpdateEquipmentDto extends PartialType(CreateEquipmentDto) {}
 

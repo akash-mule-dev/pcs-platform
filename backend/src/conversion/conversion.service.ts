@@ -1,12 +1,12 @@
-import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as unzipper from 'unzipper';
-import { ConversionJob } from './conversion-job.entity.js';
+import { ConversionJob, ConversionStatus } from './conversion-job.entity.js';
 import { CreateConversionDto } from './dto/create-conversion.dto.js';
 import { isSupportedInput, extOf } from './converters/converter.registry.js';
 import { CONVERSION_QUEUE } from './queue/conversion-queue.interface.js';
@@ -18,13 +18,55 @@ import { TenantContext } from '../common/tenant/tenant-context.js';
 
 const CAD_EXTS = ['step', 'stp', 'iges', 'igs', 'ifc'];
 
+/** Conversion-job states that have not reached a terminal outcome yet. */
+const NON_TERMINAL_STATUSES: ConversionStatus[] = ['pending', 'converting', 'optimizing', 'uploading'];
+
 @Injectable()
-export class ConversionService {
+export class ConversionService implements OnModuleInit {
+  private readonly logger = new Logger(ConversionService.name);
+
   constructor(
     @InjectRepository(ConversionJob) private readonly repo: Repository<ConversionJob>,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(CONVERSION_QUEUE) private readonly queue: ConversionQueue,
   ) {}
+
+  /**
+   * Restart recovery: the inline queue driver runs jobs in-process via
+   * `setImmediate`, so any job that was mid-flight when the API died is lost —
+   * its row is left in a non-terminal state forever (the bug that stranded a
+   * package at "Converting 3D model" for days). On boot we re-queue every such
+   * job from its durably stored source so it completes and its mirrored import
+   * row finishes too. Skipped for BullMQ: Redis already persists the queue and
+   * recovers stalled jobs, and a separate worker may be actively processing
+   * (re-queueing here would fight it). Single-API-instance assumption, same as
+   * the import-pipeline recovery sweep.
+   */
+  async onModuleInit(): Promise<void> {
+    if (!this.isInlineDriver()) return;
+    try {
+      const stuck = await this.repo.find({ where: { status: In(NON_TERMINAL_STATUSES) } });
+      const recoverable = stuck.filter((j) => !!j.sourceKey);
+      if (!recoverable.length) return;
+      for (const job of recoverable) {
+        job.status = 'pending';
+        job.progress = 0;
+        job.error = null;
+        job.durationMs = null;
+        await this.repo.save(job);
+        await this.queue.enqueue(job.id);
+      }
+      this.logger.log(`Re-queued ${recoverable.length} interrupted conversion job(s) after restart`);
+    } catch (e) {
+      this.logger.warn(`Conversion recovery sweep failed: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  /** True when running the in-process driver (the one that loses work on restart). */
+  private isInlineDriver(): boolean {
+    const driver = (process.env.CONVERSION_DRIVER || (process.env.REDIS_URL ? 'bullmq' : 'inline')).toLowerCase();
+    return driver === 'inline';
+  }
 
   /**
    * Single-file upload: store the source, persist a job, enqueue, return.
