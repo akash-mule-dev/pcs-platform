@@ -176,9 +176,9 @@ Copy `backend/.env.example` to `backend/.env` and update the values as needed:
 | `PORT`         | `3000`                       | Backend server port                              |
 | `NODE_ENV`     | `production`                 | Environment mode                                 |
 | `CORS_ORIGINS` | `localhost:4200,8100`        | Allowed CORS origins (comma-separated)           |
-| `STORAGE_TYPE` | `local`                      | File storage backend: `local`, `s3`, or `azure`  |
-| `S3_BUCKET`    | `pcs-models`                 | S3 bucket name (when `STORAGE_TYPE=s3`)          |
-| `S3_REGION`    | `us-east-1`                  | AWS region (when `STORAGE_TYPE=s3`)              |
+| `STORAGE_TYPE` | `vercel-blob`                | File storage backend: `vercel-blob` or `azure`   |
+| `PCS_DEV_BLOB_READ_WRITE_TOKEN` | _(none)_    | Vercel Blob token (when `STORAGE_TYPE=vercel-blob`) |
+| `AZURE_STORAGE_CONNECTION_STRING` | _(none)_  | Azure Blob connection (when `STORAGE_TYPE=azure`) |
 
 > **Tip:** You can also use `DATABASE_URL` as a connection string instead of individual DB variables.
 

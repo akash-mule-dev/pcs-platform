@@ -76,9 +76,9 @@ component passes a structural transpile check.
 
 ## Remaining manual items (cannot be done from here)
 
-- **Rotate the live credentials** in `backend/.env` and `.env.production.local` (real
-  AWS keys + Neon DB password). They are not in git, but the values are real — rotate
-  them and move to a secrets manager.
+- **Rotate the live credentials** in `backend/.env` and `.env.production.local` (Vercel
+  Blob token + Neon DB password). They are not in git, but the values are real — rotate
+  them and move to a secrets manager (Vercel project environment variables).
 - **Generate the baseline migration** against a real/empty Postgres using the
   documented `npm run migration:generate` workflow (no DB/Docker was available in this
   environment to generate and verify it).

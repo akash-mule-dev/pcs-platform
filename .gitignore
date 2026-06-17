@@ -46,7 +46,7 @@ tmp/
 mobile/android/
 mobile/ios/
 
-# Uploads (stored in S3 in production)
+# Uploads (stored in Vercel Blob in production)
 backend/uploads/
 
 # Test artifacts

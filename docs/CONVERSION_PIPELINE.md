@@ -30,7 +30,7 @@ The backend already had a partial, fragmented pipeline:
 | STEP / IGES → GLB | `cad-conversion/scripts/convert-cad.mjs` | OpenCASCADE WASM, spawned child, 2-min cap |
 | IFC → GLB | `cad-conversion/scripts/convert-ifc.mjs` | web-ifc, spawned child, 5-min cap |
 | GLB/glTF storage | `models/` | stored as-is; `/api/models/:id/file/ar` adds AR tangents (gltf-transform + mikktspace) |
-| Pluggable storage | `storage/` | S3 / Azure / local, selected by `STORAGE_TYPE` |
+| Pluggable storage | `storage/` | Vercel Blob / Azure, selected by `STORAGE_TYPE` |
 | Real-time progress | `websocket/events.gateway.ts` | `coordination:progress` precedent |
 
 **Gaps this pipeline closes**
@@ -85,7 +85,7 @@ not half-implemented.
 ```mermaid
 flowchart LR
     U[Upload<br/>any supported format] --> API[/POST /api/conversion/convert/]
-    API -->|store source| S[(Object storage<br/>S3/Azure/local)]
+    API -->|store source| S[(Object storage<br/>Vercel Blob/Azure)]
     API -->|persist job + enqueue jobId| Q{{Conversion queue}}
     API -->|202 jobId| U
 

@@ -153,7 +153,7 @@ Edit the environment config before building:
 
 ```typescript
 // src/config/environment.ts
-const PROD_API_URL = 'https://api.spadebloom.com/api';  // ← Change this
+const PROD_API_URL = 'https://api.fabrixr.com/api';  // ← Change this
 ```
 
 Then rebuild with the appropriate command above.

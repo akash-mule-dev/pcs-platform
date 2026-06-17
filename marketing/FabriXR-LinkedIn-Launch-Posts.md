@@ -1,4 +1,4 @@
-# SpadeBloom — LinkedIn Launch Posts
+# FabriXR — LinkedIn Launch Posts
 
 Five ready-to-post pieces, in suggested posting order over ~2 weeks. Written in a founder's plain voice — honest, specific, no hype. Edit the bracketed bits, keep the line breaks (they matter on LinkedIn), and lead with the hook (only the first ~2 lines show before "…see more").
 
@@ -13,7 +13,7 @@ We kept hearing the same thing from fab shops:
 
 "I can't tell who's working on what until the end of the shift — and by then it's too late to fix anything."
 
-So we built SpadeBloom.
+So we built FabriXR.
 
 It's production control for metal-fabrication shops. Three things, done well:
 
@@ -27,7 +27,7 @@ It's not everything (materials and scheduling are on the roadmap). But for the q
 
 If you run a fab floor, I'd genuinely love to show you. Comment "demo" or DM me.
 
-See your floor live → demo.spadebloom.com
+See your floor live → demo.fabrixr.com
 
 #manufacturing #metalfabrication #leanmanufacturing #shopfloor #SaaS
 
@@ -40,7 +40,7 @@ Most shops still check a welded assembly against a 2D drawing on a clipboard.
 
 A flat drawing can't really tell you if the built part matches intent. So defects get caught late, recorded inconsistently, and the same mistake quietly repeats.
 
-Here's the part of SpadeBloom I'm most proud of:
+Here's the part of FabriXR I'm most proud of:
 
 The operator opens the actual 3D model — on a tablet, or in AR right at the station — and inspects the real assembly against it. They pin each defect to the exact spot on the geometry: type, severity, measurement, tolerance. It's signed off, and recurring issues show up as a pattern instead of disappearing into a binder.
 
@@ -48,7 +48,7 @@ Fewer escapes. Less rework. A quality record tied to the real part.
 
 (Deeper scan-to-model comparison is what we're building next.)
 
-Curious what this looks like on your parts? → demo.spadebloom.com
+Curious what this looks like on your parts? → demo.fabrixr.com
 
 #qualitycontrol #metalfabrication #AR #manufacturing #welding
 
@@ -69,7 +69,7 @@ What a floor actually needs first is simpler: a live answer to "who's on what, a
 
 Get that, and costing, quoting and scheduling all get better — because they're finally built on real numbers.
 
-That's the gap we built SpadeBloom for. Happy to compare notes if you're wrestling with this.
+That's the gap we built FabriXR for. Happy to compare notes if you're wrestling with this.
 
 #manufacturing #operations #leanmanufacturing #digitaltransformation #SMB
 
@@ -86,9 +86,9 @@ What does "run your floor on live data" actually look like?
 → labor captured with one tap per stage
 → an operator inspecting an assembly in 3D and AR, pinning a defect right on the part
 
-This is SpadeBloom — production control + 3D/AR quality for fab shops.
+This is FabriXR — production control + 3D/AR quality for fab shops.
 
-If even one part of this would save your supervisors a lap around the floor, let's talk → demo.spadebloom.com
+If even one part of this would save your supervisors a lap around the floor, let's talk → demo.fabrixr.com
 
 #manufacturing #metalfabrication #productdemo #shopfloor
 
@@ -101,9 +101,9 @@ Spreadsheets tell you what happened.
 
 Your floor needs to tell you what's happening.
 
-SpadeBloom: who's building what, against target, right now — plus 3D/AR quality, on web and the operator's phone.
+FabriXR: who's building what, against target, right now — plus 3D/AR quality, on web and the operator's phone.
 
-Live in weeks. → demo.spadebloom.com
+Live in weeks. → demo.fabrixr.com
 
 #manufacturing #metalfabrication #leanmanufacturing
 

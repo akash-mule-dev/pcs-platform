@@ -58,7 +58,7 @@ backend/src/
   processes/ stages/       # a Process is an ordered list of Stages (the routing)
   work-orders/             # WorkOrder + WorkOrderStage — the stage-execution engine
   lines/ stations/ workforce/ equipment/ scheduling/ time-tracking/ traceability/ quality-* /
-  storage/                 # pluggable StorageProvider (local | s3 | azure), STORAGE_TYPE env
+  storage/                 # pluggable StorageProvider (vercel-blob | azure), STORAGE_TYPE env
   cad-conversion/          # spawns convert-*.mjs + extract-ifc-structure.mjs (web-ifc / assimp)
   conversion/              # async 3D→GLB pipeline: ConversionJob + queue (inline|BullMQ) + processor
   models/                  # Model3D (GLB) records + file streaming endpoints

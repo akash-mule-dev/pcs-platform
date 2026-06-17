@@ -1,6 +1,6 @@
-# SpadeBloom — 90-Second Demo Video Script
+# FabriXR — 90-Second Demo Video Script
 
-**Goal:** Show, in 90 seconds, that SpadeBloom makes the floor visible in real time, captures labor automatically, and — the hero moment — lets operators inspect assemblies in 3D/AR. End on a clear demo CTA.
+**Goal:** Show, in 90 seconds, that FabriXR makes the floor visible in real time, captures labor automatically, and — the hero moment — lets operators inspect assemblies in 3D/AR. End on a clear demo CTA.
 
 **Audience:** owners, plant/ops managers and QA leads at metal-fabrication shops.
 **Tone:** confident, plain-spoken, "made by people who've stood on a floor." Not salesy.
@@ -18,12 +18,12 @@
 | Time | On screen (visual) | On-screen text | Voiceover |
 |---|---|---|---|
 | **0:00–0:07** | B-roll: a busy fab shop — sparks, a press brake, a clipboard with a paper traveler; quick cut to a manager squinting at a spreadsheet. | *"Sixty jobs. One whiteboard."* | "On a busy floor, the hardest question is the simplest one: who's building what, right now — and is it right?" |
-| **0:07–0:14** | Hard cut to the SpadeBloom dashboard fading in, clean and live. KPI cards count up (248 work orders, 31 operators, 87% labor efficiency). | **SpadeBloom** · Production Control | "SpadeBloom answers it. One live view of your whole floor." |
+| **0:07–0:14** | Hard cut to the FabriXR dashboard fading in, clean and live. KPI cards count up (248 work orders, 31 operators, 87% labor efficiency). | **FabriXR** · Production Control | "FabriXR answers it. One live view of your whole floor." |
 | **0:14–0:24** | Cursor hovers the **Live Stage Status** board: rows of operator · order · stage · elapsed · station updating. A new row appears with no refresh. | *"Live Stage Status — no refresh."* | "Every operator, every order, every stage — against target, updating in real time on the wall and on the phone." |
 | **0:24–0:36** | Cut to the operator app on a phone: a worker taps a work order, taps **Clock In** on the Weld stage; a timer starts. Subtle highlight on idle/break/rework. | *"Labor that tracks itself."* | "Operators clock into a stage with one tap — so labor time is captured per stage, automatically. No paper travelers, no end-of-shift guesswork." |
-| **0:36–1:04** | **HERO MOMENT.** Operator opens the 3D model of the assembly on a tablet. Slow rotate. They tap **AR mode** — the model overlays the real weldment at the station. They tap the part: a red pin drops with "weld porosity — high"; an amber pin shows "gap 2.1mm > 1.5mm"; a green check signs off a passed feature. Camera pushes in on the pinned geometry. | *"Inspect in 3D. Flag defects in AR."* → *"Defects pinned to the geometry."* | "Here's what sets SpadeBloom apart. Instead of checking a weld against a 2D drawing, your operator inspects the built assembly against the actual 3D model — in AR, right at the station. Every defect is pinned to the geometry, with severity, measurements and tolerances — and signed off. The same mistakes stop hiding in a binder." |
+| **0:36–1:04** | **HERO MOMENT.** Operator opens the 3D model of the assembly on a tablet. Slow rotate. They tap **AR mode** — the model overlays the real weldment at the station. They tap the part: a red pin drops with "weld porosity — high"; an amber pin shows "gap 2.1mm > 1.5mm"; a green check signs off a passed feature. Camera pushes in on the pinned geometry. | *"Inspect in 3D. Flag defects in AR."* → *"Defects pinned to the geometry."* | "Here's what sets FabriXR apart. Instead of checking a weld against a 2D drawing, your operator inspects the built assembly against the actual 3D model — in AR, right at the station. Every defect is pinned to the geometry, with severity, measurements and tolerances — and signed off. The same mistakes stop hiding in a binder." |
 | **1:04–1:16** | Cut back to the dashboard: the inspection result and the labor time flow in; a small defect-pattern chart ticks up; manager nods. | *"It all flows back — live."* | "And it all flows straight back to the floor view — labor, status and quality, in one place, the moment it happens." |
-| **1:16–1:30** | SpadeBloom wordmark on navy. Rocket/▶ accent. Big CTA. Web + phone shown side by side. | **See your floor live.** / Book a demo · **demo.spadebloom.com** | "SpadeBloom. Real-time production control and 3D/AR quality — live in weeks, not quarters. Book a demo and we'll show you your shop." |
+| **1:16–1:30** | FabriXR wordmark on navy. Rocket/▶ accent. Big CTA. Web + phone shown side by side. | **See your floor live.** / Book a demo · **demo.fabrixr.com** | "FabriXR. Real-time production control and 3D/AR quality — live in weeks, not quarters. Book a demo and we'll show you your shop." |
 
 ---
 
@@ -46,4 +46,4 @@
 3. "Labor captured per stage. Automatically."
 4. "Inspect assemblies in 3D — flag defects in AR."
 5. "Quality, labor and status — in one place."
-6. "See your floor live → demo.spadebloom.com"
+6. "See your floor live → demo.fabrixr.com"

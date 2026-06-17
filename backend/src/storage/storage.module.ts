@@ -1,6 +1,5 @@
 import { Module, Global, Logger } from '@nestjs/common';
 import { STORAGE_PROVIDER } from './storage.interface.js';
-import { S3StorageProvider } from './providers/s3-storage.provider.js';
 import { AzureBlobStorageProvider } from './providers/azure-blob-storage.provider.js';
 import { VercelBlobStorageProvider } from './providers/vercel-blob-storage.provider.js';
 
@@ -15,9 +14,6 @@ function createStorageProvider() {
   const storageType = (process.env.STORAGE_TYPE || 'vercel-blob').toLowerCase();
 
   switch (storageType) {
-    case 's3':
-      logger.log('Using S3 storage provider');
-      return new S3StorageProvider();
     case 'azure':
       logger.log('Using Azure Blob storage provider');
       return new AzureBlobStorageProvider();

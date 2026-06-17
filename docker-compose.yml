@@ -36,15 +36,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
       PORT: 3000
       NODE_ENV: production
-      # Storage: 'local' | 's3' | 'azure'
-      STORAGE_TYPE: ${STORAGE_TYPE:-local}
-      # S3 settings (when STORAGE_TYPE=s3)
-      S3_BUCKET: ${S3_BUCKET:-pcs-models}
-      S3_PREFIX: ${S3_PREFIX:-models/}
-      AWS_REGION: ${AWS_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      # Storage: 'vercel-blob' (default) | 'azure'
+      STORAGE_TYPE: ${STORAGE_TYPE:-vercel-blob}
+      # Vercel Blob settings (when STORAGE_TYPE=vercel-blob)
+      PCS_DEV_BLOB_READ_WRITE_TOKEN: ${PCS_DEV_BLOB_READ_WRITE_TOKEN:-}
+      BLOB_READ_WRITE_TOKEN: ${BLOB_READ_WRITE_TOKEN:-}
       # Azure settings (when STORAGE_TYPE=azure)
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
       AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-pcs-models}

@@ -1,4 +1,4 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://pcsapi.spadebloom.com/api'
+  apiUrl: 'https://pcsapi.fabrixr.com/api'
 };

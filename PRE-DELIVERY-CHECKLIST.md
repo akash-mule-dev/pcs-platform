@@ -44,8 +44,8 @@ git push origin main
 ## 2. Security (blockers for customer delivery)
 
 - [ ] **Rotate the live credentials** in `backend/.env` and `.env.production.local`
-      (AWS access keys + Neon DB password). They are gitignored but real — revoke,
-      reissue, and store in a secrets manager (Render env vars / AWS Secrets Manager).
+      (Vercel Blob token + Neon DB password). They are gitignored but real — revoke,
+      reissue, and store in a secrets manager (Vercel project environment variables).
 - [ ] Set a strong **`JWT_SECRET`** in every deployed environment (app refuses to
       boot in production without it — good).
 - [ ] Remove default seeded passwords; set **`SEED_DEFAULT_PASSWORD`** (or seed real

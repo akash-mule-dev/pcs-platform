@@ -26,13 +26,23 @@ concurrency:
   group: deploy-${{ github.event.inputs.environment || 'dev' }}
   cancel-in-progress: true
 
+# Vercel project credentials live in repo secrets:
+#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
 jobs:
-  build:
-    name: Build Frontend
+  deploy-dev:
+    name: Deploy to Dev
+    if: github.event.inputs.environment == 'dev' || (github.event_name == 'push' && !github.event.inputs.environment)
     runs-on: ubuntu-latest
-    outputs:
-      commit_sha: ${{ steps.info.outputs.commit_sha }}
-      commit_msg: ${{ steps.info.outputs.commit_msg }}
+    environment:
+      name: dev
+      url: https://frontend-git-dev-akash-mule-devs-projects.vercel.app
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -45,58 +55,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
-        working-directory: frontend
+      - name: Install Vercel CLI
+        run: npm i -g vercel
 
-      - name: Stamp build info
-        run: node stamp-build.js
-        working-directory: frontend
-
-      - name: Build for ${{ github.event.inputs.environment || 'dev' }}
-        run: npx ng build --configuration=${{ github.event.inputs.environment || 'dev' }}
-        working-directory: frontend
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-build-${{ github.event.inputs.environment || 'dev' }}
-          path: frontend/dist/frontend/browser/
-          retention-days: 14
-
-  deploy-dev:
-    name: Deploy to Dev
-    needs: build
-    if: github.event.inputs.environment == 'dev' || (github.event_name == 'push' && !github.event.inputs.environment)
-    runs-on: ubuntu-latest
-    environment:
-      name: dev
-      url: http://pcs-frontend-dev-primeterminal.s3-website.ap-south-1.amazonaws.com
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build-dev
-          path: dist/
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
-
-      - name: Deploy to S3 (dev)
+      - name: Deploy to Vercel (preview / dev)
         run: |
-          aws s3 sync dist/ s3://pcs-frontend-dev-primeterminal/ --delete
-          aws s3 cp s3://pcs-frontend-dev-primeterminal/index.html \
-            s3://pcs-frontend-dev-primeterminal/index.html \
-            --metadata-directive REPLACE \
-            --cache-control "no-cache, no-store, must-revalidate" \
-            --content-type "text/html"
+          vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deployment summary
         run: |
@@ -104,41 +71,42 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ needs.build.outputs.commit_sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Message** | ${{ needs.build.outputs.commit_msg }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **URL** | http://pcs-frontend-dev-primeterminal.s3-website.ap-south-1.amazonaws.com |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ steps.info.outputs.commit_sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Message** | ${{ steps.info.outputs.commit_msg }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | https://frontend-git-dev-akash-mule-devs-projects.vercel.app |" >> $GITHUB_STEP_SUMMARY
           echo "| **Time** | $(date -u +'%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
 
   deploy-stage:
     name: Deploy to Stage
-    needs: build
     if: github.event.inputs.environment == 'stage'
     runs-on: ubuntu-latest
     environment:
       name: stage
-      url: http://pcs-frontend-stage-primeterminal.s3-website.ap-south-1.amazonaws.com
+      url: https://demo.fabrixr.com
+    defaults:
+      run:
+        working-directory: frontend
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build-stage
-          path: dist/
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
-
-      - name: Deploy to S3 (stage)
+      - name: Collect build info
+        id: info
         run: |
-          aws s3 sync dist/ s3://pcs-frontend-stage-primeterminal/ --delete
-          aws s3 cp s3://pcs-frontend-stage-primeterminal/index.html \
-            s3://pcs-frontend-stage-primeterminal/index.html \
-            --metadata-directive REPLACE \
-            --cache-control "no-cache, no-store, must-revalidate" \
-            --content-type "text/html"
+          echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "commit_msg=$(git log -1 --pretty=%s)" >> $GITHUB_OUTPUT
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+
+      - name: Deploy to Vercel (preview / stage)
+        run: |
+          vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deployment summary
         run: |
@@ -146,47 +114,42 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ needs.build.outputs.commit_sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Message** | ${{ needs.build.outputs.commit_msg }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **URL** | http://pcs-frontend-stage-primeterminal.s3-website.ap-south-1.amazonaws.com |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ steps.info.outputs.commit_sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Message** | ${{ steps.info.outputs.commit_msg }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | https://demo.fabrixr.com |" >> $GITHUB_STEP_SUMMARY
           echo "| **Time** | $(date -u +'%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
 
   deploy-production:
     name: Deploy to Production
-    needs: build
     if: github.event.inputs.environment == 'production'
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://app.primeterminaltech.com
+      url: https://app.fabrixr.com
+    defaults:
+      run:
+        working-directory: frontend
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build-production
-          path: dist/
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
-
-      - name: Deploy to S3 (production)
+      - name: Collect build info
+        id: info
         run: |
-          aws s3 sync dist/ s3://pcs-frontend-prod-primeterminal/ --delete
-          aws s3 cp s3://pcs-frontend-prod-primeterminal/index.html \
-            s3://pcs-frontend-prod-primeterminal/index.html \
-            --metadata-directive REPLACE \
-            --cache-control "no-cache, no-store, must-revalidate" \
-            --content-type "text/html"
+          echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "commit_msg=$(git log -1 --pretty=%s)" >> $GITHUB_OUTPUT
 
-      - name: Invalidate CloudFront cache
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+
+      - name: Deploy to Vercel (production)
         run: |
-          aws cloudfront create-invalidation \
-            --distribution-id E25I57FKXNYW46 \
-            --paths "/*"
+          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deployment summary
         run: |
@@ -194,7 +157,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ needs.build.outputs.commit_sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Message** | ${{ needs.build.outputs.commit_msg }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **URL** | https://app.primeterminaltech.com |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ steps.info.outputs.commit_sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Message** | ${{ steps.info.outputs.commit_msg }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | https://app.fabrixr.com |" >> $GITHUB_STEP_SUMMARY
           echo "| **Time** | $(date -u +'%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY

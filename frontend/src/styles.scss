@@ -33,7 +33,7 @@ $pcs-theme: mat.define-light-theme((
 @include mat.all-component-themes($pcs-theme);
 
 // ============================================
-// LIGHT THEME — SpadeBloom Web (from landing page)
+// LIGHT THEME — FabriXR Web (from landing page)
 // ============================================
 :root,
 [data-theme="light"] {
@@ -44,7 +44,7 @@ $pcs-theme: mat.define-light-theme((
   --clay-surface-hover: #f8fafc;
   --clay-white: #ffffff;
 
-  // Sidebar — dark navy (SpadeBloom signature)
+  // Sidebar — dark navy (FabriXR signature)
   --clay-sidebar: #0f172a;
   --clay-sidebar-active: #1e293b;
   --clay-sidebar-text: #94a3b8;
@@ -147,7 +147,7 @@ $pcs-theme: mat.define-light-theme((
 }
 
 // ============================================
-// DARK THEME — Stitch SpadeBloom MES UI Design
+// DARK THEME — Stitch FabriXR MES UI Design
 // "The Kinetic Engine" — aerospace/glass cockpit
 // ============================================
 [data-theme="dark"] {

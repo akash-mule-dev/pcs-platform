@@ -23,7 +23,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
         <div class="terminal-content">
           <div class="terminal-badge">
             <span class="badge-dot"></span>
-            SPADEBLOOM PCS &mdash; SECURE GATEWAY
+            FABRIXR PCS &mdash; SECURE GATEWAY
           </div>
 
           <div class="terminal-header">
@@ -42,7 +42,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
             <div class="form-group">
               <label class="field-label">OPERATOR ID</label>
               <mat-form-field appearance="outline" class="terminal-field">
-                <input matInput type="email" [(ngModel)]="email" name="email" required placeholder="operator&#64;spadebloom.com">
+                <input matInput type="email" [(ngModel)]="email" name="email" required placeholder="operator&#64;fabrixr.com">
                 <mat-icon matPrefix>person_outline</mat-icon>
               </mat-form-field>
             </div>
@@ -78,7 +78,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
           </div>
 
           <div class="terminal-footer">
-            <span class="copyright">&copy; 2026 SPADEBLOOM INDUSTRIES. ALL SYSTEMS MONITORED.</span>
+            <span class="copyright">&copy; 2026 FABRIXR INDUSTRIES. ALL SYSTEMS MONITORED.</span>
             <button class="theme-toggle" (click)="themeService.toggle()" type="button">
               <mat-icon>{{ themeService.theme() === 'dark' ? 'light_mode' : 'dark_mode' }}</mat-icon>
             </button>

@@ -10,8 +10,8 @@
 |----------|-------------|
 | [TECH-STACK.md](./TECH-STACK.md) | Complete technology overview — frontend, backend, mobile, infrastructure, repo structure |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System architecture, module design, entity relationships, API design |
-| [AWS-GUIDE.md](./AWS-GUIDE.md) | Beginner-friendly AWS walkthrough — VPC, EC2, S3, CloudFront, PM2, SSM, everything explained |
-| [INFRASTRUCTURE.md](./INFRASTRUCTURE.md) | Infrastructure reference — all resource IDs, IPs, ARNs, configs, environment URLs |
+| [VERCEL-GUIDE.md](./VERCEL-GUIDE.md) | Beginner-friendly Vercel walkthrough — projects, Git deploys, env vars, domains, Vercel Blob, everything explained |
+| [INFRASTRUCTURE.md](./INFRASTRUCTURE.md) | Infrastructure reference — Vercel projects, Neon database, configs, environment URLs |
 | [DEPLOYMENT-GUIDE.md](./DEPLOYMENT-GUIDE.md) | Step-by-step deployment for backend, frontend, mobile — all 3 environments |
 | [DNS-SETUP-GODADDY.md](./DNS-SETUP-GODADDY.md) | Complete GoDaddy DNS records, traffic flow diagrams, troubleshooting |
 | [MOBILE-BUILD-GUIDE.md](./MOBILE-BUILD-GUIDE.md) | Android APK build, iOS Xcode build, App Store submission checklists |
@@ -20,12 +20,12 @@
 
 ## 🔗 Quick Links
 
-### Live URLs (spadebloom.com)
+### Live URLs (fabrixr.com)
 | Environment | Frontend | Backend API | Swagger Docs |
 |------------|----------|-------------|-------------|
-| **Production** | https://app.spadebloom.com | https://api.spadebloom.com | https://api.spadebloom.com/api/docs |
-| **Demo/Staging** | https://demo.spadebloom.com | https://demo-api.spadebloom.com | https://demo-api.spadebloom.com/api/docs |
-| **Landing Page** | https://www.spadebloom.com | — | — |
+| **Production** | https://app.fabrixr.com | https://api.fabrixr.com | https://api.fabrixr.com/api/docs |
+| **Demo/Staging** | https://demo.fabrixr.com | https://demo-api.fabrixr.com | https://demo-api.fabrixr.com/api/docs |
+| **Landing Page** | https://www.fabrixr.com | — | — |
 
 ### Legacy URLs (primeterminaltech.com — still active)
 | Environment | Frontend | Backend API |
@@ -43,7 +43,7 @@
 ### External Services
 | Service | URL |
 |---------|-----|
-| AWS Console | https://console.aws.amazon.com |
+| Vercel Dashboard | https://vercel.com/dashboard |
 | Neon Database | https://console.neon.tech |
 | GoDaddy DNS | https://dcc.godaddy.com/manage/primeterminaltech.com/dns |
 | GitHub | https://github.com/akash-mule-dev |
@@ -62,4 +62,4 @@
 
 ---
 
-*Spade Bloom © 2026*
+*FabriXR © 2026*

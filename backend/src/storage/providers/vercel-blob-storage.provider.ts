@@ -13,7 +13,7 @@ import * as fs from 'fs';
  * thumbnails and quality evidence. Packages are blobs, so they live here, never
  * in Postgres (Neon only ever stores the `storage_key` pointer).
  *
- * Keyed by PATHNAME, identical to the S3/Azure providers: callers persist the
+ * Keyed by PATHNAME, identical to the Azure provider: callers persist the
  * bare key they pass in (`import-sources/<id>.ifc`, `<uuid>.glb`, …) and every
  * operation addresses the blob by that pathname. The SDK resolves the store
  * from the token, so reads/deletes need no stored URL — `get`/`head`/`del` all
@@ -71,7 +71,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
     // a streamed multipart upload so we never hold the whole file in memory.
     const body = large ? fs.createReadStream(filePath) : fs.readFileSync(filePath);
     await this.putBlob(key, body, mimeType, size, large);
-    // Mirror the S3/Azure providers: the source temp file is no longer needed.
+    // Mirror the Azure provider: the source temp file is no longer needed.
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch {

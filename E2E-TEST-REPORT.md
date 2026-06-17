@@ -1,7 +1,7 @@
 # PCS Platform — End-to-End Test Report (Chrome)
 
 **Date:** 2026-05-31
-**Target:** Deployed app — frontend `frontend-mu-three-23.vercel.app`, API `pcsapi.spadebloom.com`
+**Target:** Deployed app — frontend `frontend-mu-three-23.vercel.app`, API `pcsapi.fabrixr.com`
 **Method:** Real browser (Chrome) driving full workflows: create/edit/delete, status
 transitions, clock-in, plus network/status-code inspection on every call.
 **Build under test:** frontend `104867c`.

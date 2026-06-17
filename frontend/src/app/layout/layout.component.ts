@@ -54,7 +54,7 @@ interface NavGroup {
           <div class="logo-mark">SB</div>
           @if (!sidenavCollapsed) {
             <div class="logo-block">
-              <span class="logo-text">SpadeBloom</span>
+              <span class="logo-text">FabriXR</span>
               <span class="logo-sub">Production Control</span>
             </div>
           }

@@ -55,8 +55,8 @@
 
 ### Build Output
 - Compiled to static HTML/CSS/JS files
-- Hosted on S3 (no server needed)
-- Served via CloudFront CDN with HTTPS
+- Hosted on Vercel (Git-integration deploys, no server needed)
+- Served via Vercel's automatic global CDN with SSL
 
 ---
 
@@ -156,29 +156,28 @@ Swagger UI available at `/api/docs` on each environment.
 
 | Technology | Purpose |
 |-----------|---------|
-| **AWS EC2** (t3.micro) | Backend server hosting |
-| **AWS S3** | Frontend static hosting (3 buckets) |
-| **AWS CloudFront** | CDN + HTTPS for prod frontend & landing page |
-| **AWS ACM** | Free SSL certificate (wildcard) |
-| **AWS SSM Parameter Store** | Secrets management (DB URLs, JWT keys) |
+| **Vercel** (serverless functions) | Backend server hosting (NestJS via `@codegenie/serverless-express`) |
+| **Vercel** | Frontend static hosting (Angular app, Git-integration deploys) |
+| **Vercel** | CDN + HTTPS — automatic global CDN + SSL for prod frontend & landing page |
+| **Vercel** | Automatic managed TLS (SSL certificates) |
+| **Vercel Environment Variables** | Secrets management (DB URLs, JWT keys) |
+| **Vercel Blob** | Object/file storage (`STORAGE_TYPE=vercel-blob`) |
 | **Neon** | Managed PostgreSQL database |
-| **PM2** | Node.js process manager (auto-restart, logging) |
-| **Nginx** | Reverse proxy for subdomains |
 | **GitHub** | Source code repository (private) |
 | **GitHub Pages** | Landing page hosting |
 | **GoDaddy** | Domain registrar + DNS |
 
 ### Environment Architecture
 ```
-                    primeterminaltech.com
+                       fabrixr.com
                             │
               ┌─────────────┼─────────────────┐
               │             │                  │
          www/root          app               api
-     CloudFront CDN    CloudFront CDN      EC2 Nginx
+       Vercel CDN        Vercel CDN      Vercel CDN
          │                 │                  │
-    GitHub Pages     S3 Prod Bucket     PM2 (port 3000)
-   (Landing Page)    (Angular App)     (NestJS Backend)
+    GitHub Pages    Vercel (Angular)   Vercel Functions
+   (Landing Page)      (Prod App)       (NestJS Backend)
                                              │
                                         Neon PostgreSQL
 ```
@@ -196,7 +195,7 @@ Swagger UI available at `/api/docs` on each environment.
 | **Nest CLI** | Backend scaffolding & builds |
 | **Expo CLI** | Mobile development |
 | **EAS CLI** | Mobile builds & app store submission |
-| **AWS CLI** | AWS resource management |
+| **Vercel CLI** | Vercel deployments & resource management |
 | **GitHub CLI** (`gh`) | Repo management, Pages deployment |
 | **psql** | Database CLI client |
 | **ImageMagick** | Icon/splash screen generation |

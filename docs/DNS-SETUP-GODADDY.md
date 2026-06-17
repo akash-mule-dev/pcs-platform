@@ -1,6 +1,9 @@
 # GoDaddy DNS Configuration — Complete Reference
 
-> Exact DNS records configured for primeterminaltech.com on GoDaddy.
+> Exact DNS records configured for primeterminaltech.com on GoDaddy, pointing the domains at
+> **Vercel**. Hosting (frontend + backend) is on Vercel; **SSL and CDN are automatic** — Vercel
+> issues and auto-renews the TLS certificate for every custom domain you add. There is no
+> certificate to request, no validation record to maintain, and no CDN to configure.
 
 ---
 
@@ -12,118 +15,119 @@
 | Nameservers | `ns33.domaincontrol.com`, `ns34.domaincontrol.com` |
 | DNS Management URL | https://dcc.godaddy.com/manage/primeterminaltech.com/dns |
 | Account Email | `akashmule341@gmail.com` |
+| Hosting | Vercel (auto SSL + CDN) |
+
+---
+
+## How This Works on Vercel
+
+You don't point GoDaddy at servers or IPs you manage. For each subdomain:
+
+1. Add the subdomain as a **custom domain** on the matching **Vercel project**
+   (**Settings → Domains → Add Domain**).
+2. Vercel shows the exact DNS record to create — for a subdomain that's a **CNAME to
+   `cname.vercel-dns.com`**; for the apex (root) it's an **A record to `76.76.21.21`**.
+3. Add that record here in GoDaddy.
+4. Vercel verifies the domain and **automatically provisions + renews TLS**.
+
+> The values below are Vercel's standard public targets. Always confirm against the record shown
+> in **your own Vercel dashboard** for each project — the dashboard is the source of truth.
 
 ---
 
 ## Complete DNS Records
 
-### Record 1: SSL Certificate Validation
-| Field | Value |
-|-------|-------|
-| Type | CNAME |
-| Name | `_fd561ddaaefe1ba0ccfe78875232245f` |
-| Value | `_fb50f18beaef6913de373162866976e7.jkddzztszm.acm-validations.aws.` |
-| TTL | 600 |
-| Purpose | AWS ACM SSL certificate validation & auto-renewal |
-
-> ⚠️ **CRITICAL: Never delete this record.** It's required for the SSL certificate to auto-renew. If deleted, HTTPS will stop working within 60 days.
-
----
-
-### Record 2: www → Landing Page
+### Record 1: www → Landing Page
 | Field | Value |
 |-------|-------|
 | Type | CNAME |
 | Name | `www` |
-| Value | `d2pv0ycsr3grbi.cloudfront.net` |
+| Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes www.primeterminaltech.com to CloudFront → GitHub Pages landing page |
+| Purpose | Routes www.primeterminaltech.com to the Vercel landing project |
 
 **Traffic flow:**
 ```
 www.primeterminaltech.com
-  → CloudFront (d2pv0ycsr3grbi.cloudfront.net)
-    → GitHub Pages (akash-mule-dev.github.io/pcs-website)
+  → CNAME cname.vercel-dns.com
+    → Vercel landing project (TLS + CDN automatic)
 ```
 
 ---
 
-### Record 3: app → PCS Dashboard
+### Record 2: app → PCS Dashboard
 | Field | Value |
 |-------|-------|
 | Type | CNAME |
 | Name | `app` |
-| Value | `d387267ab216kr.cloudfront.net` |
+| Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes app.primeterminaltech.com to CloudFront → S3 prod frontend |
+| Purpose | Routes app.primeterminaltech.com to the Vercel production frontend project |
 
 **Traffic flow:**
 ```
 app.primeterminaltech.com
-  → CloudFront (d387267ab216kr.cloudfront.net)
-    → S3 (pcs-frontend-prod-primeterminal bucket)
+  → CNAME cname.vercel-dns.com
+    → Vercel prod frontend project (TLS + CDN automatic)
 ```
 
 ---
 
-### Record 4: api → Backend Server
+### Record 3: api → Backend API
 | Field | Value |
 |-------|-------|
-| Type | A |
+| Type | CNAME |
 | Name | `api` |
-| Value | `43.204.37.17` |
+| Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes api.primeterminaltech.com to EC2 instance → Nginx → PM2 prod backend |
+| Purpose | Routes api.primeterminaltech.com to the Vercel production backend project |
 
 **Traffic flow:**
 ```
 api.primeterminaltech.com
-  → EC2 (43.204.37.17)
-    → Nginx (port 80)
-      → PM2 pcs-prod (port 3000)
+  → CNAME cname.vercel-dns.com
+    → Vercel prod backend project (TLS automatic)
 ```
 
 ---
 
-### Record 5: dev → Development Frontend
+### Record 4: dev → Development Frontend
 | Field | Value |
 |-------|-------|
-| Type | A |
+| Type | CNAME |
 | Name | `dev` |
-| Value | `43.204.37.17` |
+| Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes dev.primeterminaltech.com to EC2 → Nginx → S3 dev bucket |
+| Purpose | Routes dev.primeterminaltech.com to the Vercel development frontend project |
 
 **Traffic flow:**
 ```
 dev.primeterminaltech.com
-  → EC2 (43.204.37.17)
-    → Nginx (port 80)
-      → S3 (pcs-frontend-dev-primeterminal bucket)
+  → CNAME cname.vercel-dns.com
+    → Vercel dev frontend project (TLS + CDN automatic)
 ```
 
 ---
 
-### Record 6: stage → Staging Frontend
+### Record 5: stage → Staging Frontend
 | Field | Value |
 |-------|-------|
-| Type | A |
+| Type | CNAME |
 | Name | `stage` |
-| Value | `43.204.37.17` |
+| Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes stage.primeterminaltech.com to EC2 → Nginx → S3 stage bucket |
+| Purpose | Routes stage.primeterminaltech.com to the Vercel staging frontend project |
 
 **Traffic flow:**
 ```
 stage.primeterminaltech.com
-  → EC2 (43.204.37.17)
-    → Nginx (port 80)
-      → S3 (pcs-frontend-stage-primeterminal bucket)
+  → CNAME cname.vercel-dns.com
+    → Vercel staging frontend project (TLS + CDN automatic)
 ```
 
 ---
 
-### Record 7: Root Domain Forwarding
+### Record 6: Root Domain Forwarding
 | Field | Value |
 |-------|-------|
 | Type | Domain Forward |
@@ -132,7 +136,9 @@ stage.primeterminaltech.com
 | Type | 301 (Permanent Redirect) |
 | Purpose | Redirects bare domain to www |
 
-> Note: GoDaddy doesn't support CNAME on the root domain (@). Domain forwarding is the workaround.
+> Note: GoDaddy doesn't support a CNAME on the root domain (`@`). Domain forwarding is the
+> workaround. Alternatively, add an **A record `@ → 76.76.21.21`**, attach the apex to the Vercel
+> landing project, and set it to redirect to `www` inside Vercel's Domains settings.
 
 ---
 
@@ -141,41 +147,30 @@ stage.primeterminaltech.com
 | Subdomain | Type | Points To | Final Destination | HTTPS |
 |-----------|------|-----------|-------------------|-------|
 | `primeterminaltech.com` | Forward | → `www.primeterminaltech.com` | Landing page | ✅ |
-| `www.primeterminaltech.com` | CNAME | CloudFront | Landing page (GitHub Pages) | ✅ |
-| `app.primeterminaltech.com` | CNAME | CloudFront | PCS Dashboard (S3) | ✅ |
-| `api.primeterminaltech.com` | A | EC2 | Backend API (Nginx → PM2) | ❌ (HTTP only*) |
-| `dev.primeterminaltech.com` | A | EC2 | Dev frontend (Nginx → S3) | ❌ (HTTP only*) |
-| `stage.primeterminaltech.com` | A | EC2 | Stage frontend (Nginx → S3) | ❌ (HTTP only*) |
+| `www.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | Landing page (Vercel) | ✅ (auto) |
+| `app.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | PCS Dashboard (Vercel) | ✅ (auto) |
+| `api.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | Backend API (Vercel) | ✅ (auto) |
+| `dev.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | Dev frontend (Vercel) | ✅ (auto) |
+| `stage.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | Stage frontend (Vercel) | ✅ (auto) |
 
-*To add HTTPS to api/dev/stage, install Let's Encrypt (Certbot) on the EC2 instance. See "Future Improvements" below.
+> Every domain gets HTTPS automatically once Vercel reports **Valid Configuration** — there is no
+> separate certificate step.
 
 ---
 
-## Future Improvements
+## Notes & Operations
 
-### Add HTTPS to api/dev/stage (Let's Encrypt)
-```bash
-# SSH into EC2
-ssh -i ~/.ssh/pcs-key.pem ubuntu@43.204.37.17
+### Environment variables and secrets
+App configuration and secrets live as **Vercel Environment Variables** (per project, scoped to
+Production / Preview / Development), including `CORS_ORIGIN`, `DATABASE_URL` (Neon PostgreSQL),
+`STORAGE_TYPE`, the blob token, and JWT secrets. After changing any variable, **redeploy** the
+project so it takes effect.
 
-# Install Certbot
-sudo apt install certbot python3-certbot-nginx -y
-
-# Get certificates for all subdomains
-sudo certbot --nginx -d api.primeterminaltech.com -d dev.primeterminaltech.com -d stage.primeterminaltech.com
-
-# Auto-renewal is set up automatically by Certbot
-```
-
-### If EC2 IP Changes
-If you stop and start the EC2 instance (not reboot), the public IP may change. You'd need to:
-1. Get the new IP: `aws ec2 describe-instances --instance-ids i-02140b6fbb9abf976 --query 'Reservations[0].Instances[0].PublicIpAddress'`
-2. Update GoDaddy A records for `api`, `dev`, `stage`
-3. To prevent this, attach an **Elastic IP** (free while instance is running):
-   ```bash
-   aws ec2 allocate-address --domain vpc
-   aws ec2 associate-address --instance-id i-02140b6fbb9abf976 --allocation-id <eipalloc-id>
-   ```
+### Adding a brand-new subdomain
+1. Add it as a custom domain on the right Vercel project (**Settings → Domains → Add Domain**).
+2. Copy the record Vercel shows (CNAME → `cname.vercel-dns.com`, or A → `76.76.21.21` for an apex).
+3. Create that record in GoDaddy.
+4. Wait for Vercel to show **Valid Configuration** — TLS is then issued and renewed automatically.
 
 ---
 
@@ -183,21 +178,29 @@ If you stop and start the EC2 instance (not reboot), the public IP may change. Y
 
 ### "DNS_PROBE_FINISHED_BAD_CONFIG"
 - DNS hasn't propagated yet. Wait 15-30 minutes.
-- Try different DNS: Change device DNS to 1.1.1.1 (Cloudflare) to test.
-- Verify record exists: `dig <subdomain>.primeterminaltech.com +short`
+- Try different DNS: change device DNS to 1.1.1.1 (Cloudflare) to test.
+- Verify record exists: `dig <subdomain>.primeterminaltech.com +short` — it should resolve toward
+  Vercel.
 
 ### "This site can't be reached"
-- Check if EC2 is running: `aws ec2 describe-instance-status --instance-ids i-02140b6fbb9abf976`
-- Check if PM2 is running: SSH in → `pm2 status`
-- Check security group allows the port
+- Check the subdomain's status in **Vercel → (project) → Settings → Domains** — it should read
+  **Valid Configuration**.
+- Confirm the GoDaddy record matches exactly what Vercel asks for (CNAME → `cname.vercel-dns.com`,
+  or A → `76.76.21.21` for the apex).
+- Make sure the Vercel project has a successful production deployment.
 
-### "502 Bad Gateway"
-- Nginx is running but the backend isn't
-- SSH in → `pm2 status` → restart the failed process
+### "404 / Not Found" from the backend
+- The domain may be attached to the wrong Vercel project. Confirm `api.*` is on the backend
+  project, not the frontend.
+- Check the project's latest deployment succeeded and that `CORS_ORIGIN` includes the calling
+  frontend domain; redeploy after changing it.
 
-### SSL Certificate Issues
-- Never delete the ACM validation CNAME record
-- Check certificate status: `aws acm describe-certificate --region us-east-1 --certificate-arn <arn>`
+### SSL / Certificate Issues
+- Certificates are issued and renewed automatically by Vercel — there is no validation record to
+  maintain. A "certificate" error is almost always a DNS problem.
+- In **Vercel → Settings → Domains**, if a domain shows **Invalid Configuration**, fix the GoDaddy
+  record to match what Vercel displays; Vercel then completes the certificate on its own, usually
+  within a minute or two.
 
 ---
 

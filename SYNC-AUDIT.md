@@ -9,7 +9,7 @@ This document is the audit. The fixes that follow from it are tracked in `SYNC-F
 
 ## 1. How sync works today (architecture)
 
-Both clients talk to one backend (`http://localhost:3000/api` locally; `https://pcsapi.spadebloom.com/api` in prod) over:
+Both clients talk to one backend (`http://localhost:3000/api` locally; `https://pcsapi.fabrixr.com/api` in prod) over:
 
 - **REST** for all reads/writes.
 - **Socket.IO** for real-time push.
@@ -80,7 +80,7 @@ The first draft suspected a double-nested page (`body.data.data`) that mobile wo
 **Fix:** add a mobile socket service + a `useSocketEvent` hook, and wire Timer, Dashboard, Work-Order list & detail to refetch on the relevant events.
 
 ### S3 — Mobile API URL hardcoded to production · **HIGH · sync / testability**
-`mobile/src/config/environment.ts` points **both** `development` and `production` at `https://pcsapi.spadebloom.com/api`. While web runs against `localhost:3000`, mobile cannot point at the same local backend, so the two clients literally talk to different servers during development.
+`mobile/src/config/environment.ts` points **both** `development` and `production` at `https://pcsapi.fabrixr.com/api`. While web runs against `localhost:3000`, mobile cannot point at the same local backend, so the two clients literally talk to different servers during development.
 **Fix:** make the base URL configurable via `EXPO_PUBLIC_API_URL` (fall back to a LAN IP for dev), documented in the device test script.
 
 ### S4 — Backend never broadcasts work-order / quality changes · **HIGH · sync**

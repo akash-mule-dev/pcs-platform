@@ -1,306 +1,229 @@
-# PCS Platform — Infrastructure Reference
+# FabriXR / PCS Platform — Infrastructure Reference
 
-> Complete reference of all AWS resources, DNS configuration, and deployment details.
+> Complete reference of all Vercel resources, DNS configuration, and deployment details.
 
 ---
 
 ## Table of Contents
-1. [AWS Account](#aws-account)
-2. [VPC & Networking](#vpc--networking)
-3. [EC2 Instance](#ec2-instance)
-4. [S3 Buckets](#s3-buckets)
-5. [CloudFront Distributions](#cloudfront-distributions)
-6. [SSL Certificate](#ssl-certificate)
-7. [SSM Parameter Store (Secrets)](#ssm-parameter-store-secrets)
-8. [PM2 Process Manager](#pm2-process-manager)
-9. [Nginx Reverse Proxy](#nginx-reverse-proxy)
-10. [Neon Database](#neon-database)
-11. [GoDaddy DNS Configuration](#godaddy-dns-configuration)
-12. [Environment URLs](#environment-urls)
-13. [Login Credentials](#login-credentials)
+1. [Hosting Overview](#hosting-overview)
+2. [Vercel Projects](#vercel-projects)
+3. [Backend Serverless Function](#backend-serverless-function)
+4. [Custom Domains](#custom-domains)
+5. [SSL & CDN](#ssl--cdn)
+6. [Environment Variables (Secrets)](#environment-variables-secrets)
+7. [Deployment & CI/CD](#deployment--cicd)
+8. [Vercel Blob Storage](#vercel-blob-storage)
+9. [Neon Database](#neon-database)
+10. [DNS Configuration](#dns-configuration)
+11. [Environment URLs](#environment-urls)
+12. [Login Credentials](#login-credentials)
 
 ---
 
-## AWS Account
+## Hosting Overview
 
-| Field | Value |
-|-------|-------|
-| Account ID | `365885288238` |
-| Region | `ap-south-1` (Mumbai, India) |
-| IAM User | `PCS_openclaw` |
-| Access Key ID | `AKIAVKMDWN4XJ4VD5OO3` |
+The entire platform runs on **Vercel**. There are no servers to manage, no SSH, and no
+process manager — Vercel builds and hosts both apps directly from the Git repository and
+auto-deploys on every push.
 
-### IAM Policies Attached
-- `AmazonEC2FullAccess`
-- `AmazonS3FullAccess`
-- `CloudFrontFullAccess`
-- `AmazonSSMFullAccess`
-- `IAMReadOnlyAccess`
-- `AWSCertificateManagerFullAccess`
+| Component | How it runs on Vercel |
+|-----------|-----------------------|
+| Frontend (Angular) | Static build served from Vercel's edge CDN |
+| Backend (NestJS) | Serverless function via `@codegenie/serverless-express` |
+| SSL / HTTPS | Automatic, managed by Vercel |
+| CDN / caching | Automatic, Vercel edge network |
+| Secrets / config | Vercel project Environment Variables |
+| Deploys | Git-integration auto-deploy + GitHub Actions (Vercel CLI) |
 
----
+Config files live in the repo:
 
-## VPC & Networking
+| File | Purpose |
+|------|---------|
+| `frontend/vercel.json` | Frontend build/output + SPA rewrite config |
+| `backend/vercel.json` | Backend serverless function routing |
 
-| Resource | ID | Details |
-|----------|----|---------|
-| VPC | `vpc-0170654f784a116fa` | CIDR: `10.0.0.0/16`, DNS enabled |
-| Internet Gateway | `igw-038d513d0df16692b` | Attached to VPC |
-| Public Subnet | `subnet-05caae9172aa2eb72` | CIDR: `10.0.1.0/24`, AZ: `ap-south-1a`, auto-assign public IP |
-| Route Table | `rtb-0ac09137bbbd37c18` | `0.0.0.0/0` → Internet Gateway |
-| Security Group | `sg-0da18892863ce990a` | Name: `pcs-backend-sg` |
-
-### Security Group Inbound Rules
-| Port | Protocol | Source | Purpose |
-|------|----------|--------|---------|
-| 22 | TCP | 0.0.0.0/0 | SSH access |
-| 80 | TCP | 0.0.0.0/0 | HTTP (Nginx) |
-| 443 | TCP | 0.0.0.0/0 | HTTPS |
-| 3000-3002 | TCP | 0.0.0.0/0 | Backend API ports (prod/dev/stage) |
+> Brand: **FabriXR**, primary domain `fabrixr.com` (the legacy `primeterminaltech.com`
+> domain may still appear in some records).
 
 ---
 
-## EC2 Instance
+## Vercel Projects
 
-| Field | Value |
-|-------|-------|
-| Instance ID | `i-02140b6fbb9abf976` |
-| Instance Type | `t3.micro` (2 vCPU, 1 GB RAM) — Free tier |
-| Public IP | `43.204.37.17` |
-| OS | Ubuntu 22.04 LTS (Jammy) |
-| AMI | `ami-07216ac99dc46a187` |
-| Storage | 20 GB gp3 SSD |
-| SSH Key | `pcs-key` (`~/.ssh/pcs-key.pem` on local machine) |
-| Availability Zone | `ap-south-1a` |
+Two Vercel projects back the platform, each linked to this Git repository.
 
-### SSH Access
-```bash
-ssh -i ~/.ssh/pcs-key.pem ubuntu@43.204.37.17
-```
+| Project | App | Framework | Config |
+|---------|-----|-----------|--------|
+| `frontend` | Angular SPA | Angular 17 (standalone) | `frontend/vercel.json` |
+| `backend` | NestJS API | NestJS 11 (serverless) | `backend/vercel.json` |
 
-### Installed Software
-| Software | Version | Purpose |
+### Git Integration & Branch Behavior
+- Every push triggers a Vercel build automatically.
+- Pushes to **`dev`** build the **dev** configuration and produce a preview deployment.
+- The **backend selects its production configuration when `VERCEL_ENV=production`** (i.e.
+  production deployments), otherwise it uses dev/preview settings.
+- Each branch/PR gets its own preview URL; production deployments are promoted from the
+  production branch.
+
+### Stable Preview URLs (dev branch)
+| Project | Preview URL |
+|---------|-------------|
+| `frontend` | https://frontend-git-dev-akash-mule-devs-projects.vercel.app |
+| `backend` | https://backend-git-dev-akash-mule-devs-projects.vercel.app |
+
+---
+
+## Backend Serverless Function
+
+The NestJS backend is wrapped with **`@codegenie/serverless-express`** and deployed as a
+single Vercel serverless function rather than a long-running Node process.
+
+| Aspect | Detail |
+|--------|--------|
+| Adapter | `@codegenie/serverless-express` (Express → Lambda-style handler) |
+| Routing | Defined in `backend/vercel.json` |
+| Environment switch | Production config active when `VERCEL_ENV=production` |
+| Request body cap | **~4.5 MB** (Vercel serverless request limit) |
+
+### Implication of the request body cap
+Server-proxied uploads (IFC/ZIP import sources, GLB models, drawings, QA evidence) are
+limited to ~4.5 MB per request. For packages above that size, the **client uploads
+directly to Vercel Blob** and hands the backend the resulting storage key, bypassing the
+serverless body limit.
+
+### Conversion / background work
+With no `REDIS_URL` set, the BullMQ conversion queue runs **inline** in the API process.
+There is no separate worker host — the serverless function does the work in-request, and
+interrupted imports are re-queued on cold start from their durable storage source.
+
+---
+
+## Custom Domains
+
+Custom domains are attached to the Vercel projects; Vercel provisions and renews SSL
+certificates automatically for each.
+
+| Domain | Points to | Environment |
+|--------|-----------|-------------|
+| `www.fabrixr.com` | Landing page | Production |
+| `app.fabrixr.com` | `frontend` project | Production frontend |
+| `api.fabrixr.com` | `backend` project | Production backend |
+| `pcsapi.fabrixr.com` | `backend` project | Production backend (alias) |
+| `demo.fabrixr.com` | `frontend` project | Staging frontend |
+| `demo-api.fabrixr.com` | `backend` project | Staging backend |
+
+To add a domain: assign it to the project in **Vercel → Project → Settings → Domains**,
+then add the DNS record Vercel shows (see [DNS Configuration](#dns-configuration)).
+
+---
+
+## SSL & CDN
+
+SSL and CDN are **fully managed by Vercel** — there is nothing to provision or renew.
+
+| Concern | How it's handled |
+|---------|------------------|
+| HTTPS / TLS certificates | Auto-issued and auto-renewed per custom domain by Vercel |
+| HTTP → HTTPS redirect | Automatic |
+| CDN / edge caching | Vercel's global edge network (frontend static assets) |
+| SPA routing (Angular) | Rewrite rule in `frontend/vercel.json` (all paths → `index.html`) |
+| Cache invalidation | Automatic on each new deployment (no manual invalidation step) |
+
+> There are no SSL certificates, CDN distributions, or cache-invalidation commands to
+> manage by hand — a new deployment publishes fresh assets globally.
+
+---
+
+## Environment Variables (Secrets)
+
+All sensitive configuration is stored as **Vercel project Environment Variables**.
+**Never in the codebase.**
+
+Each project has three scopes — **Production**, **Preview**, and **Development** — so the
+same key can resolve to different values per environment (e.g. dev vs prod database URLs).
+
+### Key variables (per project, as applicable)
+| Variable | Used by | Purpose |
 |----------|---------|---------|
-| Node.js | v20.20.0 | Runtime for NestJS backend |
-| NPM | v10.8.2 | Package manager |
-| PM2 | v6.0.14 | Process manager (auto-restart, logging) |
-| Nginx | latest | Reverse proxy for subdomains |
-| Git | latest | Version control |
+| `DATABASE_URL` | backend | Neon connection string (scoped per environment) |
+| `JWT_SECRET` | backend | JWT signing key |
+| `STORAGE_TYPE` | backend | Storage provider (`vercel-blob` default) |
+| `PCS_DEV_BLOB_READ_WRITE_TOKEN` / `BLOB_READ_WRITE_TOKEN` | backend | Vercel Blob token |
+| `VERCEL_ENV` | both (Vercel-provided) | `production` / `preview` / `development` |
+| `IMPORT_PIPELINE_CONCURRENCY` | backend | Import pipeline concurrency (optional) |
+| `REDIS_URL` | backend | Enables external BullMQ worker (optional; inline if unset) |
 
-### Directory Structure on EC2
-```
-/opt/pcs/
-├── dev/                  # Dev environment
-│   ├── dist/             # Compiled NestJS app
-│   ├── node_modules/     # Dependencies
-│   ├── .env              # Dev environment variables
-│   └── start.sh          # PM2 startup script
-├── stage/                # Stage environment
-│   ├── dist/
-│   ├── node_modules/
-│   ├── .env
-│   └── start.sh
-├── prod/                 # Production environment
-│   ├── dist/
-│   ├── node_modules/
-│   ├── .env
-│   └── start.sh
-└── ecosystem.config.js   # PM2 configuration
-```
+### Managing variables
+- **Vercel Dashboard:** Project → Settings → Environment Variables (add/edit per scope).
+- **Vercel CLI:**
+  ```bash
+  vercel env ls                        # list variables
+  vercel env add DATABASE_URL production   # add/update for a scope
+  vercel env rm DATABASE_URL production     # remove
+  ```
+- Variables take effect on the **next deployment**; redeploy after changing a value.
 
 ---
 
-## S3 Buckets
+## Deployment & CI/CD
 
-Three S3 buckets host the Angular frontend for each environment.
+There are two paths to a deployment, and both end up on Vercel.
 
-| Bucket Name | Environment | Direct URL |
-|------------|-------------|------------|
-| `pcs-frontend-dev-primeterminal` | Development | http://pcs-frontend-dev-primeterminal.s3-website.ap-south-1.amazonaws.com |
-| `pcs-frontend-stage-primeterminal` | Staging | http://pcs-frontend-stage-primeterminal.s3-website.ap-south-1.amazonaws.com |
-| `pcs-frontend-prod-primeterminal` | Production | http://pcs-frontend-prod-primeterminal.s3-website.ap-south-1.amazonaws.com |
+### 1. Git-integration auto-deploy (default)
+Pushing to the repo triggers Vercel to build and deploy automatically:
+- Push to **`dev`** → preview deployment with the **dev** config.
+- Push to the production branch → production deployment (backend uses prod config because
+  `VERCEL_ENV=production`).
+- Every branch/PR gets its own preview URL.
 
-### Bucket Configuration (all 3)
-- **Static Website Hosting:** Enabled
-- **Index Document:** `index.html`
-- **Error Document:** `index.html` (for Angular SPA routing)
-- **Public Access:** Enabled (block public access disabled)
-- **Bucket Policy:** Public read (`s3:GetObject` for `*`)
+### 2. GitHub Actions (Vercel CLI)
+`.github/workflows/deploy.yml` deploys through the **Vercel CLI**.
 
-### Deploying to S3
+| GitHub Secret | Purpose |
+|---------------|---------|
+| `VERCEL_TOKEN` | Auth token for the Vercel CLI |
+| `VERCEL_ORG_ID` | Target Vercel organization/team ID |
+| `VERCEL_PROJECT_ID` | Target Vercel project ID |
+
+Typical CLI flow used by the workflow:
 ```bash
-# Build frontend with environment-specific config
-cd /home/vboxuser/pcs-platform/frontend
-
-# For dev:
-npx ng build --configuration=dev
-aws s3 sync dist/frontend/browser/ s3://pcs-frontend-dev-primeterminal/ --delete
-
-# For stage:
-npx ng build --configuration=stage
-aws s3 sync dist/frontend/browser/ s3://pcs-frontend-stage-primeterminal/ --delete
-
-# For prod:
-npx ng build --configuration=production
-aws s3 sync dist/frontend/browser/ s3://pcs-frontend-prod-primeterminal/ --delete
+vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+vercel build --prod --token=$VERCEL_TOKEN
+vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
 ```
+
+> Use the placeholders above — real token/ID values live only in GitHub Actions secrets
+> and the Vercel dashboard, never in the repo.
 
 ---
 
-## CloudFront Distributions
+## Vercel Blob Storage
 
-CloudFront provides HTTPS (SSL) and CDN caching for the frontend.
-
-### Main Website (Landing Page)
-| Field | Value |
-|-------|-------|
-| Distribution ID | `EHT114VO9BG9B` |
-| Domain | `d2pv0ycsr3grbi.cloudfront.net` |
-| Aliases | `primeterminaltech.com`, `www.primeterminaltech.com` |
-| Origin | `akash-mule-dev.github.io/pcs-website` (GitHub Pages) |
-| SSL | ✅ ACM certificate |
-| Protocol | HTTPS (redirect HTTP → HTTPS) |
-| Price Class | PriceClass_200 (NA, EU, Asia) |
-
-### PCS App (Production Frontend)
-| Field | Value |
-|-------|-------|
-| Distribution ID | `E25I57FKXNYW46` |
-| Domain | `d387267ab216kr.cloudfront.net` |
-| Aliases | `app.primeterminaltech.com` |
-| Origin | `pcs-frontend-prod-primeterminal.s3-website.ap-south-1.amazonaws.com` |
-| SSL | ✅ ACM certificate |
-| Protocol | HTTPS (redirect HTTP → HTTPS) |
-| Custom Error | 404 → `/index.html` (200) for Angular SPA routing |
-| Price Class | PriceClass_200 |
-
-### Invalidating CloudFront Cache
-After deploying new frontend code, invalidate the cache:
-```bash
-# Main site
-aws cloudfront create-invalidation --distribution-id EHT114VO9BG9B --paths "/*"
-
-# App
-aws cloudfront create-invalidation --distribution-id E25I57FKXNYW46 --paths "/*"
-```
-
----
-
-## SSL Certificate
+Uploaded artifacts (IFC/ZIP import sources, GLB models, shop drawings, thumbnails, QA
+evidence, coordination files) are stored in **Vercel Blob**, not in Postgres and not on
+local disk. Neon only stores the `storage_key` / `file_name` pointer.
 
 | Field | Value |
 |-------|-------|
-| ARN | `arn:aws:acm:us-east-1:365885288238:certificate/886aa711-699d-4e98-aca2-0e379b0bace2` |
-| Region | `us-east-1` (required for CloudFront) |
-| Domains | `primeterminaltech.com`, `*.primeterminaltech.com` (wildcard) |
-| Validation | DNS (CNAME record in GoDaddy) |
-| Status | ISSUED ✅ |
-| Auto-Renewal | Yes (AWS auto-renews DNS-validated certificates) |
+| Provider | Vercel Blob (`STORAGE_TYPE=vercel-blob`, default) |
+| Alternate provider | Azure Blob (`STORAGE_TYPE=azure`) |
+| Token | `PCS_DEV_BLOB_READ_WRITE_TOKEN` (or `BLOB_READ_WRITE_TOKEN`) |
+| Visibility | **Private** — files are streamed back through the API, never a public URL |
+| Key layout | Tenant-partitioned, centralized in `storage/storage-keys.ts` |
 
-### Validation CNAME Record
-| Name | Value |
-|------|-------|
-| `_fd561ddaaefe1ba0ccfe78875232245f.primeterminaltech.com` | `_fb50f18beaef6913de373162866976e7.jkddzztszm.acm-validations.aws.` |
-
-> ⚠️ Do NOT delete this CNAME — it's needed for certificate auto-renewal.
-
----
-
-## SSM Parameter Store (Secrets)
-
-All sensitive configuration is stored in AWS Systems Manager Parameter Store. **Never in the codebase.**
-
-| Parameter | Type | Environment |
-|-----------|------|-------------|
-| `/pcs/dev/database-url` | SecureString | Dev DB connection string |
-| `/pcs/dev/jwt-secret` | SecureString | Dev JWT signing key |
-| `/pcs/stage/database-url` | SecureString | Stage DB connection string |
-| `/pcs/stage/jwt-secret` | SecureString | Stage JWT signing key |
-| `/pcs/prod/database-url` | SecureString | Prod DB connection string |
-| `/pcs/prod/jwt-secret` | SecureString | Prod JWT signing key |
-
-### Retrieving Secrets
-```bash
-# View a secret
-aws ssm get-parameter --name "/pcs/prod/database-url" --with-decryption --query 'Parameter.Value' --output text
-
-# Update a secret
-aws ssm put-parameter --name "/pcs/prod/jwt-secret" --type SecureString --value "new-secret-value" --overwrite
+### Key layout
+Every blob lives under its organization:
 ```
-
-### How Secrets Reach the App
-1. During deployment, secrets are fetched from SSM
-2. Written to `.env` files on EC2 (permission 600 — owner-only read)
-3. PM2 start scripts source the `.env` file before launching Node.js
-4. The `.env` files are NOT in the codebase or git
-
----
-
-## PM2 Process Manager
-
-PM2 runs three backend instances — one per environment.
-
-### Process Status
-```bash
-ssh -i ~/.ssh/pcs-key.pem ubuntu@43.204.37.17 'pm2 status'
+<orgId>/{imports,documents,models,conversions,quality/{evidence,ncr},coordination,media}/…
 ```
+- GLBs: `<org>/models/<id>.glb`
+- Thumbnails: `<org>/models/<id>/thumbnail.png`
 
-| PM2 Name | Port | Environment | CWD |
-|----------|------|-------------|-----|
-| `pcs-dev` | 3001 | Development | `/opt/pcs/dev` |
-| `pcs-stage` | 3002 | Staging | `/opt/pcs/stage` |
-| `pcs-prod` | 3000 | Production | `/opt/pcs/prod` |
-
-### Ecosystem Config
-Location: `/opt/pcs/ecosystem.config.js`
-
-Each app uses a `start.sh` script that:
-1. Sources the `.env` file (loads DATABASE_URL, JWT_SECRET, etc.)
-2. Starts `node dist/main.js`
-
-### PM2 Auto-Start
-PM2 is configured to start on boot via systemd:
-- Service: `pm2-ubuntu`
-- Saved process list: `~/.pm2/dump.pm2`
-
-### Common PM2 Commands
-```bash
-pm2 status                    # View all processes
-pm2 logs pcs-prod             # View prod logs
-pm2 logs pcs-prod --lines 100 # Last 100 lines
-pm2 restart pcs-prod          # Restart prod
-pm2 restart all               # Restart everything
-pm2 monit                     # Real-time CPU/RAM monitor
-pm2 save                      # Save process list for reboot
-```
-
----
-
-## Nginx Reverse Proxy
-
-Nginx runs on the EC2 instance, routing subdomain traffic to the correct service.
-
-### Config File
-Location: `/etc/nginx/sites-available/pcs`
-
-| Server Name | Proxies To |
-|-------------|-----------|
-| `api.primeterminaltech.com` | `http://127.0.0.1:3000` (Prod backend) |
-| `dev.primeterminaltech.com` | S3 dev bucket (HTTP proxy) |
-| `stage.primeterminaltech.com` | S3 stage bucket (HTTP proxy) |
-
-### Why Nginx?
-- **api subdomain:** Users access `api.primeterminaltech.com` (port 80) instead of `43.204.37.17:3000`. Nginx forwards to the backend on port 3000.
-- **dev/stage subdomains:** Nginx proxies to S3 bucket URLs so users get clean subdomain URLs.
-- **Future:** Nginx will handle SSL termination with Let's Encrypt for these subdomains.
-
-### Nginx Commands
-```bash
-sudo nginx -t                  # Test config
-sudo systemctl reload nginx    # Apply changes
-sudo systemctl status nginx    # Check status
-cat /etc/nginx/sites-available/pcs  # View config
-```
+### Notes
+- Bytes already in memory go straight to the store via `storage.uploadBuffer(...)` — they
+  never touch local disk.
+- Because the store is private, downloads are proxied through the API (e.g.
+  `GET /api/models/:id/file`) using the server-side token.
+- Round-trip check: `node scripts/verify-blob.cjs` (needs the token in env).
 
 ---
 
@@ -322,12 +245,15 @@ cat /etc/nginx/sites-available/pcs  # View config
 postgresql://neondb_owner:<password>@ep-curly-pine-aivn3f9s-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require
 ```
 
-### Additional Databases Created
-| Database | Purpose | Status |
-|----------|---------|--------|
+### Database Branches
+| Branch / Database | Purpose | Status |
+|-------------------|---------|--------|
 | `neondb` | Production (and currently shared with dev/stage) | Active ✅ |
-| `pcs_dev` | Future dedicated dev database | Created, unused |
+| `pcs-dev-db` | Dedicated dev branch (isolated from prod) | Active ✅ |
 | `pcs_stage` | Future dedicated stage database | Created, unused |
+
+> The backend uses the dev branch (`pcs-dev-db`) by default; the production connection
+> string is selected only when `VERCEL_ENV=production`.
 
 ### Viewing Data
 1. Go to https://console.neon.tech
@@ -343,61 +269,47 @@ postgresql://neondb_owner:<password>@ep-curly-pine-aivn3f9s-pooler.c-4.us-east-1
 
 ---
 
-## GoDaddy DNS Configuration
+## DNS Configuration
 
-**Domain:** `primeterminaltech.com`
-**Registrar:** GoDaddy
-**DNS Management:** https://dcc.godaddy.com/manage/primeterminaltech.com/dns
-**Nameservers:** `ns33.domaincontrol.com`, `ns34.domaincontrol.com`
+**Domain:** `fabrixr.com`
 
-### DNS Records
+All custom domains are served by Vercel. For each domain, add the DNS record Vercel shows
+in **Project → Settings → Domains** — typically a `CNAME` to `cname.vercel-dns.com` for
+subdomains, or Vercel's apex/ALIAS target for the root domain.
+
+### DNS Records (pattern)
 
 | Type | Name | Value | Purpose |
 |------|------|-------|---------|
-| **CNAME** | `_fd561ddaa...` | `_fb50f18bea...acm-validations.aws.` | SSL certificate validation (DO NOT DELETE) |
-| **CNAME** | `www` | `d2pv0ycsr3grbi.cloudfront.net` | Landing page via CloudFront |
-| **CNAME** | `app` | `d387267ab216kr.cloudfront.net` | PCS app via CloudFront |
-| **A** | `api` | `43.204.37.17` | Backend API via EC2 |
-| **A** | `dev` | `43.204.37.17` | Dev frontend via EC2/Nginx |
-| **A** | `stage` | `43.204.37.17` | Stage frontend via EC2/Nginx |
-| **Forward** | `@` (root) | `https://www.primeterminaltech.com` | Root domain redirect |
+| **CNAME** | `app` | `cname.vercel-dns.com` | Prod frontend (`app.fabrixr.com`) |
+| **CNAME** | `api` | `cname.vercel-dns.com` | Prod backend (`api.fabrixr.com`) |
+| **CNAME** | `pcsapi` | `cname.vercel-dns.com` | Prod backend alias (`pcsapi.fabrixr.com`) |
+| **CNAME** | `demo` | `cname.vercel-dns.com` | Staging frontend (`demo.fabrixr.com`) |
+| **CNAME** | `demo-api` | `cname.vercel-dns.com` | Staging backend (`demo-api.fabrixr.com`) |
+| **CNAME** | `www` | `cname.vercel-dns.com` | Landing page (`www.fabrixr.com`) |
+| **A / ALIAS** | `@` (root) | Vercel apex target | Root domain (per Vercel dashboard) |
+
+> The exact record values are shown by Vercel when you attach each domain; SSL validation
+> and renewal are handled automatically once the record resolves.
 
 ### How DNS Routes Traffic
 ```
-User → www.primeterminaltech.com
+User → app.fabrixr.com
        │
        ▼ (CNAME)
-       d2pv0ycsr3grbi.cloudfront.net (CloudFront CDN)
+       cname.vercel-dns.com (Vercel edge)
        │
-       ▼ (Origin)
-       akash-mule-dev.github.io/pcs-website (GitHub Pages)
+       ▼
+       frontend project (Angular SPA)
 
 
-User → app.primeterminaltech.com
+User → api.fabrixr.com
        │
        ▼ (CNAME)
-       d387267ab216kr.cloudfront.net (CloudFront CDN)
+       cname.vercel-dns.com (Vercel edge)
        │
-       ▼ (Origin)
-       pcs-frontend-prod-primeterminal.s3-website... (S3 Bucket)
-
-
-User → api.primeterminaltech.com
-       │
-       ▼ (A record)
-       43.204.37.17 (EC2 Instance)
-       │
-       ▼ (Nginx proxy)
-       localhost:3000 (PM2 pcs-prod process)
-
-
-User → dev.primeterminaltech.com
-       │
-       ▼ (A record)
-       43.204.37.17 (EC2 Instance)
-       │
-       ▼ (Nginx proxy)
-       S3 dev bucket
+       ▼
+       backend project (NestJS serverless function)
 ```
 
 ---
@@ -407,27 +319,25 @@ User → dev.primeterminaltech.com
 ### Production
 | Service | URL |
 |---------|-----|
-| Landing Page | https://www.primeterminaltech.com |
-| PCS App | https://app.primeterminaltech.com |
-| Backend API | http://api.primeterminaltech.com |
-| Swagger Docs | http://api.primeterminaltech.com/api/docs |
-| GitHub Pages (direct) | https://akash-mule-dev.github.io/pcs-website |
-
-### Development
-| Service | URL |
-|---------|-----|
-| Frontend | http://dev.primeterminaltech.com |
-| Backend API | http://43.204.37.17:3001 |
-| Swagger Docs | http://43.204.37.17:3001/api/docs |
-| S3 Direct | http://pcs-frontend-dev-primeterminal.s3-website.ap-south-1.amazonaws.com |
+| Landing Page | https://www.fabrixr.com |
+| FabriXR App | https://app.fabrixr.com |
+| Backend API | https://api.fabrixr.com |
+| Backend API (alias) | https://pcsapi.fabrixr.com |
+| Swagger Docs | https://api.fabrixr.com/api/docs |
 
 ### Staging
 | Service | URL |
 |---------|-----|
-| Frontend | http://stage.primeterminaltech.com |
-| Backend API | http://43.204.37.17:3002 |
-| Swagger Docs | http://43.204.37.17:3002/api/docs |
-| S3 Direct | http://pcs-frontend-stage-primeterminal.s3-website.ap-south-1.amazonaws.com |
+| Frontend | https://demo.fabrixr.com |
+| Backend API | https://demo-api.fabrixr.com |
+| Swagger Docs | https://demo-api.fabrixr.com/api/docs |
+
+### Development (dev branch previews)
+| Service | URL |
+|---------|-----|
+| Frontend | https://frontend-git-dev-akash-mule-devs-projects.vercel.app |
+| Backend API | https://backend-git-dev-akash-mule-devs-projects.vercel.app |
+| Swagger Docs | https://backend-git-dev-akash-mule-devs-projects.vercel.app/api/docs |
 
 ---
 
@@ -449,4 +359,4 @@ All environments share the same seed data:
 ---
 
 *Document created: February 22, 2026*
-*Last updated: February 22, 2026*
+*Last updated: June 2026 — reference now describes the Vercel deployment*

@@ -1,6 +1,6 @@
-# SpadeBloom — Website Copy
+# FabriXR — Website Copy
 
-**Implementation-ready copy for spadebloom.com.** Organized by page and section. Every section gives you a headline, subhead, body, and CTA where relevant. SEO meta and reusable microcopy are at the end.
+**Implementation-ready copy for fabrixr.com.** Organized by page and section. Every section gives you a headline, subhead, body, and CTA where relevant. SEO meta and reusable microcopy are at the end.
 
 **Voice:** plain-spoken, confident, shop-floor practical. No buzzwords, no hype. Claims that survive a live demo (we say "labor efficiency," never "OEE"; materials / scheduling / costing are roadmap, not promises).
 
@@ -10,7 +10,7 @@
 
 ## Global
 
-**Product name:** SpadeBloom · Production Control
+**Product name:** FabriXR · Production Control
 **One-line tagline:** See who's building what — and inspect it in 3D.
 **Nav:** Product · 3D/AR Quality · Pricing · Compare · Book a demo *(primary button)*
 **Primary CTA (everywhere):** Book a demo
@@ -23,7 +23,7 @@
 ### Hero
 **Eyebrow:** Production control for metal-fabrication shops
 **Headline:** See who's building what — and inspect it in 3D.
-**Subhead:** SpadeBloom shows who's on which order and stage in real time, lets operators inspect assemblies against the 3D model, and captures labor time per stage — so you can finally run the floor on live data instead of paper.
+**Subhead:** FabriXR shows who's on which order and stage in real time, lets operators inspect assemblies against the 3D model, and captures labor time per stage — so you can finally run the floor on live data instead of paper.
 **Primary CTA:** Book a demo
 **Secondary CTA:** Watch the 90-sec demo
 **Trust line (under buttons):** Live on web and the operator's phone · Up and running in weeks
@@ -42,7 +42,7 @@
 
 ### Three pillars
 **Headline:** One platform — from work order to weld inspection.
-**Subhead:** SpadeBloom is the fast, operator-first layer between paper and a heavyweight ERP.
+**Subhead:** FabriXR is the fast, operator-first layer between paper and a heavyweight ERP.
 - **See your floor live.** Know who's on which order and stage, against target — right now, on web and phone.
 - **QA in 3D & AR.** Inspect assemblies against the actual 3D model and pin defects to the geometry, in AR.
 - **Labor that tracks itself.** Per-operator, per-stage time with idle, break and rework — no paper travelers.
@@ -50,7 +50,7 @@
 ### 3D/AR Quality spotlight *(the flagship — give it the most visual weight)*
 **Eyebrow:** What sets us apart
 **Headline:** Quality you can see, in 3D and AR.
-**Body:** Most shops check a built assembly against a 2D drawing on a clipboard. SpadeBloom puts the actual 3D model in the operator's hands. They inspect the real part against the model — on a tablet or in AR, right at the station — and pin each defect directly to the geometry, with type, severity, measurements and tolerances. Every check is signed off and rolls up into defect-pattern views, so recurring problems stop hiding in a binder.
+**Body:** Most shops check a built assembly against a 2D drawing on a clipboard. FabriXR puts the actual 3D model in the operator's hands. They inspect the real part against the model — on a tablet or in AR, right at the station — and pin each defect directly to the geometry, with type, severity, measurements and tolerances. Every check is signed off and rolls up into defect-pattern views, so recurring problems stop hiding in a binder.
 **Proof bullets:**
 - Inspect the built assembly against the real 3D model — not a flat checklist.
 - Defects pinned to the geometry: type, severity, measurement, tolerance.
@@ -76,7 +76,7 @@
 
 ### Comparison teaser
 **Headline:** Lighter than an ERP. Smarter than a spreadsheet. More than a machine monitor.
-**Body:** SpadeBloom is built for the one question paper can't answer and a full ERP takes a year to: who is doing what, on which order, against target — and is the part right?
+**Body:** FabriXR is built for the one question paper can't answer and a full ERP takes a year to: who is doing what, on which order, against target — and is the part right?
 **CTA:** See how we compare →
 
 ### Pricing teaser
@@ -86,7 +86,7 @@
 
 ### Final CTA
 **Headline:** See your floor live.
-**Subhead:** Book a 20-minute demo and we'll show you your shop's workflow on SpadeBloom — including a 3D/AR quality check.
+**Subhead:** Book a 20-minute demo and we'll show you your shop's workflow on FabriXR — including a 3D/AR quality check.
 **Primary CTA:** Book a demo
 **Secondary CTA:** Watch the 90-sec demo
 
@@ -95,7 +95,7 @@
 ## 2. Features page
 
 **Page headline:** Everything you need to run the floor — and nothing you don't.
-**Intro:** SpadeBloom covers production execution, live labor, and 3D/AR quality. Here's what's live today.
+**Intro:** FabriXR covers production execution, live labor, and 3D/AR quality. Here's what's live today.
 
 **Live floor visibility**
 Know who's on which order and stage, against target, in real time. The dashboard surfaces work orders, active operators, completed output and labor efficiency, with a Live Stage Status board (operator · order · stage · elapsed · station) that updates with no refresh, on web and mobile.
@@ -128,9 +128,9 @@ An Angular web portal, a React Native operator app, and a documented REST + real
 ## 3. 3D/AR Quality page *(dedicated — this is the differentiator)*
 
 **Headline:** Stop checking welds against a clipboard.
-**Subhead:** SpadeBloom brings the 3D model to the floor, so operators inspect the real assembly against the real geometry — and flag defects in AR.
+**Subhead:** FabriXR brings the 3D model to the floor, so operators inspect the real assembly against the real geometry — and flag defects in AR.
 **Section — The problem with 2D QA:** A printed drawing can't show whether a fabricated assembly actually matches intent. Defects get caught late, recorded inconsistently, and the same mistakes repeat because no one can see the pattern.
-**Section — How SpadeBloom does QA:**
+**Section — How FabriXR does QA:**
 - Open the product's 3D model on a tablet — or step into AR at the station.
 - Inspect the built assembly against the model and pin each defect to the exact spot on the geometry.
 - Record type, severity, measurements and tolerances on the part itself.
@@ -167,22 +167,22 @@ An Angular web portal, a React Native operator app, and a documented REST + real
 
 ## 5. Compare page
 
-**Headline:** How SpadeBloom compares.
+**Headline:** How FabriXR compares.
 **Subhead:** We're honest about what we do and don't do — so the comparison is fair.
 
 | | Real-time labor | 3D/AR QA | Fast to deploy | Operator-first |
 |---|:---:|:---:|:---:|:---:|
-| **SpadeBloom** | Yes | Yes | Yes | Yes |
+| **FabriXR** | Yes | Yes | Yes | Yes |
 | Heavy ERP / MES | — | Logs only | — | — |
 | Machine monitors | Partial | — | Partial | — |
 | DIY platforms | Partial | — | — | Partial |
 | Paper & spreadsheets | — | — | Yes | Partial |
 
-**vs. spreadsheets & paper:** Free and familiar — until you have sixty jobs open and your dashboard is twelve hours stale. SpadeBloom gives you real-time status, consistent labor capture, and model-based QA instead of clipboard checklists.
+**vs. spreadsheets & paper:** Free and familiar — until you have sixty jobs open and your dashboard is twelve hours stale. FabriXR gives you real-time status, consistent labor capture, and model-based QA instead of clipboard checklists.
 
-**vs. a full ERP/MES:** ERPs do materials, scheduling and costing — and take quarters and a budget to roll out, after which the floor often still doesn't use them. SpadeBloom does the execution-and-quality layer operators actually adopt, live in weeks. *(Materials, scheduling and costing are on our roadmap; if you need them today, a full ERP may fit better — and SpadeBloom can sit alongside one.)*
+**vs. a full ERP/MES:** ERPs do materials, scheduling and costing — and take quarters and a budget to roll out, after which the floor often still doesn't use them. FabriXR does the execution-and-quality layer operators actually adopt, live in weeks. *(Materials, scheduling and costing are on our roadmap; if you need them today, a full ERP may fit better — and FabriXR can sit alongside one.)*
 
-**vs. machine monitors:** Machine-signal tools read your CNCs and report utilization. They don't track the people, the manual stages, or whether the part is right. SpadeBloom covers weld, assembly and inspection — the human work where most fab time and rework live.
+**vs. machine monitors:** Machine-signal tools read your CNCs and report utilization. They don't track the people, the manual stages, or whether the part is right. FabriXR covers weld, assembly and inspection — the human work where most fab time and rework live.
 
 **CTA:** Book a demo
 
@@ -190,7 +190,7 @@ An Angular web portal, a React Native operator app, and a documented REST + real
 
 ## 6. FAQ
 
-- **What is SpadeBloom?** A cloud production-control platform for metal-fab and discrete shops: real-time floor visibility, per-stage labor tracking, and 3D/AR quality inspection, on web and an operator app.
+- **What is FabriXR?** A cloud production-control platform for metal-fab and discrete shops: real-time floor visibility, per-stage labor tracking, and 3D/AR quality inspection, on web and an operator app.
 - **Who is it for?** Metal-fabrication and sheet-metal job shops, roughly 20–300 employees, running multi-stage routed jobs.
 - **How long does it take to go live?** Weeks, not quarters. We model your routings during onboarding and start with a pilot line.
 - **Does it replace our ERP?** No — it's the live execution-and-quality layer your floor will actually use. It can run alongside an ERP. Materials, scheduling and costing are on our roadmap.
@@ -205,19 +205,19 @@ An Angular web portal, a React Native operator app, and a documented REST + real
 **Columns:**
 - **Product:** Live visibility · 3D/AR Quality · Labor tracking · Work orders · Operator app · Pricing
 - **Company:** About · Book a demo · Contact
-- **Contact:** demo.spadebloom.com · akash.mule@eterio.ca
-**Tagline line:** SpadeBloom — production control, 3D/AR quality and live labor visibility for the modern fab floor.
-**Legal:** © 2026 SpadeBloom. All rights reserved.
+- **Contact:** demo.fabrixr.com · akash.mule@eterio.ca
+**Tagline line:** FabriXR — production control, 3D/AR quality and live labor visibility for the modern fab floor.
+**Legal:** © 2026 FabriXR. All rights reserved.
 
 ---
 
 ## 8. SEO — title tags & meta descriptions
 
-- **Home** — Title: `SpadeBloom — Production Control & 3D/AR Quality for Fab Shops` · Meta: `See who's building what in real time, track labor per stage, and inspect assemblies in 3D/AR. Production control for metal-fabrication shops — live in weeks.`
-- **Features** — Title: `Features — Live Floor Visibility, Labor Tracking & 3D/AR QA | SpadeBloom` · Meta: `Real-time Live Stage Status, per-stage labor tracking, 3D/AR assembly inspection, work-order kanban and an operator app. See what SpadeBloom does today.`
-- **3D/AR Quality** — Title: `3D/AR Quality Inspection for Fabricated Assemblies | SpadeBloom` · Meta: `Inspect built assemblies against the 3D model and pin defects to the geometry, in AR — on the floor. Fewer escapes, less rework, a real quality record.`
-- **Pricing** — Title: `Pricing — Per-Site Plans for Fab Shops | SpadeBloom` · Meta: `Simple per-site pricing banded by operator count. Start with a low-risk pilot and go live in weeks.`
-- **Compare** — Title: `SpadeBloom vs. Spreadsheets, ERP & Machine Monitors` · Meta: `An honest comparison: real-time labor, 3D/AR QA, fast deployment and operator adoption — versus paper, full ERPs and machine-signal tools.`
+- **Home** — Title: `FabriXR — Production Control & 3D/AR Quality for Fab Shops` · Meta: `See who's building what in real time, track labor per stage, and inspect assemblies in 3D/AR. Production control for metal-fabrication shops — live in weeks.`
+- **Features** — Title: `Features — Live Floor Visibility, Labor Tracking & 3D/AR QA | FabriXR` · Meta: `Real-time Live Stage Status, per-stage labor tracking, 3D/AR assembly inspection, work-order kanban and an operator app. See what FabriXR does today.`
+- **3D/AR Quality** — Title: `3D/AR Quality Inspection for Fabricated Assemblies | FabriXR` · Meta: `Inspect built assemblies against the 3D model and pin defects to the geometry, in AR — on the floor. Fewer escapes, less rework, a real quality record.`
+- **Pricing** — Title: `Pricing — Per-Site Plans for Fab Shops | FabriXR` · Meta: `Simple per-site pricing banded by operator count. Start with a low-risk pilot and go live in weeks.`
+- **Compare** — Title: `FabriXR vs. Spreadsheets, ERP & Machine Monitors` · Meta: `An honest comparison: real-time labor, 3D/AR QA, fast deployment and operator adoption — versus paper, full ERPs and machine-signal tools.`
 
 **Target keywords:** metal fabrication production tracking software, shop floor labor tracking, real-time production visibility, 3D/AR weld & assembly inspection, MES alternative for small manufacturers, job shop production control.
 
