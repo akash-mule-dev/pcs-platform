@@ -45,9 +45,9 @@ echo "  ✅ Metro port forwarded"
 
 # --- Step 3: Launch app fresh ---
 echo "[3/9] Launching app..."
-adb shell am force-stop com.primeterminal.pcs
+adb shell am force-stop com.fabrixr.pcs
 sleep 1
-adb shell am start -n com.primeterminal.pcs/.MainActivity > /dev/null 2>&1
+adb shell am start -n com.fabrixr.pcs/.MainActivity > /dev/null 2>&1
 echo "  Waiting for app to load..."
 sleep 8
 screenshot "01_app_launch"

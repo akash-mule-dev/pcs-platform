@@ -42,8 +42,7 @@ Config files live in the repo:
 | `frontend/vercel.json` | Frontend build/output + SPA rewrite config |
 | `backend/vercel.json` | Backend serverless function routing |
 
-> Brand: **FabriXR**, primary domain `fabrixr.com` (the legacy `primeterminaltech.com`
-> domain may still appear in some records).
+> Brand: **FabriXR**, primary domain `fabrixr.com`.
 
 ---
 

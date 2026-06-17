@@ -27,18 +27,28 @@ export async function extractPartGlb(
   const root = doc.getRoot();
   const keepSet = new Set(meshNames);
 
-  // Mark nodes to keep (post-order: a node survives if it or any descendant is wanted).
+  // Mark nodes to keep. A node survives if it is the match itself, lies BELOW a
+  // match (that's where the geometry usually is — the named IFC node is often
+  // just a transform container, with the actual mesh on child nodes), OR lies
+  // ABOVE a match (to preserve the transform-carrying ancestor chain).
+  //
+  // The previous logic kept only matches + their ancestors and DROPPED a match's
+  // children, so whenever geometry hung off child nodes the isolated GLB came out
+  // empty (0×0×0 bbox, invisible in AR). This mirrors the web 3D viewer, which
+  // keeps a mesh when its own name OR any ancestor's name matches.
   const keep = new Set<any>();
-  const visit = (node: any): boolean => {
-    let wanted = keepSet.has(node.getName());
+  const visit = (node: any, ancestorMatched: boolean): boolean => {
+    const selfMatched = keepSet.has(node.getName());
+    const inKeptSubtree = ancestorMatched || selfMatched;
+    let descendantMatched = false;
     for (const child of node.listChildren()) {
-      if (visit(child)) wanted = true;
+      if (visit(child, inKeptSubtree)) descendantMatched = true;
     }
-    if (wanted) keep.add(node);
-    return wanted;
+    if (inKeptSubtree || descendantMatched) keep.add(node);
+    return selfMatched || descendantMatched;
   };
   for (const scene of root.listScenes()) {
-    for (const node of scene.listChildren()) visit(node);
+    for (const node of scene.listChildren()) visit(node, false);
   }
 
   // Drop every node we're not keeping (children of a dropped node are unwanted too).
@@ -64,7 +74,15 @@ export async function extractPartGlb(
       if (t.listParents().every((p: any) => p.propertyType === 'Root')) t.dispose();
   }
 
-  const meshCount = root.listMeshes().length;
+  // Count only meshes that actually carry vertices, so an isolated subtree with
+  // no POSITION data reports 0 and the caller falls back to the full model.
+  let meshCount = 0;
+  for (const mesh of root.listMeshes()) {
+    const hasVerts = mesh
+      .listPrimitives()
+      .some((p: any) => (p.getAttribute('POSITION')?.getCount() ?? 0) > 0);
+    if (hasVerts) meshCount++;
+  }
   const data = await io.writeBinary(doc);
   return { data, meshCount };
 }

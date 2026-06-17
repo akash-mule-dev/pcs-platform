@@ -97,7 +97,10 @@ export function useRemoteModel(
       const dir = `${cacheRoot}${MODELS_SUBDIR}/`;
       const key = safeName(modelId);
       const fullUri = `${dir}${key}.glb`;
-      const variantKey = isolateKey ? `${key}__p_${isolateKey}` : key;
+      // `p2` bumps the cache version: older builds cached EMPTY isolated GLBs
+      // (the part-extractor dropped a match's geometry-bearing children); this
+      // forces a fresh extraction with the fixed subtree-keeping logic.
+      const variantKey = isolateKey ? `${key}__p2_${isolateKey}` : key;
       let activeUri = `${dir}${variantKey}.glb`;
       const wireframeUri = `${dir}${variantKey}_wireframe.glb`;
 

@@ -1,4 +1,4 @@
-appId: com.primeterminal.pcs
+appId: com.fabrixr.pcs
 ---
 # Step 1: Home screen
 - takeScreenshot: step1_home

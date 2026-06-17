@@ -3,7 +3,7 @@
 // module is safe to import in Expo Go / Jest. Logic is otherwise unchanged:
 // solid / ghost / wireframe render modes, world / plane / image tracking,
 // model + real-world rulers, and dimension overlays.
-import React, { useState, useRef } from 'react';
+import React, { useRef } from 'react';
 import { Vec3, RenderMode, TrackingMode, MeasurementState } from './types';
 import { ModelDimensions } from './dimensionExtractor';
 import {
@@ -23,8 +23,6 @@ let Viro3DObject: any = null;
 let ViroNode: any = null;
 let ViroTrackingStateConstants: any = null;
 let ViroMaterials: any = null;
-let ViroARPlaneSelector: any = null;
-let ViroARImageMarker: any = null;
 let ViroARTrackingTargets: any = null;
 let ViroText: any = null;
 
@@ -37,8 +35,6 @@ try {
   ViroNode = viro.ViroNode;
   ViroTrackingStateConstants = viro.ViroTrackingStateConstants;
   ViroMaterials = viro.ViroMaterials;
-  ViroARPlaneSelector = viro.ViroARPlaneSelector;
-  ViroARImageMarker = viro.ViroARImageMarker;
   ViroARTrackingTargets = viro.ViroARTrackingTargets;
   ViroText = viro.ViroText;
 } catch {
@@ -51,6 +47,14 @@ try {
       diffuseColor: '#00FF0022',
       lightingModel: 'Constant',
       blendMode: 'Alpha',
+    },
+    // IFC-converted GLBs carry NO materials and NO vertex normals (same reason
+    // the web 3D viewer has to assign a material + computeVertexNormals), so the
+    // Viro default renders the model invisible. 'Constant' lighting shows the
+    // diffuseColor without needing normals, guaranteeing the part is visible in AR.
+    steelSolid: {
+      diffuseColor: '#9aa2ad',
+      lightingModel: 'Constant',
     },
   });
 } catch {
@@ -132,9 +136,9 @@ function ARModelScene(props: SceneProps) {
     onPartTap,
   } = props.sceneNavigator.viroAppProps;
 
-  const [imageMarkerFound, setImageMarkerFound] = useState(false);
   const placingRef = useRef(false);
   const sceneRef = useRef<any>(null);
+  const viro3dRef = useRef<any>(null); // solid model node — used to read its bbox on load (diagnostics)
 
   const rulerActive =
     measurements.modelRulerActive ||
@@ -182,8 +186,10 @@ function ARModelScene(props: SceneProps) {
       onAddRealRulerPoint(p);
       return;
     }
-    // Placement (world mode only) when not yet placed
-    if (trackingMode !== 'world') return;
+    // Placement — IDENTICAL in all three modes: a single tap drops the model in
+    // front of the camera. The tracking mode only changes how ARKit stabilizes
+    // the world (anchorDetectionTypes below + worldAlignment on the navigator),
+    // never how the model is placed, so the flow is the same everywhere.
     if (placed || placingRef.current) return;
     placingRef.current = true;
     placeInFrontOfCamera(p);
@@ -226,7 +232,24 @@ function ARModelScene(props: SceneProps) {
     position: [0, 0, 0] as Vec3,
     onClick: handleModelTap,
     onLoadStart: () => onModelStatus('loading'),
-    onLoadEnd: () => onModelStatus('loaded'),
+    onLoadEnd: async () => {
+      // Report the loaded model's world-space size so we can tell a load success
+      // from a scale problem (dims here = raw GLB size × the node scale 0.2).
+      try {
+        const r = await viro3dRef.current?.getBoundingBoxAsync?.();
+        const b = r?.boundingBox ?? r;
+        if (b && typeof b.maxX === 'number') {
+          const sz = [b.maxX - b.minX, b.maxY - b.minY, b.maxZ - b.minZ]
+            .map((n: number) => Number(n).toFixed(2))
+            .join('×');
+          onModelStatus('loaded ' + sz + 'm');
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+      onModelStatus('loaded');
+    },
     onError: (event: any) => {
       if (__DEV__) console.warn('Model load error:', event?.nativeEvent);
       onModelStatus('error: ' + (event?.nativeEvent?.error || 'unknown'));
@@ -255,8 +278,10 @@ function ARModelScene(props: SceneProps) {
     }
     return (
       <Viro3DObject
+        ref={viro3dRef}
         source={{ uri: modelUri }}
         type="GLB"
+        materials={['steelSolid']}
         {...modelObjectProps}
       />
     );
@@ -348,63 +373,27 @@ function ARModelScene(props: SceneProps) {
     </>
   );
 
-  if (trackingMode === 'plane' && ViroARPlaneSelector) {
-    return (
-      <ViroARScene
-        onTrackingUpdated={handleTrackingUpdated}
-        onClick={handleSceneTap}
-      >
-        {lights}
-        <ViroARPlaneSelector
-          minHeight={0.1}
-          minWidth={0.1}
-          alignment="Horizontal"
-          onPlaneSelected={() => {
-            if (!placed) onPlace([0, 0, 0]);
-          }}
-        >
-          {modelNode}
-        </ViroARPlaneSelector>
-        {rulerOverlays}
-        {!placed && hintText('Move phone to detect a surface, then tap it')}
-      </ViroARScene>
-    );
-  }
+  // All three modes share ONE scene and ONE placement flow: a single tap drops
+  // the model in front of the camera (see handleSceneTap), shown only once
+  // placed. The mode is purely a live tracking PRESET on this never-swapped
+  // scene — no ViroARPlaneSelector / ViroARImageMarker structural swap, which is
+  // what made the old per-mode flows diverge and made switching unreliable.
+  // 'plane'/'image' turn on ARKit plane detection for steadier tracking;
+  // worldAlignment (set on the navigator) further differentiates the presets.
+  const anchorDetectionTypes =
+    trackingMode === 'world' ? ['None'] : ['PlanesHorizontal', 'PlanesVertical'];
 
-  if (trackingMode === 'image' && ViroARImageMarker) {
-    return (
-      <ViroARScene
-        onTrackingUpdated={handleTrackingUpdated}
-        onClick={handleSceneTap}
-      >
-        {lights}
-        <ViroARImageMarker
-          target="reference"
-          onAnchorFound={() => {
-            setImageMarkerFound(true);
-            if (!placed) onPlace([0, 0, 0]);
-          }}
-          onAnchorRemoved={() => setImageMarkerFound(false)}
-        >
-          {modelNode}
-        </ViroARImageMarker>
-        {rulerOverlays}
-        {!imageMarkerFound && hintText('Point camera at reference image')}
-      </ViroARScene>
-    );
-  }
-
-  // world mode (default): drift-prone free placement via scene taps.
   return (
     <ViroARScene
       ref={sceneRef}
+      anchorDetectionTypes={anchorDetectionTypes as any}
       onTrackingUpdated={handleTrackingUpdated}
       onClick={handleSceneTap}
     >
       {lights}
       {placed && modelNode}
       {rulerOverlays}
-      {!placed && hintText('Tap anywhere to place the model')}
+      {!placed && hintText('Tap to place the model')}
     </ViroARScene>
   );
 }

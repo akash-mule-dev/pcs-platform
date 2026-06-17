@@ -37,19 +37,21 @@ export const TRACKING_MODE_INFO: Record<
   TrackingMode,
   { title: string; subtitle: string; accuracy: string }
 > = {
+  // All three modes place the model the same way — tap to drop it in front of
+  // the camera. They differ only in how ARKit stabilizes the world afterward.
   world: {
     title: 'World Position',
-    subtitle: 'Drag to place anywhere. Drifts as you move.',
+    subtitle: 'Tap to place. Free tracking — drifts most as you move.',
     accuracy: 'Baseline',
   },
   plane: {
     title: 'Plane Anchor',
-    subtitle: 'Tap a detected surface. ARKit/ARCore keeps it fixed.',
+    subtitle: 'Tap to place. Plane detection holds it steadier.',
     accuracy: 'High',
   },
   image: {
     title: 'Image Marker',
-    subtitle: 'Locks to a printed reference image on the object.',
+    subtitle: 'Tap to place. Gravity + heading lock for the steadiest hold.',
     accuracy: 'Highest',
   },
 };

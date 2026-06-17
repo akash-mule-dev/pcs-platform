@@ -65,7 +65,7 @@ forwarding) because most registrars can't CNAME the root.
 > Use **"DNS only" (grey cloud)** for every record pointing at Vercel — Vercel terminates TLS and
 > serves the CDN itself, so proxying through Cloudflare would conflict with its certificates.
 
-### Option B: If using GoDaddy (same registrar as primeterminaltech.com setup)
+### Option B: If using GoDaddy
 
 | Type | Name | Value | TTL |
 |------|------|-------|-----|
@@ -138,8 +138,8 @@ origins so the backend accepts the FabriXR frontends:
 
 | Project | Variable | Value |
 |---------|----------|-------|
-| prod backend | `CORS_ORIGIN` | `https://app.fabrixr.com,https://www.fabrixr.com,https://app.primeterminaltech.com` |
-| staging backend | `CORS_ORIGIN` | `https://demo.fabrixr.com,https://stage.primeterminaltech.com` |
+| prod backend | `CORS_ORIGIN` | `https://app.fabrixr.com,https://www.fabrixr.com` |
+| staging backend | `CORS_ORIGIN` | `https://demo.fabrixr.com` |
 
 Set these under **Vercel → (project) → Settings → Environment Variables**, then **redeploy** the
 project so the new values take effect. Keep `DATABASE_URL` (Neon PostgreSQL), `STORAGE_TYPE`, the
@@ -175,14 +175,14 @@ against what Vercel asks for.
 
 ## Quick Reference
 
-| What | Old (primeterminaltech.com) | New (fabrixr.com) |
-|------|---------------------------|---------------------|
-| Landing page | www.primeterminaltech.com | www.fabrixr.com |
-| Production app | app.primeterminaltech.com | app.fabrixr.com |
-| Production API | api.primeterminaltech.com | api.fabrixr.com / pcsapi.fabrixr.com |
-| Staging app | stage.primeterminaltech.com | demo.fabrixr.com |
-| Staging API | stage backend (port 3002) | demo-api.fabrixr.com |
-| Hosting | self-managed servers | Vercel (auto SSL + CDN) |
+| Role | Domain | Points at |
+|------|--------|-----------|
+| Landing page | www.fabrixr.com | Vercel landing project |
+| Production app | app.fabrixr.com | Vercel production frontend |
+| Production API | api.fabrixr.com / pcsapi.fabrixr.com | Vercel production backend |
+| Staging app | demo.fabrixr.com | Vercel staging frontend |
+| Staging API | demo-api.fabrixr.com | Vercel staging backend |
+| Hosting | — | Vercel (auto SSL + CDN) |
 
 ---
 
