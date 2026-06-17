@@ -2,7 +2,7 @@
 
 ## App Info
 - **App Name:** PCS
-- **Bundle ID:** com.primeterminal.pcs
+- **Bundle ID:** com.fabrixr.pcs
 - **Platforms:** Android, iOS
 - **Framework:** React Native + Expo (SDK 52)
 
@@ -117,7 +117,7 @@ npx expo run:ios
 
 ### In Xcode:
 1. **Select your team** — Click on the project → "Signing & Capabilities" → Select your Apple Developer team
-2. **Set Bundle Identifier** — Should be `com.primeterminal.pcs`
+2. **Set Bundle Identifier** — Should be `com.fabrixr.pcs`
 3. **Select a device** — Choose your iPhone or a simulator
 4. **Build** — Press `Cmd + B` or click the play button
 5. **Archive for distribution** — Product → Archive → Distribute App

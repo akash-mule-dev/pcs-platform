@@ -144,7 +144,7 @@ Swagger UI available at `/api/docs` on each environment.
 | Web | ✅ Expo Web | `expo start --web` |
 
 ### App Configuration
-- **Bundle ID:** `com.primeterminal.pcs`
+- **Bundle ID:** `com.fabrixr.pcs`
 - **App Name:** PCS
 - **Icons:** Configured in `assets/` directory
 - **Splash Screen:** Blue theme (#1565c0) with PCS branding

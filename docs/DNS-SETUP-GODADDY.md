@@ -1,6 +1,6 @@
 # GoDaddy DNS Configuration — Complete Reference
 
-> Exact DNS records configured for primeterminaltech.com on GoDaddy, pointing the domains at
+> Exact DNS records configured for fabrixr.com on GoDaddy, pointing the domains at
 > **Vercel**. Hosting (frontend + backend) is on Vercel; **SSL and CDN are automatic** — Vercel
 > issues and auto-renews the TLS certificate for every custom domain you add. There is no
 > certificate to request, no validation record to maintain, and no CDN to configure.
@@ -10,10 +10,10 @@
 ## Domain Details
 | Field | Value |
 |-------|-------|
-| Domain | `primeterminaltech.com` |
+| Domain | `fabrixr.com` |
 | Registrar | GoDaddy |
 | Nameservers | `ns33.domaincontrol.com`, `ns34.domaincontrol.com` |
-| DNS Management URL | https://dcc.godaddy.com/manage/primeterminaltech.com/dns |
+| DNS Management URL | https://dcc.godaddy.com/manage/fabrixr.com/dns |
 | Account Email | `akashmule341@gmail.com` |
 | Hosting | Vercel (auto SSL + CDN) |
 
@@ -44,11 +44,11 @@ You don't point GoDaddy at servers or IPs you manage. For each subdomain:
 | Name | `www` |
 | Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes www.primeterminaltech.com to the Vercel landing project |
+| Purpose | Routes www.fabrixr.com to the Vercel landing project |
 
 **Traffic flow:**
 ```
-www.primeterminaltech.com
+www.fabrixr.com
   → CNAME cname.vercel-dns.com
     → Vercel landing project (TLS + CDN automatic)
 ```
@@ -62,11 +62,11 @@ www.primeterminaltech.com
 | Name | `app` |
 | Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes app.primeterminaltech.com to the Vercel production frontend project |
+| Purpose | Routes app.fabrixr.com to the Vercel production frontend project |
 
 **Traffic flow:**
 ```
-app.primeterminaltech.com
+app.fabrixr.com
   → CNAME cname.vercel-dns.com
     → Vercel prod frontend project (TLS + CDN automatic)
 ```
@@ -80,11 +80,11 @@ app.primeterminaltech.com
 | Name | `api` |
 | Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes api.primeterminaltech.com to the Vercel production backend project |
+| Purpose | Routes api.fabrixr.com to the Vercel production backend project |
 
 **Traffic flow:**
 ```
-api.primeterminaltech.com
+api.fabrixr.com
   → CNAME cname.vercel-dns.com
     → Vercel prod backend project (TLS automatic)
 ```
@@ -98,11 +98,11 @@ api.primeterminaltech.com
 | Name | `dev` |
 | Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes dev.primeterminaltech.com to the Vercel development frontend project |
+| Purpose | Routes dev.fabrixr.com to the Vercel development frontend project |
 
 **Traffic flow:**
 ```
-dev.primeterminaltech.com
+dev.fabrixr.com
   → CNAME cname.vercel-dns.com
     → Vercel dev frontend project (TLS + CDN automatic)
 ```
@@ -116,11 +116,11 @@ dev.primeterminaltech.com
 | Name | `stage` |
 | Value | `cname.vercel-dns.com` |
 | TTL | 600 |
-| Purpose | Routes stage.primeterminaltech.com to the Vercel staging frontend project |
+| Purpose | Routes stage.fabrixr.com to the Vercel staging frontend project |
 
 **Traffic flow:**
 ```
-stage.primeterminaltech.com
+stage.fabrixr.com
   → CNAME cname.vercel-dns.com
     → Vercel staging frontend project (TLS + CDN automatic)
 ```
@@ -131,8 +131,8 @@ stage.primeterminaltech.com
 | Field | Value |
 |-------|-------|
 | Type | Domain Forward |
-| From | `primeterminaltech.com` |
-| To | `https://www.primeterminaltech.com` |
+| From | `fabrixr.com` |
+| To | `https://www.fabrixr.com` |
 | Type | 301 (Permanent Redirect) |
 | Purpose | Redirects bare domain to www |
 
@@ -146,12 +146,12 @@ stage.primeterminaltech.com
 
 | Subdomain | Type | Points To | Final Destination | HTTPS |
 |-----------|------|-----------|-------------------|-------|
-| `primeterminaltech.com` | Forward | → `www.primeterminaltech.com` | Landing page | ✅ |
-| `www.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | Landing page (Vercel) | ✅ (auto) |
-| `app.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | PCS Dashboard (Vercel) | ✅ (auto) |
-| `api.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | Backend API (Vercel) | ✅ (auto) |
-| `dev.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | Dev frontend (Vercel) | ✅ (auto) |
-| `stage.primeterminaltech.com` | CNAME | `cname.vercel-dns.com` | Stage frontend (Vercel) | ✅ (auto) |
+| `fabrixr.com` | Forward | → `www.fabrixr.com` | Landing page | ✅ |
+| `www.fabrixr.com` | CNAME | `cname.vercel-dns.com` | Landing page (Vercel) | ✅ (auto) |
+| `app.fabrixr.com` | CNAME | `cname.vercel-dns.com` | PCS Dashboard (Vercel) | ✅ (auto) |
+| `api.fabrixr.com` | CNAME | `cname.vercel-dns.com` | Backend API (Vercel) | ✅ (auto) |
+| `dev.fabrixr.com` | CNAME | `cname.vercel-dns.com` | Dev frontend (Vercel) | ✅ (auto) |
+| `stage.fabrixr.com` | CNAME | `cname.vercel-dns.com` | Stage frontend (Vercel) | ✅ (auto) |
 
 > Every domain gets HTTPS automatically once Vercel reports **Valid Configuration** — there is no
 > separate certificate step.
@@ -179,7 +179,7 @@ project so it takes effect.
 ### "DNS_PROBE_FINISHED_BAD_CONFIG"
 - DNS hasn't propagated yet. Wait 15-30 minutes.
 - Try different DNS: change device DNS to 1.1.1.1 (Cloudflare) to test.
-- Verify record exists: `dig <subdomain>.primeterminaltech.com +short` — it should resolve toward
+- Verify record exists: `dig <subdomain>.fabrixr.com +short` — it should resolve toward
   Vercel.
 
 ### "This site can't be reached"

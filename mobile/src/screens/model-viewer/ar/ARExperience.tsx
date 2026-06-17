@@ -519,6 +519,11 @@ export default function ARExperience({
             <Text style={styles.modelNameText} numberOfLines={1}>
               {state.fileName}
             </Text>
+            {/* Diagnostics: surfaces the GLB load result + measured size so we
+                can tell a load failure from a scale problem on-device. */}
+            <Text style={styles.modelNameText} numberOfLines={1}>
+              {`model: ${modelStatus}`}
+            </Text>
           </View>
 
           {onViewRecords && (
@@ -537,11 +542,20 @@ export default function ARExperience({
 
       {/* AR Scene. The navigator is mounted ONCE and never re-keyed: remounting
           it tears down the GLSurfaceView + renderer on the GL thread, which
-          races and crashes (onSurfaceChanged NPE / shader-load SIGSEGV). Tracking
-          mode switches in place — trackingMode flows through viroAppProps and
-          ARModelScene swaps the scene graph (world / plane / image) live. */}
+          races and crashes (onSurfaceChanged NPE / shader-load SIGSEGV).
+          All three modes share ONE scene graph and the SAME tap-to-place flow
+          (see ARModelScene). Switching modes only changes the tracking preset
+          live — worldAlignment here + anchorDetectionTypes on the scene — so
+          there is no scene-graph swap, which keeps switching stable. */}
       <ViroARSceneNavigator
         ref={navigatorRef}
+        worldAlignment={
+          trackingMode === 'world'
+            ? 'Camera'
+            : trackingMode === 'image'
+              ? 'GravityAndHeading'
+              : 'Gravity'
+        }
         autofocus={true}
         videoQuality="High"
         depthEnabled={true}

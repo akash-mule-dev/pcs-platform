@@ -1,10 +1,10 @@
-appId: com.primeterminal.pcs
+appId: com.fabrixr.pcs
 name: AR View - Camera Opens Test
 ---
 
 # Step 1: Launch app
 - launchApp:
-    appId: com.primeterminal.pcs
+    appId: com.fabrixr.pcs
     clearState: false
 
 # Step 2: Login

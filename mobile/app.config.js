@@ -16,7 +16,7 @@ module.exports = {
     assetBundlePatterns: ["**/*"],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.primeterminal.pcs",
+      bundleIdentifier: "com.fabrixr.pcs",
       infoPlist: {
         NSCameraUsageDescription: "PCS needs camera access for AR features",
         NSPhotoLibraryUsageDescription:
@@ -32,7 +32,7 @@ module.exports = {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#1565c0",
       },
-      package: "com.primeterminal.pcs",
+      package: "com.fabrixr.pcs",
       permissions: [
         "INTERNET",
         "CAMERA",

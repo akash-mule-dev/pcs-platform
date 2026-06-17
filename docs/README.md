@@ -1,6 +1,6 @@
 # PCS Platform — Documentation Index
 
-> All technical documentation for the Production Control System by Prime Terminal.
+> All technical documentation for the FabriXR Production Control System.
 
 ---
 
@@ -27,13 +27,6 @@
 | **Demo/Staging** | https://demo.fabrixr.com | https://demo-api.fabrixr.com | https://demo-api.fabrixr.com/api/docs |
 | **Landing Page** | https://www.fabrixr.com | — | — |
 
-### Legacy URLs (primeterminaltech.com — still active)
-| Environment | Frontend | Backend API |
-|------------|----------|-------------|
-| **Production** | https://app.primeterminaltech.com | http://api.primeterminaltech.com |
-| **Development** | http://dev.primeterminaltech.com | http://43.204.37.17:3001 |
-| **Staging** | http://stage.primeterminaltech.com | http://43.204.37.17:3002 |
-
 ### Repositories
 | Repo | URL |
 |------|-----|
@@ -45,7 +38,7 @@
 |---------|-----|
 | Vercel Dashboard | https://vercel.com/dashboard |
 | Neon Database | https://console.neon.tech |
-| GoDaddy DNS | https://dcc.godaddy.com/manage/primeterminaltech.com/dns |
+| GoDaddy DNS | https://dcc.godaddy.com/manage/fabrixr.com/dns |
 | GitHub | https://github.com/akash-mule-dev |
 
 ---
