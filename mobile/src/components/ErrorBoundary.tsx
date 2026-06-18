@@ -4,6 +4,19 @@ import { Colors } from '../theme/colors';
 
 interface Props {
   children: React.ReactNode;
+  /** Fallback heading. Defaults to a generic message. */
+  title?: string;
+  /** Fallback body text. Defaults to a generic message. */
+  message?: string;
+  /** Recovery-button label. Defaults to "Try again". */
+  resetLabel?: string;
+  /**
+   * Called when the user taps the recovery button, AFTER the boundary clears
+   * its error state. Use it on a NESTED boundary to navigate away from a screen
+   * that crashes on render (e.g. pop out of AR) so recovery doesn't just
+   * re-mount the same failing tree in place.
+   */
+  onReset?: () => void;
 }
 
 interface State {
@@ -28,18 +41,19 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   handleReset = () => {
     this.setState({ hasError: false, message: undefined });
+    this.props.onReset?.();
   };
 
   render() {
     if (this.state.hasError) {
       return (
         <View style={styles.container}>
-          <Text style={styles.title}>Something went wrong</Text>
+          <Text style={styles.title}>{this.props.title ?? 'Something went wrong'}</Text>
           <Text style={styles.message}>
-            The app hit an unexpected error. You can try again.
+            {this.props.message ?? 'The app hit an unexpected error. You can try again.'}
           </Text>
           <TouchableOpacity style={styles.button} onPress={this.handleReset}>
-            <Text style={styles.buttonText}>Try again</Text>
+            <Text style={styles.buttonText}>{this.props.resetLabel ?? 'Try again'}</Text>
           </TouchableOpacity>
         </View>
       );

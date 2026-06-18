@@ -241,7 +241,7 @@ export class TemplatesComponent implements OnInit, OnDestroy {
   }
 
   remove(t: any): void {
-    this.api.remove(t.id).subscribe({ next: () => { this.snack.open('Deleted', 'OK', { duration: 1500 }); this.load(); }, error: () => {} });
+    this.api.remove(t.id).subscribe({ next: () => { this.snack.open('Template deleted', 'OK', { duration: 3000, panelClass: 'success-snackbar' }); this.load(); }, error: () => {} });
   }
 
   // ── Form.io visual builder (lazy-loaded from CDN) ────────────────────────

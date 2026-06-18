@@ -10,6 +10,7 @@ import {
   ProjectsService, Project, ImportsMonitor, MonitorActiveRow, HistoryRow,
 } from '../core/services/projects.service';
 import { IMPORT_STAGE_LABELS } from './project-workspace.store';
+import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
 const PAGE = 25;
 
@@ -29,7 +30,7 @@ const PAGE = 25;
 @Component({
   selector: 'app-package-monitor',
   standalone: true,
-  imports: [CommonModule, RouterModule, MatIconModule, MatMenuModule, MatTooltipModule, MatProgressBarModule, MatProgressSpinnerModule],
+  imports: [CommonModule, RouterModule, MatIconModule, MatMenuModule, MatTooltipModule, MatProgressBarModule, MatProgressSpinnerModule, TourLauncherComponent],
   template: `
     <div class="pm">
       <div class="page-header">
@@ -37,12 +38,15 @@ const PAGE = 25;
           <h1 class="page-title">Package Monitor</h1>
           <p class="page-subtitle">Live import pipeline and upload history across all projects in your organization.</p>
         </div>
-        <a class="ghost-btn" routerLink="/projects"><mat-icon>foundation</mat-icon>Projects</a>
+        <div class="header-actions">
+          <app-tour-launcher tourId="package-monitor" [auto]="true" tooltip="Tour the Package Monitor"></app-tour-launcher>
+          <a class="ghost-btn" routerLink="/projects"><mat-icon>foundation</mat-icon>Projects</a>
+        </div>
       </div>
 
       <!-- KPI strip -->
       @if (monitor(); as m) {
-        <div class="kpi-grid">
+        <div class="kpi-grid" data-tour="pm-kpis">
           <div class="kpi">
             <div class="kpi-icon tone-blue"><mat-icon>conveyor_belt</mat-icon></div>
             <div class="kpi-text"><span class="kpi-num">{{ m.kpis.processing }}</span><span class="kpi-lbl">Processing now</span></div>
@@ -67,7 +71,7 @@ const PAGE = 25;
       }
 
       <!-- Tabs -->
-      <div class="seg-tabs">
+      <div class="seg-tabs" data-tour="pm-tabs">
         <button class="seg" [class.active]="tab() === 'live'" (click)="tab.set('live')">
           <mat-icon>monitor_heart</mat-icon> Package(s) in progress
           @if (monitor()?.kpis?.inProgress; as c) { <span class="seg-badge">{{ c }}</span> }
@@ -203,6 +207,7 @@ const PAGE = 25;
   styles: [`
     .pm { max-width: 1320px; margin: 0 auto; }
     .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+    .header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .page-title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--clay-text); }
     .page-subtitle { margin: 4px 0 0; color: var(--clay-text-muted); font-size: 13.5px; }
     .muted { color: var(--clay-text-muted); font-size: 12px; font-style: normal; }

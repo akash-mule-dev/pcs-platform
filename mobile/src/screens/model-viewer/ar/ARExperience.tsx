@@ -6,7 +6,9 @@
 // All interaction logic (placement, lock, render-mode cycle, measurement
 // rulers, align d-pad / scale / tilt / joystick) is unchanged from glb-viewer.
 import React, { useRef, useCallback, useState, useEffect } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform, ActivityIndicator } from 'react-native';
+import { offlineService } from '../../../services/offline.service';
+import { notifySuccess, notifyError } from '../../../utils/feedback';
 import ARModelScene from './ARModelScene';
 import ToolBar from './ToolBar';
 import TrackingModeSwitcher from './TrackingModeSwitcher';
@@ -112,10 +114,13 @@ export default function ARExperience({
     create: createQuality,
     uploadEvidence,
     signoff: signoffQuality,
+    flush: flushQueue,
   } = useQualityData(modelId);
   const [qaPanelOpen, setQaPanelOpen] = useState(false);
   const [logFormOpen, setLogFormOpen] = useState(false);
   const [savingInspection, setSavingInspection] = useState(false);
+  // True while the offline QA queue is being drained from the sync pill.
+  const [syncingQueue, setSyncingQueue] = useState(false);
 
   // ── AR visualization / inspection modes ──
   // QA overlay: 'off' | 'heatmap' (status-colored part volumes) | 'parts'
@@ -159,7 +164,9 @@ export default function ARExperience({
       try {
         await createQuality({ modelId, inspector: inspectorName, ...result });
         setLogFormOpen(false);
+        notifySuccess(offlineService.isOnline ? 'Inspection logged' : 'Saved offline — will sync');
       } catch (e) {
+        notifyError();
         Alert.alert('Could not save', e instanceof Error ? e.message : 'Failed to save inspection');
       } finally {
         setSavingInspection(false);
@@ -167,6 +174,39 @@ export default function ARExperience({
     },
     [createQuality, modelId, inspectorName],
   );
+
+  // Drain the offline QA queue on demand (the inspector taps the sync pill).
+  // Offline → reassure (it auto-syncs later); online → flush and report the
+  // synced/failed split so a rejected record or a given-up image is never silent.
+  const handleSyncQueue = useCallback(async () => {
+    if (syncingQueue) return;
+    if (!offlineService.isOnline) {
+      Alert.alert(
+        'Still offline',
+        `${pendingCount} inspection${pendingCount === 1 ? '' : 's'} saved on this device. They'll upload automatically the moment you're back online — nothing is lost.`,
+      );
+      return;
+    }
+    setSyncingQueue(true);
+    try {
+      const { synced, failed } = await flushQueue();
+      if (failed > 0) {
+        Alert.alert(
+          'Some items could not sync',
+          `${synced} uploaded, ${failed} could not be saved.\n\nThose were rejected by the server (e.g. failed validation) or an image gave up after repeated retries, so they were removed from the queue. Re-log them if needed.`,
+        );
+      } else if (synced > 0) {
+        Alert.alert('Synced', `${synced} queued inspection${synced === 1 ? '' : 's'} uploaded.`);
+      }
+    } catch {
+      Alert.alert(
+        "Couldn't sync",
+        "We couldn't reach the server. Your inspections stay queued and will retry automatically.",
+      );
+    } finally {
+      setSyncingQueue(false);
+    }
+  }, [syncingQueue, pendingCount, flushQueue]);
 
   // Set initial model on mount / when the prepared model changes.
   useEffect(() => {
@@ -340,7 +380,9 @@ export default function ARExperience({
           inspector: inspectorName,
           notes: `AR per-part inspection${confidenceTag()}`,
         });
+        notifySuccess(`${meshName}: ${status}`);
       } catch (e) {
+        notifyError();
         Alert.alert('Could not save', e instanceof Error ? e.message : 'Failed to save result');
       }
     },
@@ -380,8 +422,10 @@ export default function ARExperience({
         notes: `AR deviation probe${confidenceTag()}`,
       });
       setMeasurements((m) => ({ ...m, deviationModelPoint: null, deviationRealPoint: null }));
+      notifySuccess();
       Alert.alert('Logged', `Deviation of ${mm} mm recorded.`);
     } catch (e) {
+      notifyError();
       Alert.alert('Could not save', e instanceof Error ? e.message : 'Failed to save deviation');
     }
   }, [measurements.deviationModelPoint, measurements.deviationRealPoint, createQuality, modelId, focusMeshName, inspectorName, confidenceTag]);
@@ -696,11 +740,14 @@ export default function ARExperience({
         </View>
       )}
 
-      {/* Capture-confidence badge + offline-queue chip (bottom-center). */}
+      {/* Capture-confidence badge + offline-queue sync pill (bottom-center).
+          box-none so the camera/scene stays interactive everywhere except on
+          the tappable pill itself; the confidence badge is non-interactive. */}
       {!state.locked && (confidence || pendingCount > 0) && (
-        <View style={styles.bottomCenter} pointerEvents="none">
+        <View style={styles.bottomCenter} pointerEvents="box-none">
           {confidence && (
             <View
+              pointerEvents="none"
               style={[
                 styles.confidenceBadge,
                 confidence === 'high'
@@ -722,9 +769,24 @@ export default function ARExperience({
             </View>
           )}
           {pendingCount > 0 && (
-            <View style={styles.queueChip}>
-              <Text style={styles.queueChipText}>{pendingCount} queued offline</Text>
-            </View>
+            <TouchableOpacity
+              style={[styles.queueChip, syncingQueue && styles.queueChipBusy]}
+              onPress={handleSyncQueue}
+              disabled={syncingQueue}
+              activeOpacity={0.8}
+              hitSlop={{ top: 10, bottom: 10, left: 16, right: 16 }}
+            >
+              {syncingQueue ? (
+                <ActivityIndicator size="small" color="#0b1220" />
+              ) : (
+                <Text style={styles.queueChipIcon}>⟳</Text>
+              )}
+              <Text style={styles.queueChipText}>
+                {syncingQueue
+                  ? 'Syncing…'
+                  : `${pendingCount} queued offline · tap to sync`}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -976,8 +1038,8 @@ const styles = StyleSheet.create({
   bannerText: {
     flex: 1,
     color: '#1f2937',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
   },
   bannerTextOnInfo: {
     color: '#ffffff',
@@ -993,14 +1055,16 @@ const styles = StyleSheet.create({
   },
   bannerAction: {
     marginLeft: 12,
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 18,
   },
   bannerActionText: {
     color: '#1d4ed8',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
   },
   tiltContainer: {
@@ -1025,30 +1089,34 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 150,
     right: 16,
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: 'rgba(239, 68, 68, 0.92)',
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 20,
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+    borderRadius: 22,
     zIndex: 25,
   },
   lockButtonText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
   },
   qaButton: {
     position: 'absolute',
     top: 150,
     left: 16,
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: 'rgba(59, 130, 246, 0.92)',
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 20,
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+    borderRadius: 22,
     zIndex: 25,
   },
   qaButtonText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
   },
   vizRail: {
@@ -1060,10 +1128,12 @@ const styles = StyleSheet.create({
   },
   vizButton: {
     backgroundColor: 'rgba(13, 17, 23, 0.85)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 18,
-    minWidth: 104,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    minWidth: 108,
     alignItems: 'center',
   },
   vizButtonActive: {
@@ -1071,7 +1141,7 @@ const styles = StyleSheet.create({
   },
   vizButtonText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
   },
   bottomCenter: {
@@ -1084,30 +1154,49 @@ const styles = StyleSheet.create({
     zIndex: 15,
   },
   confidenceBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 16,
   },
   confHigh: { backgroundColor: 'rgba(16, 185, 129, 0.92)' },
   confMedium: { backgroundColor: 'rgba(245, 158, 11, 0.92)' },
   confLow: { backgroundColor: 'rgba(239, 68, 68, 0.92)' },
   confidenceText: {
     color: '#0b1220',
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '800',
   },
   confTextLight: {
     color: '#ffffff',
   },
+  // Offline-sync pill — high-contrast amber so a growing queue is impossible to
+  // miss, sized as a real tap target with a refresh affordance.
   queueChip: {
-    backgroundColor: 'rgba(13, 17, 23, 0.85)',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 44,
+    backgroundColor: 'rgba(245, 158, 11, 0.97)',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 22,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
+  },
+  queueChipBusy: {
+    backgroundColor: 'rgba(245, 158, 11, 0.75)',
+  },
+  queueChipIcon: {
+    color: '#0b1220',
+    fontSize: 18,
+    fontWeight: '900',
   },
   queueChipText: {
-    color: '#facc15',
-    fontSize: 11,
-    fontWeight: '700',
+    color: '#0b1220',
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

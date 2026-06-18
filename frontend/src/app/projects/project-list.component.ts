@@ -8,11 +8,12 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectsService, ProjectSummary } from '../core/services/projects.service';
 import { ProjectWizardComponent } from './project-wizard.component';
 import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
+import { ListStateComponent } from '../shared/components/list-state/list-state.component';
 
 @Component({
   selector: 'app-project-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MatIconModule, MatDialogModule, MatProgressSpinnerModule, TourLauncherComponent],
+  imports: [CommonModule, FormsModule, RouterModule, MatIconModule, MatDialogModule, MatProgressSpinnerModule, TourLauncherComponent, ListStateComponent],
   template: `
     <div class="portfolio">
       <div class="page-header">
@@ -29,9 +30,8 @@ import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-l
         </div>
       </div>
 
-      @if (loading) {
-        <div class="center"><mat-spinner diameter="36"></mat-spinner></div>
-      } @else if (projects.length === 0) {
+      <app-list-state [loading]="loading" [error]="error" (retry)="load()">
+      @if (projects.length === 0) {
         <div class="empty-state">
           <mat-icon>foundation</mat-icon>
           <h3>No projects yet</h3>
@@ -109,6 +109,7 @@ import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-l
           </div>
         }
       }
+      </app-list-state>
     </div>
   `,
   styles: [`
@@ -229,6 +230,7 @@ export class ProjectListComponent implements OnInit {
 
   projects: ProjectSummary[] = [];
   loading = true;
+  error: string | null = null;
   search = '';
 
   ngOnInit(): void {
@@ -237,6 +239,7 @@ export class ProjectListComponent implements OnInit {
 
   load(): void {
     this.loading = true;
+    this.error = null;
     this.svc.summary().subscribe({
       next: (p) => { this.projects = p; this.loading = false; },
       // Degrade gracefully if the rollup endpoint is unavailable: still show the
@@ -244,7 +247,7 @@ export class ProjectListComponent implements OnInit {
       error: () => {
         this.svc.list().subscribe({
           next: (list) => { this.projects = list.map((p) => ({ ...p, metrics: this.emptyMetrics() })); this.loading = false; },
-          error: () => { this.loading = false; },
+          error: () => { this.loading = false; this.error = 'Could not load projects. Check your connection and try again.'; },
         });
       },
     });

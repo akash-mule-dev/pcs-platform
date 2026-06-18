@@ -69,7 +69,8 @@ frontend/src/app/
   core/services/           # HTTP services (projects.service.ts, shipping.service.ts, conversion.service.ts, …)
   layout/                  # shell + side-nav (navGroups define the menu)
   projects/                # ★ project list, creation wizard, workspace (tree + 3D), per-order board/progress/quality/shipping
-  shared/components/three-viewer/  # reusable three.js GLB viewer (modelUrl, highlightNames, meshClicked)
+  shared/components/three-viewer/  # reusable three.js GLB viewer (modelUrl, highlightNames, meshClicked,
+                                   #   showTools+referenceLengths for measure/dimensions, colorOverlay for data overlays)
 ```
 
 ## The fabrication module (`backend/src/projects`, `backend/src/shipping`, `frontend/src/app/projects`)
@@ -308,6 +309,22 @@ Import progress is live: the `ProjectWorkspaceStore` joins the `project:<id>` so
 `GET :id/imports` while anything is active — uploads show browser→server % first, then the
 pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
 
+**3D viewer — measurement + data overlays** (`shared/components/three-viewer`, opt-in inputs so
+read-only embeds are unchanged): on the Assemblies tab the viewer offers an in-canvas toolbar
+(`[showTools]`) for **point-to-point distance** + **bounding-box L×W×H dimensions**, labelled in
+real **mm**. Real units are recovered by **auto-calibration in WORLD space**: the GLB carries the
+IFC's native units AND is auto-scaled to fit (plus a baked node scale), so a world unit has no fixed
+size — the viewer derives `mmPerWorldUnit` from `[referenceLengths]` (a part's `length_mm` vs its
+longest geometry edge × world scale, median over linear members; CSS2DRenderer labels). Never convert
+via the fit-scale. The viewer also takes a generic **`[colorOverlay]`** (`{colors:{meshName→hex},
+legend}`) that paints meshes + shows a legend — the reusable primitive behind the Assemblies "Color
+by" control: **profile / grade** (from loaded node data), **production status** (Not started / In
+production / Complete / Shipped — from the count-based kanban `GET /work-orders/kanban?projectId&includeAllDone`
+joined by `assemblyNodeId`, propagated to descendant part meshes; shipped from project shipments) and
+**latest changes** (added/changed from `importRevision`). `meshName == ifc_guid` is the join key for
+every overlay; status colors live on assemblies so they're applied to each assembly's descendant
+meshes. Clicking a part in production mode surfaces its status + a link to the order board.
+
 ## Conventions (follow these)
 
 - **ESM / NodeNext:** the backend uses ESM (NodeNext) module resolution — **relative imports must end
@@ -416,7 +433,9 @@ pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
   body cap (~4.5 MB) limits server-proxied uploads — for packages above that, upload the client
   straight to Blob and hand the backend the key.
 - **Frontend:** standalone components, lazy `loadComponent` routes in `app.routes.ts`, services under
-  `core/services` calling `environment.apiUrl`. Reuse `ThreeViewerComponent` for any 3D model view.
-  Add new menu items to `navGroups` in `layout/layout.component.ts`.
+  `core/services` calling `environment.apiUrl`. Reuse `ThreeViewerComponent` for any 3D model view
+  (`[modelUrl]`, `[highlightNames]`, `(meshClicked)`; opt-in `[showTools]`+`[referenceLengths]` for
+  measure/dimensions, `[colorOverlay]` for a `{meshName→hex}+legend` data overlay — adding a new
+  overlay is ~one `{ifc_guid→color}` map). Add new menu items to `navGroups` in `layout/layout.component.ts`.
 - **3D linkage:** `convert-ifc.mjs` names each GLB node by the element **GlobalId**, which equals
   `assembly_nodes.ifc_guid` / `mesh_name` — that's the join key the viewer uses to highlight a part.

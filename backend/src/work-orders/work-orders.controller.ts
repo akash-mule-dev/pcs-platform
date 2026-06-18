@@ -34,8 +34,19 @@ export class WorkOrdersController {
   @ApiQuery({ name: 'projectId', required: false })
   @ApiQuery({ name: 'orderId', required: false })
   @ApiQuery({ name: 'q', required: false })
-  kanban(@Query('projectId') projectId?: string, @Query('orderId') orderId?: string, @Query('q') q?: string) {
-    return this.service.kanban({ projectId: projectId || undefined, orderId: orderId || undefined, q: q || undefined });
+  @ApiQuery({ name: 'includeAllDone', required: false, description: 'Return every completed work order (uncapped) — used by the 3D production-status overlay' })
+  kanban(
+    @Query('projectId') projectId?: string,
+    @Query('orderId') orderId?: string,
+    @Query('q') q?: string,
+    @Query('includeAllDone') includeAllDone?: string,
+  ) {
+    return this.service.kanban({
+      projectId: projectId || undefined,
+      orderId: orderId || undefined,
+      q: q || undefined,
+      includeAllDone: includeAllDone === '1' || includeAllDone === 'true',
+    });
   }
 
   @Post()

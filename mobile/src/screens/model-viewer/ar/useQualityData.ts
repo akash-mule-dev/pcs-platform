@@ -166,6 +166,10 @@ export function useQualityData(modelId: string | null) {
     [refresh],
   );
 
+  // Manually drain the offline queue (e.g. the inspector taps "sync now").
+  // The queue's subscriber refreshes the entry list as items leave the queue.
+  const flush = useCallback(() => qaOfflineQueue.flush(), []);
+
   return {
     entries,
     loading,
@@ -175,5 +179,6 @@ export function useQualityData(modelId: string | null) {
     create,
     uploadEvidence,
     signoff,
+    flush,
   };
 }

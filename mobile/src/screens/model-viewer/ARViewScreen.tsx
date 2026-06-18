@@ -22,6 +22,7 @@ import { Colors } from '../../theme/colors';
 import { ViewerScreenParams } from '../../navigation/types';
 import { useRemoteModel } from './ar/useRemoteModel';
 import ARExperience from './ar/ARExperience';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 
 type Route = RouteProp<ViewerScreenParams, 'ARView'>;
 type Nav = NativeStackNavigationProp<ViewerScreenParams, 'ARView'>;
@@ -112,17 +113,27 @@ export function ARViewScreen() {
   }
 
   // ── Ready: open the live AR session directly (mode chosen inline in-AR). ──
+  // A nested boundary keeps a JS error in the AR/Viro tree from unwinding to the
+  // root boundary (which would blank the whole app); the operator backs out into
+  // the still-alive shell instead. Native (SIGSEGV) crashes aren't JS-catchable.
   return (
-    <ARExperience
-      modelId={modelId}
-      modelUri={model.uri}
-      fileName={model.fileName}
-      wireframeUri={model.wireframeUri}
-      dimensions={model.dimensions}
-      initialTrackingMode="plane"
-      onViewRecords={openQualityData}
-      onBack={() => navigation.goBack()}
-    />
+    <ErrorBoundary
+      title="AR session error"
+      message="The AR view hit an unexpected problem. Any saved inspections are safe — go back and reopen to try again."
+      resetLabel="Go back"
+      onReset={() => navigation.goBack()}
+    >
+      <ARExperience
+        modelId={modelId}
+        modelUri={model.uri}
+        fileName={model.fileName}
+        wireframeUri={model.wireframeUri}
+        dimensions={model.dimensions}
+        initialTrackingMode="plane"
+        onViewRecords={openQualityData}
+        onBack={() => navigation.goBack()}
+      />
+    </ErrorBoundary>
   );
 }
 

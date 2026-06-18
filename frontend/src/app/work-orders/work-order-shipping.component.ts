@@ -6,6 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectsService, ProductionOrder, ShipmentTraceability } from '../core/services/projects.service';
 import { ShippingService, Shipment, ShipmentStatus, ShipReadyRow, DeliveryNote } from '../core/services/shipping.service';
+import { ToastService } from '../core/services/toast.service';
 
 const ORDER_STATUS_LABEL: Record<string, string> = { planned: 'Planned', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled' };
 
@@ -275,6 +276,7 @@ export class WorkOrderShippingComponent implements OnInit {
   private svc = inject(ProjectsService);
   private shippingSvc = inject(ShippingService);
   private route = inject(ActivatedRoute);
+  private toast = inject(ToastService);
 
   orderId = '';
   projectId = '';
@@ -363,7 +365,7 @@ export class WorkOrderShippingComponent implements OnInit {
     this.shippingSvc.removeItem(s.id, item.id).subscribe({ next: () => this.refreshAll(), error: () => {} });
   }
   changeStatus(s: Shipment, status: ShipmentStatus): void {
-    this.shippingSvc.setStatus(s.id, status).subscribe({ next: () => this.refreshAll(), error: (e) => (this.error = e?.error?.message || 'Could not update status') });
+    this.shippingSvc.setStatus(s.id, status).subscribe({ next: () => { this.refreshAll(); this.toast.success('Shipment updated'); }, error: (e) => (this.error = e?.error?.message || 'Could not update status') });
   }
   remove(s: Shipment): void {
     this.shippingSvc.remove(s.id).subscribe({ next: () => { if (this.selectedShipmentId === s.id) this.selectedShipmentId = null; this.refreshAll(); }, error: () => {} });

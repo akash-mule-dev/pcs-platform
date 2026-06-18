@@ -13,11 +13,12 @@ import { MatNativeDateModule } from '@angular/material/core';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../../core/services/api.service';
 import { DurationPipe } from '../../shared/pipes/duration.pipe';
+import { ListStateComponent } from '../../shared/components/list-state/list-state.component';
 
 @Component({
   selector: 'app-time-tracking-history',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MatTableModule, MatPaginatorModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatButtonModule, MatDatepickerModule, MatNativeDateModule, MatIconModule, DurationPipe],
+  imports: [CommonModule, FormsModule, RouterModule, MatTableModule, MatPaginatorModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatButtonModule, MatDatepickerModule, MatNativeDateModule, MatIconModule, DurationPipe, ListStateComponent],
   template: `
     <div class="page-header">
       <h2>Time Tracking — History</h2>
@@ -48,50 +49,55 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
       </mat-form-field>
     </div>
 
+    <app-list-state [loading]="loading" [error]="error"
+      [empty]="!loading && !error && entries.length === 0"
+      emptyIcon="schedule" emptyTitle="No time entries"
+      [emptyText]="'No time entries match the current filters.'" (retry)="load()">
     <div class="table-container">
-    <table mat-table [dataSource]="entries" class="full-width mat-elevation-z2">
+    <table mat-table [dataSource]="entries" class="full-width mat-elevation-z2 stack-cards">
       <ng-container matColumnDef="operator">
         <th mat-header-cell *matHeaderCellDef>Operator</th>
-        <td mat-cell *matCellDef="let e">{{ e.user?.firstName }} {{ e.user?.lastName }}</td>
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'Operator'">{{ e.user?.firstName }} {{ e.user?.lastName }}</td>
       </ng-container>
       <ng-container matColumnDef="workOrder">
         <th mat-header-cell *matHeaderCellDef>Work Order</th>
-        <td mat-cell *matCellDef="let e">{{ e.workOrderStage?.workOrder?.orderNumber || '—' }}</td>
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'Work Order'">{{ e.workOrderStage?.workOrder?.orderNumber || '—' }}</td>
       </ng-container>
       <ng-container matColumnDef="stage">
         <th mat-header-cell *matHeaderCellDef>Stage</th>
-        <td mat-cell *matCellDef="let e">{{ e.workOrderStage?.stage?.name || '—' }}</td>
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'Stage'">{{ e.workOrderStage?.stage?.name || '—' }}</td>
       </ng-container>
       <ng-container matColumnDef="start">
         <th mat-header-cell *matHeaderCellDef>Start</th>
-        <td mat-cell *matCellDef="let e">{{ e.startTime | date:'short' }}</td>
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'Start'">{{ e.startTime | date:'short' }}</td>
       </ng-container>
       <ng-container matColumnDef="end">
         <th mat-header-cell *matHeaderCellDef>End</th>
-        <td mat-cell *matCellDef="let e">{{ e.endTime ? (e.endTime | date:'short') : 'Active' }}</td>
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'End'">{{ e.endTime ? (e.endTime | date:'short') : 'Active' }}</td>
       </ng-container>
       <ng-container matColumnDef="duration">
         <th mat-header-cell *matHeaderCellDef>Duration</th>
-        <td mat-cell *matCellDef="let e">{{ e.durationSeconds | duration }}</td>
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'Duration'">{{ e.durationSeconds | duration }}</td>
       </ng-container>
       <ng-container matColumnDef="target">
         <th mat-header-cell *matHeaderCellDef>Target</th>
-        <td mat-cell *matCellDef="let e">{{ e.workOrderStage?.stage?.targetTimeSeconds | duration }}</td>
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'Target'">{{ e.workOrderStage?.stage?.targetTimeSeconds | duration }}</td>
       </ng-container>
       <ng-container matColumnDef="variance">
         <th mat-header-cell *matHeaderCellDef>Variance</th>
-        <td mat-cell *matCellDef="let e" [class.over-target]="getVariance(e) > 0" [class.under-target]="getVariance(e) <= 0">
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'Variance'" [class.over-target]="getVariance(e) > 0" [class.under-target]="getVariance(e) <= 0">
           {{ getVariance(e) > 0 ? '+' : '' }}{{ getVariance(e) | number:'1.0-0' }}%
         </td>
       </ng-container>
       <ng-container matColumnDef="method">
         <th mat-header-cell *matHeaderCellDef>Method</th>
-        <td mat-cell *matCellDef="let e">{{ e.inputMethod || '—' }}</td>
+        <td mat-cell *matCellDef="let e" [attr.data-label]="'Method'">{{ e.inputMethod || '—' }}</td>
       </ng-container>
       <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
       <tr mat-row *matRowDef="let row; columns: columns;"></tr>
     </table>
     </div>
+    </app-list-state>
 
     <mat-paginator [length]="totalEntries" [pageSize]="20" [pageSizeOptions]="[10, 20, 50]"
       (page)="onPage($event)"></mat-paginator>
@@ -105,12 +111,19 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
     .over-target { color: var(--danger-text); font-weight: 500; }
     .under-target { color: var(--success-text); font-weight: 500; }
     ::ng-deep .mat-mdc-header-row { background: var(--clay-surface, #f5f0e8) !important; }
+    /* Stack the 9-column table into cards on narrow screens (global .stack-cards
+       kicks in via [attr.data-label]); drop the scroll container + sticky header. */
+    @media (max-width: 760px) {
+      .table-container { max-height: none; overflow: visible; }
+    }
   `]
 })
 export class TimeTrackingHistoryComponent implements OnInit {
   entries: any[] = [];
   users: any[] = [];
   columns = ['operator', 'workOrder', 'stage', 'start', 'end', 'duration', 'target', 'variance', 'method'];
+  loading = true;
+  error: string | null = null;
   totalEntries = 0;
   page = 1;
   filterUser = '';
@@ -127,18 +140,24 @@ export class TimeTrackingHistoryComponent implements OnInit {
   }
 
   load(): void {
+    this.loading = true;
+    this.error = null;
     const params: any = { page: this.page, limit: 20 };
     if (this.filterUser) params.userId = this.filterUser;
     if (this.filterFrom) params.startDate = this.filterFrom.toISOString();
     if (this.filterTo) params.endDate = this.filterTo.toISOString();
-    this.api.get<any>('/time-tracking/history', params).subscribe(data => {
-      if (Array.isArray(data)) {
-        this.entries = data;
-        this.totalEntries = data.length;
-      } else {
-        this.entries = data.data || [];
-        this.totalEntries = data.total || this.entries.length;
-      }
+    this.api.get<any>('/time-tracking/history', params).subscribe({
+      next: (data) => {
+        if (Array.isArray(data)) {
+          this.entries = data;
+          this.totalEntries = data.length;
+        } else {
+          this.entries = data.data || [];
+          this.totalEntries = data.total || this.entries.length;
+        }
+        this.loading = false;
+      },
+      error: () => { this.loading = false; this.error = 'Could not load time entries — try again.'; },
     });
   }
 

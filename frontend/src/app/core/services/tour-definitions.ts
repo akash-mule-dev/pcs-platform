@@ -216,8 +216,9 @@ export const BUILTIN_TOURS: TourDefinition[] = [
   // ── Stage Kanban ──
   {
     id: 'kanban',
-    label: 'Tour the Kanban board',
+    label: 'Tour: Kanban board',
     version: 'v1',
+    match: (u) => path(u).startsWith('/work-orders/kanban'),
     steps: () => [
       {
         element: '[data-tour="kanban-filters"]',
@@ -245,6 +246,143 @@ export const BUILTIN_TOURS: TourDefinition[] = [
           description:
             '<b>+1</b> records one more piece through the current stage; <b>✓</b> completes the stage for all pieces. Quality gates (open NCRs) are enforced server-side.',
           side: 'right',
+          align: 'start',
+        },
+      },
+    ],
+  },
+
+  // ── Package Monitor (tenant-wide import pipeline) ──
+  {
+    id: 'package-monitor',
+    label: 'Tour: Package Monitor',
+    version: 'v1',
+    match: (u) => path(u).startsWith('/package-monitor'),
+    steps: () => [
+      {
+        element: '[data-tour="pm-kpis"]',
+        popover: {
+          title: 'The pipeline at a glance',
+          description:
+            'Across your whole organization: how many packages are processing now, waiting in the queue, completed today, and any failures.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '[data-tour="pm-tabs"]',
+        popover: {
+          title: 'In progress vs history',
+          description:
+            '<b>In progress</b> shows each package\'s live stage, % and queue position. <b>History</b> is every upload ever — filter by project, sort, and retry failed imports.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+    ],
+  },
+
+  // ── Materials & Inventory ──
+  {
+    id: 'materials',
+    label: 'Tour: Inventory',
+    version: 'v1',
+    match: (u) => path(u) === '/materials',
+    steps: () => [
+      {
+        element: '[data-tour="mat-kpis"]',
+        popover: {
+          title: 'Stock at a glance',
+          description: 'Material count, total stock value (moving-average cost) and how many items are below their reorder level.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '[data-tour="mat-new"]',
+        popover: {
+          title: 'Add a material',
+          description:
+            'A master\'s <b>profile + grade</b> link it to imported assembly parts — that match drives project material requirements and one-click issuing.',
+          side: 'bottom',
+          align: 'end',
+        },
+      },
+      {
+        element: '[data-tour="mat-filters"]',
+        popover: {
+          title: 'Find & manage stock',
+          description:
+            'Search or filter to low-stock only. Pick a material to receive (re-averages cost), return, adjust, and read its full movement ledger.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+    ],
+  },
+
+  // ── Order workspace shell (the per-order tabs) ──
+  {
+    id: 'order-workspace',
+    label: 'Tour: this order',
+    version: 'v1',
+    match: (u) => /^\/projects\/[^/]+\/orders\/[^/]+/.test(path(u)),
+    steps: () => [
+      {
+        element: '[data-tour="ow-head"]',
+        popover: {
+          title: 'One production order',
+          description: 'Its status, customer, quantity and due date. Released orders generate the work that flows across the tabs below.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '[data-tour="ow-tabs"]',
+        popover: {
+          title: 'Track it end to end',
+          description:
+            '<b>Board</b> steps pieces through stages, <b>Progress</b> rolls it up, <b>Materials</b> issues stock, <b>Costs</b> compares actual vs estimate, <b>Quality</b> handles NCRs, and <b>Shipping</b> loads it out.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+    ],
+  },
+
+  // ── Production board (a single order's stage board) ──
+  {
+    id: 'order-board',
+    label: 'Tour: production board',
+    version: 'v1',
+    match: (u) => /\/orders\/[^/]+\/board/.test(path(u)),
+    steps: () => [
+      {
+        element: '[data-tour="board-search"]',
+        popover: {
+          title: 'Find an item',
+          description: 'Search by piece mark or tag — handy when an order has hundreds of pieces.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '[data-tour="board-columns"]',
+        popover: {
+          title: 'Stages, left to right',
+          description:
+            'Each column is a process stage; the cards are this order\'s pieces. Pieces flow rightward as you record work, and land in <b>Done</b> when every stage is complete.',
+          side: 'top',
+          align: 'start',
+        },
+      },
+      {
+        element: '[data-tour="board-columns"] .step',
+        popover: {
+          title: 'Record production',
+          description:
+            '<b>+ / −</b> step one piece, <b>All</b> completes the stage for every piece, <b>Reset</b> sets it back. Taps are optimistic — record fast, nothing is lost.',
+          side: 'top',
           align: 'start',
         },
       },

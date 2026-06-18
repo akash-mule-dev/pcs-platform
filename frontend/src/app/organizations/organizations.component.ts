@@ -11,11 +11,12 @@ import { OrganizationsApiService } from './organizations.service';
 import { PermissionsService } from '../core/services/permissions.service';
 import { AuthService } from '../core/services/auth.service';
 import { LogoUploadComponent } from '../shared/components/logo-upload/logo-upload.component';
+import { ListStateComponent } from '../shared/components/list-state/list-state.component';
 
 @Component({
   selector: 'app-organizations',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatTableModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatInputModule, LogoUploadComponent],
+  imports: [CommonModule, FormsModule, MatTableModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatInputModule, LogoUploadComponent, ListStateComponent],
   template: `
     <div class="page-shell">
       <div class="page-header">
@@ -71,31 +72,33 @@ import { LogoUploadComponent } from '../shared/components/logo-upload/logo-uploa
         </div>
       }
 
-      <table mat-table [dataSource]="orgs" class="full mat-elevation-z1">
-        <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Name</th>
-          <td mat-cell *matCellDef="let o">
-            <div class="org-cell">
-              @if (logoUrls[o.id]) { <img class="row-logo" [src]="logoUrls[o.id]" alt=""> }
-              @else { <span class="row-logo initials">{{ initials(o.name) }}</span> }
-              <span>{{ o.name }}</span>
-            </div>
-          </td></ng-container>
-        <ng-container matColumnDef="slug"><th mat-header-cell *matHeaderCellDef>Slug</th><td mat-cell *matCellDef="let o"><code>{{ o.slug }}</code></td></ng-container>
-        <ng-container matColumnDef="status"><th mat-header-cell *matHeaderCellDef>Status</th>
-          <td mat-cell *matCellDef="let o"><span class="chip" [class.on]="o.isActive">{{ o.isActive ? 'Active' : 'Inactive' }}</span></td></ng-container>
-        <ng-container matColumnDef="created"><th mat-header-cell *matHeaderCellDef>Created</th><td mat-cell *matCellDef="let o">{{ o.createdAt | date:'mediumDate' }}</td></ng-container>
-        <ng-container matColumnDef="actions"><th mat-header-cell *matHeaderCellDef></th>
-          <td mat-cell *matCellDef="let o">
-            @if (canImpersonate && o.isActive) {
-              <button mat-button color="primary" (click)="supportLogin(o)" [disabled]="busyId === o.id">
-                <mat-icon>support_agent</mat-icon> Support login
-              </button>
-            }
-            @if (canManage) { <button mat-button (click)="toggleActive(o)">{{ o.isActive ? 'Deactivate' : 'Activate' }}</button> }
-          </td></ng-container>
-        <tr mat-header-row *matHeaderRowDef="cols"></tr><tr mat-row *matRowDef="let r; columns: cols"></tr>
-      </table>
-      @if (!orgs.length) { <p class="empty">No organizations yet. Create one to onboard a customer.</p> }
+      <app-list-state [loading]="loading" [error]="error" [empty]="false" (retry)="load()">
+        <table mat-table [dataSource]="orgs" class="full mat-elevation-z1 stack-cards">
+          <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Name</th>
+            <td mat-cell *matCellDef="let o" [attr.data-label]="'Name'">
+              <div class="org-cell">
+                @if (logoUrls[o.id]) { <img class="row-logo" [src]="logoUrls[o.id]" alt=""> }
+                @else { <span class="row-logo initials">{{ initials(o.name) }}</span> }
+                <span>{{ o.name }}</span>
+              </div>
+            </td></ng-container>
+          <ng-container matColumnDef="slug"><th mat-header-cell *matHeaderCellDef>Slug</th><td mat-cell *matCellDef="let o" [attr.data-label]="'Slug'"><code>{{ o.slug }}</code></td></ng-container>
+          <ng-container matColumnDef="status"><th mat-header-cell *matHeaderCellDef>Status</th>
+            <td mat-cell *matCellDef="let o" [attr.data-label]="'Status'"><span class="chip" [class.on]="o.isActive">{{ o.isActive ? 'Active' : 'Inactive' }}</span></td></ng-container>
+          <ng-container matColumnDef="created"><th mat-header-cell *matHeaderCellDef>Created</th><td mat-cell *matCellDef="let o" [attr.data-label]="'Created'">{{ o.createdAt | date:'mediumDate' }}</td></ng-container>
+          <ng-container matColumnDef="actions"><th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let o" [attr.data-label]="'Actions'">
+              @if (canImpersonate && o.isActive) {
+                <button mat-button color="primary" (click)="supportLogin(o)" [disabled]="busyId === o.id">
+                  <mat-icon>support_agent</mat-icon> Support login
+                </button>
+              }
+              @if (canManage) { <button mat-button (click)="toggleActive(o)">{{ o.isActive ? 'Deactivate' : 'Activate' }}</button> }
+            </td></ng-container>
+          <tr mat-header-row *matHeaderRowDef="cols"></tr><tr mat-row *matRowDef="let r; columns: cols"></tr>
+        </table>
+        @if (!orgs.length) { <p class="empty">No organizations yet. Create one to onboard a customer.</p> }
+      </app-list-state>
     </div>
   `,
   styles: [`
@@ -120,6 +123,8 @@ import { LogoUploadComponent } from '../shared/components/logo-upload/logo-uploa
 export class OrganizationsComponent implements OnInit {
   cols = ['name', 'slug', 'status', 'created', 'actions'];
   orgs: any[] = [];
+  loading = true;
+  error: string | null = null;
   editing: any = null;
   busyId: string | null = null;
   canImpersonate = false;
@@ -157,9 +162,11 @@ export class OrganizationsComponent implements OnInit {
   }
 
   load(): void {
+    this.loading = true;
+    this.error = null;
     this.api.list().subscribe({
-      next: (d) => { this.orgs = Array.isArray(d) ? d : (d?.data || []); this.loadLogos(); },
-      error: () => {},
+      next: (d) => { this.orgs = Array.isArray(d) ? d : (d?.data || []); this.loading = false; this.loadLogos(); },
+      error: () => { this.loading = false; this.error = 'Could not load organizations — try again.'; },
     });
   }
 

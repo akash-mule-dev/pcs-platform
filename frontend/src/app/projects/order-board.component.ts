@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectsService, OrderBoard, OrderBoardItem, OrderStageRow } from '../core/services/projects.service';
+import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
 const SS_LABEL: Record<string, string> = { pending: 'Queued', in_progress: 'In progress', completed: 'Done', skipped: 'Skipped' };
 /** Cards rendered per column before "Show more" (keeps 100+ item orders fast). */
@@ -27,7 +28,7 @@ interface ColVM { id: string; name: string; cards: CardVM[]; total: number; }
 @Component({
   selector: 'app-order-board',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [CommonModule, RouterModule, FormsModule, MatIconModule, MatProgressSpinnerModule, TourLauncherComponent],
   template: `
     <div class="board">
       @if (loading) {
@@ -38,7 +39,8 @@ interface ColVM { id: string; name: string; cards: CardVM[]; total: number; }
         @if (error) { <p class="err"><mat-icon>block</mat-icon>{{ error }}<button class="dismiss" (click)="error = null">×</button></p> }
 
         <div class="toolbar">
-          <div class="bsearch">
+          <app-tour-launcher tourId="order-board" [auto]="true" tooltip="Tour the production board"></app-tour-launcher>
+          <div class="bsearch" data-tour="board-search">
             <mat-icon>search</mat-icon>
             <input type="text" placeholder="Search items…" [ngModel]="query" (ngModelChange)="onQuery($event)">
             @if (query) { <button class="clear" (click)="onQuery('')">×</button> }
@@ -46,7 +48,7 @@ interface ColVM { id: string; name: string; cards: CardVM[]; total: number; }
           @if (query) { <span class="hits">{{ filteredCount }} match(es)</span> }
         </div>
 
-        <div class="columns">
+        <div class="columns" data-tour="board-columns">
           @for (c of columns; track c.id) {
             <div class="col">
               <div class="col-head"><span>{{ c.name }}</span><span class="cnt">{{ c.total }}</span></div>

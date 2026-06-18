@@ -1,4 +1,4 @@
-import { Component, OnInit, AfterViewInit, ViewChild } from '@angular/core';
+import { Component, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatTableModule, MatTableDataSource } from '@angular/material/table';
@@ -17,11 +17,12 @@ import { PermissionsService } from '../../core/services/permissions.service';
 import { UserFormComponent } from '../user-form/user-form.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { AssignableRole, RolesApiService } from '../../core/services/roles.service';
+import { ListStateComponent } from '../../shared/components/list-state/list-state.component';
 
 @Component({
   selector: 'app-user-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatTableModule, MatPaginatorModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatSelectModule, MatChipsModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, MatTableModule, MatPaginatorModule, MatButtonModule, MatIconModule, MatFormFieldModule, MatSelectModule, MatChipsModule, MatTooltipModule, ListStateComponent],
   template: `
     <div class="page-header">
       <div class="header-left">
@@ -56,55 +57,60 @@ import { AssignableRole, RolesApiService } from '../../core/services/roles.servi
       </mat-form-field>
     </div>
 
-    <table mat-table [dataSource]="dataSource" class="full-width mat-elevation-z2">
-      <ng-container matColumnDef="name">
-        <th mat-header-cell *matHeaderCellDef>Name</th>
-        <td mat-cell *matCellDef="let u">{{ u.firstName }} {{ u.lastName }}</td>
-      </ng-container>
-      <ng-container matColumnDef="mobileNo">
-        <th mat-header-cell *matHeaderCellDef>Mobile No</th>
-        <td mat-cell *matCellDef="let u">{{ u.mobileNo }}</td>
-      </ng-container>
-      <ng-container matColumnDef="employeeId">
-        <th mat-header-cell *matHeaderCellDef>Employee ID</th>
-        <td mat-cell *matCellDef="let u">{{ u.employeeId }}</td>
-      </ng-container>
-      <ng-container matColumnDef="role">
-        <th mat-header-cell *matHeaderCellDef>Role</th>
-        <td mat-cell *matCellDef="let u">
-          <span class="role-chip" [class]="'role-' + u.role?.name" [class.role-custom]="u.role && !u.role.isSystem">{{ u.role?.name | uppercase }}</span>
-        </td>
-      </ng-container>
-      <ng-container matColumnDef="status">
-        <th mat-header-cell *matHeaderCellDef>Status</th>
-        <td mat-cell *matCellDef="let u">
-          <span class="status-chip" [class.status-active]="u.isActive" [class.status-inactive]="!u.isActive">
-            {{ u.isActive ? 'Active' : 'Inactive' }}
-          </span>
-        </td>
-      </ng-container>
-      @if (showActions) {
-        <ng-container matColumnDef="actions">
-          <th mat-header-cell *matHeaderCellDef>Actions</th>
-          <td mat-cell *matCellDef="let u">
-            @if (u.isActive) {
-              @if (canUpdate) {
-                <button mat-icon-button color="primary" (click)="openForm(u)" matTooltip="Edit user"><mat-icon>edit</mat-icon></button>
-              }
-              @if (canDelete) {
-                <button mat-icon-button color="warn" (click)="deleteUser(u)" matTooltip="Deactivate user"><mat-icon>delete</mat-icon></button>
-              }
-            } @else if (canUpdate) {
-              <button mat-icon-button color="primary" (click)="activateUser(u)" matTooltip="Activate user"><mat-icon>person_add</mat-icon></button>
-            }
+    <app-list-state [loading]="listLoading" [error]="error"
+      [empty]="!listLoading && !error && dataSource.data.length === 0"
+      emptyIcon="group" emptyTitle="No users"
+      [emptyText]="'No users match these filters. Add a user or adjust the role/status filters.'" (retry)="load()">
+      <table mat-table [dataSource]="dataSource" class="full-width mat-elevation-z2 stack-cards">
+        <ng-container matColumnDef="name">
+          <th mat-header-cell *matHeaderCellDef>Name</th>
+          <td mat-cell *matCellDef="let u" [attr.data-label]="'Name'">{{ u.firstName }} {{ u.lastName }}</td>
+        </ng-container>
+        <ng-container matColumnDef="mobileNo">
+          <th mat-header-cell *matHeaderCellDef>Mobile No</th>
+          <td mat-cell *matCellDef="let u" [attr.data-label]="'Mobile No'">{{ u.mobileNo }}</td>
+        </ng-container>
+        <ng-container matColumnDef="employeeId">
+          <th mat-header-cell *matHeaderCellDef>Employee ID</th>
+          <td mat-cell *matCellDef="let u" [attr.data-label]="'Employee ID'">{{ u.employeeId }}</td>
+        </ng-container>
+        <ng-container matColumnDef="role">
+          <th mat-header-cell *matHeaderCellDef>Role</th>
+          <td mat-cell *matCellDef="let u" [attr.data-label]="'Role'">
+            <span class="role-chip" [class]="'role-' + u.role?.name" [class.role-custom]="u.role && !u.role.isSystem">{{ u.role?.name | uppercase }}</span>
           </td>
         </ng-container>
-      }
-      <tr mat-header-row *matHeaderRowDef="columns"></tr>
-      <tr mat-row *matRowDef="let row; columns: columns;"></tr>
-    </table>
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let u" [attr.data-label]="'Status'">
+            <span class="status-chip" [class.status-active]="u.isActive" [class.status-inactive]="!u.isActive">
+              {{ u.isActive ? 'Active' : 'Inactive' }}
+            </span>
+          </td>
+        </ng-container>
+        @if (showActions) {
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef>Actions</th>
+            <td mat-cell *matCellDef="let u" [attr.data-label]="'Actions'">
+              @if (u.isActive) {
+                @if (canUpdate) {
+                  <button mat-icon-button color="primary" (click)="openForm(u)" matTooltip="Edit user"><mat-icon>edit</mat-icon></button>
+                }
+                @if (canDelete) {
+                  <button mat-icon-button color="warn" (click)="deleteUser(u)" matTooltip="Deactivate user"><mat-icon>delete</mat-icon></button>
+                }
+              } @else if (canUpdate) {
+                <button mat-icon-button color="primary" (click)="activateUser(u)" matTooltip="Activate user"><mat-icon>person_add</mat-icon></button>
+              }
+            </td>
+          </ng-container>
+        }
+        <tr mat-header-row *matHeaderRowDef="columns"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+      </table>
 
-    <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
+      <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
+    </app-list-state>
   `,
   styles: [`
     /* page-header, page-title/subtitle, btn-primary & full-width inherited from global styles.scss */
@@ -121,7 +127,7 @@ import { AssignableRole, RolesApiService } from '../../core/services/roles.servi
     .status-inactive { background: var(--clay-bg); color: var(--clay-text-muted); }
   `]
 })
-export class UserListComponent implements OnInit, AfterViewInit {
+export class UserListComponent implements OnInit {
   users: any[] = [];
   dataSource = new MatTableDataSource<any>([]);
   columns: string[] = [];
@@ -132,7 +138,11 @@ export class UserListComponent implements OnInit, AfterViewInit {
   canUpdate = false;
   canDelete = false;
   showActions = false;
-  @ViewChild(MatPaginator) paginator!: MatPaginator;
+  listLoading = true;
+  error: string | null = null;
+  @ViewChild(MatPaginator) set paginator(p: MatPaginator | undefined) {
+    if (p) this.dataSource.paginator = p;
+  }
 
   constructor(private api: ApiService, private rolesApi: RolesApiService, private dialog: MatDialog, private snackBar: MatSnackBar, private loading: LoadingService, private permissions: PermissionsService) {
     this.canCreate = this.permissions.can('users.create');
@@ -152,17 +162,19 @@ export class UserListComponent implements OnInit, AfterViewInit {
     });
   }
 
-  ngAfterViewInit(): void { this.dataSource.paginator = this.paginator; }
-
   load(): void {
-    this.loading.show();
+    this.listLoading = true;
+    this.error = null;
     this.api.getList<any>('/users', { status: this.statusFilter }).subscribe({
       next: (list) => {
         this.users = list;
         this.applyFilter();
-        this.loading.hide();
+        this.listLoading = false;
       },
-      error: () => { this.loading.hide(); }
+      error: () => {
+        this.listLoading = false;
+        this.error = 'Could not load users. Check your connection and try again.';
+      }
     });
   }
 
@@ -203,7 +215,7 @@ export class UserListComponent implements OnInit, AfterViewInit {
         this.api.delete(`/users/${user.id}`).subscribe({
           next: () => {
             this.loading.hide();
-            this.snackBar.open('User deleted', 'Close', { duration: 3000 });
+            this.snackBar.open('User deactivated', 'Close', { duration: 3000 });
             this.load();
           },
           error: (err) => {

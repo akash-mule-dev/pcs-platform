@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import {
@@ -25,7 +26,7 @@ type EditorMode = 'view' | 'edit' | 'create';
   standalone: true,
   imports: [
     CommonModule, FormsModule, MatButtonModule, MatIconModule, MatFormFieldModule,
-    MatInputModule, MatCheckboxModule, MatTooltipModule, MatDialogModule,
+    MatInputModule, MatCheckboxModule, MatTooltipModule, MatDialogModule, MatProgressSpinnerModule,
   ],
   template: `
     <div class="page-shell">
@@ -38,6 +39,10 @@ type EditorMode = 'view' | 'edit' | 'create';
           <button mat-raised-button color="primary" (click)="newRole()"><mat-icon>add</mat-icon> New role</button>
         }
       </div>
+
+      @if (!loaded) {
+        <div style="display:flex;justify-content:center;padding:48px"><mat-spinner diameter="32"></mat-spinner></div>
+      }
 
       <div class="grid">
         <!-- ── Role list ─────────────────────────────────────────────── -->

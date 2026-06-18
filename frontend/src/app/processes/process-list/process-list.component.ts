@@ -1,4 +1,4 @@
-import { Component, OnInit, AfterViewInit, ViewChild } from '@angular/core';
+import { Component, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -14,11 +14,12 @@ import { ApiService } from '../../core/services/api.service';
 import { PermissionsService } from '../../core/services/permissions.service';
 import { ProcessFormComponent } from '../process-form/process-form.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { ListStateComponent } from '../../shared/components/list-state/list-state.component';
 
 @Component({
   selector: 'app-process-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MatTableModule, MatPaginatorModule, MatButtonModule, MatIconModule, MatChipsModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, RouterModule, MatTableModule, MatPaginatorModule, MatButtonModule, MatIconModule, MatChipsModule, MatTooltipModule, ListStateComponent],
   template: `
     <div class="page-shell">
       <!-- Page Header -->
@@ -47,56 +48,61 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       </div>
 
       <!-- Table -->
-      <div class="table-wrap">
-        <table mat-table [dataSource]="dataSource" class="sb-table">
-          <ng-container matColumnDef="name">
-            <th mat-header-cell *matHeaderCellDef>Process</th>
-            <td mat-cell *matCellDef="let p">
-              <a [routerLink]="['/processes', p.id]" class="cell-link">
-                <div class="cell-entity">
-                  <div class="entity-icon tone-purple">
-                    <mat-icon>account_tree</mat-icon>
+      <app-list-state [loading]="loading" [error]="error"
+        [empty]="!loading && !error && dataSource.data.length === 0"
+        emptyIcon="account_tree" emptyTitle="No processes"
+        [emptyText]="'Add a process to define a manufacturing workflow and its stage sequence.'" (retry)="load()">
+        <div class="table-wrap">
+          <table mat-table [dataSource]="dataSource" class="sb-table stack-cards">
+            <ng-container matColumnDef="name">
+              <th mat-header-cell *matHeaderCellDef>Process</th>
+              <td mat-cell *matCellDef="let p" [attr.data-label]="'Process'">
+                <a [routerLink]="['/processes', p.id]" class="cell-link">
+                  <div class="cell-entity">
+                    <div class="entity-icon tone-purple">
+                      <mat-icon>account_tree</mat-icon>
+                    </div>
+                    <div class="entity-info">
+                      <span class="entity-name">{{ p.name }}</span>
+                    </div>
                   </div>
-                  <div class="entity-info">
-                    <span class="entity-name">{{ p.name }}</span>
+                </a>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="version">
+              <th mat-header-cell *matHeaderCellDef>Version</th>
+              <td mat-cell *matCellDef="let p" [attr.data-label]="'Version'">
+                <span class="version-tag">v{{ p.version }}</span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="stages">
+              <th mat-header-cell *matHeaderCellDef>Stages</th>
+              <td mat-cell *matCellDef="let p" [attr.data-label]="'Stages'">
+                <span class="stage-count">{{ p.stages?.length || 0 }}</span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef></th>
+              <td mat-cell *matCellDef="let p" [attr.data-label]="'Actions'">
+                @if (canEdit) {
+                  <div class="row-actions">
+                    <button class="icon-btn" (click)="openForm(p); $event.stopPropagation()" matTooltip="Edit">
+                      <mat-icon>edit</mat-icon>
+                    </button>
+                    <button class="icon-btn icon-btn-danger" (click)="deleteProcess(p); $event.stopPropagation()" matTooltip="Delete">
+                      <mat-icon>delete_outline</mat-icon>
+                    </button>
                   </div>
-                </div>
-              </a>
-            </td>
-          </ng-container>
-          <ng-container matColumnDef="version">
-            <th mat-header-cell *matHeaderCellDef>Version</th>
-            <td mat-cell *matCellDef="let p">
-              <span class="version-tag">v{{ p.version }}</span>
-            </td>
-          </ng-container>
-          <ng-container matColumnDef="stages">
-            <th mat-header-cell *matHeaderCellDef>Stages</th>
-            <td mat-cell *matCellDef="let p">
-              <span class="stage-count">{{ p.stages?.length || 0 }}</span>
-            </td>
-          </ng-container>
-          <ng-container matColumnDef="actions">
-            <th mat-header-cell *matHeaderCellDef></th>
-            <td mat-cell *matCellDef="let p">
-              @if (canEdit) {
-                <div class="row-actions">
-                  <button class="icon-btn" (click)="openForm(p); $event.stopPropagation()" matTooltip="Edit">
-                    <mat-icon>edit</mat-icon>
-                  </button>
-                  <button class="icon-btn icon-btn-danger" (click)="deleteProcess(p); $event.stopPropagation()" matTooltip="Delete">
-                    <mat-icon>delete_outline</mat-icon>
-                  </button>
-                </div>
-              }
-            </td>
-          </ng-container>
-          <tr mat-header-row *matHeaderRowDef="columns"></tr>
-          <tr mat-row *matRowDef="let row; columns: columns;"></tr>
-        </table>
-      </div>
+                }
+              </td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="columns"></tr>
+            <tr mat-row *matRowDef="let row; columns: columns;"></tr>
+          </table>
+        </div>
 
-      <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
+        <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25]" showFirstLastButtons></mat-paginator>
+      </app-list-state>
     </div>
   `,
   styles: [`
@@ -118,11 +124,15 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     }
   `]
 })
-export class ProcessListComponent implements OnInit, AfterViewInit {
+export class ProcessListComponent implements OnInit {
   dataSource = new MatTableDataSource<any>([]);
   columns = ['name', 'version', 'stages', 'actions'];
   searchTerm = '';
-  @ViewChild(MatPaginator) paginator!: MatPaginator;
+  loading = true;
+  error: string | null = null;
+  @ViewChild(MatPaginator) set paginator(p: MatPaginator | undefined) {
+    if (p) this.dataSource.paginator = p;
+  }
 
   canEdit = false;
 
@@ -132,11 +142,12 @@ export class ProcessListComponent implements OnInit, AfterViewInit {
 
   ngOnInit(): void { this.load(); }
 
-  ngAfterViewInit(): void { this.dataSource.paginator = this.paginator; }
-
   load(): void {
-    this.api.getList<any>('/processes').subscribe(list => {
-      this.dataSource.data = list;
+    this.loading = true;
+    this.error = null;
+    this.api.getList<any>('/processes').subscribe({
+      next: (list) => { this.dataSource.data = list; this.loading = false; },
+      error: () => { this.loading = false; this.error = 'Could not load processes. Check your connection and try again.'; },
     });
   }
 

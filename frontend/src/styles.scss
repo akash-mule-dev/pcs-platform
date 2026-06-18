@@ -1068,10 +1068,30 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
 .mat-mdc-snack-bar-container.error-snackbar {
   --mdc-snackbar-container-color: #dc2626;
   --mdc-snackbar-supporting-text-color: white;
+  --mat-snack-bar-button-color: #ffffff;
 }
 [data-theme="dark"] .mat-mdc-snack-bar-container.error-snackbar {
   --mdc-snackbar-container-color: #93000a;
   --mdc-snackbar-supporting-text-color: #ffdad6;
+}
+// Success / info snackbars — action feedback (ToastService). Themed for both modes.
+.mat-mdc-snack-bar-container.success-snackbar {
+  --mdc-snackbar-container-color: #16a34a;
+  --mdc-snackbar-supporting-text-color: #ffffff;
+  --mat-snack-bar-button-color: #ffffff;
+}
+.mat-mdc-snack-bar-container.info-snackbar {
+  --mdc-snackbar-container-color: #2563eb;
+  --mdc-snackbar-supporting-text-color: #ffffff;
+  --mat-snack-bar-button-color: #ffffff;
+}
+[data-theme="dark"] .mat-mdc-snack-bar-container.success-snackbar {
+  --mdc-snackbar-container-color: #166534;
+  --mdc-snackbar-supporting-text-color: #dcfce7;
+}
+[data-theme="dark"] .mat-mdc-snack-bar-container.info-snackbar {
+  --mdc-snackbar-container-color: #1e40af;
+  --mdc-snackbar-supporting-text-color: #dbeafe;
 }
 
 // Paginator
@@ -1211,6 +1231,74 @@ p:has(+ .mat-mdc-table):empty {
 ::selection {
   background: var(--selection-bg);
   color: var(--selection-color);
+}
+
+// ============================================
+// ACCESSIBILITY — visible keyboard focus
+// Material paints its own ripple/overlay on focus, but keyboard users need a
+// clear, consistent ring on every interactive element. :focus-visible only
+// shows for keyboard/AT (not mouse clicks), so it doesn't add visual noise.
+// ============================================
+:focus-visible {
+  outline: 2px solid var(--clay-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+.mat-mdc-button-base:focus-visible,
+.fchip:focus-visible,
+.chip-toggle:focus-visible,
+.icon-btn:focus-visible {
+  outline: 2px solid var(--clay-primary);
+  outline-offset: 2px;
+}
+
+// ============================================
+// TOUCH TARGETS — gloves + tablets on the shop floor
+// On coarse (touch) pointers only, grow the app's small custom controls to a
+// ≥44px hit area (Apple HIG / WCAG 2.5.5). Mouse/desktop layouts are untouched.
+// ============================================
+@media (pointer: coarse) {
+  .icon-btn { width: 44px; height: 44px; }
+  .fchip, .chip-toggle, .btn-outline {
+    min-height: 44px; padding-top: 10px; padding-bottom: 10px;
+  }
+  .filter-select { min-height: 44px; }
+  .search-box, .search-box input { min-height: 40px; }
+}
+
+// ============================================
+// RESPONSIVE TABLE — stack rows into labelled cards on narrow screens
+// Add `class="sb-table stack-cards"` to a mat-table and `[attr.data-label]` to
+// each <td mat-cell>. Below 700px the header hides and every row becomes a card
+// with "Label: value" rows, so wide tables no longer overflow on tablets/phones.
+// ============================================
+@media (max-width: 700px) {
+  .sb-table.stack-cards .mat-mdc-header-row { display: none !important; }
+  .sb-table.stack-cards .mat-mdc-row {
+    display: block !important; height: auto !important;
+    border: 1px solid var(--clay-border) !important;
+    border-radius: var(--clay-radius-sm);
+    margin: 0 0 10px; padding: 4px 4px 8px;
+    background: var(--clay-surface);
+  }
+  .sb-table.stack-cards .mat-mdc-cell {
+    display: flex !important; align-items: center; justify-content: space-between;
+    gap: 16px; text-align: right;
+    padding: 8px 12px !important; border-bottom: none !important;
+    min-height: 0;
+  }
+  .sb-table.stack-cards .mat-mdc-cell::before {
+    content: attr(data-label);
+    font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--clay-text-muted); text-align: left; flex: 0 0 auto;
+  }
+  // The lead "entity" cell reads as the card title — let it span full width.
+  .sb-table.stack-cards .mat-mdc-cell:first-child { text-align: left; }
+  .sb-table.stack-cards .mat-mdc-cell:first-child::before { display: none; }
 }
 
 // ============================================

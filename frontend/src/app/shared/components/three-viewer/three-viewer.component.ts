@@ -12,6 +12,16 @@ import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRe
  *  self-calibrate the model's unit scale so on-model measurements read in real mm. */
 export interface ViewerReferenceLength { meshName: string; lengthMm: number; }
 
+/** A data-driven color overlay: paint meshes (by name == ifc_guid) with arbitrary
+ *  colors and show a legend. The reusable primitive behind "color by property" and
+ *  future status/revision overlays. Meshes not in `colors` are ghosted. */
+export interface ViewerColorOverlay {
+  /** GLB mesh name (== ifc_guid) → CSS hex color (e.g. '#27ae60'). */
+  colors: Record<string, string>;
+  /** Optional legend rows rendered bottom-left while the overlay is active. */
+  legend?: { label: string; color: string }[];
+}
+
 @Component({
   selector: 'app-three-viewer',
   standalone: true,
@@ -48,10 +58,15 @@ export interface ViewerReferenceLength { meshName: string; lengthMm: number; }
 
       @if (showTools && !loading && !error) {
         <div class="tools">
-          <button type="button" class="tool" [class.on]="measureMode" (click)="toggleMeasure()"
+          <button type="button" class="tool" [class.on]="measureTool === 'distance'" (click)="toggleMeasure()"
             title="Measure distance between two points">
             <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 17.25 17.25 3 21 6.75 6.75 21 3 17.25Zm3.4-3.4 1.1-1.1-2-2 1-1 2 2 1.1-1.1-2-2 1-1 2 2 1.1-1.1-2-2 1-1 2 2 1.4-1.4-3.75-3.75L4.6 16.1l1.8 1.75Z"/></svg>
             <span>Measure</span>
+          </button>
+          <button type="button" class="tool" [class.on]="measureTool === 'angle'" (click)="toggleAngle()"
+            title="Measure the angle between two edges (click three points, corner second)">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 19V4h2v13h13v2H4Z"/><path fill="none" stroke="currentColor" stroke-width="1.7" d="M8 17a9 9 0 0 0-1-9"/></svg>
+            <span>Angle</span>
           </button>
           <button type="button" class="tool" [class.on]="showDimensions" (click)="toggleDimensions()"
             title="Show bounding-box dimensions of the selected part">
@@ -69,12 +84,19 @@ export interface ViewerReferenceLength { meshName: string; lengthMm: number; }
             <span>Reset</span>
           </button>
         </div>
-        @if (measureMode || measureHint) {
-          <div class="measure-readout">{{ measureHint || 'Click two points to measure' }}</div>
+        @if (measureTool !== 'none' || measureHint) {
+          <div class="measure-readout">{{ measureHint || 'Click points to measure' }}</div>
         }
-        @if (!calibrated && (measureMode || showDimensions)) {
+        @if (!calibrated && (measureTool === 'distance' || showDimensions)) {
           <div class="measure-warn" title="No reference length was found to calibrate the model's unit scale. Distances assume metres and may be approximate.">~ approx — uncalibrated</div>
         }
+      }
+      @if (overlayLegend.length && !loading && !error) {
+        <div class="legend">
+          @for (row of overlayLegend; track row.label) {
+            <div class="legend-row"><span class="legend-swatch" [style.background]="row.color"></span>{{ row.label }}</div>
+          }
+        </div>
       }
     </div>
   `,
@@ -161,6 +183,15 @@ export interface ViewerReferenceLength { meshName: string; lengthMm: number; }
       background: rgba(245,166,35,0.95); color: #3d2c00; font-size: 11px; font-weight: 700;
       padding: 4px 9px; border-radius: 6px; pointer-events: none;
     }
+    /* Color-overlay legend (bottom-left). */
+    .legend {
+      position: absolute; bottom: 10px; left: 10px; z-index: 6;
+      display: flex; flex-direction: column; gap: 3px; max-height: 60%; overflow: auto;
+      background: rgba(255,255,255,0.92); border: 1px solid var(--clay-border, #e0d8cc);
+      border-radius: 8px; padding: 7px 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    .legend-row { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--clay-text, #3d3229); white-space: nowrap; }
+    .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12); }
   `]
 })
 export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
@@ -196,6 +227,15 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
    *  Opt-in so existing read-only viewer embeds are unchanged. */
   @Input() showTools = false;
 
+  /** Data-driven color overlay (color-by-property / status). Null clears it and
+   *  restores the base material + quality + render-mode styling. */
+  @Input() set colorOverlay(o: ViewerColorOverlay | null) {
+    this._overlay = o;
+    this.applyColorOverlay();
+  }
+  /** Legend rows for the active overlay (public for the template). */
+  get overlayLegend(): { label: string; color: string }[] { return this._overlay?.legend ?? []; }
+
   /** Known true lengths (mm) for some meshes, used to auto-calibrate the model's
    *  unit scale so measurements read in real mm. The GLB carries the IFC's native
    *  units (m/mm/in vary per file), so we derive mm-per-unit from these. */
@@ -209,7 +249,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   error: string | null = null;
 
   // ── Measurement state (template-bound) ──
-  measureMode = false;
+  measureTool: 'none' | 'distance' | 'angle' = 'none';
   showDimensions = false;
   measureHint = '';
   calibrated = false;
@@ -229,6 +269,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   private originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
   private _highlight = new Set<string>();
   private _highlightActive = false;
+  private _overlay: ViewerColorOverlay | null = null;
   private camAnim: {
     fromPos: THREE.Vector3; toPos: THREE.Vector3;
     fromTgt: THREE.Vector3; toTgt: THREE.Vector3;
@@ -247,10 +288,10 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   private measureGroup = new THREE.Group();
   /** World-space group holding the bounding-box dimension visuals. */
   private dimGroup = new THREE.Group();
-  /** Points picked so far for the in-progress point-to-point measurement. */
+  /** Points picked so far for the in-progress measurement (2 for distance, 3 for angle). */
   private measurePts: THREE.Vector3[] = [];
-  /** Marker for a half-finished (1-point) measurement, so it can be undone on exit. */
-  private pendingMarker: THREE.Object3D | null = null;
+  /** Markers for the in-progress (uncommitted) measurement, removed if abandoned. */
+  private pendingMarkers: THREE.Object3D[] = [];
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -452,6 +493,7 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
         this.applyQualityOverlay();
         this.applyRenderMode();
         this.calibrate();
+        if (this._overlay) this.applyColorOverlay();
         if (this._highlight.size > 0) {
           this.applyHighlight();
           if (this.autoFocus) this.focusOnHighlight();
@@ -504,12 +546,11 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!this.currentModel) return;
     if (this._highlight.size === 0) {
       if (this._highlightActive) {
-        this.currentModel.traverse((c) => {
-          if (c instanceof THREE.Mesh) { const o = this.originalMaterials.get(c); if (o) c.material = o; }
-        });
         this._highlightActive = false;
-        this.applyQualityOverlay();
-        this.applyRenderMode();
+        // Restore the base layer — the color overlay if one is active, else the
+        // original materials + quality + render-mode styling (applyColorOverlay
+        // handles both cases).
+        this.applyColorOverlay();
       }
       return;
     }
@@ -520,6 +561,33 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
         child.material = new THREE.MeshStandardMaterial({ color: 0xff8c00, emissive: 0x4a2600, roughness: 0.45, metalness: 0.1 });
       } else {
         child.material = new THREE.MeshStandardMaterial({ color: 0xbfb8ab, transparent: true, opacity: 0.15, depthWrite: false });
+      }
+    });
+  }
+
+  /** Paint meshes by the data-driven color overlay (color-by-property / status),
+   *  ghosting unmapped meshes; when no overlay is set, restore the base styling. */
+  private applyColorOverlay(): void {
+    if (!this.currentModel) return;
+    if (!this._overlay) {
+      // Clear: restore originals, then re-apply quality + render-mode styling.
+      this.currentModel.traverse((c) => {
+        if (c instanceof THREE.Mesh) { const o = this.originalMaterials.get(c); if (o) c.material = o; }
+      });
+      this.applyQualityOverlay();
+      this.applyRenderMode();
+      return;
+    }
+    // A spotlight selection takes visual precedence — re-applied after it clears.
+    if (this._highlightActive) return;
+    const colors = this._overlay.colors || {};
+    this.currentModel.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const hex = colors[child.name];
+      if (hex) {
+        child.material = new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.55, metalness: 0.05 });
+      } else {
+        child.material = new THREE.MeshStandardMaterial({ color: 0xc8c2b6, transparent: true, opacity: 0.16, depthWrite: false });
       }
     });
   }
@@ -540,9 +608,14 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     const intersects = this.raycaster.intersectObjects(meshes, false);
 
     // Measure mode: clicks pick world points to measure between (not select).
-    if (this.measureMode) {
-      if (intersects.length > 0) this.addMeasurePoint(intersects[0].point.clone());
-      else this.measureHint = 'Click on the model surface to place a point';
+    if (this.measureTool !== 'none') {
+      if (intersects.length > 0) {
+        const p = intersects[0].point.clone();
+        if (this.measureTool === 'distance') this.addMeasurePoint(p);
+        else this.addAnglePoint(p);
+      } else {
+        this.measureHint = 'Click on the model surface to place a point';
+      }
       return;
     }
 
@@ -742,16 +815,16 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   // ── Measurement tools (toolbar) ────────────────────────────────────────────
   hasMeasurements(): boolean { return this.measureGroup.children.length > 0; }
 
-  toggleMeasure(): void {
-    this.measureMode = !this.measureMode;
-    if (this.measureMode) {
-      this.measureHint = 'Click two points on the model to measure';
-    } else {
-      // Abandon any half-finished measurement (single placed point).
-      if (this.pendingMarker) { this.measureGroup.remove(this.pendingMarker); this.pendingMarker = null; }
-      this.measurePts = [];
-      this.measureHint = '';
-    }
+  toggleMeasure(): void { this.setTool(this.measureTool === 'distance' ? 'none' : 'distance'); }
+  toggleAngle(): void { this.setTool(this.measureTool === 'angle' ? 'none' : 'angle'); }
+
+  /** Switch the active measurement tool, abandoning any half-finished pick. */
+  private setTool(tool: 'none' | 'distance' | 'angle'): void {
+    this.abandonInProgress();
+    this.measureTool = tool;
+    this.measureHint = tool === 'distance' ? 'Click two points on the model to measure'
+      : tool === 'angle' ? 'Click three points — the corner second — to measure an angle'
+      : '';
   }
 
   toggleDimensions(): void {
@@ -760,21 +833,29 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     else this.clearDimensions();
   }
 
-  /** Clear all point-to-point measurements (toolbar Clear / model reload / destroy). */
+  /** Clear all committed measurements (toolbar Clear / model reload / destroy). */
   clearMeasurements(): void {
     this.disposeGroup(this.measureGroup);
     this.measurePts = [];
-    this.pendingMarker = null;
-    if (this.measureMode) this.measureHint = 'Click two points on the model to measure';
+    this.pendingMarkers = [];
+    this.measureHint = this.measureTool === 'angle' ? 'Click three points — the corner second — to measure an angle'
+      : this.measureTool === 'distance' ? 'Click two points on the model to measure' : '';
+  }
+
+  /** Drop the markers of an unfinished measurement (committed ones are kept). */
+  private abandonInProgress(): void {
+    for (const m of this.pendingMarkers) this.measureGroup.remove(m);
+    this.pendingMarkers = [];
+    this.measurePts = [];
   }
 
   private addMeasurePoint(p: THREE.Vector3): void {
     const marker = this.makeMarker(p);
     this.measureGroup.add(marker);
+    this.pendingMarkers.push(marker);
     this.measurePts.push(p);
 
     if (this.measurePts.length === 1) {
-      this.pendingMarker = marker;
       this.measureHint = 'Click the second point';
       return;
     }
@@ -787,12 +868,66 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
     this.measureGroup.add(line);
 
     const mm = this.worldToMm(a.distanceTo(b));
-    const label = this.makeLabel(this.fmtLen(mm), a.clone().lerp(b, 0.5));
-    this.measureGroup.add(label);
+    this.measureGroup.add(this.makeLabel(this.fmtLen(mm), a.clone().lerp(b, 0.5)));
 
     this.measurePts = [];
-    this.pendingMarker = null;
+    this.pendingMarkers = [];
     this.measureHint = `Distance: ${this.fmtLen(mm)} — click to measure again`;
+  }
+
+  /** Three-click angle: A, vertex B, C → the angle ABC, drawn with an arc + degrees.
+   *  Angles are scale-invariant, so this works even when the model is uncalibrated. */
+  private addAnglePoint(p: THREE.Vector3): void {
+    const marker = this.makeMarker(p);
+    this.measureGroup.add(marker);
+    this.pendingMarkers.push(marker);
+    this.measurePts.push(p);
+
+    if (this.measurePts.length === 1) { this.measureHint = 'Click the corner (vertex)'; return; }
+    if (this.measurePts.length === 2) { this.measureHint = 'Click the third point'; return; }
+
+    // Third point — commit: two legs from the vertex + an arc + a degrees label.
+    const [a, b, c] = this.measurePts;
+    const d1 = a.clone().sub(b);
+    const d2 = c.clone().sub(b);
+    const deg = THREE.MathUtils.radToDeg(d1.angleTo(d2));
+
+    const legs = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([a, b, c]),
+      new THREE.LineBasicMaterial({ color: 0xff6a00, depthTest: false }),
+    );
+    legs.renderOrder = 999;
+    this.measureGroup.add(legs);
+
+    const u1 = d1.clone().normalize();
+    const u2 = d2.clone().normalize();
+    const r = Math.max(1e-4, 0.25 * Math.min(d1.length(), d2.length()));
+    const axis = new THREE.Vector3().crossVectors(u1, u2);
+    if (axis.lengthSq() > 1e-9) {
+      axis.normalize();
+      const sweep = u1.angleTo(u2);
+      const arcPts: THREE.Vector3[] = [];
+      const q = new THREE.Quaternion();
+      for (let i = 0; i <= 32; i++) {
+        q.setFromAxisAngle(axis, (sweep * i) / 32);
+        arcPts.push(u1.clone().applyQuaternion(q).multiplyScalar(r).add(b));
+      }
+      const arc = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(arcPts),
+        new THREE.LineBasicMaterial({ color: 0xff6a00, depthTest: false }),
+      );
+      arc.renderOrder = 999;
+      this.measureGroup.add(arc);
+    }
+
+    const bisector = u1.clone().add(u2);
+    if (bisector.lengthSq() < 1e-9) bisector.copy(u1); // straight angle fallback
+    const labelPos = b.clone().add(bisector.normalize().multiplyScalar(r * 1.6));
+    this.measureGroup.add(this.makeLabel(`${deg.toFixed(1)}°`, labelPos));
+
+    this.measurePts = [];
+    this.pendingMarkers = [];
+    this.measureHint = `Angle: ${deg.toFixed(1)}° — click to measure again`;
   }
 
   // ── Bounding-box dimensions of the current selection ───────────────────────

@@ -7,9 +7,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { EquipmentApiService } from './equipment.service';
+import { ListStateComponent } from '../shared/components/list-state/list-state.component';
 
 const TYPES = ['laser', 'press_brake', 'cnc', 'welder', 'shear', 'grinder', 'paint_booth', 'other'];
 const STATUSES = ['running', 'idle', 'down', 'maintenance'];
@@ -20,7 +20,8 @@ const REASONS = ['breakdown', 'changeover', 'no_material', 'no_operator', 'plann
   standalone: true,
   imports: [
     CommonModule, FormsModule, MatTableModule, MatButtonModule, MatIconModule,
-    MatFormFieldModule, MatInputModule, MatSelectModule, MatProgressSpinnerModule,
+    MatFormFieldModule, MatInputModule, MatSelectModule,
+    ListStateComponent,
   ],
   template: `
     <div class="page-shell">
@@ -66,16 +67,15 @@ const REASONS = ['breakdown', 'changeover', 'no_material', 'no_operator', 'plann
         </div>
       }
 
-      @if (loading) { <div class="center"><mat-spinner diameter="40"></mat-spinner></div> }
-      @else {
-        <table mat-table [dataSource]="rows" class="mat-elevation-z1 full">
-          <ng-container matColumnDef="code"><th mat-header-cell *matHeaderCellDef>Code</th><td mat-cell *matCellDef="let e">{{ e.code }}</td></ng-container>
-          <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Name</th><td mat-cell *matCellDef="let e">{{ e.name }}</td></ng-container>
-          <ng-container matColumnDef="type"><th mat-header-cell *matHeaderCellDef>Type</th><td mat-cell *matCellDef="let e">{{ e.type }}</td></ng-container>
+      <app-list-state [loading]="loading" [error]="error" [empty]="false" (retry)="load()">
+        <table mat-table [dataSource]="rows" class="mat-elevation-z1 full stack-cards">
+          <ng-container matColumnDef="code"><th mat-header-cell *matHeaderCellDef>Code</th><td mat-cell *matCellDef="let e" [attr.data-label]="'Code'">{{ e.code }}</td></ng-container>
+          <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Name</th><td mat-cell *matCellDef="let e" [attr.data-label]="'Name'">{{ e.name }}</td></ng-container>
+          <ng-container matColumnDef="type"><th mat-header-cell *matHeaderCellDef>Type</th><td mat-cell *matCellDef="let e" [attr.data-label]="'Type'">{{ e.type }}</td></ng-container>
           <ng-container matColumnDef="status"><th mat-header-cell *matHeaderCellDef>Status</th>
-            <td mat-cell *matCellDef="let e"><span class="chip st-{{e.status}}">{{ e.status }}</span></td></ng-container>
+            <td mat-cell *matCellDef="let e" [attr.data-label]="'Status'"><span class="chip st-{{e.status}}">{{ e.status }}</span></td></ng-container>
           <ng-container matColumnDef="actions"><th mat-header-cell *matHeaderCellDef></th>
-            <td mat-cell *matCellDef="let e">
+            <td mat-cell *matCellDef="let e" [attr.data-label]="'Actions'">
               @if (e.status === 'down') { <button mat-button color="primary" (click)="endDowntime(e)">End downtime</button> }
               @else { <button mat-button color="warn" (click)="downtimeFor = e; downtime = { reason: 'breakdown', note: '' }">Report downtime</button> }
             </td></ng-container>
@@ -83,7 +83,7 @@ const REASONS = ['breakdown', 'changeover', 'no_material', 'no_operator', 'plann
           <tr mat-row *matRowDef="let row; columns: columns"></tr>
         </table>
         @if (rows.length === 0) { <p class="empty">No machines yet.</p> }
-      }
+      </app-list-state>
     </div>
   `,
   styles: [`
@@ -97,7 +97,7 @@ const REASONS = ['breakdown', 'changeover', 'no_material', 'no_operator', 'plann
     .form-row mat-form-field { min-width:150px; } .grow { flex:1; } .full { width:100%; } .panel-actions { display:flex; justify-content:flex-end; gap:8px; }
     .chip { padding:2px 8px; border-radius:10px; font-size:12px; text-transform:capitalize; }
     .st-running { background:#bbf7d0; } .st-idle { background:#e2e8f0; } .st-down { background:#fca5a5; } .st-maintenance { background:#fde68a; }
-    .center { display:flex; justify-content:center; padding:48px; } .empty { text-align:center; color: var(--clay-text-muted,#64748b); padding:16px; }
+    .empty { text-align:center; color: var(--clay-text-muted,#64748b); padding:16px; }
   `],
 })
 export class EquipmentComponent implements OnInit {
@@ -107,6 +107,7 @@ export class EquipmentComponent implements OnInit {
   columns = ['code', 'name', 'type', 'status', 'actions'];
 
   loading = true;
+  error: string | null = null;
   rows: any[] = [];
   eff: any = null;
   showAdd = false;
@@ -120,9 +121,10 @@ export class EquipmentComponent implements OnInit {
 
   load(): void {
     this.loading = true;
+    this.error = null;
     this.api.list().subscribe({
       next: (data) => { this.rows = Array.isArray(data) ? data : (data?.data || []); this.loading = false; },
-      error: () => { this.loading = false; },
+      error: () => { this.loading = false; this.error = 'Could not load equipment — try again.'; },
     });
     this.api.effectiveness().subscribe({ next: (e) => this.eff = e?.data ?? e, error: () => {} });
   }

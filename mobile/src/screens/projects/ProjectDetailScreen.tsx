@@ -5,6 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
 import { ProjectsStackParamList } from '../../navigation/types';
 import { ordersService, MOrder, MProcess, OrderStatusColors, OrderStatusLabels } from '../../services/projects.service';
+import { ProjectAssemblies } from './ProjectAssemblies';
 
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'ProjectDetail'>;
 type Rt = RouteProp<ProjectsStackParamList, 'ProjectDetail'>;
@@ -15,6 +16,7 @@ export function ProjectDetailScreen() {
   const route = useRoute<Rt>();
   const { projectId, name } = route.params;
 
+  const [tab, setTab] = useState<'orders' | 'assemblies'>('orders');
   const [orders, setOrders] = useState<MOrder[]>([]);
   const [processes, setProcesses] = useState<MProcess[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,23 +121,46 @@ export function ProjectDetailScreen() {
     );
   };
 
-  if (loading) return <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>;
+  const SegBar = (
+    <View style={styles.segWrap}>
+      {(['orders', 'assemblies'] as const).map((t) => (
+        <TouchableOpacity key={t} style={[styles.seg, tab === t && styles.segOn]} onPress={() => setTab(t)} activeOpacity={0.8}>
+          <Text style={[styles.segTxt, tab === t && styles.segTxtOn]}>{t === 'orders' ? 'Work orders' : 'Assemblies & 3D'}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
 
   return (
-    <FlatList
-      style={styles.container}
-      contentContainerStyle={styles.list}
-      data={orders}
-      keyExtractor={(i) => i.id}
-      ListHeaderComponent={Header}
-      renderItem={renderCard}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-      ListEmptyComponent={<View style={styles.empty}><Text style={styles.muted}>No work orders yet. Create one to track production for a customer or run.</Text></View>}
-    />
+    <View style={styles.screen}>
+      {SegBar}
+      {tab === 'assemblies' ? (
+        <ProjectAssemblies projectId={projectId} />
+      ) : loading ? (
+        <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>
+      ) : (
+        <FlatList
+          style={styles.container}
+          contentContainerStyle={styles.list}
+          data={orders}
+          keyExtractor={(i) => i.id}
+          ListHeaderComponent={Header}
+          renderItem={renderCard}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+          ListEmptyComponent={<View style={styles.empty}><Text style={styles.muted}>No work orders yet. Create one to track production for a customer or run.</Text></View>}
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: Colors.background },
+  segWrap: { flexDirection: 'row', gap: 8, padding: 12, paddingBottom: 6, backgroundColor: Colors.background },
+  seg: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white },
+  segOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  segTxt: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary },
+  segTxtOn: { color: Colors.white },
   container: { flex: 1, backgroundColor: Colors.background },
   list: { padding: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },

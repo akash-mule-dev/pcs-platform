@@ -124,7 +124,12 @@ export function WorkOrderHubScreen() {
         {FILTERS.map((f) => {
           const on = filter === f.key;
           return (
-            <TouchableOpacity key={f.key} style={[styles.chip, on && styles.chipOn]} onPress={() => setFilter(on ? 'all' : f.key)}>
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.chip, on && styles.chipOn]}
+              onPress={() => setFilter(on ? 'all' : f.key)}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            >
               <Text style={[styles.chipTxt, on && styles.chipTxtOn]}>{f.label}</Text>
               <View style={[styles.cBadge, on && styles.cBadgeOn]}><Text style={[styles.cBadgeTxt, on && styles.cBadgeTxtOn]}>{counts[f.key]}</Text></View>
             </TouchableOpacity>
@@ -201,9 +206,9 @@ const styles = StyleSheet.create({
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10, marginBottom: 6 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.light, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 11, borderWidth: 1, borderColor: Colors.border },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, backgroundColor: Colors.light, borderRadius: 22, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: Colors.border },
   chipOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipTxt: { color: Colors.text, fontSize: 12.5, fontWeight: '600' },
+  chipTxt: { color: Colors.text, fontSize: 13.5, fontWeight: '600' },
   chipTxtOn: { color: Colors.white },
   cBadge: { backgroundColor: Colors.card, borderRadius: 9, minWidth: 18, paddingHorizontal: 5, alignItems: 'center' },
   cBadgeOn: { backgroundColor: 'rgba(255,255,255,0.25)' },

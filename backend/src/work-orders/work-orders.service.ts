@@ -118,7 +118,7 @@ export class WorkOrdersService {
    * reads the legacy `work_orders.completed_quantity` column. Work orders with
    * every stage completed/skipped land in the terminal "done" list (capped).
    */
-  async kanban(filters: { projectId?: string; orderId?: string; q?: string } = {}) {
+  async kanban(filters: { projectId?: string; orderId?: string; q?: string; includeAllDone?: boolean } = {}) {
     const org = TenantContext.getOrganizationId();
 
     // 1. Cards: every non-cancelled WO with its fabrication context.
@@ -221,6 +221,7 @@ export class WorkOrdersService {
         mark: w.mark ?? null,
         nodeName: w.node_name ?? null,
         profile: w.profile ?? null,
+        assemblyNodeId: w.assembly_node_id ?? null,
         projectId: w.project_id ?? null,
         projectName: w.project_name ?? null,
         productionOrderId: w.production_order_id ?? null,
@@ -267,7 +268,7 @@ export class WorkOrdersService {
       late: cards.filter((c) => c.late).length,
       blocked: cards.filter((c) => c.currentStage?.gateBlocked).length,
     };
-    return { stages, cards, done: done.slice(0, 25), doneTotal: done.length, totals };
+    return { stages, cards, done: filters.includeAllDone ? done : done.slice(0, 25), doneTotal: done.length, totals };
   }
 
   /** Highest numeric suffix among order numbers with the given prefix (count() drifts after deletes). */

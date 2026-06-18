@@ -6,6 +6,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { QualityReportsService, QualityReport } from '../core/services/quality-reports.service';
+import { ToastService } from '../core/services/toast.service';
 
 const BOOTSTRAP_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.2/css/bootstrap.min.css';
 const FORMIO_CSS = 'https://cdn.form.io/formiojs/formio.full.min.css';
@@ -186,6 +187,7 @@ export class ReportFillComponent implements OnInit, OnDestroy {
   private location = inject(Location);
   private svc = inject(QualityReportsService);
   private zone = inject(NgZone);
+  private toast = inject(ToastService);
 
   @ViewChild('formHost', { static: true }) formHost!: ElementRef<HTMLDivElement>;
 
@@ -284,7 +286,8 @@ export class ReportFillComponent implements OnInit, OnDestroy {
       next: (r) => {
         this.busy = false; this.dirty = false; this.savedAt = new Date();
         this.report = { ...this.report!, status: r.status, submittedAt: r.submittedAt };
-        if (status === 'submitted') this.notice = `${this.report.number} submitted.`;
+        if (status === 'submitted') { this.notice = `${this.report.number} submitted.`; this.toast.success(`${this.report.number} submitted`); }
+        else this.toast.success('Draft saved');
       },
       error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not save the report.'; },
     });
@@ -453,7 +456,7 @@ export class ReportFillComponent implements OnInit, OnDestroy {
     if (!this.report || this.busy) return;
     this.busy = true; this.error = null;
     this.svc.resolve(this.report.id).subscribe({
-      next: (r) => { this.busy = false; this.report = { ...this.report!, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy }; this.notice = `${this.report.number} resolved.`; },
+      next: (r) => { this.busy = false; this.report = { ...this.report!, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy }; this.notice = `${this.report.number} resolved.`; this.toast.success(`${this.report.number} resolved — gates lifted`); },
       error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not resolve this NCR.'; },
     });
   }
@@ -463,7 +466,7 @@ export class ReportFillComponent implements OnInit, OnDestroy {
     if (!this.report || this.busy) return;
     this.busy = true; this.error = null;
     this.svc.reopen(this.report.id).subscribe({
-      next: (r) => { this.busy = false; this.report = { ...this.report!, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy }; this.notice = `${this.report.number} reopened.`; },
+      next: (r) => { this.busy = false; this.report = { ...this.report!, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy }; this.notice = `${this.report.number} reopened.`; this.toast.success(`${this.report.number} reopened`); },
       error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not reopen this NCR.'; },
     });
   }

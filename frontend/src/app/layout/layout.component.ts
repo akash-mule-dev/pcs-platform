@@ -22,6 +22,7 @@ import { ThemeService, FONT_SIZE_OPTIONS } from '../core/services/theme.service'
 import { BUILD_INFO } from '../../build-info';
 import { PermissionsService } from '../core/services/permissions.service';
 import { TourService } from '../core/services/tour.service';
+import type { TourDefinition } from '../core/services/tour-definitions';
 
 interface NavItem {
   label: string;
@@ -183,10 +184,27 @@ interface NavGroup {
             <mat-icon>{{ themeService.theme() === 'dark' ? 'light_mode' : 'dark_mode' }}</mat-icon>
           </button>
 
-          <!-- Onboarding tour launcher (replay anytime) -->
-          <button mat-icon-button (click)="startTour()" data-tour="tour-launcher" matTooltip="Take a tour">
-            <mat-icon>explore</mat-icon>
+          <!-- Help & tours menu -->
+          <button mat-icon-button [matMenuTriggerFor]="helpMenu" data-tour="tour-launcher"
+                  matTooltip="Help & tours" (menuOpened)="refreshHelpTours()">
+            <mat-icon>help_outline</mat-icon>
           </button>
+          <mat-menu #helpMenu="matMenu">
+            <button mat-menu-item (click)="startTour()">
+              <mat-icon>explore</mat-icon><span>Take the product tour</span>
+            </button>
+            @if (pageTours.length > 0) {
+              <div class="help-section">On this page</div>
+              @for (t of pageTours; track t.id) {
+                <button mat-menu-item (click)="tour.start(t.id)">
+                  <mat-icon>play_circle_outline</mat-icon><span>{{ t.label }}</span>
+                </button>
+              }
+            }
+            <button mat-menu-item (click)="resetTours()">
+              <mat-icon>restart_alt</mat-icon><span>Reset tour tips</span>
+            </button>
+          </mat-menu>
 
           @if (canRaiseTicket) {
             <button mat-icon-button (click)="openSupport()" data-tour="support" matTooltip="Get help / contact support">
@@ -460,6 +478,13 @@ interface NavGroup {
       color: var(--clay-primary) !important;
     }
 
+    /* Help & tours menu — section label between groups */
+    ::ng-deep .help-section {
+      padding: 8px 16px 4px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+      color: var(--clay-text-muted); font-family: 'Space Grotesk', sans-serif;
+    }
+
     /* Mobile overlay */
     .sidenav-overlay {
       display: none;
@@ -604,18 +629,31 @@ export class LayoutComponent implements OnInit, OnDestroy {
     public themeService: ThemeService,
     private permissions: PermissionsService,
     private dialog: MatDialog,
-    private tour: TourService,
+    public tour: TourService,
   ) {}
 
   canRaiseTicket = false;
   private tourChecked = false;
+  /** Page tours relevant to the current route — recomputed when the Help menu opens. */
+  pageTours: TourDefinition[] = [];
 
   openSupport(): void {
     this.dialog.open(SupportTicketDialogComponent, { data: { contextUrl: this.router.url } });
   }
 
-  /** Replay the onboarding tour on demand (toolbar "Take a tour" button). */
+  /** Replay the onboarding tour on demand (Help menu → "Take the product tour"). */
   startTour(): void {
+    this.tour.start('onboarding');
+  }
+
+  /** Refresh the contextual tour list each time the Help menu opens. */
+  refreshHelpTours(): void {
+    this.pageTours = this.tour.contextualTours(this.router.url);
+  }
+
+  /** Clear all seen flags, then re-run onboarding as immediate feedback. */
+  resetTours(): void {
+    this.tour.resetSeen();
     this.tour.start('onboarding');
   }
 

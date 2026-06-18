@@ -255,7 +255,7 @@ export class SupportComponent implements OnInit, OnDestroy {
     if (!this.selected || (!this.replyBody.trim() && !this.selectedFile)) return;
     this.busy = true;
     const body = this.replyBody.trim();
-    const done = (d: TicketDetail) => { this.busy = false; this.selected = d; this.replyBody = ''; this.selectedFile = null; this.load(); };
+    const done = (d: TicketDetail) => { this.busy = false; this.selected = d; this.replyBody = ''; this.selectedFile = null; this.load(); this.snack.open('Reply sent', 'OK', { duration: 3000, panelClass: 'success-snackbar' }); };
     const fail = (e: any) => { this.busy = false; this.snack.open(e?.error?.message || 'Reply failed', 'Dismiss', { duration: 4000 }); };
     if (this.selectedFile) {
       this.api.replyWithAttachment(this.selected.id, this.selectedFile, body).subscribe({ next: done, error: fail });
@@ -268,7 +268,7 @@ export class SupportComponent implements OnInit, OnDestroy {
     if (!this.selected) return;
     this.busy = true;
     this.api.close(this.selected.id).subscribe({
-      next: (d) => { this.busy = false; this.selected = d; this.load(); this.snack.open('Ticket closed', 'OK', { duration: 2500 }); },
+      next: (d) => { this.busy = false; this.selected = d; this.load(); this.snack.open('Ticket resolved', 'OK', { duration: 3000, panelClass: 'success-snackbar' }); },
       error: (e) => { this.busy = false; this.snack.open(e?.error?.message || 'Failed', 'Dismiss', { duration: 4000 }); },
     });
   }

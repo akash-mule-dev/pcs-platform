@@ -57,6 +57,14 @@ export class User {
   lastLoginAt: Date | null;
 
   /**
+   * In-app guided-tour state: `{ [tourId]: version }` of the tours this user has
+   * completed/dismissed. Server-side so onboarding follows the user across
+   * devices; a stored version below the current tour version re-surfaces it.
+   */
+  @Column({ name: 'tour_state', type: 'jsonb', nullable: true })
+  tourState: Record<string, string> | null;
+
+  /**
    * Costing: this person's labor rate (currency/hour). Falls back to the
    * stage's rate, then the org default (costing settings) when unset/0.
    */

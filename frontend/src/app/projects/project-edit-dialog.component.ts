@@ -7,6 +7,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { ProjectsService, Project, CreateProject } from '../core/services/projects.service';
+import { ToastService } from '../core/services/toast.service';
 
 export interface ProjectEditData {
   project: Project;
@@ -71,6 +72,7 @@ export class ProjectEditDialogComponent implements OnInit {
   private svc = inject(ProjectsService);
   private dialogRef = inject(MatDialogRef<ProjectEditDialogComponent>);
   private data = inject<ProjectEditData>(MAT_DIALOG_DATA);
+  private toast = inject(ToastService);
 
   saving = false;
   error: string | null = null;
@@ -107,6 +109,7 @@ export class ProjectEditDialogComponent implements OnInit {
     };
     try {
       const updated = await firstValueFrom(this.svc.update(this.data.project.id, dto));
+      this.toast.success('Project updated');
       this.dialogRef.close(updated);
     } catch (e: any) {
       this.saving = false;

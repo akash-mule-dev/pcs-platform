@@ -19,6 +19,7 @@ import { workOrderService } from '../../services/work-order.service';
 import { offlineService } from '../../services/offline.service';
 import { TimeEntry, WorkOrder, WorkOrderStage } from '../../types';
 import { formatTimer, formatDuration } from '../../utils/duration';
+import { notifySuccess, notifyError } from '../../utils/feedback';
 import { TimeTrackingStackParamList } from '../../navigation/types';
 import { useSocketEvents } from '../../hooks/useSocketEvent';
 
@@ -93,12 +94,15 @@ export function TimerScreen() {
     try {
       if (offlineService.isOnline) {
         await timeTrackingService.clockIn(stageId);
+        notifySuccess('Clocked in');
       } else {
         await offlineService.queueAction('clock-in', { workOrderStageId: stageId });
+        notifySuccess('Clock-in queued — will sync');
         Alert.alert('Queued', 'Clock-in queued for sync when online');
       }
       loadState();
     } catch (err: any) {
+      notifyError();
       Alert.alert('Error', err.message || 'Failed to clock in');
     }
   };
@@ -109,17 +113,20 @@ export function TimerScreen() {
     try {
       if (offlineService.isOnline) {
         await timeTrackingService.clockOut(activeEntry.id, notes || undefined);
+        notifySuccess('Clocked out');
       } else {
         await offlineService.queueAction('clock-out', {
           timeEntryId: activeEntry.id,
           notes: notes || undefined,
         });
+        notifySuccess('Clock-out queued — will sync');
         Alert.alert('Queued', 'Clock-out queued for sync when online');
       }
       setNotes('');
       setActiveEntry(null);
       loadState();
     } catch (err: any) {
+      notifyError();
       Alert.alert('Error', err.message || 'Failed to clock out');
     } finally {
       setClockingOut(false);

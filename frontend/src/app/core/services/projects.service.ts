@@ -156,6 +156,29 @@ export interface ImportRevision {
   impact: { summary: { pieces: number; critical: number; high: number; medium: number; none: number }; rows: RevisionImpactRow[] } | null;
 }
 
+// ── Stage kanban (production status) ──
+export interface KanbanCardStage {
+  wosId: string; stageId: string; name: string; sequence: number; status: string;
+  qtyDone: number; qtyTotal: number | null; isQuality: boolean; gateBlocked: boolean;
+}
+export interface KanbanCard {
+  workOrderId: string; orderNumber: string; woStatus: string;
+  mark: string | null; nodeName: string | null; profile: string | null;
+  /** The fabricated assembly node this WO drives (join key to the tree → 3D meshes). */
+  assemblyNodeId: string | null;
+  productionOrderId: string | null;
+  productionOrderNumber: string | null;
+  overall: { unitsDone: number; unitsTotal: number; percent: number };
+  currentStage: KanbanCardStage | null;
+}
+export interface KanbanData {
+  stages: { name: string; sequence: number }[];
+  cards: KanbanCard[];   // active (at their first incomplete stage)
+  done: KanbanCard[];    // production-complete (uncapped when includeAllDone)
+  doneTotal: number;
+  totals: { active: number; done: number; late: number; blocked: number };
+}
+
 // ── Earned value ──
 export interface EarnedValueWeek {
   weekStart: string; producedKg: number; producedPieces: number; shippedKg: number; shippedPieces: number;
@@ -441,6 +464,12 @@ export class ProjectsService {
   /** Revision diff of an import (added/changed/missing) + production impact per piece. */
   importRevision(projectId: string, importId: string): Observable<ImportRevision> {
     return this.http.get<ImportRevision>(`${this.base}/${projectId}/imports/${importId}/revision`);
+  }
+
+  /** Count-based stage kanban scoped to a project — the production-status source
+   *  for the 3D overlay (includeAllDone lifts the board's 25-row done cap). */
+  projectKanban(projectId: string): Observable<KanbanData> {
+    return this.http.get<KanbanData>(`${environment.apiUrl}/work-orders/kanban?projectId=${projectId}&includeAllDone=1`);
   }
 
   /** Progress billing: weekly produced + shipped tonnage with cumulative earned %. */

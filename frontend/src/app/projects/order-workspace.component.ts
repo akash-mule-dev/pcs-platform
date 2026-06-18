@@ -4,6 +4,7 @@ import { ActivatedRoute, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ProjectsService, ProductionOrder } from '../core/services/projects.service';
 import { ProjectWorkspaceStore } from './project-workspace.store';
+import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
 interface OrderTab { path: string; label: string; icon: string; }
 
@@ -16,16 +17,17 @@ interface OrderTab { path: string; label: string; icon: string; }
 @Component({
   selector: 'app-order-workspace',
   standalone: true,
-  imports: [CommonModule, RouterModule, MatIconModule],
+  imports: [CommonModule, RouterModule, MatIconModule, TourLauncherComponent],
   template: `
     <div class="ows">
       <a class="back" [routerLink]="['/projects', projectId, 'orders']"><mat-icon>arrow_back</mat-icon><span>Work orders</span></a>
 
-      <header class="ohead">
+      <header class="ohead" data-tour="ow-head">
         <div class="title">
           <mat-icon class="t-ico">receipt_long</mat-icon>
           <h2>{{ order?.number || 'Work order' }}</h2>
           @if (order) { <span class="pill st-{{ order.status }}">{{ statusLabel(order.status) }}</span> }
+          <app-tour-launcher class="ow-tour" tourId="order-workspace" [auto]="true" tooltip="Tour this order"></app-tour-launcher>
         </div>
         <div class="meta">
           @if (order?.customerName) { <span><mat-icon>business</mat-icon>{{ order?.customerName }}</span> }
@@ -33,7 +35,7 @@ interface OrderTab { path: string; label: string; icon: string; }
           @if (order?.dueDate) { <span><mat-icon>event</mat-icon>Due {{ order?.dueDate | date:'mediumDate' }}</span> }
         </div>
 
-        <nav class="tab-bar">
+        <nav class="tab-bar" data-tour="ow-tabs">
           @for (t of tabs; track t.path) {
             <a class="tab" [routerLink]="['/projects', projectId, 'orders', orderId, t.path]" routerLinkActive="active">
               <mat-icon>{{ t.icon }}</mat-icon><span>{{ t.label }}</span>
@@ -57,6 +59,7 @@ interface OrderTab { path: string; label: string; icon: string; }
 
     .ohead { background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); padding: 14px 18px 0; margin-bottom: 16px; }
     .title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .ow-tour { margin-left: auto; }
     .t-ico { color: var(--clay-primary); }
     .title h2 { margin: 0; font-size: 19px; font-weight: 700; color: var(--clay-text); letter-spacing: -0.01em; }
     .pill { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }

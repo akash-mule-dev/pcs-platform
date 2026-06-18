@@ -319,11 +319,11 @@ export class SupportDeskComponent implements OnInit, OnDestroy {
     this.api.get(this.selected.id).subscribe({ next: (d) => (this.selected = d), error: () => {} });
   }
 
-  private apply(patch: { status?: string; priority?: string; assignedToUserId?: string | null }): void {
+  private apply(patch: { status?: string; priority?: string; assignedToUserId?: string | null }, successMessage = 'Ticket updated'): void {
     if (!this.selected) return;
     this.busy = true;
     this.api.update(this.selected.id, { ...patch, expectedVersion: this.selected.version }).subscribe({
-      next: (d) => { this.busy = false; this.selected = d; this.load(); this.loadStats(); },
+      next: (d) => { this.busy = false; this.selected = d; this.load(); this.loadStats(); this.snack.open(successMessage, 'OK', { duration: 3000, panelClass: 'success-snackbar' }); },
       error: (e) => {
         this.busy = false;
         if (e?.status === 409) { this.snack.open('This ticket changed elsewhere — reloaded.', 'OK', { duration: 4000 }); this.refreshSelected(); this.load(); }
@@ -332,9 +332,9 @@ export class SupportDeskComponent implements OnInit, OnDestroy {
     });
   }
 
-  setStatus(status: string): void { this.apply({ status }); }
-  setPriority(priority: string): void { this.apply({ priority }); }
-  assign(who: string | null): void { this.apply({ assignedToUserId: who || null }); }
+  setStatus(status: string): void { this.apply({ status }, 'Status updated'); }
+  setPriority(priority: string): void { this.apply({ priority }, 'Priority updated'); }
+  assign(who: string | null): void { this.apply({ assignedToUserId: who || null }, 'Ticket assigned'); }
 
   onFile(event: Event): void {
     const input = event.target as HTMLInputElement;

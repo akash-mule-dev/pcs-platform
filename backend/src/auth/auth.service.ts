@@ -71,6 +71,33 @@ export class AuthService {
     return result;
   }
 
+  /** This user's guided-tour state: `{ [tourId]: version }` (empty when none). */
+  async getTourState(userId: string): Promise<Record<string, string>> {
+    const user = await this.userRepo.findOne({ where: { id: userId }, select: ['id', 'tourState'] });
+    if (!user) throw new UnauthorizedException();
+    return user.tourState ?? {};
+  }
+
+  /** Mark a tour completed/dismissed at the given version; returns the new map. */
+  async markTourSeen(userId: string, tourId: string, version: string): Promise<Record<string, string>> {
+    const state = await this.getTourState(userId);
+    state[tourId] = version;
+    await this.userRepo.update(userId, { tourState: state });
+    return state;
+  }
+
+  /** Clear one tour's seen-flag (or all when no id) so auto-tours surface again. */
+  async resetTours(userId: string, tourId?: string): Promise<Record<string, string>> {
+    if (!tourId) {
+      await this.userRepo.update(userId, { tourState: {} });
+      return {};
+    }
+    const state = await this.getTourState(userId);
+    delete state[tourId];
+    await this.userRepo.update(userId, { tourState: state });
+    return state;
+  }
+
   /**
    * The CALLER's effective access: role + fine-grained permission keys.
    *

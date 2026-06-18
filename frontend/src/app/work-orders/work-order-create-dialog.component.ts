@@ -11,6 +11,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectsService, Project, ProductionOrder, CreateOrder } from '../core/services/projects.service';
+import { ToastService } from '../core/services/toast.service';
 
 export interface WorkOrderCreateData {
   /** Pre-select a project (e.g. when launched from a project's Work Orders tab). */
@@ -113,6 +114,7 @@ export class WorkOrderCreateDialogComponent implements OnInit {
   private svc = inject(ProjectsService);
   private dialogRef = inject(MatDialogRef<WorkOrderCreateDialogComponent>);
   private data = inject<WorkOrderCreateData>(MAT_DIALOG_DATA);
+  private toast = inject(ToastService);
 
   projects: Project[] = [];
   processes: { id: string; name: string }[] = [];
@@ -167,6 +169,7 @@ export class WorkOrderCreateDialogComponent implements OnInit {
     };
     try {
       const order = await firstValueFrom(this.svc.createOrder(v.projectId!, body));
+      this.toast.success('Work order created');
       this.dialogRef.close(order);
     } catch (e: any) {
       this.creating = false;

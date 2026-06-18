@@ -6,6 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { QualityReportsService, QualityReport, ReportTemplate } from '../core/services/quality-reports.service';
 import { ProjectsService, DashboardOrderRow } from '../core/services/projects.service';
+import { ToastService } from '../core/services/toast.service';
 
 /**
  * QC Reports — every filled/in-progress report, filterable by work order.
@@ -72,6 +73,12 @@ import { ProjectsService, DashboardOrderRow } from '../core/services/projects.se
 
         @if (loading) {
           <div class="center"><mat-spinner diameter="30"></mat-spinner></div>
+        } @else if (error) {
+          <div class="none" role="alert">
+            <mat-icon class="err-ico">error_outline</mat-icon>
+            <p>{{ error }}</p>
+            <button class="fchip" (click)="load()" aria-label="Retry loading reports"><mat-icon>refresh</mat-icon> Retry</button>
+          </div>
         } @else {
           <div class="thead">
             <span>Report</span><span>Template</span><span>Work order</span><span>Project</span><span>Item</span><span>Status</span><span>Date</span><span></span>
@@ -154,18 +161,32 @@ import { ProjectsService, DashboardOrderRow } from '../core/services/projects.se
     .t-open mat-icon { font-size: 16px; width: 16px; height: 16px; }
     .none { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 0; color: var(--clay-text-muted); font-size: 13px; }
     .none mat-icon { font-size: 36px; width: 36px; height: 36px; opacity: .5; }
-    @media (max-width: 900px) { .thead { display: none; } .trow { grid-template-columns: 1fr 1fr; } }
+    .none .err-ico { color: var(--danger); opacity: 1; }
+    .none .fchip { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; margin-top: 4px; }
+    .none .fchip mat-icon { font-size: 16px; width: 16px; height: 16px; opacity: 1; }
+    /* Narrow screens: rows become wrap-flow cards (the 8-col grid overflows tablets). */
+    @media (max-width: 760px) {
+      .thead { display: none; }
+      .trow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 12px 14px; }
+      .trow > span { font-size: 12.5px; }
+      .t-num { font-weight: 700; font-size: 14px; flex: 1 1 auto; }
+      .t-tpl, .t-wo, .t-proj, .t-item, .t-date { white-space: normal; }
+      .t-proj, .t-item, .t-date { color: var(--clay-text-muted); }
+      .t-open { margin-left: auto; }
+    }
   `],
 })
 export class ReportsListComponent implements OnInit {
   private svc = inject(QualityReportsService);
   private projectsSvc = inject(ProjectsService);
   private router = inject(Router);
+  private toast = inject(ToastService);
 
   reports: QualityReport[] = [];
   templates: ReportTemplate[] = [];
   orders: DashboardOrderRow[] = [];
   loading = true;
+  error: string | null = null;
 
   query = '';
   orderFilter = '';
@@ -190,9 +211,10 @@ export class ReportsListComponent implements OnInit {
 
   load(): void {
     this.loading = true;
+    this.error = null;
     this.svc.list(this.orderFilter ? { productionOrderId: this.orderFilter } : undefined).subscribe({
       next: (r) => { this.reports = r; this.loading = false; },
-      error: () => { this.loading = false; },
+      error: () => { this.loading = false; this.error = 'Could not load reports. Check your connection and try again.'; },
     });
   }
 
@@ -218,7 +240,7 @@ export class ReportsListComponent implements OnInit {
     if (!this.newTemplateId || !this.newOrderId || this.creating) return;
     this.creating = true; this.newError = null;
     this.svc.create({ templateId: this.newTemplateId, productionOrderId: this.newOrderId }).subscribe({
-      next: (r) => { this.creating = false; this.router.navigate(['/qr', r.id]); },
+      next: (r) => { this.creating = false; this.toast.success(`Report ${r.number} started`); this.router.navigate(['/qr', r.id]); },
       error: (e) => { this.creating = false; this.newError = e?.error?.message || 'Could not start the report.'; },
     });
   }

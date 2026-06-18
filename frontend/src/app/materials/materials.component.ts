@@ -7,10 +7,11 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MaterialsApiService, MaterialSummaryRow, StockMovementRow } from './materials.service';
 import { PermissionsService } from '../core/services/permissions.service';
+import { ToastService } from '../core/services/toast.service';
+import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
 const MATERIAL_TYPES = ['sheet', 'plate', 'bar', 'tube', 'coil', 'fastener', 'consumable', 'component', 'other'];
 
@@ -28,6 +29,7 @@ type PanelMode = 'closed' | 'add' | 'edit' | 'receive' | 'issue' | 'return' | 'a
   imports: [
     CommonModule, FormsModule, MatButtonModule, MatIconModule,
     MatFormFieldModule, MatInputModule, MatSelectModule, MatProgressSpinnerModule, MatTooltipModule,
+    TourLauncherComponent,
   ],
   template: `
     <div class="page-shell">
@@ -36,20 +38,23 @@ type PanelMode = 'closed' | 'add' | 'edit' | 'receive' | 'issue' | 'return' | 'a
           <h1 class="page-title">Materials &amp; Inventory</h1>
           <p class="page-subtitle">Raw stock, moving-average costs, values and goods movements</p>
         </div>
-        @if (perms.canManage('materials')) {
-          <button mat-raised-button color="primary" (click)="openPanel('add')"><mat-icon>add</mat-icon> New Material</button>
-        }
+        <div class="header-actions">
+          <app-tour-launcher tourId="materials" [auto]="true" tooltip="Tour Inventory"></app-tour-launcher>
+          @if (perms.canManage('materials')) {
+            <button mat-raised-button color="primary" data-tour="mat-new" (click)="openPanel('add')"><mat-icon>add</mat-icon> New Material</button>
+          }
+        </div>
       </div>
 
       <!-- KPI strip -->
-      <div class="kpis">
+      <div class="kpis" data-tour="mat-kpis">
         <div class="kpi-card"><div class="kpi">{{ totals.materials }}</div><div class="lbl">Materials</div></div>
         <div class="kpi-card"><div class="kpi">{{ totals.totalValue | currency }}</div><div class="lbl">Stock value</div></div>
         <div class="kpi-card" [class.warn]="totals.lowStock > 0"><div class="kpi">{{ totals.lowStock }}</div><div class="lbl">Low stock</div></div>
       </div>
 
       <!-- Filters -->
-      <div class="filters">
+      <div class="filters" data-tour="mat-filters">
         <mat-form-field appearance="outline" class="search">
           <mat-label>Search</mat-label>
           <input matInput [(ngModel)]="q" placeholder="Code, name, profile, grade…">
@@ -226,6 +231,7 @@ type PanelMode = 'closed' | 'add' | 'edit' | 'receive' | 'issue' | 'return' | 'a
   styles: [`
     .page-shell { padding: 24px; }
     .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 12px; flex-wrap: wrap; }
+    .header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .page-title { margin: 0; font-size: 22px; }
     .page-subtitle { margin: 2px 0 0; color: var(--clay-text-muted, #64748b); font-size: 13px; }
 
@@ -303,7 +309,7 @@ export class MaterialsComponent implements OnInit {
   history: StockMovementRow[] = [];
   historyLoading = false;
 
-  constructor(private api: MaterialsApiService, private snack: MatSnackBar) {}
+  constructor(private api: MaterialsApiService, private toast: ToastService) {}
 
   ngOnInit(): void { this.load(); }
 
@@ -315,7 +321,7 @@ export class MaterialsComponent implements OnInit {
     this.loading = true;
     this.api.getSummary().subscribe({
       next: (s) => { this.rows = s?.materials ?? []; this.totals = s?.totals ?? this.totals; this.loading = false; },
-      error: () => { this.loading = false; this.snack.open('Could not load inventory', 'Dismiss', { duration: 4000 }); },
+      error: () => { this.loading = false; this.toast.error('Could not load inventory'); },
     });
   }
 
@@ -377,8 +383,8 @@ export class MaterialsComponent implements OnInit {
   savePanel(): void {
     if (!this.panelValid() || this.busy) return;
     this.busy = true;
-    const done = (msg: string) => { this.busy = false; this.snack.open(msg, 'OK', { duration: 2500 }); this.closePanel(); this.load(); };
-    const fail = (e: any, fallback: string) => { this.busy = false; this.snack.open(e?.error?.message || fallback, 'Dismiss', { duration: 4500 }); };
+    const done = (msg: string) => { this.busy = false; this.toast.success(msg); this.closePanel(); this.load(); };
+    const fail = (e: any, fallback: string) => { this.busy = false; this.toast.error(e?.error?.message || fallback); };
 
     switch (this.panel) {
       case 'add': {
