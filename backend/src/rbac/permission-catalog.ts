@@ -325,11 +325,20 @@ export const TENANT_PERMISSION_KEYS: string[] = ALL_PERMISSION_KEYS.filter(
   (k) => !PLATFORM_PERMISSION_KEYS.includes(k),
 );
 
+/**
+ * Feature keys flagged platform-scoped (cross-tenant). This is the single
+ * source of truth clients use to PARTITION their nav: a platform operator (who
+ * technically holds the tenant `*`) sees ONLY these, and a tenant user never
+ * sees any of these. Shipped to clients via `GET /api/auth/permissions` so the
+ * list never has to be hand-mirrored on the frontend (where it kept drifting).
+ */
+export const PLATFORM_FEATURE_KEYS: string[] = PERMISSION_CATALOG.filter((f) => f.platform).map(
+  (f) => f.key,
+);
+
 const ALL_KEY_SET: ReadonlySet<string> = new Set(ALL_PERMISSION_KEYS);
 const PLATFORM_KEY_SET: ReadonlySet<string> = new Set(PLATFORM_PERMISSION_KEYS);
-const PLATFORM_FEATURE_SET: ReadonlySet<string> = new Set(
-  PERMISSION_CATALOG.filter((f) => f.platform).map((f) => f.key),
-);
+const PLATFORM_FEATURE_SET: ReadonlySet<string> = new Set(PLATFORM_FEATURE_KEYS);
 
 export function isPlatformPermission(key: string): boolean {
   if (PLATFORM_KEY_SET.has(key)) return true;

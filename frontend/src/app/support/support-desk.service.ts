@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from '../core/services/api.service';
-import { PagedTickets, SupportAgent, SupportMeta, TicketDetail } from './support.service';
+import { PagedTickets, SupportAgent, SupportMeta, SupportOrg, TicketDetail } from './support.service';
 
 /** Platform-facing support desk API (cross-tenant). */
 @Injectable({ providedIn: 'root' })
@@ -11,6 +11,7 @@ export class SupportDeskApiService {
   meta(): Observable<SupportMeta> { return this.api.get('/support-desk/meta'); }
   stats(): Observable<Record<string, number>> { return this.api.get('/support-desk/stats'); }
   agents(): Observable<SupportAgent[]> { return this.api.getList('/support-desk/agents'); }
+  organizations(): Observable<SupportOrg[]> { return this.api.getList('/support-desk/organizations'); }
   list(params?: { status?: string; priority?: string; organizationId?: string; assignedToUserId?: string; q?: string; limit?: number; offset?: number }): Observable<PagedTickets> {
     return this.api.get('/support-desk/tickets', params);
   }

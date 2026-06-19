@@ -72,10 +72,17 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
         || String(client.handshake?.headers?.authorization || '').replace(/^Bearer\s+/i, '');
       if (raw) {
         const p: any = this.jwt.verify(raw);
-        client.data.auth = { userId: p.sub, organizationId: p.organizationId ?? null, role: p.role ?? null } as SocketAuth;
+        const auth: SocketAuth = { userId: p.sub, organizationId: p.organizationId ?? null, role: p.role ?? null };
+        client.data.auth = auth;
+        // Auto-join the caller's tenant room so org-scoped operational events
+        // (work-order / stage / dashboard / quality) reach ONLY this tenant's
+        // clients. The org comes from the verified JWT, never a client-supplied
+        // value — same trust model as the support rooms below. Re-runs on every
+        // (re)connect, so membership survives drops.
+        if (auth.organizationId) client.join(`org:${auth.organizationId}`);
       }
     } catch {
-      // Invalid/expired token → treated as anonymous (no support-room access).
+      // Invalid/expired token → treated as anonymous (no org/support-room access).
     }
     this.logger.debug(`Client connected: ${client.id}`);
   }
@@ -157,24 +164,48 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     client.leave('support-desk');
   }
 
-  // --- Existing events (payloads sanitized before broadcast) ---
+  // --- Tenant-scoped operational events --------------------------------------
+  //
+  // These used to be GLOBAL broadcasts (this.server.emit) — every connected
+  // client, across every tenant, received every other tenant's work-order /
+  // stage / dashboard / quality changes (a cross-tenant data leak + an N-clients
+  // scaling cost). They now go to the owning tenant's `org:<id>` room only.
 
-  emitTimeEntryUpdate(data: any) {
-    if (this.server) {
-      this.server.emit('time-entry-update', sanitize(data));
+  /** Resolve the owning org from an explicit id, else the payload's organizationId. */
+  private orgOf(payload: any, orgId?: string | null): string | null {
+    if (orgId) return orgId;
+    if (Array.isArray(payload)) return payload[0]?.organizationId ?? null;
+    return payload?.organizationId ?? null;
+  }
+
+  /**
+   * Emit an operational event to ONE tenant's room (`org:<id>`) so a change in
+   * one organization never reaches another tenant's clients. Falls back to a
+   * global broadcast (with a warning) only when the org genuinely can't be
+   * resolved — preserving delivery rather than silently dropping the event.
+   */
+  private emitToOrg(event: string, payload: any, orgId?: string | null): void {
+    if (!this.server) return;
+    const org = this.orgOf(payload, orgId);
+    const data = sanitize(payload);
+    if (org) {
+      this.server.to(`org:${org}`).emit(event, data);
+    } else {
+      this.logger.warn(`Emitting '${event}' without org context — broadcasting to all tenants`);
+      this.server.emit(event, data);
     }
   }
 
-  emitStageUpdate(data: any) {
-    if (this.server) {
-      this.server.emit('stage-update', sanitize(data));
-    }
+  emitTimeEntryUpdate(data: any, orgId?: string | null) {
+    this.emitToOrg('time-entry-update', data, orgId);
   }
 
-  emitDashboardRefresh(data?: any) {
-    if (this.server) {
-      this.server.emit('dashboard-refresh', sanitize(data) || { timestamp: new Date().toISOString() });
-    }
+  emitStageUpdate(data: any, orgId?: string | null) {
+    this.emitToOrg('stage-update', data, orgId);
+  }
+
+  emitDashboardRefresh(orgId?: string | null, data?: any) {
+    this.emitToOrg('dashboard-refresh', data ?? { timestamp: new Date().toISOString() }, orgId);
   }
 
   // --- New events for Phase 5 ---
@@ -187,18 +218,14 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     }
   }
 
-  /** Broadcast work order status change */
-  emitWorkOrderUpdate(data: any) {
-    if (this.server) {
-      this.server.emit('work-order-update', sanitize(data));
-    }
+  /** Work-order create / status / assignment change — scoped to the owning tenant. */
+  emitWorkOrderUpdate(data: any, orgId?: string | null) {
+    this.emitToOrg('work-order-update', data, orgId);
   }
 
-  /** Broadcast quality alert */
-  emitQualityAlert(data: any) {
-    if (this.server) {
-      this.server.emit('quality-alert', sanitize(data));
-    }
+  /** Quality alert (failed inspection / sign-off) — scoped to the owning tenant. */
+  emitQualityAlert(data: any, orgId?: string | null) {
+    this.emitToOrg('quality-alert', data, orgId);
   }
 
   /** Broadcast alert to all connected clients */

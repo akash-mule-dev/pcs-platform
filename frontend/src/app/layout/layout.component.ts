@@ -580,12 +580,6 @@ export class LayoutComponent implements OnInit, OnDestroy {
     ] },
   ];
 
-  /**
-   * Features that belong to the org-less platform operator (super admin).
-   * Mirrors the backend catalog's `platform: true` features.
-   */
-  private readonly PLATFORM_FEATURES = new Set(['organizations', 'library', 'platform-insights']);
-
   /** True for the org-less platform operator (super admin), outside a support session. */
   get isPlatformUser(): boolean {
     return this.auth.userRole === 'platform-admin' && !this.impersonation;
@@ -600,7 +594,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
    * permission checks alone would otherwise surface every tenant page.)
    */
   canSee(feature: string): boolean {
-    if (this.isPlatformUser !== this.PLATFORM_FEATURES.has(feature)) return false;
+    if (this.isPlatformUser !== this.permissions.isPlatformFeature(feature)) return false;
     return this.permissions.canView(feature);
   }
 
@@ -632,7 +626,16 @@ export class LayoutComponent implements OnInit, OnDestroy {
     public tour: TourService,
   ) {}
 
-  canRaiseTicket = false;
+  /**
+   * The toolbar "contact support" affordance is for CUSTOMERS raising tickets
+   * against their own org. The org-less platform operator has no org to raise
+   * against (it triages tickets from the Support Desk instead), so hide it —
+   * even though it technically holds `support.create` via the tenant `*`.
+   * Visible again inside a support session, where it's acting as a tenant admin.
+   */
+  get canRaiseTicket(): boolean {
+    return !this.isPlatformUser && this.permissions.can('support.create');
+  }
   private tourChecked = false;
   /** Page tours relevant to the current route — recomputed when the Help menu opens. */
   pageTours: TourDefinition[] = [];
@@ -658,7 +661,6 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.canRaiseTicket = this.permissions.can('support.create');
     // Auto-expand the group containing the active route so the active item is visible.
     const url = this.router.url;
     for (const g of this.navGroups) {

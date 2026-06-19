@@ -30,7 +30,7 @@ export class CreateRoleDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Fine-grained permission keys from the catalog, e.g. ["work-orders.view", "ncr.create"]',
+    description: 'Fine-grained permission keys from the catalog, e.g. ["work-orders.view", "quality-reports.create"]',
     type: [String],
   })
   @IsArray()

@@ -4,7 +4,9 @@ import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { merge, Subscription } from 'rxjs';
 import { ProjectsService, OrderBoard, OrderBoardItem, OrderStageRow } from '../core/services/projects.service';
+import { RealtimeService } from '../core/services/realtime.service';
 import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
 const SS_LABEL: Record<string, string> = { pending: 'Queued', in_progress: 'In progress', completed: 'Done', skipped: 'Skipped' };
@@ -137,6 +139,7 @@ interface ColVM { id: string; name: string; cards: CardVM[]; total: number; }
 export class OrderBoardComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private svc = inject(ProjectsService);
+  private realtime = inject(RealtimeService);
 
   readonly Math = Math;
 
@@ -153,6 +156,8 @@ export class OrderBoardComponent implements OnInit, OnDestroy {
   query = '';
 
   private limits = new Map<string, number>();
+  private rtSub?: Subscription;
+  private rtDebounce: ReturnType<typeof setTimeout> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   /** Per-stage debounce timers for the optimistic stepper. */
   private sendTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -175,14 +180,31 @@ export class OrderBoardComponent implements OnInit, OnDestroy {
     this.orderId = this.param('orderId');
     this.projectId = this.param('id');
     this.load();
-    // Light auto-refresh; skipped while the tab is hidden or edits are in flight.
+
+    // LIVE: a stage moved on any client (web or mobile) refreshes this board via
+    // the shared Socket.IO gateway (same broadcast the kanban + mobile board use).
+    // `work-order-update` carries productionOrderId, so changes to other orders are
+    // ignored; `stage-update` (clock in/out auto-advances) has no order field, so it
+    // always triggers a refresh. The refresh itself no-ops while edits are in flight.
+    this.rtSub = merge(
+      this.realtime.on<any>('work-order-update'),
+      this.realtime.on<any>('stage-update'),
+    ).subscribe((p) => {
+      if (p && !Array.isArray(p) && p.productionOrderId && p.productionOrderId !== this.orderId) return;
+      if (this.rtDebounce) clearTimeout(this.rtDebounce);
+      this.rtDebounce = setTimeout(() => this.refresh(), 700);
+    });
+
+    // Safety net only: catch anything missed during a socket drop/reconnect.
     this.pollTimer = setInterval(() => {
       if (document.hidden || this.loading || this.sendTimers.size > 0 || this.savingIds.size > 0) return;
       this.refresh();
-    }, 10000);
+    }, 30000);
   }
 
   ngOnDestroy(): void {
+    this.rtSub?.unsubscribe();
+    if (this.rtDebounce) clearTimeout(this.rtDebounce);
     if (this.pollTimer) clearInterval(this.pollTimer);
     // Flush pending stepper updates so no taps are lost on navigation.
     for (const wosId of [...this.sendTimers.keys()]) this.flushSend(wosId);

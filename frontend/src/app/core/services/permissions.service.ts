@@ -7,10 +7,17 @@ export interface MyAccess {
   role: { id: string; name: string; isSystem: boolean };
   /** Fine-grained permission keys; `*` = everything (system admin). */
   permissions: string[];
+  /** Feature keys flagged platform-scoped (cross-tenant) by the backend catalog. */
+  platformFeatures?: string[];
 }
 
 const WILDCARD = '*';
-const PLATFORM_FEATURES = new Set(['organizations', 'library', 'platform-insights']);
+/**
+ * Fallback only — the authoritative list is sent by `GET /auth/permissions`
+ * (`platformFeatures`). Used before the first load, or against an older backend
+ * that doesn't yet return the field, so the nav partition still behaves.
+ */
+const DEFAULT_PLATFORM_FEATURES = ['organizations', 'library', 'support-desk', 'platform-insights'];
 
 /**
  * The caller's effective fine-grained permissions, fetched from the backend
@@ -25,6 +32,7 @@ const PLATFORM_FEATURES = new Set(['organizations', 'library', 'platform-insight
 @Injectable({ providedIn: 'root' })
 export class PermissionsService {
   private granted = new Set<string>();
+  private platformFeatures = new Set<string>(DEFAULT_PLATFORM_FEATURES);
   private role: MyAccess['role'] | null = null;
   private loadedForToken: string | null = null;
 
@@ -38,6 +46,9 @@ export class PermissionsService {
       this.http.get<MyAccess>(`${environment.apiUrl}/auth/permissions`).subscribe({
         next: (data) => {
           this.granted = new Set(data?.permissions ?? []);
+          this.platformFeatures = new Set(
+            data?.platformFeatures?.length ? data.platformFeatures : DEFAULT_PLATFORM_FEATURES,
+          );
           this.role = data?.role ?? null;
           this.loadedForToken = token;
           resolve();
@@ -77,10 +88,19 @@ export class PermissionsService {
     return [...this.granted].sort();
   }
 
+  /**
+   * Is this feature platform-scoped (cross-tenant)? Authoritative list comes
+   * from the backend catalog via `/auth/permissions`; the nav partition and the
+   * tenant-`*` exclusion both key off this rather than a hand-mirrored constant.
+   */
+  isPlatformFeature(feature: string): boolean {
+    return this.platformFeatures.has(feature);
+  }
+
   /** Fine-grained check: does the user hold this `<feature>.<action>` permission? */
   can(permission: string): boolean {
     const feature = permission.slice(0, permission.lastIndexOf('.'));
-    if (this.granted.has(WILDCARD) && !PLATFORM_FEATURES.has(feature)) return true;
+    if (this.granted.has(WILDCARD) && !this.isPlatformFeature(feature)) return true;
     if (this.granted.has(permission)) return true;
     const dot = permission.lastIndexOf('.');
     return dot > 0 && this.granted.has(`${permission.slice(0, dot)}.*`);
@@ -105,7 +125,7 @@ export class PermissionsService {
    * Prefer can('<feature>.<action>') for new, fine-grained gating.
    */
   canManage(feature: string): boolean {
-    if (this.granted.has(WILDCARD) && !PLATFORM_FEATURES.has(feature)) return true;
+    if (this.granted.has(WILDCARD) && !this.isPlatformFeature(feature)) return true;
     if (this.granted.has(`${feature}.*`)) return true;
     const prefix = `${feature}.`;
     for (const p of this.granted) {

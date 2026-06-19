@@ -123,7 +123,8 @@ export class AlertsService {
       priority: NotificationPriority.LOW,
     });
 
-    this.eventsGateway.emitDashboardRefresh({ type: 'shift_summary' });
+    // System-wide daily summary (spans all tenants) — intentionally broadcast.
+    this.eventsGateway.emitDashboardRefresh(null, { type: 'shift_summary' });
     this.logger.log('Shift summary generated');
   }
 }

@@ -60,6 +60,18 @@ import { SupportApiService, SupportMeta } from './support.service';
             @if (description.invalid && submitted) { <mat-error>Please describe the issue</mat-error> }
           </mat-form-field>
           <p class="ctx">This page ({{ contextUrl }}) is attached automatically.</p>
+
+          <div class="attach-row">
+            <button type="button" class="btn-attach" (click)="fileInput.click()" [disabled]="busy">
+              <mat-icon>attach_file</mat-icon> Attach a screenshot or PDF
+            </button>
+            <input #fileInput type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" (change)="onFile($event)">
+            @if (selectedFile) {
+              <span class="file-chip"><mat-icon>attach_file</mat-icon> {{ selectedFile.name }}
+                <button type="button" class="x" (click)="clearFile()" aria-label="Remove attachment"><mat-icon>close</mat-icon></button>
+              </span>
+            }
+          </div>
         </form>
       </div>
 
@@ -75,6 +87,17 @@ import { SupportApiService, SupportMeta } from './support.service';
     .full { width: 100%; }
     .row { display: flex; gap: 12px; } .row mat-form-field { flex: 1; }
     .ctx { margin: 2px 0 0; font-size: 12px; color: var(--clay-text-muted, #64748b); }
+    .attach-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .btn-attach { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;
+      background: var(--clay-surface, #fff); color: var(--clay-text, #0f172a);
+      border: 1px solid var(--clay-border, #e2e8f0); border-radius: 8px; padding: 7px 12px; }
+    .btn-attach:hover:not(:disabled) { border-color: var(--clay-primary, #2563eb); color: var(--clay-primary, #2563eb); }
+    .btn-attach:disabled { opacity: .6; cursor: default; }
+    .btn-attach mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .file-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+      background: var(--clay-primary-soft, #eff6ff); color: #1d4ed8; border-radius: 999px; padding: 3px 6px 3px 10px; }
+    .file-chip mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .file-chip .x { border: none; background: transparent; cursor: pointer; display: inline-flex; color: inherit; padding: 0; }
   `],
 })
 export class SupportTicketDialogComponent implements OnInit {
@@ -83,7 +106,11 @@ export class SupportTicketDialogComponent implements OnInit {
   submitted = false;
   busy = false;
   contextUrl = '';
+  selectedFile: File | null = null;
   form = { subject: '', description: '', category: 'question', priority: 'normal' };
+
+  /** Image/PDF, ≤10 MB — matches the server's support-attachment limits. */
+  private readonly MAX_FILE_BYTES = 10 * 1024 * 1024;
 
   constructor(
     public ref: MatDialogRef<SupportTicketDialogComponent>,
@@ -98,6 +125,18 @@ export class SupportTicketDialogComponent implements OnInit {
     this.api.meta().subscribe({ next: (m) => (this.meta = m), error: () => {} });
   }
 
+  onFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (file && file.size > this.MAX_FILE_BYTES) {
+      this.snack.open('Attachment must be 10 MB or smaller', 'Dismiss', { duration: 4000 });
+      return;
+    }
+    this.selectedFile = file;
+  }
+  clearFile(): void { this.selectedFile = null; }
+
   submit(): void {
     this.submitted = true;
     if (!this.form.subject || !this.form.description) return;
@@ -105,7 +144,7 @@ export class SupportTicketDialogComponent implements OnInit {
     this.api.create({
       subject: this.form.subject, description: this.form.description,
       category: this.form.category, priority: this.form.priority, contextUrl: this.contextUrl,
-    }).subscribe({
+    }, this.selectedFile).subscribe({
       next: (t) => { this.busy = false; this.snack.open(`Ticket ${t.number} created — we'll be in touch`, 'OK', { duration: 4000 }); this.ref.close(t); },
       error: (e) => { this.busy = false; this.snack.open(e?.error?.message || 'Could not create ticket', 'Dismiss', { duration: 5000 }); },
     });

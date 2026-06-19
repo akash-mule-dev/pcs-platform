@@ -63,7 +63,7 @@ export class QualityNotifyService {
         label: input.label,
         severity: input.severity ?? null,
         autoFailed: !!input.autoFailed,
-      });
+      }, TenantContext.getOrganizationId());
       // Only interrupt people for the serious ones; the board shows the rest.
       if (priority === NotificationPriority.HIGH || priority === NotificationPriority.CRITICAL) {
         const audience = await this.qaAudience(input.inspectorUserId);
@@ -97,7 +97,7 @@ export class QualityNotifyService {
         qualityDataId: input.qualityDataId,
         label: input.label,
         decision: input.decision,
-      });
+      }, TenantContext.getOrganizationId());
       if (input.inspectorUserId) {
         await this.notifications.create({
           userId: input.inspectorUserId,

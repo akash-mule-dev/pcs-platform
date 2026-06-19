@@ -50,6 +50,8 @@ export const PROJECTS_ROUTES: Routes = [
           { path: 'materials', loadComponent: () => import('./order-materials.component').then((m) => m.OrderMaterialsComponent) },
           // Actual vs estimated material/labor/overhead cost.
           { path: 'costs', loadComponent: () => import('./order-costs.component').then((m) => m.OrderCostsComponent) },
+          // Labor logged per assembly/stage/worker (feeds costing).
+          { path: 'time', loadComponent: () => import('./order-time.component').then((m) => m.OrderTimeComponent) },
           { path: 'quality', loadComponent: () => import('./project-quality.component').then((m) => m.ProjectQualityComponent) },
           // Shipping moved to the work order — redirect any bookmarked URL.
           { path: 'shipping', canActivate: [shippingRedirect], loadComponent: () => import('../work-orders/work-order-shipping.component').then((m) => m.WorkOrderShippingComponent) },

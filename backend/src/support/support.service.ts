@@ -53,7 +53,7 @@ export class SupportService {
 
   // ── customer side (tenant-scoped) ───────────────────────────────────────────
 
-  async createTicket(dto: CreateTicketDto, actor: Actor): Promise<any> {
+  async createTicket(dto: CreateTicketDto, actor: Actor, file?: Express.Multer.File): Promise<any> {
     const org = TenantContext.requireOrganizationId();
     const name = await this.displayName(actor.id);
     const number = await this.allocateNumber();
@@ -67,6 +67,14 @@ export class SupportService {
         organizationId: org, lastMessageAt: now,
       } as any),
     ) as unknown as SupportTicket;
+
+    // An attachment supplied with the initial report rides along as the first
+    // customer message (multer's fileFilter has already validated the type, so
+    // the ticket is never created and then orphaned by a bad upload).
+    if (file) {
+      const key = await this.storeAttachment(ticket, file);
+      await this.addMessage(ticket, { kind: 'customer', body: '(attachment)', actor, attachments: [key] });
+    }
 
     await this.audit.log({ userId: actor.id, action: 'create', entityType: 'support_ticket', entityId: ticket.id, newValues: { number, subject: ticket.subject, priority: ticket.priority } });
     await this.notifyPlatform(`New support ticket ${number}`, `${ticket.subject} — ${name}`, ticket.id);
@@ -122,19 +130,40 @@ export class SupportService {
     const limit = Math.min(Math.max(Number(filters.limit) || 25, 1), 100);
     const offset = Math.max(Number(filters.offset) || 0, 0);
     const qb = this.ticketRepo.createQueryBuilder('t')
-      .leftJoin('organizations', 'o', 'o.id = t.organization_id')
-      .addSelect('o.name', 'org_name')
-      .orderBy('t.last_message_at', 'DESC').addOrderBy('t.created_at', 'DESC');
+      .orderBy('t.last_message_at', 'DESC').addOrderBy('t.created_at', 'DESC')
+      .take(limit).skip(offset);
     if (filters.status && isValidStatus(filters.status)) qb.andWhere('t.status = :s', { s: filters.status });
     if (filters.priority) qb.andWhere('t.priority = :p', { p: filters.priority });
     if (filters.organizationId) qb.andWhere('t.organization_id = :org', { org: filters.organizationId });
     if (filters.assignedToUserId) qb.andWhere('t.assigned_to_user_id = :a', { a: filters.assignedToUserId });
     if (filters.q) qb.andWhere('(t.subject ILIKE :q OR t.number ILIKE :q)', { q: `%${filters.q}%` });
-    const total = await qb.getCount();
-    qb.take(limit).skip(offset);
-    const { entities, raw } = await qb.getRawAndEntities();
-    const items = entities.map((t, i) => ({ ...this.toSummary(t), organizationName: raw[i]?.org_name ?? null }));
+    // Org names are resolved in a SECOND query, NOT a join: a raw addSelect from a
+    // non-relation join crashes TypeORM's take/skip pagination — it can't map the
+    // joined column to entity metadata when building the distinct-id ORDER BY.
+    const [tickets, total] = await qb.getManyAndCount();
+    const names = await this.organizationNames(tickets.map((t) => t.organizationId));
+    const items = tickets.map((t) => ({ ...this.toSummary(t), organizationName: names.get(t.organizationId ?? '') ?? null }));
     return { items, total, limit, offset };
+  }
+
+  /** Tenants that have raised ≥1 ticket — powers the desk's per-company filter. */
+  async listTicketOrganizations(): Promise<Array<{ id: string; name: string }>> {
+    return this.ticketRepo.manager.query(
+      `SELECT DISTINCT o.id, o.name
+         FROM support_tickets t
+         JOIN organizations o ON o.id = t.organization_id
+        ORDER BY o.name`,
+    );
+  }
+
+  /** Resolve org id → name for a page of tickets (kept separate from pagination). */
+  private async organizationNames(orgIds: Array<string | null>): Promise<Map<string, string>> {
+    const ids = [...new Set(orgIds.filter((x): x is string => !!x))];
+    if (!ids.length) return new Map();
+    const rows: Array<{ id: string; name: string }> = await this.ticketRepo.manager.query(
+      `SELECT id, name FROM organizations WHERE id = ANY($1)`, [ids],
+    );
+    return new Map(rows.map((r) => [r.id, r.name]));
   }
 
   async stats(): Promise<Record<string, number>> {

@@ -41,6 +41,7 @@ export interface TicketDetail extends TicketSummary {
   messages: TicketMessage[];
 }
 export interface SupportAgent { id: string; name: string | null; }
+export interface SupportOrg { id: string; name: string; }
 export interface SupportMeta {
   statuses: { value: string; label: string }[];
   priorities: { value: string; label: string }[];
@@ -55,8 +56,17 @@ export class SupportApiService {
   meta(): Observable<SupportMeta> { return this.api.get('/support/meta'); }
   list(params?: { status?: string; q?: string }): Observable<TicketSummary[]> { return this.api.get('/support/tickets', params); }
   get(id: string): Observable<TicketDetail> { return this.api.get(`/support/tickets/${id}`); }
-  create(body: { subject: string; description: string; category?: string; priority?: string; contextUrl?: string; appVersion?: string }): Observable<TicketDetail> {
-    return this.api.post('/support/tickets', body);
+  create(body: { subject: string; description: string; category?: string; priority?: string; contextUrl?: string; appVersion?: string }, file?: File | null): Observable<TicketDetail> {
+    if (!file) return this.api.post('/support/tickets', body);
+    const form = new FormData();
+    form.append('subject', body.subject);
+    form.append('description', body.description);
+    if (body.category) form.append('category', body.category);
+    if (body.priority) form.append('priority', body.priority);
+    if (body.contextUrl) form.append('contextUrl', body.contextUrl);
+    if (body.appVersion) form.append('appVersion', body.appVersion);
+    form.append('file', file);
+    return this.api.postForm('/support/tickets', form);
   }
   reply(id: string, body: string): Observable<TicketDetail> { return this.api.post(`/support/tickets/${id}/messages`, { body }); }
   close(id: string): Observable<TicketDetail> { return this.api.post(`/support/tickets/${id}/close`, {}); }

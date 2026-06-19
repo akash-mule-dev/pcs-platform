@@ -6,7 +6,7 @@ import * as bcrypt from 'bcryptjs';
 import { User } from './entities/user.entity.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RolePermissionsResolver } from '../rbac/role-permissions.resolver.js';
-import { expandGrants } from '../rbac/permission-catalog.js';
+import { expandGrants, PLATFORM_FEATURE_KEYS } from '../rbac/permission-catalog.js';
 
 @Injectable()
 export class AuthService {
@@ -116,6 +116,10 @@ export class AuthService {
         isSystem: access.role.isSystem,
       },
       permissions: expandGrants(access.permissions).sort(),
+      // Which features are platform-scoped — lets clients partition their nav
+      // (platform operators see only these; tenant users never do) without
+      // re-deriving the catalog's `platform: true` flags themselves.
+      platformFeatures: PLATFORM_FEATURE_KEYS,
     };
   }
 }

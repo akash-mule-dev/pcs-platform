@@ -45,6 +45,13 @@ export class SupportDeskController {
     return this.service.listAgents();
   }
 
+  @Get('organizations')
+  @RequirePermissions('support-desk.view')
+  @ApiOperation({ summary: 'Tenants that have raised tickets (per-company filter)' })
+  organizations() {
+    return this.service.listTicketOrganizations();
+  }
+
   @Get('tickets')
   @RequirePermissions('support-desk.view')
   @ApiOperation({ summary: 'List support tickets across all tenants' })

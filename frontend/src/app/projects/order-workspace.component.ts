@@ -98,6 +98,7 @@ export class OrderWorkspaceComponent implements OnInit, OnDestroy {
     { path: 'board', label: 'Board', icon: 'view_kanban' },
     { path: 'progress', label: 'Progress', icon: 'insights' },
     { path: 'materials', label: 'Materials', icon: 'category' },
+    { path: 'time', label: 'Time & Labor', icon: 'timer' },
     { path: 'costs', label: 'Costs', icon: 'payments' },
     { path: 'quality', label: 'Quality', icon: 'verified' },
   ];

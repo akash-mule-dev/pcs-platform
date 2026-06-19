@@ -319,7 +319,7 @@ export class WorkOrdersService {
 
     const created = await this.findOne(saved!.id);
     this.eventsGateway.emitWorkOrderUpdate(created);
-    this.eventsGateway.emitDashboardRefresh();
+    this.eventsGateway.emitDashboardRefresh(TenantContext.getOrganizationId());
     return created;
   }
 
@@ -414,7 +414,7 @@ export class WorkOrdersService {
 
     const updated = await this.findOne(id);
     this.eventsGateway.emitWorkOrderUpdate(updated);
-    this.eventsGateway.emitDashboardRefresh();
+    this.eventsGateway.emitDashboardRefresh(TenantContext.getOrganizationId());
     return updated;
   }
 
@@ -436,7 +436,7 @@ export class WorkOrdersService {
   // Phase 7: Batch assign to line
   async batchAssignLine(ids: string[], lineId: string): Promise<number> {
     const result = await this.woRepo.update({ id: In(ids) }, { lineId });
-    this.eventsGateway.emitWorkOrderUpdate({ ids, lineId });
+    this.eventsGateway.emitWorkOrderUpdate({ ids, lineId }, TenantContext.getOrganizationId());
     return result.affected || 0;
   }
 

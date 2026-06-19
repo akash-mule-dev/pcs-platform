@@ -64,7 +64,7 @@ export class ProductionOrderService {
     for (let attempt = 0; ; attempt++) {
       try {
         const order = await this.orderRepo.manager.transaction((em) => this.createInTx(em, org, projectId, dto));
-        this.events.emitDashboardRefresh();
+        this.events.emitDashboardRefresh(org);
         return order;
       } catch (e: any) {
         if (e?.code === '23505' && attempt < 4) continue; // number race — retry the whole transaction
@@ -342,8 +342,8 @@ export class ProductionOrderService {
     // Live propagation: WO status ← its stages; order status ← its WOs.
     await this.syncWorkOrderStatus(wo);
     await this.syncOrderStatus(orderId);
-    this.events.emitWorkOrderUpdate({ id: wo.id, productionOrderId: orderId, workOrderStageId: saved.id, status: String(saved.status) });
-    this.events.emitDashboardRefresh();
+    this.events.emitWorkOrderUpdate({ id: wo.id, productionOrderId: orderId, workOrderStageId: saved.id, status: String(saved.status) }, org);
+    this.events.emitDashboardRefresh(org);
     return saved;
   }
 
@@ -715,8 +715,8 @@ export class ProductionOrderService {
       await this.recordEvents(trail);
       await this.syncWorkOrderStatuses(touched);
       await this.syncOrderStatus(orderId);
-      this.events.emitWorkOrderUpdate({ productionOrderId: orderId, bulk: true, updated: toSave.length });
-      this.events.emitDashboardRefresh();
+      this.events.emitWorkOrderUpdate({ productionOrderId: orderId, bulk: true, updated: toSave.length }, org);
+      this.events.emitDashboardRefresh(org);
     }
     return { requested: nodeIds.length, updated: toSave.length, failed };
   }

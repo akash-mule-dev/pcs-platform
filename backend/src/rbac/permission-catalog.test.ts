@@ -14,6 +14,7 @@ import {
   PERMISSION_CATALOG,
   PERMISSION_CATEGORIES,
   PLATFORM_ADMIN_ROLE_NAME,
+  PLATFORM_FEATURE_KEYS,
   PLATFORM_PERMISSION_KEYS,
   sanitizeGrants,
   SYSTEM_ROLE_PERMISSIONS,
@@ -109,6 +110,17 @@ ok('platform separation: tenant wildcard never grants platform permissions', () 
   assert.equal(TENANT_PERMISSION_KEYS.length + PLATFORM_PERMISSION_KEYS.length, ALL_PERMISSION_KEYS.length);
 });
 
+ok('PLATFORM_FEATURE_KEYS = exactly the platform-flagged features (clients partition nav on this)', () => {
+  const flagged = PERMISSION_CATALOG.filter((f) => f.platform).map((f) => f.key).sort();
+  assert.deepEqual([...PLATFORM_FEATURE_KEYS].sort(), flagged);
+  // The cross-tenant support desk MUST be here — its absence once hid the desk
+  // from the platform operator and leaked the customer ticket button to them.
+  assert.ok(PLATFORM_FEATURE_KEYS.includes('support-desk'));
+  assert.ok(PLATFORM_FEATURE_KEYS.includes('organizations'));
+  // Customer-facing support is a TENANT feature, never platform:
+  assert.ok(!PLATFORM_FEATURE_KEYS.includes('support'));
+});
+
 ok('isValidGrant accepts catalog keys + wildcards, rejects junk', () => {
   assert.ok(isValidGrant(WILDCARD));
   assert.ok(isValidGrant('projects.*'));
@@ -144,7 +156,6 @@ ok('catalog covers every permission referenced by controllers (no orphans)', () 
     'templates.view', 'templates.manage',
     'coordination.view', 'coordination.manage', 'coordination.convert', 'coordination.delete',
     'shipping.view', 'shipping.manage', 'shipping.delete',
-    'ncr.view', 'ncr.create', 'ncr.manage',
     'workforce.view', 'workforce.assign', 'workforce.manage',
     'traceability.view', 'traceability.record',
     'quality-reports.view', 'quality-reports.create', 'quality-reports.update', 'quality-reports.delete',

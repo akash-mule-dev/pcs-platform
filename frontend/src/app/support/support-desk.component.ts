@@ -11,7 +11,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { SupportDeskApiService } from './support-desk.service';
-import { SupportAgent, SupportMeta, TicketDetail, TicketMessage, TicketSummary } from './support.service';
+import { SupportAgent, SupportMeta, SupportOrg, TicketDetail, TicketMessage, TicketSummary } from './support.service';
 import { RealtimeService } from '../core/services/realtime.service';
 
 @Component({
@@ -40,6 +40,11 @@ import { RealtimeService } from '../core/services/realtime.service';
           <mat-select [(ngModel)]="f.priority" (selectionChange)="search()">
             <mat-option value="">All</mat-option>
             @for (p of meta?.priorities || []; track p.value) { <mat-option [value]="p.value">{{ p.label }}</mat-option> }
+          </mat-select></mat-form-field>
+        <mat-form-field appearance="outline"><mat-label>Company</mat-label>
+          <mat-select [(ngModel)]="f.organizationId" (selectionChange)="search()">
+            <mat-option value="">All companies</mat-option>
+            @for (o of orgs; track o.id) { <mat-option [value]="o.id">{{ o.name }}</mat-option> }
           </mat-select></mat-form-field>
         <mat-form-field appearance="outline" class="search"><mat-label>Search</mat-label>
           <input matInput [(ngModel)]="f.q" (keyup.enter)="search()" placeholder="number or subject">
@@ -225,9 +230,10 @@ export class SupportDeskComponent implements OnInit, OnDestroy {
   selected: TicketDetail | null = null;
   meta: SupportMeta | null = null;
   agents: SupportAgent[] = [];
+  orgs: SupportOrg[] = [];
   stats: Record<string, number> = {};
   statKeys: string[] = [];
-  f = { status: '', priority: '', q: '' };
+  f = { status: '', priority: '', organizationId: '', q: '' };
   replyBody = '';
   internal = false;
   showInternal = true;
@@ -247,6 +253,7 @@ export class SupportDeskComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.api.meta().subscribe({ next: (m) => (this.meta = m), error: () => {} });
     this.api.agents().subscribe({ next: (a) => (this.agents = a ?? []), error: () => {} });
+    this.loadOrgs();
     this.loadStats();
     this.load();
 
@@ -282,8 +289,12 @@ export class SupportDeskComponent implements OnInit, OnDestroy {
   /** Re-run from page 0 (filter changed). */
   search(): void { this.offset = 0; this.load(); }
 
+  loadOrgs(): void {
+    this.api.organizations().subscribe({ next: (o) => (this.orgs = o ?? []), error: () => {} });
+  }
+
   load(): void {
-    this.api.list({ status: this.f.status || undefined, priority: this.f.priority || undefined, q: this.f.q || undefined, limit: this.limit, offset: this.offset }).subscribe({
+    this.api.list({ status: this.f.status || undefined, priority: this.f.priority || undefined, organizationId: this.f.organizationId || undefined, q: this.f.q || undefined, limit: this.limit, offset: this.offset }).subscribe({
       next: (res) => { this.tickets = res?.items ?? []; this.total = res?.total ?? 0; this.loaded = true; },
       error: () => (this.loaded = true),
     });

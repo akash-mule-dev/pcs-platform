@@ -50,9 +50,15 @@ export class SupportController {
 
   @Post('tickets')
   @RequirePermissions('support.create')
-  @ApiOperation({ summary: 'Raise a new support ticket' })
-  create(@Body() dto: CreateTicketDto, @Request() req: any) {
-    return this.service.createTicket(dto, { id: req.user.id, email: req.user.email });
+  @ApiOperation({ summary: 'Raise a new support ticket (optionally with an image/PDF attachment)' })
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @UseInterceptors(FileInterceptor('file', supportAttachmentMulter))
+  create(
+    @Body() dto: CreateTicketDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Request() req: any,
+  ) {
+    return this.service.createTicket(dto, { id: req.user.id, email: req.user.email }, file);
   }
 
   @Post('tickets/:id/messages')
