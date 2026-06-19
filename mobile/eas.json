@@ -6,8 +6,8 @@
     "dev": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://backend-git-dev-akash-mule-devs-projects.vercel.app/api",
-        "EXPO_PUBLIC_WEB_URL": "https://frontend-git-dev-akash-mule-devs-projects.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://demo-api.fabrixr.com/api",
+        "EXPO_PUBLIC_WEB_URL": "https://dev.fabrixr.com"
       },
       "android": {
         "buildType": "apk"
