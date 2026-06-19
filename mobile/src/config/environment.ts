@@ -9,7 +9,7 @@
  * Without the override: dev builds default to localhost, production builds to the
  * hosted API. This is what lets the mobile app and the web portal share one backend.
  */
-const DEFAULT_PROD_API = 'https://pcsapi.fabrixr.com/api';
+const DEFAULT_PROD_API = 'https://api.fabrixr.com/api';
 
 const isDev = __DEV__;
 
@@ -42,8 +42,8 @@ function deriveWebUrl(api: string): string {
   // Hosted: the portal is a SIBLING host of the API, not a sub-path of it.
   return origin
     .replace('://backend-', '://frontend-') // Vercel preview deploys (legacy branch alias)
-    .replace('://demo-api.fabrixr.com', '://demo.fabrixr.com') // dev custom domain
-    .replace('://pcsapi.fabrixr.com', '://app.fabrixr.com'); // prod custom domain
+    .replace('://demo-api.fabrixr.com', '://dev.fabrixr.com') // dev custom domain
+    .replace('://api.fabrixr.com', '://pcs.fabrixr.com'); // prod custom domain
 }
 
 const webUrl = process.env.EXPO_PUBLIC_WEB_URL ?? deriveWebUrl(apiUrl);
