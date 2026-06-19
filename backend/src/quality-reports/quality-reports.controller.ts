@@ -53,18 +53,63 @@ export class QualityReportsController {
     return this.service.update(id, body ?? {});
   }
 
-  @Post(':id/resolve')
+  @Get(':id/events')
+  @RequirePermissions('quality-reports.view')
+  @ApiOperation({ summary: 'NCR activity timeline (raise / disposition / comments / close …)' })
+  events(@Param('id') id: string) {
+    return this.service.events(id);
+  }
+
+  @Post(':id/comment')
   @RequirePermissions('quality-reports.update')
-  @ApiOperation({ summary: 'Resolve (close) an NCR report — lifts its shipping + quality-stage gates' })
+  @ApiOperation({ summary: 'Add a comment to an NCR activity log' })
+  comment(@Param('id') id: string, @Body() body: { note?: string }) {
+    if (!body?.note?.trim()) throw new BadRequestException('note is required');
+    return this.service.addComment(id, body.note);
+  }
+
+  @Post(':id/start-review')
+  @RequirePermissions('quality-reports.update')
+  @ApiOperation({ summary: 'Move an open NCR into "under review"' })
+  startReview(@Param('id') id: string, @Body() body: { note?: string }) {
+    return this.service.startReview(id, body?.note);
+  }
+
+  @Post(':id/disposition')
+  @RequirePermissions('quality-reports.disposition')
+  @ApiOperation({ summary: 'Record the Material-Review disposition (rework/repair/use-as-is/scrap/return)' })
+  disposition(
+    @Param('id') id: string,
+    @Body() body: { disposition?: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string },
+  ) {
+    if (!body?.disposition) throw new BadRequestException('disposition is required');
+    return this.service.recordDisposition(id, {
+      disposition: body.disposition,
+      dispositionNotes: body.dispositionNotes,
+      rootCause: body.rootCause,
+      correctiveAction: body.correctiveAction,
+    });
+  }
+
+  @Post(':id/resolve')
+  @RequirePermissions('quality-reports.disposition')
+  @ApiOperation({ summary: 'Close an NCR — needs a disposition (and a passing rework re-inspection); lifts gates' })
   resolve(@Param('id') id: string) {
     return this.service.resolve(id);
   }
 
   @Post(':id/reopen')
-  @RequirePermissions('quality-reports.update')
-  @ApiOperation({ summary: 'Reopen a resolved NCR report (re-blocks its gates)' })
+  @RequirePermissions('quality-reports.disposition')
+  @ApiOperation({ summary: 'Reopen a closed NCR (re-blocks its gates)' })
   reopen(@Param('id') id: string) {
     return this.service.reopen(id);
+  }
+
+  @Post(':id/cancel')
+  @RequirePermissions('quality-reports.disposition')
+  @ApiOperation({ summary: 'Cancel an NCR raised in error (lifts gates; recorded as voided)' })
+  cancel(@Param('id') id: string, @Body() body: { note?: string }) {
+    return this.service.cancel(id, body?.note);
   }
 
   @Delete(':id')

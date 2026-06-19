@@ -41,8 +41,9 @@ function deriveWebUrl(api: string): string {
   }
   // Hosted: the portal is a SIBLING host of the API, not a sub-path of it.
   return origin
-    .replace('://backend-', '://frontend-') // Vercel preview deploys
-    .replace('://pcsapi.', '://pcs.'); // custom domains
+    .replace('://backend-', '://frontend-') // Vercel preview deploys (legacy branch alias)
+    .replace('://demo-api.fabrixr.com', '://demo.fabrixr.com') // dev custom domain
+    .replace('://pcsapi.fabrixr.com', '://app.fabrixr.com'); // prod custom domain
 }
 
 const webUrl = process.env.EXPO_PUBLIC_WEB_URL ?? deriveWebUrl(apiUrl);

@@ -200,8 +200,9 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
     key: 'quality-reports', label: 'QC Reports', category: 'Quality',
     actions: [
       { action: 'view', label: 'View', description: 'Read QC reports and per-order quality summaries', defaultRoles: MSO },
-      { action: 'create', label: 'Create', description: 'Start QC reports from a template', defaultRoles: MSO },
-      { action: 'update', label: 'Fill & submit', description: 'Fill in and submit QC reports', defaultRoles: MSO },
+      { action: 'create', label: 'Create', description: 'Start QC reports / raise NCRs from a template', defaultRoles: MSO },
+      { action: 'update', label: 'Fill & submit', description: 'Fill in, submit and comment on QC reports', defaultRoles: MSO },
+      { action: 'disposition', label: 'Disposition & close NCRs', description: 'Decide NCR disposition (rework/scrap/…) and close, reopen or cancel', defaultRoles: MS },
       { action: 'delete', label: 'Delete', description: 'Delete QC reports', defaultRoles: M },
     ],
   },

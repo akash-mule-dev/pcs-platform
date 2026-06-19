@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { QualityReportsService, QualityReport } from '../core/services/quality-reports.service';
+import { QualityReportsService, QualityReport, NcrEvent } from '../core/services/quality-reports.service';
 import { ToastService } from '../core/services/toast.service';
 
 const BOOTSTRAP_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.2/css/bootstrap.min.css';
@@ -49,16 +49,7 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
           @if (savedAt && !dirty) { <span class="saved"><mat-icon>cloud_done</mat-icon>Saved {{ savedAt | date:'shortTime' }}</span> }
           @if (dirty) { <span class="saved dirty"><mat-icon>cloud_upload</mat-icon>Unsaved changes</span> }
           @if (report?.templateType === 'ncr') {
-            @if (report?.resolvedAt) {
-              <span class="pill resolved"><mat-icon>verified</mat-icon>Resolved</span>
-              <button class="btn ghost" [disabled]="busy" (click)="reopenNcr()" title="Reopen this NCR (re-blocks shipping + quality stage)">
-                <mat-icon>lock_open</mat-icon>Reopen
-              </button>
-            } @else {
-              <button class="btn resolve" [disabled]="busy" (click)="resolveNcr()" title="Resolve this NCR — lifts the shipping + quality-stage gates for this assembly">
-                <mat-icon>check_circle</mat-icon>Resolve NCR
-              </button>
-            }
+            <span class="pill ncr-st-{{ ncrStatusKey() }}">{{ ncrStatusLabel() }}</span>
           }
           @if (report) {
             <button class="btn ghost" [disabled]="busy || loading" (click)="downloadPdf()" title="Download this report as a PDF">
@@ -75,8 +66,82 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
       @if (report?.templateType === 'ncr' && !report?.resolvedAt) {
         <p class="banner ncr-open">
           <mat-icon>report_problem</mat-icon>
-          This NCR is open — it blocks shipping and quality-stage completion for {{ report?.itemMark || 'this assembly' }} until resolved.
+          This NCR is open — it blocks shipping and quality-stage completion for {{ report?.itemMark || 'this assembly' }} until it is closed.
         </p>
+      }
+
+      @if (report?.templateType === 'ncr') {
+        <section class="ncr">
+          <div class="ncr-row">
+            <h2><mat-icon>assignment_late</mat-icon> Non-conformance</h2>
+            <span class="pill ncr-st-{{ ncrStatusKey() }}">{{ ncrStatusLabel() }}</span>
+            @if (severity()) { <span class="sev sev-{{ severityKey() }}">{{ severity() }}</span> }
+            <span class="spacer"></span>
+            @if (canEdit()) {
+              @if (report?.ncrStatus === 'open') {
+                <button class="btn ghost sm" [disabled]="busy" (click)="startReview()"><mat-icon>search</mat-icon>Investigate</button>
+              }
+              <button class="btn resolve sm" [disabled]="busy || !report?.disposition" [title]="closeHint()" (click)="closeNcr()"><mat-icon>check_circle</mat-icon>Close NCR</button>
+              <button class="btn ghost sm danger" [disabled]="busy" (click)="cancelNcr()" title="Raised in error"><mat-icon>block</mat-icon>Cancel</button>
+            } @else if (report?.ncrStatus === 'closed') {
+              <button class="btn ghost sm" [disabled]="busy" (click)="reopenNcr()"><mat-icon>lock_open</mat-icon>Reopen</button>
+            }
+          </div>
+
+          <div class="ncr-card">
+            <div class="ncr-card-h"><mat-icon>gavel</mat-icon> Disposition</div>
+            @if (report?.disposition) {
+              <p class="disp"><strong>{{ dispositionLabel(report?.disposition) }}</strong>
+                @if (report?.dispositionByName) { <span class="muted"> · {{ report?.dispositionByName }}</span> }
+                @if (report?.dispositionAt) { <span class="muted"> · {{ report?.dispositionAt | date:'MMM d, HH:mm' }}</span> }
+              </p>
+              @if (report?.dispositionNotes) { <p class="disp-note">{{ report?.dispositionNotes }}</p> }
+              @if (report?.rootCause) { <p class="kv"><span>Root cause</span>{{ report?.rootCause }}</p> }
+              @if (report?.correctiveAction) { <p class="kv"><span>Corrective action</span>{{ report?.correctiveAction }}</p> }
+            }
+            @if (canEdit()) {
+              <div class="disp-form">
+                <label class="fld">{{ report?.disposition ? 'Revise disposition' : 'Decide disposition' }}
+                  <select [(ngModel)]="dispForm.disposition">
+                    <option value="">— choose —</option>
+                    @for (d of dispositions; track d.value) { <option [value]="d.value">{{ d.label }}</option> }
+                  </select>
+                </label>
+                <textarea [(ngModel)]="dispForm.notes" rows="2" placeholder="Justification / rework instructions / concession reference"></textarea>
+                <div class="two">
+                  <textarea [(ngModel)]="dispForm.rootCause" rows="2" placeholder="Root cause (investigation finding)"></textarea>
+                  <textarea [(ngModel)]="dispForm.correctiveAction" rows="2" placeholder="Corrective action taken / planned"></textarea>
+                </div>
+                <div class="disp-actions">
+                  <button class="btn primary sm" [disabled]="busy || !dispForm.disposition" (click)="recordDisposition()">
+                    <mat-icon>save</mat-icon>{{ report?.disposition ? 'Update disposition' : 'Record disposition' }}
+                  </button>
+                  @if (needsReinspection()) { <span class="hint"><mat-icon>info</mat-icon>Rework/repair must pass a re-inspection (recorded after this disposition) before the NCR can close.</span> }
+                </div>
+              </div>
+            }
+          </div>
+
+          <div class="ncr-card">
+            <div class="ncr-card-h"><mat-icon>forum</mat-icon> Activity</div>
+            <div class="timeline">
+              @for (e of events; track e.id) {
+                <div class="ev">
+                  <span class="ev-ic ev-{{ e.type }}"><mat-icon>{{ eventIcon(e) }}</mat-icon></span>
+                  <div class="ev-body">
+                    <span class="ev-t">{{ eventLabel(e) }}</span>
+                    @if (e.note) { <span class="ev-note">“{{ e.note }}”</span> }
+                    <span class="ev-meta">{{ e.createdByName || 'Someone' }} · {{ e.createdAt | date:'MMM d, HH:mm' }}</span>
+                  </div>
+                </div>
+              } @empty { <p class="muted sm">No activity yet.</p> }
+            </div>
+            <div class="comment">
+              <input [(ngModel)]="commentText" placeholder="Add a comment…" (keydown.enter)="addComment()">
+              <button class="btn ghost sm" [disabled]="busy || !commentText.trim()" (click)="addComment()"><mat-icon>send</mat-icon></button>
+            </div>
+          </div>
+        </section>
       }
 
       <main class="paper">
@@ -122,6 +187,53 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
     .btn.resolve:hover:not(:disabled) { background: #bbf7d0; }
     .pill.resolved { display: inline-flex; align-items: center; gap: 4px; background: #dcfce7; color: #166534; }
     .pill.resolved mat-icon { font-size: 15px; width: 15px; height: 15px; }
+
+    /* ── NCR lifecycle panel ── */
+    .btn.sm { padding: 7px 12px; font-size: 12.5px; }
+    .btn.sm mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .btn.danger { color: var(--danger, #dc2626); }
+    .ncr-st-open { background: #fef3c7; color: #92400e; }
+    .ncr-st-under_review { background: #dbeafe; color: #1e40af; }
+    .ncr-st-dispositioned { background: #ede9fe; color: #6d28d9; }
+    .ncr-st-closed { background: #dcfce7; color: #166534; }
+    .ncr-st-cancelled { background: #f1f5f9; color: #475569; }
+    .sev { padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: capitalize; }
+    .sev-low { background:#dcfce7; color:#166534; } .sev-medium { background:#fef3c7; color:#92400e; }
+    .sev-high { background:#ffedd5; color:#9a3412; } .sev-critical { background:#fee2e2; color:#991b1b; }
+    .ncr { background: var(--clay-surface,#fff); border: 1px solid var(--clay-border,#e2e8f0); border-radius: 12px; margin-top: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+    .ncr-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .ncr-row h2 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; font-weight: 700; color: var(--clay-text,#0f172a); }
+    .ncr-row h2 mat-icon { color: var(--danger,#dc2626); }
+    .spacer { flex: 1; }
+    .ncr-card { margin-top: 12px; border: 1px solid var(--clay-border,#e2e8f0); border-radius: 10px; padding: 12px 14px; background: var(--clay-bg-warm,#f8fafc); }
+    .ncr-card-h { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--clay-text-muted,#64748b); margin-bottom: 8px; }
+    .ncr-card-h mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .disp { margin: 0 0 4px; font-size: 14px; color: var(--clay-text,#0f172a); }
+    .disp-note { margin: 0 0 8px; font-size: 13px; color: var(--clay-text-secondary,#475569); white-space: pre-wrap; }
+    .kv { margin: 4px 0; font-size: 13px; color: var(--clay-text-secondary,#475569); }
+    .kv span { display: inline-block; min-width: 120px; font-weight: 700; color: var(--clay-text-muted,#64748b); }
+    .muted { color: var(--clay-text-muted,#64748b); } .sm { font-size: 12.5px; }
+    .disp-form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .fld { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--clay-text-secondary,#475569); }
+    .ncr select, .ncr textarea, .ncr input { border: 1px solid var(--clay-border,#e2e8f0); border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; color: var(--clay-text,#0f172a); background: #fff; }
+    .ncr textarea { resize: vertical; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .disp-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .hint { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--clay-text-muted,#64748b); }
+    .hint mat-icon { font-size: 15px; width: 15px; height: 15px; }
+    .timeline { display: flex; flex-direction: column; gap: 10px; }
+    .ev { display: flex; gap: 10px; align-items: flex-start; }
+    .ev-ic { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 999px; background: #e2e8f0; color: #475569; flex-shrink: 0; }
+    .ev-ic mat-icon { font-size: 15px; width: 15px; height: 15px; }
+    .ev-disposition { background:#ede9fe; color:#6d28d9; } .ev-resolved { background:#dcfce7; color:#166534; }
+    .ev-cancelled { background:#fee2e2; color:#991b1b; } .ev-comment { background:#dbeafe; color:#1e40af; }
+    .ev-body { display: flex; flex-direction: column; gap: 1px; }
+    .ev-t { font-size: 13px; font-weight: 600; color: var(--clay-text,#0f172a); }
+    .ev-note { font-size: 13px; color: var(--clay-text-secondary,#475569); font-style: italic; }
+    .ev-meta { font-size: 11px; color: var(--clay-text-muted,#64748b); }
+    .comment { display: flex; gap: 8px; margin-top: 12px; }
+    .comment input { flex: 1; }
+    @media (max-width: 640px) { .two { grid-template-columns: 1fr; } }
     .paper { background: var(--clay-surface, #fff); border: 1px solid var(--clay-border, #e2e8f0); border-radius: 12px; margin-top: 12px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
     .center { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 56px 0; color: var(--clay-text-muted, #64748b); font-size: 13px; }
     .form-host.hidden { display: none; }
@@ -199,6 +311,18 @@ export class ReportFillComponent implements OnInit, OnDestroy {
   error: string | null = null;
   notice: string | null = null;
 
+  // NCR lifecycle
+  events: NcrEvent[] = [];
+  commentText = '';
+  dispForm = { disposition: '', notes: '', rootCause: '', correctiveAction: '' };
+  readonly dispositions = [
+    { value: 'rework', label: 'Rework (restore to full conformance)' },
+    { value: 'repair', label: 'Repair (acceptable, not to full spec)' },
+    { value: 'use_as_is', label: 'Use as-is (concession)' },
+    { value: 'scrap', label: 'Scrap' },
+    { value: 'return_to_supplier', label: 'Return to supplier' },
+  ];
+
   private form: any = null;
   private static formioPromise: Promise<any> | null = null;
 
@@ -214,7 +338,7 @@ export class ReportFillComponent implements OnInit, OnDestroy {
     }
     const id = this.route.snapshot.paramMap.get('id') ?? '';
     this.svc.get(id).subscribe({
-      next: (r) => { this.report = r; this.mountForm(); },
+      next: (r) => { this.report = r; this.prefillNcr(); this.mountForm(); },
       error: (e) => {
         this.loading = false;
         this.error = e?.status === 401
@@ -450,25 +574,121 @@ export class ReportFillComponent implements OnInit, OnDestroy {
 </body></html>`;
   }
 
-  // ── Resolve / reopen NCR report ────────────────────────────────────────
-  /** Resolve (close) this NCR report — lifts the shipping + quality-stage gates. */
-  resolveNcr(): void {
-    if (!this.report || this.busy) return;
+  // ── NCR lifecycle ──────────────────────────────────────────────────────
+  private prefillNcr(): void {
+    if (this.report?.templateType !== 'ncr') return;
+    this.dispForm = {
+      disposition: this.report.disposition ?? '',
+      notes: this.report.dispositionNotes ?? '',
+      rootCause: this.report.rootCause ?? '',
+      correctiveAction: this.report.correctiveAction ?? '',
+    };
+    this.loadEvents();
+  }
+
+  private loadEvents(): void {
+    if (this.report?.templateType !== 'ncr') return;
+    this.svc.events(this.report.id).subscribe({ next: (e) => (this.events = e), error: () => {} });
+  }
+
+  ncrStatusKey(): string { return this.report?.ncrStatus || (this.report?.resolvedAt ? 'closed' : 'open'); }
+  ncrStatusLabel(): string {
+    return ({ open: 'Open', under_review: 'Under review', dispositioned: 'Dispositioned', closed: 'Closed', cancelled: 'Cancelled' } as Record<string, string>)[this.ncrStatusKey()] ?? 'Open';
+  }
+  canEdit(): boolean {
+    const k = this.ncrStatusKey();
+    return this.report?.templateType === 'ncr' && k !== 'closed' && k !== 'cancelled';
+  }
+  severity(): string | null { const s = this.report?.data?.['severity']; return s ? String(s) : null; }
+  severityKey(): string { return (this.severity() ?? '').toLowerCase(); }
+  dispositionLabel(d: string | null | undefined): string { return this.dispositions.find((x) => x.value === d)?.label ?? (d ?? '—'); }
+  needsReinspection(): boolean { return this.dispForm.disposition === 'rework' || this.dispForm.disposition === 'repair'; }
+  closeHint(): string { return this.report?.disposition ? 'Close this NCR — lifts the shipping + quality-stage gates' : 'Record a disposition before closing'; }
+  eventIcon(e: NcrEvent): string {
+    return ({ created: 'flag', submitted: 'task_alt', disposition: 'gavel', resolved: 'check_circle', reopened: 'lock_open', cancelled: 'block', comment: 'chat_bubble' } as Record<string, string>)[e.type] ?? 'radio_button_checked';
+  }
+  eventLabel(e: NcrEvent): string {
+    switch (e.type) {
+      case 'created': return 'NCR raised';
+      case 'submitted': return 'Report submitted';
+      case 'disposition': return `Disposition: ${this.dispositionLabel(e.disposition)}`;
+      case 'resolved': return 'Closed — gates lifted';
+      case 'reopened': return 'Reopened';
+      case 'cancelled': return 'Cancelled (raised in error)';
+      case 'comment': return 'Comment';
+      case 'status': return e.toStatus === 'under_review' ? 'Investigation started' : `Status → ${e.toStatus}`;
+      default: return e.type;
+    }
+  }
+
+  recordDisposition(): void {
+    if (!this.report || this.busy || !this.dispForm.disposition) return;
     this.busy = true; this.error = null;
-    this.svc.resolve(this.report.id).subscribe({
-      next: (r) => { this.busy = false; this.report = { ...this.report!, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy }; this.notice = `${this.report.number} resolved.`; this.toast.success(`${this.report.number} resolved — gates lifted`); },
-      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not resolve this NCR.'; },
+    this.svc.disposition(this.report.id, {
+      disposition: this.dispForm.disposition,
+      dispositionNotes: this.dispForm.notes || undefined,
+      rootCause: this.dispForm.rootCause || undefined,
+      correctiveAction: this.dispForm.correctiveAction || undefined,
+    }).subscribe({
+      next: (r) => this.afterNcrAction(r, 'Disposition recorded'),
+      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not record the disposition.'; },
     });
   }
 
-  /** Reopen a resolved NCR report (re-blocks its gates). */
+  startReview(): void {
+    if (!this.report || this.busy) return;
+    this.busy = true; this.error = null;
+    this.svc.startReview(this.report.id).subscribe({
+      next: (r) => this.afterNcrAction(r, 'Marked under review'),
+      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not update the NCR.'; },
+    });
+  }
+
+  /** Close (resolve) this NCR — backend enforces disposition + rework re-inspection. */
+  closeNcr(): void {
+    if (!this.report || this.busy) return;
+    this.busy = true; this.error = null;
+    this.svc.resolve(this.report.id).subscribe({
+      next: (r) => this.afterNcrAction(r, `${r.number} closed — gates lifted`),
+      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not close this NCR.'; },
+    });
+  }
+
   reopenNcr(): void {
     if (!this.report || this.busy) return;
     this.busy = true; this.error = null;
     this.svc.reopen(this.report.id).subscribe({
-      next: (r) => { this.busy = false; this.report = { ...this.report!, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy }; this.notice = `${this.report.number} reopened.`; this.toast.success(`${this.report.number} reopened`); },
+      next: (r) => this.afterNcrAction(r, `${r.number} reopened`),
       error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not reopen this NCR.'; },
     });
+  }
+
+  cancelNcr(): void {
+    if (!this.report || this.busy) return;
+    const note = window.prompt('Cancel this NCR (raised in error)? Optional reason:');
+    if (note === null) return; // dismissed
+    this.busy = true; this.error = null;
+    this.svc.cancel(this.report.id, note || undefined).subscribe({
+      next: (r) => this.afterNcrAction(r, `${r.number} cancelled`),
+      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not cancel this NCR.'; },
+    });
+  }
+
+  addComment(): void {
+    if (!this.report || this.busy || !this.commentText.trim()) return;
+    const id = this.report.id;
+    this.busy = true; this.error = null;
+    this.svc.comment(id, this.commentText.trim()).subscribe({
+      next: () => { this.busy = false; this.commentText = ''; this.loadEvents(); },
+      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not add the comment.'; },
+    });
+  }
+
+  private afterNcrAction(r: QualityReport, msg: string): void {
+    this.busy = false;
+    this.report = r;
+    this.prefillNcr();
+    this.toast.success(msg);
   }
 
   private ensureFormio(): Promise<any> {

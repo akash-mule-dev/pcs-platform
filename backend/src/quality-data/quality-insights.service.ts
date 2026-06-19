@@ -84,11 +84,13 @@ export class QualityInsightsService {
       p,
     );
 
+    // Genuine closures only — exclude NCRs voided via Cancel (also stamp resolved_at).
     const [closeStats] = await this.repo.query(
       `SELECT COUNT(*)::int AS n,
               AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 86400.0) AS avg_days
          FROM quality_reports
         WHERE template_type = 'ncr' AND resolved_at IS NOT NULL
+          AND (ncr_status IS NULL OR ncr_status <> 'cancelled')
           AND resolved_at > now() - interval '90 days' ${qdOrg}`,
       p,
     );

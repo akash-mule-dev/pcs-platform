@@ -250,51 +250,61 @@ against the order → costs roll up (WO → order → project → org).**
   issue guards→rate chain→overhead→roll-up agreement→closed-order guard; freshly seeded API +
   `E2E_PG_URL` — the demo IFC has no part weights, the suite backfills them via SQL).
 
-## The quality module (`quality-data`, `quality-ncr`, `quality-reports`, `spc`, `quality-notify`)
+## The quality module (`quality-data`, `quality-reports`, `spc`, `quality-notify`)
 
 End-to-end QA flow: **record inspection (web 3D / mobile AR / per-node) → auto-fail on
-out-of-tolerance → failed entries queue for sign-off → raise NCR → investigate → disposition →
-close (or CAPA) → gates lift** (work-order quality stages + shipping both block on open NCRs).
+out-of-tolerance → failed entries queue for sign-off**, and separately **raise an NCR (a
+template-driven QC report) → investigate → disposition → verify correction → close → gates lift**
+(work-order quality stages + shipping both block on open NCRs). There is ONE report system — the
+standalone `quality-ncr` module + `ncrs`/`capas`/`ncr_events` tables were retired
+(`RetireNcrModule` migration); CAPA is gone.
 
-- **Pure rule modules** (unit-tested, no Nest/TypeORM): `quality-data/quality-math.ts`
-  (tolerance evaluation + auto-fail + sign-off rules), `quality-ncr/ncr-workflow.ts`
-  (NCR/CAPA state machines), `work-orders/qc-gate.ts` (stage gate incl. inspection rules) and
-  `spc/spc-math.ts` (XmR charts + Western Electric rules). `npm run test:quality` runs all four.
+- **An NCR IS a `QualityReport` whose `template_type === 'ncr'`** (`quality-reports/`). It is
+  created from an `ncr`-type FormTemplate via the normal report flow (web Report Templates → fill
+  on `/qr/:id` → reflects in QC Reports; the mobile app opens the same `/qr/:id` page in a WebView,
+  so it inherits the whole lifecycle UI). The seeded library NCR template
+  (`library/library-content.ts`) carries defectType/severity/description/quantityAffected/rootCause.
+- **NCR lifecycle** (pure state machine `quality-reports/ncr-workflow.ts`, `npm run test:quality`):
+  `open → under_review → dispositioned → closed` (+ `cancelled`, + reopen). The shipping +
+  quality-stage GATES are keyed on `quality_reports.resolved_at IS NULL` (unchanged); only CLOSE
+  and CANCEL stamp `resolved_at`, so `ncr_status` adds the richer state without touching any gate
+  query. Endpoints (all on `/api/quality-reports/:id/*`): `disposition` (record/revise the
+  Material-Review decision), `resolve` (close), `reopen`, `cancel`, `comment`, `start-review`,
+  `GET :id/events` (timeline). Lifecycle columns live on `quality_reports`
+  (`ncr_status`, `disposition`, `disposition_notes/by/at`, `root_cause`, `corrective_action`) +
+  the additive `NcrLifecycle` migration.
+- **Disposition** ∈ `rework | repair | use_as_is | scrap | return_to_supplier` (ISO 9001 §8.7
+  Material Review). **Closing REQUIRES a disposition**, and a correction (`rework`/`repair`)
+  additionally requires a **passing re-inspection recorded AFTER the disposition** — a `quality_data`
+  `pass` for the assembly with `created_at > disposition_at` (ISO §8.7.1 "verify the correction").
+- **Activity log:** every transition + comment appends a `quality_report_events` row (append-only;
+  author resolved to a display name on read). `GET :id/events` is the timeline the fill page renders.
+  RLS-enrolled by the `NcrLifecycle` migration.
+- **RBAC:** filling/submitting/commenting = `quality-reports.update` (manager/supervisor/operator);
+  deciding disposition + close/reopen/cancel = **`quality-reports.disposition`** (manager/supervisor
+  only) — "report it" is separated from "decide its fate". `quality-reports.create` raises NCRs.
 - **Stage quality gates** (work-orders + order bulk/board paths): a quality-named stage cannot
-  COMPLETE while the assembly has (1) open NCRs, or (2) failed inspections not yet signed off
-  (approve = formal concession); a stage flagged `stages.requires_inspection` (hold point — set
-  in the stage dialog) additionally needs ≥1 acceptable inspection recorded. Audit endpoints
-  return `gateBlocked` + human `gateReason` per stage row for pre-warn chips/tooltips.
-- **Rework verification:** closing an NCR dispositioned `rework` that is pinned to an assembly
-  requires a passing re-inspection recorded AFTER the disposition (`ncrs.dispositioned_at`).
-- **Concurrency & idempotency:** NCR PATCHes accept `expectedVersion` (409 on mismatch — web +
-  mobile reload on conflict); quality-data creates accept a `clientKey` uuid so offline-queue
-  replays return the original row (unique `(org, client_key)`), and the mobile AR queue retries
-  failed evidence uploads as separate queue items.
-- **Identity is server-stamped, never client-supplied:** `inspector`/`inspectorUserId` default
-  from the JWT on create; `PATCH /quality-data/:id/signoff` ignores any client `signoffBy` and
-  stamps `signoffBy`/`signoffByUserId` from the authenticated user. Sign-off needs the dedicated
-  `quality-analysis.signoff` permission (inspect ≠ approve).
-- **NCR lifecycle is a state machine:** open → investigation → disposition → closed, cancel from
-  open/investigation, reopen closed → investigation (clears `closed_at`/`closed_by`). Closing
-  REQUIRES a disposition. Every action (create/transition/disposition/assignment/comment) appends
-  an `ncr_events` row — `GET /api/ncr/:id/events` is the timeline; `GET /api/ncr/:id` returns
-  `allowedTransitions` which the web + mobile detail UIs render as guided action buttons.
-  CAPAs must be `verified` (stamps verifier) before they can close.
-- **Numbering is per-organization** (`NCR-YYYY-NNNN`, `QR-YYYY-NNNN`) with unique
-  `(organization_id, number)` indexes; allocation races retry on 23505.
-- **Tenancy:** every quality read/write is org-scoped (incl. summaries/trends/SPC/by-model
-  deletes); linked records (model/node/project/WO/quality entry/assignee) are validated to belong
-  to the caller's org on create. `ncr_events` is RLS-enrolled by the `QualityGovernance` migration.
-- **Eventing** (`quality-notify/`): failed inspections and NCR lifecycle changes emit the
-  `quality-alert` websocket event; high/critical failures + raised NCRs notify the org's
-  admin/manager/supervisors, assignments notify the assignee, sign-off decisions notify the
-  inspector. All best-effort (never fails the write). Sign-off/NCR/CAPA mutations are audit-logged.
-- **Evidence uploads** (`POST /quality-data/:id/evidence`, `POST /ncr/:id/evidence`) accept
-  JPEG/PNG/WebP only (≤10 MB); web fetches them as authed blobs. Rejecting a sign-off offers a
-  pre-filled "Raise NCR" on web + mobile AR; the web NCR detail has a print view (browser → PDF).
-- **Analytics:** `GET /quality-data/insights` (FPY, NCR aging/time-to-close, defect Pareto —
-  web page `/quality-insights`); `GET /spc/control-chart` returns a characteristics picker
+  COMPLETE while the assembly has (1) open NCRs (NCR-type reports with `resolved_at IS NULL`), or
+  (2) failed inspections not yet signed off (approve = formal concession); a stage flagged
+  `stages.requires_inspection` (hold point) additionally needs ≥1 acceptable inspection. Audit
+  endpoints return `gateBlocked` + human `gateReason` per stage row for pre-warn chips/tooltips.
+- **Identity is server-stamped:** `inspector`/`inspectorUserId` default from the JWT on create;
+  `PATCH /quality-data/:id/signoff` ignores client `signoffBy` and stamps it from the authed user
+  (needs `quality-analysis.signoff`). NCR disposition/close authority is the JWT user
+  (`disposition_by`/`resolved_by`) — the ISO §8.7.2 "authority responsible".
+- **Idempotency:** quality-data creates accept a `clientKey` uuid so offline-queue replays return
+  the original row (unique `(org, client_key)`); the mobile AR queue retries failed evidence uploads.
+- **Numbering is per-organization** (`QR-YYYY-NNNN`, shared by NCRs + QC reports) with a unique
+  `(organization_id, number)` index; allocation races retry on 23505.
+- **Tenancy:** every quality read/write is org-scoped; linked records (model/node/project/WO) are
+  validated to belong to the caller's org. `quality_reports` + `quality_report_events` are RLS-enrolled.
+- **Eventing** (`quality-notify/`): failed inspections emit the `quality-alert` websocket event;
+  high/critical failures notify the org's admin/manager/supervisors; sign-off decisions notify the
+  inspector. Best-effort (never fails the write).
+- **Evidence uploads** (`POST /quality-data/:id/evidence`) accept JPEG/PNG/WebP only (≤10 MB), fetched
+  back as authed blobs. The web `/qr/:id` page has a print → PDF view.
+- **Analytics:** `GET /quality-data/insights` (FPY, NCR aging/time-to-close excluding cancelled,
+  defect Pareto — web `/quality-insights`); `GET /spc/control-chart` returns a characteristics picker
   without `meshName`, else an XmR chart (σ from average moving range, WE rules 1–4, Cp/Cpk).
 - **Regression suites:** `npm run test:quality` (pure rules), `npm run test:e2e:quality`
   (80-assertion live suite: identity, workflow, gates, rework loop, idempotency, versioning,

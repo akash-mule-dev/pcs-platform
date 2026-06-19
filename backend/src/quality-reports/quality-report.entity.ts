@@ -49,8 +49,27 @@ export class QualityReport extends TenantOwnedEntity {
   @Column({ name: 'submitted_at', type: 'timestamp', nullable: true }) submittedAt: Date | null;
 
   /**
+   * NCR lifecycle (only meaningful for `ncr`-type reports). The GATE is keyed on
+   * `resolvedAt IS NULL` (unchanged): an NCR blocks shipping + quality-stage
+   * completion until it is CLOSED or CANCELLED, both of which stamp `resolvedAt`.
+   * `ncrStatus` carries the richer state for the UI/timeline:
+   *   open → under_review → dispositioned → closed   (+ cancelled, + reopen).
+   */
+  @Column({ name: 'ncr_status', type: 'varchar', length: 24, nullable: true }) ncrStatus: string | null;
+
+  /** Material Review disposition: rework | repair | use_as_is | scrap | return_to_supplier. */
+  @Column({ name: 'disposition', type: 'varchar', length: 24, nullable: true }) disposition: string | null;
+  @Column({ name: 'disposition_notes', type: 'text', nullable: true }) dispositionNotes: string | null;
+  @Column({ name: 'disposition_by', type: 'uuid', nullable: true }) dispositionBy: string | null;
+  @Column({ name: 'disposition_at', type: 'timestamp', nullable: true }) dispositionAt: Date | null;
+
+  /** Investigation outcome + the action taken (ISO 9001 §8.7.2 "actions taken"). */
+  @Column({ name: 'root_cause', type: 'text', nullable: true }) rootCause: string | null;
+  @Column({ name: 'corrective_action', type: 'text', nullable: true }) correctiveAction: string | null;
+
+  /**
    * NCR close: an `ncr`-type report is OPEN (blocks gates) while `resolvedAt` is
-   * null, and is closed by an explicit Resolve action. Non-NCR reports ignore these.
+   * null; closing (or cancelling) stamps it. `resolvedBy` is the closing authority.
    */
   @Column({ name: 'resolved_at', type: 'timestamp', nullable: true }) resolvedAt: Date | null;
   @Column({ name: 'resolved_by', type: 'uuid', nullable: true }) resolvedBy: string | null;

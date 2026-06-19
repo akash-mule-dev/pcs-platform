@@ -91,7 +91,10 @@ import { ToastService } from '../core/services/toast.service';
               <span class="t-proj">{{ r.projectName || '—' }}</span>
               <span class="t-item">{{ r.itemMark || '—' }}</span>
               @if (r.templateType === 'ncr') {
-                <span><span class="pill" [class.st-open]="!r.resolvedAt" [class.st-submitted]="r.resolvedAt">{{ r.resolvedAt ? 'Resolved' : 'Open NCR' }}</span></span>
+                <span class="ncr-cell">
+                  <span class="pill ncr-{{ ncrKey(r) }}">{{ ncrLabel(r) }}</span>
+                  @if (r.disposition && !r.resolvedAt) { <span class="disp-chip">{{ dispShort(r.disposition) }}</span> }
+                </span>
               } @else {
                 <span><span class="pill st-{{ r.status }}">{{ r.status === 'submitted' ? 'Submitted' : 'Draft' }}</span></span>
               }
@@ -155,6 +158,13 @@ import { ToastService } from '../core/services/toast.service';
     .st-draft { background: var(--warning-bg); color: var(--warning-text); }
     .st-submitted { background: var(--success-bg); color: var(--success-text); }
     .st-open { background: var(--danger-bg); color: var(--danger-text); }
+    .ncr-cell { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .ncr-open { background: var(--danger-bg); color: var(--danger-text); }
+    .ncr-under_review { background: var(--info-bg); color: var(--info-text); }
+    .ncr-dispositioned { background: #ede9fe; color: #6d28d9; }
+    .ncr-closed { background: var(--success-bg); color: var(--success-text); }
+    .ncr-cancelled { background: var(--clay-bg-warm); color: var(--clay-text-muted); }
+    .disp-chip { padding: 1px 7px; border-radius: 5px; font-size: 10px; font-weight: 700; background: var(--clay-bg-warm); color: var(--clay-text-secondary); border: 1px solid var(--clay-border); }
     .ncr-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; background: var(--danger-bg); color: var(--danger-text); vertical-align: middle; }
     .t-date { font-size: 12px; color: var(--clay-text-muted); }
     .t-open { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; color: var(--clay-primary); justify-content: flex-end; }
@@ -220,6 +230,15 @@ export class ReportsListComponent implements OnInit {
 
   applyFilters(): void { this.load(); }
   setStatus(s: string): void { this.statusFilter = this.statusFilter === s ? '' : s; }
+
+  /** NCR lifecycle status key/label for the list pill. */
+  ncrKey(r: QualityReport): string { return r.ncrStatus || (r.resolvedAt ? 'closed' : 'open'); }
+  ncrLabel(r: QualityReport): string {
+    return ({ open: 'Open NCR', under_review: 'Under review', dispositioned: 'Dispositioned', closed: 'Closed', cancelled: 'Cancelled' } as Record<string, string>)[this.ncrKey(r)] ?? 'Open NCR';
+  }
+  dispShort(d: string | null): string {
+    return ({ rework: 'Rework', repair: 'Repair', use_as_is: 'Use as-is', scrap: 'Scrap', return_to_supplier: 'Return' } as Record<string, string>)[d ?? ''] ?? (d ?? '');
+  }
 
   filtered(): QualityReport[] {
     let rows = this.reports;

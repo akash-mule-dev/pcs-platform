@@ -24,6 +24,14 @@ export interface QualityReport {
   /** NCR close: an 'ncr' report is OPEN (blocks gates) while this is null. */
   resolvedAt: string | null;
   resolvedBy: string | null;
+  // NCR lifecycle (ncr reports): open → under_review → dispositioned → closed (+ cancelled)
+  ncrStatus: string | null;
+  disposition: string | null;
+  dispositionNotes: string | null;
+  dispositionBy: string | null;
+  dispositionAt: string | null;
+  rootCause: string | null;
+  correctiveAction: string | null;
   createdAt: string;
   updatedAt: string;
   // Enriched context
@@ -31,6 +39,21 @@ export interface QualityReport {
   customerName: string | null;
   projectName: string | null;
   itemMark: string | null;
+  filledByName: string | null;
+  dispositionByName: string | null;
+  resolvedByName: string | null;
+}
+
+export interface NcrEvent {
+  id: string;
+  type: string;
+  fromStatus: string | null;
+  toStatus: string | null;
+  disposition: string | null;
+  note: string | null;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: string;
 }
 
 export interface ReportTemplate { id: string; name: string; type: string; schema: Record<string, any> | null; version: number; }
@@ -75,14 +98,39 @@ export class QualityReportsService {
     return this.http.delete<{ ok: true }>(`${this.base}/${id}`);
   }
 
-  /** Resolve (close) an NCR report — lifts its shipping + quality-stage gates. */
+  /** Record the Material-Review disposition (rework/repair/use-as-is/scrap/return). */
+  disposition(id: string, body: { disposition: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string }): Observable<QualityReport> {
+    return this.http.post<QualityReport>(`${this.base}/${id}/disposition`, body);
+  }
+
+  /** Move an open NCR into "under review". */
+  startReview(id: string, note?: string): Observable<QualityReport> {
+    return this.http.post<QualityReport>(`${this.base}/${id}/start-review`, { note });
+  }
+
+  /** Close an NCR — lifts its shipping + quality-stage gates (needs a disposition first). */
   resolve(id: string): Observable<QualityReport> {
     return this.http.post<QualityReport>(`${this.base}/${id}/resolve`, {});
   }
 
-  /** Reopen a resolved NCR report (re-blocks its gates). */
+  /** Reopen a closed NCR report (re-blocks its gates). */
   reopen(id: string): Observable<QualityReport> {
     return this.http.post<QualityReport>(`${this.base}/${id}/reopen`, {});
+  }
+
+  /** Cancel an NCR raised in error (lifts gates; recorded as voided). */
+  cancel(id: string, note?: string): Observable<QualityReport> {
+    return this.http.post<QualityReport>(`${this.base}/${id}/cancel`, { note });
+  }
+
+  /** Add a comment to an NCR's activity log. */
+  comment(id: string, note: string): Observable<{ ok: true }> {
+    return this.http.post<{ ok: true }>(`${this.base}/${id}/comment`, { note });
+  }
+
+  /** The NCR activity timeline. */
+  events(id: string): Observable<NcrEvent[]> {
+    return this.http.get<NcrEvent[]>(`${this.base}/${id}/events`);
   }
 
   /** The shareable fill URL (used by web nav and by mobile with ?token=). */

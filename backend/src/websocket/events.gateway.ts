@@ -2,6 +2,7 @@ import { WebSocketGateway, WebSocketServer, OnGatewayInit, OnGatewayConnection, 
 import { Server, Socket } from 'socket.io';
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { AblyService } from '../realtime/ably.service.js';
 
 /** Authenticated principal derived from the socket handshake JWT (if present). */
 interface SocketAuth { userId: string; organizationId: string | null; role: string | null; }
@@ -54,7 +55,25 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly jwt: JwtService) {}
+  constructor(private readonly jwt: JwtService, private readonly ably: AblyService) {}
+
+  /**
+   * Route an event to one channel/room. In production (ABLY_API_KEY set) it
+   * publishes over Ably's hosted edge — the only transport that survives Vercel
+   * serverless. In local dev it uses the in-process Socket.IO server. Channel
+   * names are identical on both transports (`org:<id>`, `user:<id>`, `system`),
+   * so consumers don't care which is live. `system` means "everyone".
+   */
+  private publish(channel: string, event: string, payload: any): void {
+    const data = sanitize(payload);
+    if (this.ably.enabled) {
+      this.ably.publish(channel, event, data);
+      return;
+    }
+    if (!this.server) return;
+    if (channel === 'system') this.server.emit(event, data);
+    else this.server.to(channel).emit(event, data);
+  }
 
   afterInit(_server: Server) {
     this.logger.log('WebSocket gateway initialized');
@@ -179,20 +198,18 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   }
 
   /**
-   * Emit an operational event to ONE tenant's room (`org:<id>`) so a change in
-   * one organization never reaches another tenant's clients. Falls back to a
-   * global broadcast (with a warning) only when the org genuinely can't be
-   * resolved — preserving delivery rather than silently dropping the event.
+   * Emit an operational event to ONE tenant's channel (`org:<id>`) so a change
+   * in one organization never reaches another tenant's clients. Falls back to
+   * the shared `system` channel (with a warning) only when the org genuinely
+   * can't be resolved — preserving delivery rather than silently dropping it.
    */
   private emitToOrg(event: string, payload: any, orgId?: string | null): void {
-    if (!this.server) return;
     const org = this.orgOf(payload, orgId);
-    const data = sanitize(payload);
     if (org) {
-      this.server.to(`org:${org}`).emit(event, data);
+      this.publish(`org:${org}`, event, payload);
     } else {
-      this.logger.warn(`Emitting '${event}' without org context — broadcasting to all tenants`);
-      this.server.emit(event, data);
+      this.logger.warn(`Emitting '${event}' without org context — using the shared system channel`);
+      this.publish('system', event, payload);
     }
   }
 
@@ -210,12 +227,10 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
   // --- New events for Phase 5 ---
 
-  /** Send notification to a specific user */
+  /** Send a notification to a specific user (their personal `user:<id>` channel). */
   emitNotification(userId: string, notification: any) {
-    if (this.server) {
-      this.server.to(`user:${userId}`).emit('notification', sanitize(notification));
-      this.server.to(`user:${userId}`).emit('unread-count-update', { userId });
-    }
+    this.publish(`user:${userId}`, 'notification', notification);
+    this.publish(`user:${userId}`, 'unread-count-update', { userId });
   }
 
   /** Work-order create / status / assignment change — scoped to the owning tenant. */
@@ -228,11 +243,9 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     this.emitToOrg('quality-alert', data, orgId);
   }
 
-  /** Broadcast alert to all connected clients */
+  /** Broadcast a platform-wide alert to all connected clients (shared `system` channel). */
   emitAlert(data: { type: string; title: string; message: string; priority: string }) {
-    if (this.server) {
-      this.server.emit('alert', sanitize(data));
-    }
+    this.publish('system', 'alert', data);
   }
 
   /**

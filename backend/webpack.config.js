@@ -79,6 +79,11 @@ module.exports = function (options) {
             'mikktspace',
             '@gltf-transform/core',
             '@gltf-transform/functions',
+            // unzipper lazy-requires the AWS SDK only for its Open.s3() source,
+            // which this app never uses (storage is vercel-blob/azure; ZIP
+            // packages are opened from buffers/files). Not a tracked dependency,
+            // so don't fail the bundle when it's absent.
+            '@aws-sdk/client-s3',
           ];
           return lazyImports.some(m => resource.startsWith(m));
         },

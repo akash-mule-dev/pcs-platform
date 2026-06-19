@@ -22,6 +22,7 @@
     "@angular/router": "^17.3.0",
     "@google/model-viewer": "^4.2.0",
     "@types/three": "^0.182.0",
+    "ably": "^2.23.0",
     "chart.js": "^4.5.1",
     "driver.js": "^1.4.0",
     "ng2-charts": "^5.0.4",

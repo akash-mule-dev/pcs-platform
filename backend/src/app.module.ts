@@ -18,6 +18,7 @@ import { WorkOrdersModule } from './work-orders/work-orders.module.js';
 import { TimeTrackingModule } from './time-tracking/time-tracking.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { WebsocketModule } from './websocket/websocket.module.js';
+import { RealtimeModule } from './realtime/realtime.module.js';
 import { CadConversionModule } from './cad-conversion/cad-conversion.module.js';
 import { ConversionModule } from './conversion/conversion.module.js';
 import { CoordinationModule } from './coordination/coordination.module.js';
@@ -61,6 +62,7 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
     DatabaseModule,
     StorageModule,
     WebsocketModule,
+    RealtimeModule,
     AuthModule,
     UsersModule,
     ProcessesModule,
