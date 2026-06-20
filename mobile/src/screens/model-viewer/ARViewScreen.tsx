@@ -1,26 +1,17 @@
-// AR QA Inspector — hosts the ported glb-viewer AR experience.
+// AR QA Inspector host.
 //
-// Tapping "AR" on an assembly lands here: the model is downloaded + prepared
-// on-device, then the live AR session opens DIRECTLY — no intro/launch screen
-// and no blocking "Choose Tracking Mode" picker. The three tracking modes are
-// selected inline inside the AR view itself (see TrackingModeSwitcher), so the
-// inspector can load the assembly and compare World / Plane / Image stability
-// without leaving the camera. The Quality-records view stays one tap away via
-// the in-AR header.
+// Camera-first: when Viro is available this mounts the AR experience DIRECTLY —
+// the live camera opens immediately and the model streams in over it (handled
+// inside ARExperience via useRemoteModel). There is no pre-camera "Preparing
+// model…" screen anymore; download / prepare / error are all shown as light
+// overlays on top of the running camera.
 import React, { useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { ViewerScreenParams } from '../../navigation/types';
-import { useRemoteModel } from './ar/useRemoteModel';
 import ARExperience from './ar/ARExperience';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 
@@ -39,43 +30,25 @@ export function ARViewScreen() {
   const route = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const { modelId, fileUrl, meshNames, partLabel } = route.params;
+  const modelName = partLabel || 'Model';
 
-  const { model, loading, error, progress } = useRemoteModel(
-    fileUrl,
-    modelId,
-    partLabel || undefined,
-    meshNames && meshNames.length ? meshNames : undefined,
-  );
-
-  // Quality records (non-AR 3D viewer) — surfaced as an in-AR header action so
-  // it stays reachable now that the launch screen is gone.
   const openQualityData = useCallback(() => {
-    navigation.navigate('QualityView', {
-      modelId,
-      modelName: model?.fileName ?? 'Model',
-      fileUrl,
-    });
-  }, [navigation, modelId, model, fileUrl]);
+    navigation.navigate('QualityView', { modelId, modelName, fileUrl });
+  }, [navigation, modelId, modelName, fileUrl]);
 
-  // ── Viro not available (Expo Go / web) ──
+  // ── Viro not available (Expo Go / web) → offer the 3D viewer instead ──
   if (!viroAvailable) {
     return (
       <View style={styles.container}>
         <Ionicons name="cube-outline" size={64} color={Colors.primary} />
         <Text style={styles.titleText}>AR QA Inspector</Text>
         <Text style={styles.descText}>
-          In-app AR needs a development build (Viro isn't available in Expo Go).
-          You can still inspect the model in the 3D viewer.
+          In-app AR needs a development build (Viro isn't available in Expo Go). You can still
+          inspect the model in the 3D viewer.
         </Text>
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() =>
-            navigation.navigate('ModelView', {
-              modelId,
-              modelName: model?.fileName ?? 'Model',
-              fileUrl,
-            })
-          }
+          onPress={() => navigation.navigate('ModelView', { modelId, modelName, fileUrl })}
         >
           <Ionicons name="cube" size={22} color={Colors.white} />
           <Text style={styles.primaryButtonText}>Open 3D Viewer</Text>
@@ -87,35 +60,10 @@ export function ARViewScreen() {
     );
   }
 
-  // ── Preparing the model (download + wireframe + dimensions) ──
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.titleText}>Preparing model…</Text>
-        <Text style={styles.descText}>{progress ?? 'Loading…'}</Text>
-      </View>
-    );
-  }
-
-  // ── Download / preparation failed ──
-  if (error || !model) {
-    return (
-      <View style={styles.container}>
-        <Ionicons name="alert-circle-outline" size={64} color={Colors.danger} />
-        <Text style={styles.titleText}>Couldn’t load the model</Text>
-        <Text style={styles.descText}>{error ?? 'The model file is unavailable.'}</Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>Go back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // ── Ready: open the live AR session directly (mode chosen inline in-AR). ──
+  // ── Open the live AR session immediately; the model loads over the camera. ──
   // A nested boundary keeps a JS error in the AR/Viro tree from unwinding to the
-  // root boundary (which would blank the whole app); the operator backs out into
-  // the still-alive shell instead. Native (SIGSEGV) crashes aren't JS-catchable.
+  // root boundary (which would blank the whole app). Native (SIGSEGV) crashes
+  // aren't JS-catchable.
   return (
     <ErrorBoundary
       title="AR session error"
@@ -125,10 +73,10 @@ export function ARViewScreen() {
     >
       <ARExperience
         modelId={modelId}
-        modelUri={model.uri}
-        fileName={model.fileName}
-        wireframeUri={model.wireframeUri}
-        dimensions={model.dimensions}
+        fileUrl={fileUrl}
+        fileName={`${modelName}.glb`}
+        meshNames={meshNames && meshNames.length ? meshNames : null}
+        partLabel={partLabel}
         initialTrackingMode="plane"
         onViewRecords={openQualityData}
         onBack={() => navigation.goBack()}

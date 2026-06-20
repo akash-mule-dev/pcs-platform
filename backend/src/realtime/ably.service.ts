@@ -26,11 +26,23 @@ export class AblyService {
   constructor() {
     const key = process.env.ABLY_API_KEY;
     const driver = (process.env.REALTIME_DRIVER || (key ? 'ably' : 'socketio')).toLowerCase();
-    this.enabled = driver === 'ably' && !!key;
-    this.client = this.enabled ? new Rest(key as string) : null;
+    let enabled = driver === 'ably' && !!key;
+    let client: Rest | null = null;
     if (driver === 'ably' && !key) {
       this.logger.warn('REALTIME_DRIVER=ably but ABLY_API_KEY is unset — real-time disabled (Socket.IO fallback)');
     }
+    if (enabled) {
+      try {
+        // Throws on a malformed key (not "appId.keyId:secret") — never let that
+        // crash the whole app; degrade to the Socket.IO fallback instead.
+        client = new Rest(key as string);
+      } catch (e) {
+        this.logger.error(`Invalid ABLY_API_KEY — real-time disabled (Socket.IO fallback): ${(e as Error).message}`);
+        enabled = false;
+      }
+    }
+    this.enabled = enabled;
+    this.client = client;
     this.logger.log(`Real-time driver: ${this.enabled ? 'ably' : 'socketio'}`);
   }
 
