@@ -1,11 +1,15 @@
-// Ported from the standalone glb-viewer app (Expo AR QA inspector).
-// Pure types + constants — framework-agnostic, no Viro/native imports.
+// Pure types + constants for the AR QA inspector — framework-agnostic, no
+// Viro/native imports, safe to load anywhere (Expo Go / Jest / web).
 
 export type Vec3 = [number, number, number];
 
 export type RenderMode = 'solid' | 'ghost' | 'wireframe';
 
 export type TrackingMode = 'world' | 'plane' | 'image';
+
+// Lifecycle of the on-device model load. The camera is live the whole time —
+// these phases only describe the model streaming in over the live camera.
+export type ModelPhase = 'downloading' | 'preparing' | 'ready' | 'error';
 
 export interface MeasurementState {
   showOverall: boolean;
@@ -37,25 +41,29 @@ export const TRACKING_MODE_INFO: Record<
   TrackingMode,
   { title: string; subtitle: string; accuracy: string }
 > = {
-  // All three modes place the model the same way — tap to drop it in front of
-  // the camera. They differ only in how ARKit stabilizes the world afterward.
+  // The model auto-places in front of the camera the moment it loads; the modes
+  // differ only in how ARKit stabilizes the world afterward.
   world: {
     title: 'World Position',
-    subtitle: 'Tap to place. Free tracking — drifts most as you move.',
+    subtitle: 'Auto-placed in front. Free tracking — drifts most as you move.',
     accuracy: 'Baseline',
   },
   plane: {
     title: 'Plane Anchor',
-    subtitle: 'Tap to place. Plane detection holds it steadier.',
+    subtitle: 'Auto-placed in front. Plane detection holds it steadier.',
     accuracy: 'High',
   },
   image: {
     title: 'Image Marker',
-    subtitle: 'Tap to place. Gravity + heading lock for the steadiest hold.',
+    subtitle: 'Auto-placed in front. Gravity + heading lock for the steadiest hold.',
     accuracy: 'Highest',
   },
 };
 
+// ── Model placement / transform state ──
+// Owned by useModelState; rendered by the AR scene. Design facts only — no QA
+// data here. `autoFitted` guards the one-shot auto-fit so the bbox read can't
+// feedback-loop.
 export interface ModelState {
   uri: string | null;
   fileName: string | null;
@@ -66,6 +74,7 @@ export interface ModelState {
   placed: boolean;
   wireframeUri: string | null;
   renderMode: RenderMode;
+  autoFitted: boolean;
 }
 
 export type ModelAction =
@@ -76,6 +85,12 @@ export type ModelAction =
   | { type: 'SET_ROTATION'; rotation: Vec3 }
   | { type: 'TOGGLE_LOCK' }
   | { type: 'SET_PLACED'; placed: boolean }
+  // Atomic place: set position and mark placed in one render (avoids a flash
+  // where the node mounts at the stale position for one frame).
+  | { type: 'PLACE'; position: Vec3 }
+  // One-shot auto-fit: set the scale derived from the loaded model's bbox and
+  // mark autoFitted so it never recomputes.
+  | { type: 'APPLY_AUTOFIT'; scale: Vec3 }
   | { type: 'RESET' }
   | { type: 'SET_WIREFRAME_URI'; wireframeUri: string }
   | { type: 'CYCLE_RENDER_MODE' }

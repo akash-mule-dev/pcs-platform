@@ -19,13 +19,8 @@ jest.mock('@reactvision/react-viro', () => ({
   ViroARSceneNavigator: () => null,
 }));
 
-// Controllable model-preparation state.
-let mockModelState: any;
-jest.mock('../ar/useRemoteModel', () => ({
-  useRemoteModel: () => mockModelState,
-}));
-
-// Stub the heavy AR experience so the test never loads Viro/GLB code.
+// Stub the heavy AR experience so the test never loads Viro/GLB code. It now
+// owns model loading internally (camera-first), so the host just mounts it.
 let experienceProps: any = null;
 jest.mock('../ar/ARExperience', () => {
   const React = require('react');
@@ -42,30 +37,19 @@ jest.mock('../ar/ARExperience', () => {
 // Must import AFTER mocks
 import { ARViewScreen } from '../ARViewScreen';
 
-const READY = {
-  model: {
-    uri: 'file:///cache/test-model-1.glb',
-    fileName: 'model.glb',
-    wireframeUri: 'file:///cache/test-model-1_wireframe.glb',
-    dimensions: null,
-  },
-  loading: false,
-  error: null,
-  progress: null,
-};
-
-describe('ARViewScreen (host for ported AR experience)', () => {
+describe('ARViewScreen (camera-first host)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     experienceProps = null;
-    mockModelState = READY;
   });
 
-  it('opens the live AR experience directly once the model is ready (no launch screen)', () => {
+  it('mounts the AR experience immediately (camera opens before the model loads)', () => {
     const { getByTestId } = render(<ARViewScreen />);
     expect(getByTestId('ar-experience')).toBeTruthy();
-    expect(experienceProps.modelUri).toBe('file:///cache/test-model-1.glb');
-    expect(experienceProps.wireframeUri).toBe('file:///cache/test-model-1_wireframe.glb');
+    // The host no longer downloads first — it hands the model source to the
+    // experience, which streams it in over the live camera.
+    expect(experienceProps.modelId).toBe('test-model-1');
+    expect(experienceProps.fileUrl).toBe('https://example.com/model.glb');
   });
 
   it('opens in Plane mode by default; the three modes are switched inline in-AR', () => {
@@ -73,18 +57,9 @@ describe('ARViewScreen (host for ported AR experience)', () => {
     expect(experienceProps.initialTrackingMode).toBe('plane');
   });
 
-  it('shows a preparing state while the model downloads', () => {
-    mockModelState = { model: null, loading: true, error: null, progress: 'Downloading model…' };
-    const { getByText } = render(<ARViewScreen />);
-    expect(getByText('Preparing model…')).toBeTruthy();
-    expect(getByText('Downloading model…')).toBeTruthy();
-  });
-
-  it('shows an error state when preparation fails', () => {
-    mockModelState = { model: null, loading: false, error: 'Download failed (HTTP 404)', progress: null };
-    const { getByText } = render(<ARViewScreen />);
-    expect(getByText('Couldn’t load the model')).toBeTruthy();
-    expect(getByText('Download failed (HTTP 404)')).toBeTruthy();
+  it('passes no mesh isolation when none was requested', () => {
+    render(<ARViewScreen />);
+    expect(experienceProps.meshNames).toBeNull();
   });
 
   it('hands the AR experience a records action that opens Quality Inspection for the same model', () => {
