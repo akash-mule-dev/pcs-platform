@@ -91,12 +91,12 @@ We run **two separate Vercel projects** from the one repository — one for the 
 ### Frontend project (Angular)
 - Builds the Angular app into static HTML/CSS/JS and serves it from Vercel's CDN.
 - Build configuration lives in `frontend/vercel.json`.
-- Dev preview URL: `https://frontend-git-dev-akash-mule-devs-projects.vercel.app`
+- Dev preview URL: `https://dev.fabrixr.com`
 
 ### Backend project (NestJS serverless)
 - Runs the NestJS API as a **Vercel serverless function**. We use the `@codegenie/serverless-express` adapter so the existing NestJS/Express app can run inside a Vercel function without a long-running server.
 - Build configuration lives in `backend/vercel.json`.
-- Dev preview URL: `https://backend-git-dev-akash-mule-devs-projects.vercel.app`
+- Dev preview URL: `https://demo-api.fabrixr.com`
 
 ### Important caveat: the request body size limit
 Because the backend runs as a serverless function, Vercel enforces a request body cap of **about 4.5 MB**. That is fine for normal API calls, but it is too small for large file uploads (3D models, big drawing packages, etc.).

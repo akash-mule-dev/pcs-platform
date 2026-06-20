@@ -5,8 +5,8 @@ FILE_NAME('','2026-06-08T13:37:40',(''),(''),'IfcOpenShell 0.8.5-1c5b825','IfcOp
 FILE_SCHEMA(('IFC4'));
 ENDSEC;
 DATA;
-#1=IFCPERSON($,'Mule','Akash',$,$,$,$,$);
-#2=IFCORGANIZATION($,'Eterio',$,$,$);
+#1=IFCPERSON($,'FabriXR',$,$,$,$,$,$);
+#2=IFCORGANIZATION($,'FabriXR',$,$,$);
 #3=IFCAPPLICATION(#2,'5.1','PCS AR Demo Assembly Generator','PCS-DAG');
 #4=IFCPERSONANDORGANIZATION(#1,#2,$);
 #5=IFCOWNERHISTORY(#4,#3,$,.ADDED.,$,$,$,1780925860);

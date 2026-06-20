@@ -3,7 +3,7 @@
  * platform/tenant separation, safety rails and audit logging.
  *
  * Run against a FRESHLY SEEDED backend (drops nothing, but expects the seed
- * users to exist and "Eterio Steel"/"Second Steel" orgs to NOT exist yet):
+ * users to exist and "FabriXR Steel"/"Second Steel" orgs to NOT exist yet):
  *
  *   # terminal 1 — any Postgres, e.g. docker compose up -d postgres
  *   DATABASE_URL=postgresql://... node dist/main.js --seed
@@ -86,14 +86,14 @@ const QC_PERMS = [
   r = await req('POST', '/organizations', {
     token: platform.accessToken,
     body: {
-      name: 'Eterio Steel', slug: 'eterio-steel',
-      initialAdmin: { email: 'owner@eterio.ca', password: 'owner-pass-1', firstName: 'Shweta', lastName: 'Baravkar', employeeId: 'ETR-001' },
+      name: 'FabriXR Steel', slug: 'fabrixr-steel',
+      initialAdmin: { email: 'owner@fabrixr.com', password: 'owner-pass-1', firstName: 'Shweta', lastName: 'Baravkar', employeeId: 'FBX-001' },
     },
   });
   check('org provisioned with bootstrap admin', (r.status === 201 || r.status === 200) && !!r.data?.initialAdmin?.id, r.raw);
   const org1 = r.data;
 
-  const owner = await login('owner@eterio.ca', 'owner-pass-1');
+  const owner = await login('owner@fabrixr.com', 'owner-pass-1');
   check('bootstrap admin can sign in, stamped with new org', owner.user?.organizationId === org1.id, owner.user?.organizationId);
   r = await req('GET', '/auth/permissions', { token: owner.accessToken });
   check('bootstrap admin holds full expanded tenant set (no platform keys)', r.data?.permissions?.includes('users.delete') && !r.data?.permissions?.some((p) => p.startsWith('organizations.')), r.data?.permissions?.length);
@@ -133,13 +133,13 @@ const QC_PERMS = [
   // ── 6. Assign the custom role; verify allow/deny enforcement ──────────────
   r = await req('POST', '/users', {
     token: owner.accessToken,
-    body: { employeeId: 'ETR-100', email: 'qc@eterio.ca', mobileNo: '9876500100', password: 'qc-pass-123', firstName: 'Quinn', lastName: 'Inspector', roleId: qcRole.id },
+    body: { employeeId: 'FBX-100', email: 'qc@fabrixr.com', mobileNo: '9876500100', password: 'qc-pass-123', firstName: 'Quinn', lastName: 'Inspector', roleId: qcRole.id },
   });
   check('create user with custom role', r.status === 201 || r.status === 200, r.raw);
   const qcUserId = r.data?.id;
   check('new user stamped with the tenant org', r.data?.organizationId === org1.id);
 
-  const qc = await login('qc@eterio.ca', 'qc-pass-123');
+  const qc = await login('qc@fabrixr.com', 'qc-pass-123');
   r = await req('GET', '/auth/permissions', { token: qc.accessToken });
   check('custom-role user gets exact permission set', JSON.stringify([...(r.data?.permissions ?? [])].sort()) === JSON.stringify([...QC_PERMS].sort()), r.data?.permissions);
   check('permissions endpoint names the custom role', r.data?.role?.name === 'QC Inspector');

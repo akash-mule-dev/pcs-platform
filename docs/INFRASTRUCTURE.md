@@ -66,8 +66,8 @@ Two Vercel projects back the platform, each linked to this Git repository.
 ### Stable Preview URLs (dev branch)
 | Project | Preview URL |
 |---------|-------------|
-| `frontend` | https://frontend-git-dev-akash-mule-devs-projects.vercel.app |
-| `backend` | https://backend-git-dev-akash-mule-devs-projects.vercel.app |
+| `frontend` | https://dev.fabrixr.com |
+| `backend` | https://demo-api.fabrixr.com |
 
 ---
 
@@ -334,9 +334,9 @@ User → api.fabrixr.com
 ### Development (dev branch previews)
 | Service | URL |
 |---------|-----|
-| Frontend | https://frontend-git-dev-akash-mule-devs-projects.vercel.app |
-| Backend API | https://backend-git-dev-akash-mule-devs-projects.vercel.app |
-| Swagger Docs | https://backend-git-dev-akash-mule-devs-projects.vercel.app/api/docs |
+| Frontend | https://dev.fabrixr.com |
+| Backend API | https://demo-api.fabrixr.com |
+| Swagger Docs | https://demo-api.fabrixr.com/api/docs |
 
 ---
 

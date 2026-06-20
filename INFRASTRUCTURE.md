@@ -10,9 +10,9 @@
 ## Environments
 
 ### DEV (preview — `dev` branch)
-- **Frontend:** https://frontend-git-dev-akash-mule-devs-projects.vercel.app
-- **Backend:** https://backend-git-dev-akash-mule-devs-projects.vercel.app
-- **Swagger:** https://backend-git-dev-akash-mule-devs-projects.vercel.app/api/docs
+- **Frontend:** https://dev.fabrixr.com
+- **Backend:** https://demo-api.fabrixr.com
+- **Swagger:** https://demo-api.fabrixr.com/api/docs
 - **Auto-deploy:** pushes to `dev` build the dev config
 
 ### STAGING (`demo.fabrixr.com`)

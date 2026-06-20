@@ -50,7 +50,7 @@ vercel whoami   # Should show your authenticated Vercel user
 ### Environments at a glance
 | Env | Branch / trigger | Frontend URL | Backend URL |
 |-----|------------------|--------------|-------------|
-| **DEV** | push to `dev` (or `dev` Git branch on Vercel) | https://frontend-git-dev-akash-mule-devs-projects.vercel.app | https://backend-git-dev-akash-mule-devs-projects.vercel.app |
+| **DEV** | push to `dev` (or `dev` Git branch on Vercel) | https://dev.fabrixr.com | https://demo-api.fabrixr.com |
 | **STAGE / DEMO** | manual / CI | https://demo.fabrixr.com | https://demo-api.fabrixr.com |
 | **PROD** | production deploy | https://app.fabrixr.com / https://www.fabrixr.com | https://api.fabrixr.com (alias https://pcsapi.fabrixr.com) |
 
@@ -139,7 +139,7 @@ echo "✅ Prod backend deployed"
 ### Step 3: Verify
 ```bash
 # DEV
-curl -s https://backend-git-dev-akash-mule-devs-projects.vercel.app/api/auth/login \
+curl -s https://demo-api.fabrixr.com/api/auth/login \
   -X POST -H "Content-Type: application/json" \
   -d '{"email":"admin@pcs.local","password":"password123"}'
 
@@ -207,7 +207,7 @@ vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
 ### Step 3: Verify
 Open the URL in a browser:
-- DEV: https://frontend-git-dev-akash-mule-devs-projects.vercel.app
+- DEV: https://dev.fabrixr.com
 - STAGE: https://demo.fabrixr.com
 - PROD: https://app.fabrixr.com (and https://www.fabrixr.com)
 
