@@ -135,9 +135,14 @@ export default function ARExperience({
   const [focusMeshName, setFocusMeshName] = useState<string | null>(null);
   const [occlusionOn, setOcclusionOn] = useState(false);
 
-  // The model is "on screen" once it's been auto-placed; the loading pill hides
-  // at that moment so the transition from pill → model is seamless.
-  const modelVisible = state.placed;
+  // The model is "on screen" once it's been auto-placed AND Viro has finished
+  // loading it — a large GLB can take a beat to parse after placement, so the
+  // pill stays up until first paint and there's never a camera-only gap. An
+  // 'error:' status also clears it (the scene reveals what it can; a hard
+  // download failure is handled separately by the error card).
+  const modelLoadFinished =
+    modelStatus.startsWith('loaded') || modelStatus.startsWith('error');
+  const modelVisible = state.placed && modelLoadFinished;
 
   const confidence: 'high' | 'medium' | 'low' | null = !state.placed
     ? null
