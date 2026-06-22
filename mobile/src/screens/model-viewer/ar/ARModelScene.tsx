@@ -154,6 +154,10 @@ function ARModelScene(props: SceneProps) {
   const modelRef = useRef<any>(null); // active model node — read its bbox on load
   const tapPlacingRef = useRef(false);
   const autoFitDoneRef = useRef(false);
+  // Last-resort fit timer: if neither Viro's AR bbox NOR the JS-extracted
+  // geometry size yields a scale, apply a visible default after a grace period so
+  // the model is never left stuck at the microscopic provisional scale.
+  const fallbackFitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fade-in is driven by a tiny JS opacity ramp rather than ViroAnimations, so a
   // missing/parse-failed animation registration can never leave the model stuck
@@ -177,7 +181,37 @@ function ARModelScene(props: SceneProps) {
       clearInterval(fadeTimerRef.current);
       fadeTimerRef.current = null;
     }
+    if (fallbackFitTimerRef.current) {
+      clearTimeout(fallbackFitTimerRef.current);
+      fallbackFitTimerRef.current = null;
+    }
   }, [modelUri]);
+
+  // ── Geometry-based auto-fit (the no-depth-sensor path) ──
+  // On a LiDAR device Viro's bounding box is real and handleLoadEnd fits from it.
+  // On a device WITHOUT a depth sensor that box comes back empty (0×0×0), so we
+  // instead fit from the GLB's real geometry size — extracted in JS off-device,
+  // so it's reliable everywhere — the moment it's available. This sizes the part
+  // to ~AUTOFIT_TARGET_M (visible) and lets the HUD show a true on-screen size
+  // instead of 0.00×0.00×0.00m. Strictly one-shot (guarded by autoFitDoneRef and
+  // the reducer's autoFitted flag), and it cancels the last-resort timer.
+  useEffect(() => {
+    if (autoFitted || autoFitDoneRef.current || !modelReady || !dimensions) return;
+    const sz = dimensions.overall.size;
+    const rawLongest = Math.max(sz[0], sz[1], sz[2]);
+    if (!(rawLongest > 0) || !isFinite(rawLongest)) return;
+    autoFitDoneRef.current = true;
+    if (fallbackFitTimerRef.current) {
+      clearTimeout(fallbackFitTimerRef.current);
+      fallbackFitTimerRef.current = null;
+    }
+    let fit = AUTOFIT_TARGET_M / rawLongest;
+    fit = Math.max(0.001, Math.min(8, fit));
+    onAutoFit?.([fit, fit, fit]);
+    onModelStatus(
+      'loaded ' + [sz[0], sz[1], sz[2]].map((n) => (n * fit).toFixed(2)).join('×') + 'm',
+    );
+  }, [modelReady, dimensions, autoFitted, onAutoFit, onModelStatus]);
 
   // ── Fade in once the model has loaded + been fit ──
   useEffect(() => {
@@ -329,7 +363,16 @@ function ARModelScene(props: SceneProps) {
 
   // Read the loaded model's world-space bbox → derive a one-shot fit scale and
   // reveal it. Distinguishes a load success from a scale/visibility problem.
+  //
+  // On a LiDAR device Viro returns a real box and we fit from it here. On a device
+  // WITHOUT a depth sensor it returns an empty (0×0×0) box — so we deliberately do
+  // NOT guess a fixed scale here (the old [0.2,0.2,0.2] fallback fired immediately
+  // and PERMANENTLY locked the one-shot APPLY_AUTOFIT, leaving every part stuck at
+  // a wrong size). Instead the geometry-based effect above fits from the GLB's
+  // real size as soon as it's extracted; a short timer applies a visible default
+  // only if that extraction never produces a size.
   const handleLoadEnd = async () => {
+    let measured = false;
     let sizeLabel = '';
     try {
       const r = await modelRef.current?.getBoundingBoxAsync?.();
@@ -339,27 +382,37 @@ function ARModelScene(props: SceneProps) {
         const dy = b.maxY - b.minY;
         const dz = b.maxZ - b.minZ;
         const longest = Math.max(dx, dy, dz);
-        sizeLabel = [dx, dy, dz].map((n: number) => Number(n).toFixed(2)).join('×') + 'm';
-        if (!autoFitted && !autoFitDoneRef.current && longest > 0 && isFinite(longest)) {
-          autoFitDoneRef.current = true;
-          const current = scale[0] || 0.05;
-          const rawLongest = longest / current; // longest dimension at scale 1
-          let fit = AUTOFIT_TARGET_M / rawLongest;
-          fit = Math.max(0.001, Math.min(8, fit));
-          onAutoFit?.([fit, fit, fit]);
+        if (longest > 0 && isFinite(longest)) {
+          measured = true;
+          sizeLabel = [dx, dy, dz].map((n: number) => Number(n).toFixed(2)).join('×') + 'm';
+          if (!autoFitted && !autoFitDoneRef.current) {
+            autoFitDoneRef.current = true;
+            const current = scale[0] || 0.05;
+            const rawLongest = longest / current; // longest dimension at scale 1
+            let fit = AUTOFIT_TARGET_M / rawLongest;
+            fit = Math.max(0.001, Math.min(8, fit));
+            onAutoFit?.([fit, fit, fit]);
+          }
         }
       }
     } catch {
-      /* bbox read unsupported on this device — fall through */
+      /* bbox read unsupported on this device — fall through to the geometry fit */
     }
-    if (!autoFitted && !autoFitDoneRef.current) {
-      // Couldn't measure — use a reasonable visible default instead of leaving
-      // the model at the tiny provisional scale.
-      autoFitDoneRef.current = true;
-      onAutoFit?.([0.2, 0.2, 0.2]);
+    if (!measured && !autoFitted && !autoFitDoneRef.current) {
+      // No usable AR bbox. The geometry-based effect will fit once dimensions are
+      // ready; if extraction never yields a size, apply a visible default so the
+      // model is never stuck microscopic. (Does not run if the effect fits first
+      // — both guard on autoFitDoneRef.)
+      if (fallbackFitTimerRef.current) clearTimeout(fallbackFitTimerRef.current);
+      fallbackFitTimerRef.current = setTimeout(() => {
+        if (!autoFitDoneRef.current) {
+          autoFitDoneRef.current = true;
+          onAutoFit?.([0.2, 0.2, 0.2]);
+        }
+      }, 4000);
     }
     onModelStatus(sizeLabel ? 'loaded ' + sizeLabel : 'loaded');
-    setModelReady(true); // triggers the fade-in
+    setModelReady(true); // triggers the fade-in (and the geometry-fit effect)
   };
 
   const modelObjectProps = {
