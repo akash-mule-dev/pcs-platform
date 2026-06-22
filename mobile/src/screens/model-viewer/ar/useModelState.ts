@@ -18,8 +18,6 @@ const DEFAULT_SCALE: Vec3 = [0.05, 0.05, 0.05];
 const DEFAULT_POSITION: Vec3 = [0, 0, -1.5];
 const DEFAULT_ROTATION: Vec3 = [0, 0, 0];
 
-const RENDER_MODE_CYCLE: RenderMode[] = ['solid', 'ghost', 'wireframe'];
-
 const initialState: ModelState = {
   uri: null,
   fileName: null,
@@ -73,16 +71,6 @@ function modelReducer(state: ModelState, action: ModelAction): ModelState {
       return { ...state, placed: action.placed };
     case 'SET_WIREFRAME_URI':
       return { ...state, wireframeUri: action.wireframeUri };
-    case 'CYCLE_RENDER_MODE': {
-      const currentIdx = RENDER_MODE_CYCLE.indexOf(state.renderMode);
-      const nextIdx = (currentIdx + 1) % RENDER_MODE_CYCLE.length;
-      let nextMode = RENDER_MODE_CYCLE[nextIdx];
-      // Skip wireframe if no wireframe URI is available yet.
-      if (nextMode === 'wireframe' && !state.wireframeUri) {
-        nextMode = RENDER_MODE_CYCLE[(nextIdx + 1) % RENDER_MODE_CYCLE.length];
-      }
-      return { ...state, renderMode: nextMode };
-    }
     case 'SET_RENDER_MODE': {
       if (action.renderMode === 'wireframe' && !state.wireframeUri) return state;
       return { ...state, renderMode: action.renderMode };
@@ -149,20 +137,9 @@ export function useModelState() {
     dispatch({ type: 'SET_WIREFRAME_URI', wireframeUri });
   }, []);
 
-  const cycleRenderMode = useCallback(() => {
-    dispatch({ type: 'CYCLE_RENDER_MODE' });
-  }, []);
-
   const setRenderMode = useCallback((renderMode: RenderMode) => {
     dispatch({ type: 'SET_RENDER_MODE', renderMode });
   }, []);
-
-  const toggleEdgesMode = useCallback(() => {
-    dispatch({
-      type: 'SET_RENDER_MODE',
-      renderMode: state.renderMode === 'wireframe' ? 'solid' : 'wireframe',
-    });
-  }, [state.renderMode]);
 
   const reset = useCallback(() => {
     dispatch({ type: 'RESET' });
@@ -195,9 +172,7 @@ export function useModelState() {
     toggleLock,
     setPlaced,
     setWireframeUri,
-    cycleRenderMode,
     setRenderMode,
-    toggleEdgesMode,
     reset,
     handlePinch,
     baseScaleRef,

@@ -7,6 +7,42 @@ export type RenderMode = 'solid' | 'ghost' | 'wireframe';
 
 export type TrackingMode = 'world' | 'plane' | 'image';
 
+// ── Edge-view styling (the Edges panel) ──
+// Edge colour is applied LIVE via a per-colour Constant Viro material (no
+// regeneration), so swapping colour is instant. Each option names the material
+// key registered in ARModelScene; `hex` is the swatch shown in the panel.
+export interface EdgeColorOption {
+  key: string;
+  label: string;
+  hex: string;
+  /** Viro material key registered in ARModelScene. */
+  material: string;
+}
+
+export const EDGE_COLORS: EdgeColorOption[] = [
+  { key: 'cyan', label: 'Cyan', hex: '#00e5ff', material: 'edge_cyan' },
+  { key: 'green', label: 'Green', hex: '#39ff14', material: 'edge_green' },
+  { key: 'yellow', label: 'Yellow', hex: '#ffe600', material: 'edge_yellow' },
+  { key: 'orange', label: 'Orange', hex: '#ff7a00', material: 'edge_orange' },
+  { key: 'magenta', label: 'Pink', hex: '#ff2bd6', material: 'edge_magenta' },
+  { key: 'white', label: 'White', hex: '#ffffff', material: 'edge_white' },
+];
+
+export const DEFAULT_EDGE_COLOR = EDGE_COLORS[0].hex; // cyan
+
+// Edge thickness is BAKED into the tube geometry (radius), so changing it
+// regenerates + re-caches the wireframe GLB at this radius multiplier. The three
+// presets map to the line-weight a fabricator picks for visibility.
+export type EdgeThickness = 'thin' | 'medium' | 'thick';
+
+export const EDGE_THICKNESS_SCALE: Record<EdgeThickness, number> = {
+  thin: 0.55,
+  medium: 1,
+  thick: 2.2,
+};
+
+export const DEFAULT_EDGE_THICKNESS: EdgeThickness = 'medium';
+
 // Lifecycle of the on-device model load. The camera is live the whole time —
 // these phases only describe the model streaming in over the live camera.
 export type ModelPhase = 'downloading' | 'preparing' | 'ready' | 'error';
@@ -93,5 +129,4 @@ export type ModelAction =
   | { type: 'APPLY_AUTOFIT'; scale: Vec3 }
   | { type: 'RESET' }
   | { type: 'SET_WIREFRAME_URI'; wireframeUri: string }
-  | { type: 'CYCLE_RENDER_MODE' }
   | { type: 'SET_RENDER_MODE'; renderMode: RenderMode };

@@ -27,9 +27,8 @@ import ARModelScene from './ARModelScene';
 import ToolBar from './ToolBar';
 import TrackingModeSwitcher from './TrackingModeSwitcher';
 import MeasurementPanel from './MeasurementPanel';
-import Joystick from './Joystick';
-import ScaleControls from './ScaleControls';
-import TiltControls from './TiltControls';
+import AlignPanel from './AlignPanel';
+import EdgesPanel from './EdgesPanel';
 import QualityPanel from './QualityPanel';
 import LogInspectionForm, { InspectionFormResult } from './LogInspectionForm';
 import { useModelState } from './useModelState';
@@ -38,7 +37,16 @@ import { useQualityData, ARQualityEntry } from './useQualityData';
 import { useRemoteModel } from './useRemoteModel';
 import { useAuth } from '../../../context/AuthContext';
 import { can } from '../../../config/permissions';
-import { Vec3, TrackingMode, MeasurementState, DEFAULT_MEASUREMENTS } from './types';
+import {
+  Vec3,
+  RenderMode,
+  TrackingMode,
+  MeasurementState,
+  DEFAULT_MEASUREMENTS,
+  EdgeThickness,
+  DEFAULT_EDGE_COLOR,
+  DEFAULT_EDGE_THICKNESS,
+} from './types';
 import { captureSnapshot } from './arSnapshot';
 import { loadRegistration, saveRegistration } from './arRegistration';
 
@@ -90,9 +98,7 @@ export default function ARExperience({
     toggleLock,
     setPlaced,
     setWireframeUri,
-    cycleRenderMode,
     setRenderMode,
-    reset,
     handlePinch,
     baseScaleRef,
   } = useModelState();
@@ -100,7 +106,12 @@ export default function ARExperience({
   const baseRotationRef = useRef<Vec3>([0, 0, 0]);
   const [modelStatus, setModelStatus] = useState<string>('loading');
   const [precisionMode, setPrecisionMode] = useState(false);
+  const [edgesPanelOpen, setEdgesPanelOpen] = useState(false);
   const [measurePanelOpen, setMeasurePanelOpen] = useState(false);
+  // Edge-view styling (the Edges panel): colour is a live material swap, weight
+  // re-bakes the tube radius via an on-demand wireframe build.
+  const [edgeColor, setEdgeColor] = useState<string>(DEFAULT_EDGE_COLOR);
+  const [edgeThickness, setEdgeThickness] = useState<EdgeThickness>(DEFAULT_EDGE_THICKNESS);
   const [trackingStatus, setTrackingStatus] = useState<string>('normal');
   const [measurements, setMeasurements] = useState<MeasurementState>(DEFAULT_MEASUREMENTS);
   const [trackingMode, setTrackingMode] = useState<TrackingMode>(initialTrackingMode);
@@ -269,48 +280,50 @@ export default function ARExperience({
     setModelStatus(status);
   }, []);
 
-  const handleScaleChange = useCallback(
-    (s: Vec3) => {
+  // ── Align-panel manipulation handlers ──
+  // Refs mirror the live transform so press-and-hold ticks accumulate without a
+  // stale closure, and so the 2-finger rotate / pinch gestures' bases stay in
+  // sync (otherwise a gesture right after a button nudge would jump).
+  const rotationRef = useRef<Vec3>(state.rotation);
+  const scaleRef = useRef<Vec3>(state.scale);
+  useEffect(() => {
+    rotationRef.current = state.rotation;
+  }, [state.rotation]);
+  useEffect(() => {
+    scaleRef.current = state.scale;
+  }, [state.scale]);
+
+  const handleNudgeRotation = useCallback(
+    (delta: Vec3) => {
       if (state.locked) return;
-      baseScaleRef.current = s;
-      setScale(s);
+      const next: Vec3 = [
+        rotationRef.current[0] + delta[0],
+        rotationRef.current[1] + delta[1],
+        rotationRef.current[2] + delta[2],
+      ];
+      rotationRef.current = next;
+      baseRotationRef.current = next;
+      setRotation(next);
+    },
+    [state.locked, setRotation],
+  );
+
+  const handleQuickRotate = useCallback(
+    (deg: number) => handleNudgeRotation([0, deg, 0]),
+    [handleNudgeRotation],
+  );
+
+  const handleScaleBy = useCallback(
+    (factor: number) => {
+      if (state.locked) return;
+      const f = Math.max(0.01, Math.min(5, scaleRef.current[0] * factor));
+      const next: Vec3 = [f, f, f];
+      scaleRef.current = next;
+      baseScaleRef.current = next;
+      setScale(next);
     },
     [state.locked, setScale, baseScaleRef],
   );
-
-  // ── Joystick continuous drive ──
-  const joystickVecRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const joystickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopJoystickDrive = useCallback(() => {
-    if (joystickTimerRef.current !== null) {
-      clearInterval(joystickTimerRef.current);
-      joystickTimerRef.current = null;
-    }
-  }, []);
-
-  const handleJoystickChange = useCallback(
-    (v: { x: number; y: number }) => {
-      joystickVecRef.current = v;
-      if (v.x === 0 && v.y === 0) {
-        stopJoystickDrive();
-        return;
-      }
-      if (joystickTimerRef.current !== null) return;
-      const STEP = 0.0025;
-      joystickTimerRef.current = setInterval(() => {
-        const { x, y } = joystickVecRef.current;
-        if (x === 0 && y === 0) return;
-        nudgePosition([x * STEP, 0, y * STEP]);
-      }, 16);
-    },
-    [nudgePosition, stopJoystickDrive],
-  );
-
-  useEffect(() => {
-    if (state.locked || !precisionMode) stopJoystickDrive();
-  }, [state.locked, precisionMode, stopJoystickDrive]);
-  useEffect(() => stopJoystickDrive, [stopJoystickDrive]);
 
   // ── Per-part inspection ──
   const logPart = useCallback(
@@ -519,35 +532,55 @@ export default function ARExperience({
     [trackingMode, setPlaced],
   );
 
-  // ── Edges / wireframe toggle with on-demand generation ──
-  const handleToggleEdges = useCallback(() => {
-    if (state.renderMode === 'wireframe') {
-      setRenderMode('solid');
-      return;
-    }
-    if (model.wireframeUri) {
-      setRenderMode('wireframe');
-      return;
-    }
-    if (model.wireframeBusy) {
-      notifySuccess('Generating wireframe…');
-      return;
-    }
-    setPendingWireframe(true);
-    model.requestWireframe();
-    notifySuccess('Generating wireframe…');
-  }, [state.renderMode, model, setRenderMode]);
+  // ── Bottom panels are mutually exclusive (Align / Edges / Measure) — opening
+  // one closes the others so they never stack on top of each other. ──
+  const togglePrecision = useCallback(() => {
+    setPrecisionMode((p) => !p);
+    setEdgesPanelOpen(false);
+    setMeasurePanelOpen(false);
+  }, []);
+  const toggleEdgesPanel = useCallback(() => {
+    setEdgesPanelOpen((e) => !e);
+    setPrecisionMode(false);
+    setMeasurePanelOpen(false);
+  }, []);
+  const toggleMeasurePanel = useCallback(() => {
+    setMeasurePanelOpen((m) => !m);
+    setPrecisionMode(false);
+    setEdgesPanelOpen(false);
+  }, []);
 
-  const handleReset = useCallback(() => {
-    baseRotationRef.current = [0, 0, 0];
-    setDriftSuspected(false);
-    try {
-      navigatorRef.current?._resetARSession?.(true, true);
-    } catch (err) {
-      if (__DEV__) console.warn('resetARSession failed:', err);
-    }
-    reset();
-  }, [reset]);
+  // ── Edge view: VIEW switch (Solid / Ghost / Edges), live colour, line weight ──
+  // Selecting Edges needs a wireframe GLB at the current weight; it generates on
+  // demand and pendingWireframe flips the mode in once it's ready.
+  const handleSelectView = useCallback(
+    (mode: RenderMode) => {
+      if (mode !== 'wireframe') {
+        setRenderMode(mode);
+        return;
+      }
+      if (model.wireframeUri && model.wireframeUri.endsWith(`_${edgeThickness}.glb`)) {
+        setRenderMode('wireframe');
+        return;
+      }
+      setPendingWireframe(true);
+      model.requestWireframe(edgeThickness);
+      if (!model.wireframeBusy) notifySuccess('Generating edges…');
+    },
+    [model, setRenderMode, edgeThickness],
+  );
+
+  const handleSelectThickness = useCallback(
+    (thickness: EdgeThickness) => {
+      setEdgeThickness(thickness);
+      if (state.renderMode === 'wireframe') {
+        setPendingWireframe(true);
+        model.requestWireframe(thickness);
+      }
+    },
+    [state.renderMode, model],
+  );
+
 
   if (!ViroARSceneNavigator) {
     return (
@@ -591,6 +624,7 @@ export default function ARExperience({
           modelUri: state.uri ?? '',
           wireframeUri: state.wireframeUri,
           renderMode: state.renderMode,
+          edgeColor,
           trackingMode,
           placed: state.placed,
           autoFitted: state.autoFitted,
@@ -763,7 +797,7 @@ export default function ARExperience({
       )}
 
       {/* ── Capture-confidence badge + offline-queue sync pill ── */}
-      {!state.locked && (confidence || pendingCount > 0) && (
+      {!state.locked && !precisionMode && !edgesPanelOpen && (confidence || pendingCount > 0) && (
         <View style={styles.bottomCenter} pointerEvents="box-none">
           {confidence && (
             <View
@@ -807,26 +841,30 @@ export default function ARExperience({
         </View>
       )}
 
-      {/* ── Align-mode precision controls ── */}
-      {precisionMode && state.placed && !state.locked && (
-        <>
-          <View style={styles.tiltContainer} pointerEvents="box-none">
-            <TiltControls
-              rotation={state.rotation}
-              locked={state.locked}
-              onRotationChange={(r) => {
-                baseRotationRef.current = r;
-                setRotation(r);
-              }}
-            />
-          </View>
-          <View style={styles.scaleContainer} pointerEvents="box-none">
-            <ScaleControls scale={state.scale} locked={state.locked} onScaleChange={handleScaleChange} />
-          </View>
-          <View style={styles.joystickContainer} pointerEvents="box-none">
-            <Joystick onChange={handleJoystickChange} />
-          </View>
-        </>
+      {/* ── Align-mode controls (consolidated, non-overlapping) ── */}
+      {precisionMode && state.placed && (
+        <AlignPanel
+          scale={state.scale}
+          locked={state.locked}
+          onNudgePosition={nudgePosition}
+          onNudgeRotation={handleNudgeRotation}
+          onScaleBy={handleScaleBy}
+          onQuickRotate={handleQuickRotate}
+          onToggleLock={toggleLock}
+        />
+      )}
+
+      {/* ── Edge-view controls (view / colour / weight) ── */}
+      {edgesPanelOpen && state.placed && (
+        <EdgesPanel
+          renderMode={state.renderMode}
+          edgeColor={edgeColor}
+          edgeThickness={edgeThickness}
+          busy={model.wireframeBusy}
+          onSelectView={handleSelectView}
+          onSelectColor={setEdgeColor}
+          onSelectThickness={handleSelectThickness}
+        />
       )}
 
       {/* ── Measurement panel ── */}
@@ -841,7 +879,7 @@ export default function ARExperience({
       )}
 
       {/* ── Lock / Unlock ── */}
-      {state.placed && (precisionMode || state.locked) && (
+      {state.placed && state.locked && !precisionMode && (
         <TouchableOpacity style={styles.lockButton} onPress={toggleLock} activeOpacity={0.7}>
           <Text style={styles.lockButtonText}>{state.locked ? 'Unlock' : 'Lock'}</Text>
         </TouchableOpacity>
@@ -850,19 +888,14 @@ export default function ARExperience({
       {/* ── Toolbar ── */}
       {!state.locked && (
         <ToolBar
-          locked={state.locked}
           placed={state.placed}
           modelLoaded={!!state.uri}
           precisionMode={precisionMode}
+          edgesPanelOpen={edgesPanelOpen}
           measurePanelOpen={measurePanelOpen}
-          renderMode={state.renderMode}
-          hasWireframe={true}
-          onToggleLock={toggleLock}
-          onTogglePrecision={() => setPrecisionMode((p) => !p)}
-          onToggleMeasure={() => setMeasurePanelOpen((o) => !o)}
-          onCycleRenderMode={cycleRenderMode}
-          onToggleEdges={handleToggleEdges}
-          onReset={handleReset}
+          onTogglePrecision={togglePrecision}
+          onToggleEdges={toggleEdgesPanel}
+          onToggleMeasure={toggleMeasurePanel}
         />
       )}
 
@@ -878,7 +911,7 @@ export default function ARExperience({
       )}
 
       {/* ── Primary "Log QA" FAB ── */}
-      {state.placed && !qaPanelOpen && !precisionMode && (
+      {state.placed && !qaPanelOpen && !precisionMode && !edgesPanelOpen && (
         <View style={styles.logQaWrap} pointerEvents="box-none">
           <TouchableOpacity
             style={styles.logQaButton}
@@ -1074,9 +1107,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   bannerActionText: { color: '#1d4ed8', fontSize: 14, fontWeight: '800' },
-  tiltContainer: { position: 'absolute', left: 16, bottom: 160, zIndex: 20 },
-  scaleContainer: { position: 'absolute', right: 16, bottom: 280, zIndex: 20 },
-  joystickContainer: { position: 'absolute', right: 16, bottom: 160, zIndex: 20 },
   lockButton: {
     position: 'absolute',
     top: 150,

@@ -8,7 +8,7 @@
 // Viro is lazy-`require`d and all native registration is guarded, so importing
 // this module is safe in Expo Go / Jest where the native module is absent.
 import React, { useEffect, useRef, useState } from 'react';
-import { Vec3, RenderMode, TrackingMode, MeasurementState } from './types';
+import { Vec3, RenderMode, TrackingMode, MeasurementState, EDGE_COLORS, DEFAULT_EDGE_COLOR } from './types';
 import { ModelDimensions } from './dimensionExtractor';
 import {
   OverallDimensionsOverlay,
@@ -56,9 +56,23 @@ try {
       diffuseColor: '#aab2bd',
       lightingModel: 'Constant',
     },
+    // Bright unlit edges for the edge view, ONE material per selectable colour
+    // (the Edges panel swatches). Constant lighting needs no normals (the edge
+    // tubes carry none) and stays vivid over any real-world backdrop, so the
+    // model's edges read clearly against the physical part. Colour swaps are a
+    // material swap on the same GLB — instant, no regeneration.
+    ...Object.fromEntries(
+      EDGE_COLORS.map((c) => [c.material, { diffuseColor: c.hex, lightingModel: 'Constant' }]),
+    ),
   });
 } catch {
   // ignore
+}
+
+// Resolve the registered edge material key for a colour hex (falls back to the
+// first/default colour for an unknown value).
+function edgeMaterialFor(hex: string): string {
+  return (EDGE_COLORS.find((c) => c.hex === hex) ?? EDGE_COLORS[0]).material;
 }
 
 interface SceneProps {
@@ -67,6 +81,8 @@ interface SceneProps {
       modelUri: string;
       wireframeUri: string | null;
       renderMode: RenderMode;
+      /** Edge-view colour (hex) → selects the registered edge material. */
+      edgeColor?: string;
       trackingMode: TrackingMode;
       placed: boolean;
       autoFitted: boolean;
@@ -107,6 +123,7 @@ function ARModelScene(props: SceneProps) {
     modelUri,
     wireframeUri,
     renderMode,
+    edgeColor = DEFAULT_EDGE_COLOR,
     trackingMode,
     placed,
     autoFitted,
@@ -415,7 +432,13 @@ function ARModelScene(props: SceneProps) {
   const renderModelObject = () => {
     if (renderMode === 'wireframe' && wireframeUri) {
       return (
-        <Viro3DObject ref={modelRef} source={{ uri: wireframeUri }} type="GLB" {...modelObjectProps} />
+        <Viro3DObject
+          ref={modelRef}
+          source={{ uri: wireframeUri }}
+          type="GLB"
+          materials={[edgeMaterialFor(edgeColor)]}
+          {...modelObjectProps}
+        />
       );
     }
     if (renderMode === 'ghost') {

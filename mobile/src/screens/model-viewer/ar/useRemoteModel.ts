@@ -27,7 +27,7 @@ import { generateWireframeGlb } from './wireframeGenerator';
 import { extractDimensions, ModelDimensions } from './dimensionExtractor';
 import { extractPartGlb } from './partExtractor';
 import { base64ToBytes, bytesToBase64 } from './base64';
-import { ModelPhase } from './types';
+import { ModelPhase, EdgeThickness, EDGE_THICKNESS_SCALE, DEFAULT_EDGE_THICKNESS } from './types';
 
 const TOKEN_KEY = 'auth_token';
 const MODELS_SUBDIR = 'pcs-ar-models';
@@ -40,7 +40,7 @@ export interface UseRemoteModelResult {
   isolated: boolean;
   /** Extracted in the background after `ready` — null until then. */
   dimensions: ModelDimensions | null;
-  /** Generated on demand via requestWireframe(); null until requested + built. */
+  /** Active edge-view GLB for the current thickness; null until requested + built. */
   wireframeUri: string | null;
   wireframeBusy: boolean;
   error: string | null;
@@ -50,8 +50,13 @@ export interface UseRemoteModelResult {
   downloadPct: number | null;
   /** Re-run the whole pipeline after a failure. */
   retry: () => void;
-  /** Build the wireframe GLB on demand (no-op if already built/busy). */
-  requestWireframe: () => void;
+  /**
+   * Build (or switch to a cached) edge-view GLB at the given line thickness.
+   * Each thickness bakes a different tube radius, so it caches one GLB per
+   * thickness and flips `wireframeUri` to the requested one. No-op while a build
+   * is in flight or the requested thickness is already active.
+   */
+  requestWireframe: (thickness?: EdgeThickness) => void;
 }
 
 function safeName(modelId: string): string {
@@ -105,7 +110,17 @@ export function useRemoteModel(
   // background dimension pass and the on-demand wireframe pass never re-read.
   const activeBytesRef = useRef<Uint8Array | null>(null);
   const activeUriRef = useRef<string | null>(null);
-  const wireframePathRef = useRef<string | null>(null);
+  // Base path for this model's edge-view GLBs; the per-thickness file appends
+  // `_<thickness>.glb` (one cached GLB per Thin/Medium/Thick line weight).
+  const wireframeBaseRef = useRef<string | null>(null);
+  // Edge-view build coordination: the active wireframe path (mirrors state so the
+  // builder can dedup without a stale read), the LATEST requested thickness, and
+  // whether a build drain is running. The drain always converges on the latest
+  // desired thickness, so spamming Thin/Medium/Thick never leaves the rendered
+  // weight out of sync with the selected one.
+  const activeWireframeRef = useRef<string | null>(null);
+  const desiredThicknessRef = useRef<EdgeThickness | null>(null);
+  const wireframeBuildingRef = useRef(false);
   // Bumped on every (re)run so stale async work from a previous run is ignored.
   const runRef = useRef(0);
 
@@ -120,7 +135,10 @@ export function useRemoteModel(
 
     activeBytesRef.current = null;
     activeUriRef.current = null;
-    wireframePathRef.current = null;
+    wireframeBaseRef.current = null;
+    activeWireframeRef.current = null;
+    desiredThicknessRef.current = null;
+    wireframeBuildingRef.current = false;
 
     if (!fileUrl || !modelId) {
       set({ phase: 'error', error: 'No model to load.', progress: null });
@@ -139,8 +157,11 @@ export function useRemoteModel(
     // `p2` cache version: older builds cached EMPTY isolated GLBs; bump forces a
     // fresh extraction with the fixed subtree-keeping logic.
     const variantKey = isolateKey ? `${baseKey}__p2_${isolateKey}` : baseKey;
-    const wireframeUri = `${dir}${variantKey}_wireframe.glb`;
-    wireframePathRef.current = wireframeUri;
+    // `_v3`: wireframe is now solid edge TUBES (triangles, not Viro-unsupported
+    // LINES) built in WORLD space (baked through the normalize/pcs-fit transforms
+    // so it lines up with the solid). Bumping the suffix discards stale caches.
+    // The per-thickness file appends `_<thickness>.glb` to this base.
+    wireframeBaseRef.current = `${dir}${variantKey}_wireframe_v3`;
 
     setState({ ...INITIAL, fileName, progress: 'Downloading model…' });
 
@@ -250,41 +271,68 @@ export function useRemoteModel(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileUrl, modelId, fileName, isolateKey, attempt]);
 
-  // On-demand wireframe: built from the cached bytes, cached to disk, reused.
-  const requestWireframe = useCallback(() => {
+  // On-demand edge view: builds (or reuses a cached) GLB at the requested line
+  // thickness and flips `wireframeUri` to it. Each thickness bakes a different
+  // tube radius, so they're cached separately and switching thickness is cheap
+  // after the first build. Built from the cached source bytes (no disk re-read).
+  //
+  // A single drain loop owns all building: each call just records the LATEST
+  // desired thickness, and the loop keeps building until the rendered thickness
+  // matches it. So tapping Thin→Medium→Thick mid-build always converges on the
+  // last tap instead of dropping it (no "selected weight ≠ rendered weight").
+  const requestWireframe = useCallback((thickness: EdgeThickness = DEFAULT_EDGE_THICKNESS) => {
+    const base = wireframeBaseRef.current;
+    const activeUri = activeUriRef.current;
+    if (!base || !activeUri) return;
+    desiredThicknessRef.current = thickness;
+    if (wireframeBuildingRef.current) return; // the running drain will pick this up
     const run = runRef.current;
     const alive = () => run === runRef.current;
+    wireframeBuildingRef.current = true;
     (async () => {
-      if (state.wireframeUri || state.wireframeBusy) return;
-      const wfPath = wireframePathRef.current;
-      const activeUri = activeUriRef.current;
-      if (!wfPath || !activeUri) return;
-      setState((s) => ({ ...s, wireframeBusy: true }));
       try {
-        const existing = await FileSystem.getInfoAsync(wfPath);
-        if (existing.exists) {
-          if (alive()) setState((s) => ({ ...s, wireframeUri: wfPath, wireframeBusy: false }));
-          return;
+        while (alive()) {
+          const want = desiredThicknessRef.current;
+          if (want == null) break;
+          const wfPath = `${base}_${want}.glb`;
+          if (activeWireframeRef.current === wfPath) {
+            desiredThicknessRef.current = null; // already showing the latest request
+            break;
+          }
+          setState((s) => ({ ...s, wireframeBusy: true }));
+          const existing = await FileSystem.getInfoAsync(wfPath);
+          if (!existing.exists) {
+            let bytes = activeBytesRef.current;
+            if (!bytes) {
+              const b64 = await FileSystem.readAsStringAsync(activeUri, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              bytes = base64ToBytes(b64);
+              activeBytesRef.current = bytes;
+            }
+            const wireframeData = await generateWireframeGlb(bytes, EDGE_THICKNESS_SCALE[want]);
+            await FileSystem.writeAsStringAsync(wfPath, bytesToBase64(wireframeData), {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+          }
+          if (!alive()) break;
+          activeWireframeRef.current = wfPath;
+          setState((s) => ({ ...s, wireframeUri: wfPath }));
+          // If the desired thickness changed during this build, loop and build the
+          // newer one; otherwise we've caught up.
+          if (desiredThicknessRef.current === want) {
+            desiredThicknessRef.current = null;
+            break;
+          }
         }
-        let bytes = activeBytesRef.current;
-        if (!bytes) {
-          const b64 = await FileSystem.readAsStringAsync(activeUri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          bytes = base64ToBytes(b64);
-          activeBytesRef.current = bytes;
-        }
-        const wireframeData = await generateWireframeGlb(bytes);
-        await FileSystem.writeAsStringAsync(wfPath, bytesToBase64(wireframeData), {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        if (alive()) setState((s) => ({ ...s, wireframeUri: wfPath, wireframeBusy: false }));
       } catch (wireErr) {
         if (__DEV__) console.warn('Wireframe generation failed (non-fatal):', wireErr);
+      } finally {
+        wireframeBuildingRef.current = false;
         if (alive()) setState((s) => ({ ...s, wireframeBusy: false }));
       }
     })();
-  }, [state.wireframeUri, state.wireframeBusy]);
+  }, []);
 
   return { ...state, retry, requestWireframe };
 }

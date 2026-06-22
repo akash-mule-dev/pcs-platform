@@ -2,6 +2,7 @@
 // via @gltf-transform/core's WebIO over in-memory GLB bytes. Callers must treat
 // failures as non-fatal (solid/ghost modes still work without a wireframe).
 import { Document, WebIO } from '@gltf-transform/core';
+import { buildEdgeTubes } from './edgeTubes';
 
 const CREASE_ANGLE_DEG = 30;
 const CREASE_ANGLE_RAD = (CREASE_ANGLE_DEG * Math.PI) / 180;
@@ -46,13 +47,105 @@ function makeEdgeKey(a: number, b: number): string {
   return a < b ? `${a}_${b}` : `${b}_${a}`;
 }
 
+// ── World-space geometry gathering (column-major mat4) ──
+// The source GLB nests geometry under transform nodes (the converter's unit
+// scale + partExtractor's `pcs-fit` normalize pivot). Edges must be extracted in
+// the SAME world space the solid renders in, or the wireframe ends up at the raw
+// local scale/offset and renders invisibly far from the model.
+type Mat4 = number[];
+function identityMat(): Mat4 {
+  return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+}
+function multiplyMat(a: Mat4, b: Mat4): Mat4 {
+  const r = new Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let row = 0; row < 4; row++) {
+      r[c * 4 + row] =
+        a[row] * b[c * 4] +
+        a[4 + row] * b[c * 4 + 1] +
+        a[8 + row] * b[c * 4 + 2] +
+        a[12 + row] * b[c * 4 + 3];
+    }
+  }
+  return r;
+}
+function trsMat(
+  t: [number, number, number],
+  q: [number, number, number, number],
+  s: [number, number, number],
+): Mat4 {
+  const [x, y, z, w] = q;
+  const xx = x * x, yy = y * y, zz = z * z;
+  const xy = x * y, xz = x * z, yz = y * z;
+  const wx = w * x, wy = w * y, wz = w * z;
+  return [
+    (1 - 2 * (yy + zz)) * s[0], 2 * (xy + wz) * s[0], 2 * (xz - wy) * s[0], 0,
+    2 * (xy - wz) * s[1], (1 - 2 * (xx + zz)) * s[1], 2 * (yz + wx) * s[1], 0,
+    2 * (xz + wy) * s[2], 2 * (yz - wx) * s[2], (1 - 2 * (xx + yy)) * s[2], 0,
+    t[0], t[1], t[2], 1,
+  ];
+}
+
+interface WorldPrimitive {
+  positions: Float32Array; // world-space
+  indices: Uint32Array;
+}
+
+// Walk the scene graph and return every TRIANGLE primitive with its vertices
+// already transformed into world space (and synthetic indices for non-indexed
+// meshes, so geometry that isn't indexed still yields edges).
+function worldTriPrimitives(doc: Document): WorldPrimitive[] {
+  const out: WorldPrimitive[] = [];
+  const root = doc.getRoot();
+  const scene = root.getDefaultScene() ?? root.listScenes()[0];
+  if (!scene) return out;
+  const visit = (node: any, parent: Mat4) => {
+    const world = multiplyMat(
+      parent,
+      trsMat(node.getTranslation(), node.getRotation(), node.getScale()),
+    );
+    const mesh = node.getMesh();
+    if (mesh) {
+      for (const prim of mesh.listPrimitives()) {
+        if (prim.getMode() !== 4) continue; // TRIANGLES only
+        const local = prim.getAttribute('POSITION')?.getArray();
+        if (!local) continue;
+        const vc = local.length / 3;
+        const wp = new Float32Array(local.length);
+        for (let i = 0; i < vc; i++) {
+          const px = local[i * 3], py = local[i * 3 + 1], pz = local[i * 3 + 2];
+          wp[i * 3] = px * world[0] + py * world[4] + pz * world[8] + world[12];
+          wp[i * 3 + 1] = px * world[1] + py * world[5] + pz * world[9] + world[13];
+          wp[i * 3 + 2] = px * world[2] + py * world[6] + pz * world[10] + world[14];
+        }
+        const idx = prim.getIndices()?.getArray();
+        let indices: Uint32Array;
+        if (idx) {
+          indices = idx instanceof Uint32Array ? idx : Uint32Array.from(idx as ArrayLike<number>);
+        } else {
+          indices = new Uint32Array(vc); // non-indexed → sequential triangles
+          for (let i = 0; i < vc; i++) indices[i] = i;
+        }
+        out.push({ positions: wp, indices });
+      }
+    }
+    for (const child of node.listChildren()) visit(child, world);
+  };
+  for (const node of scene.listChildren()) visit(node, identityMat());
+  return out;
+}
+
 /**
  * Generate a wireframe-only GLB from a solid GLB.
  * Extracts hard/crease edges where adjacent face normals differ by more than CREASE_ANGLE.
  * Falls back to all edges if hard edge extraction produces too few edges.
+ *
+ * `radiusScale` multiplies the auto-derived edge-tube radius (the Edges panel's
+ * Thin/Medium/Thick line weight); 1 = the default thin line.
  */
 export async function generateWireframeGlb(
   glbData: Uint8Array,
+  radiusScale = 1,
 ): Promise<Uint8Array> {
   const io = new WebIO();
   const inputDoc = await io.readBinary(glbData);
@@ -69,25 +162,13 @@ export async function generateWireframeGlb(
     .setMetallicFactor(0)
     .setRoughnessFactor(1);
 
-  const root = inputDoc.getRoot();
-  const meshes = root.listMeshes();
-
   let globalAllEdgePositions: number[] = [];
   let globalHardEdgePositions: number[] = [];
 
-  for (const mesh of meshes) {
-    for (const primitive of mesh.listPrimitives()) {
-      const mode = primitive.getMode();
-      if (mode !== 4) continue; // Only process TRIANGLES
-
-      const posAccessor = primitive.getAttribute('POSITION');
-      const idxAccessor = primitive.getIndices();
-      if (!posAccessor || !idxAccessor) continue;
-
-      const positions = posAccessor.getArray();
-      const indices = idxAccessor.getArray();
-      if (!positions || !indices) continue;
-
+  // Extract edges in WORLD space (positions already baked through every node's
+  // transform), so the wireframe lines up with — and renders at the same scale
+  // as — the solid model.
+  for (const { positions, indices } of worldTriPrimitives(inputDoc)) {
       const triCount = indices.length / 3;
 
       // Build face normals and edge-to-face mapping
@@ -176,7 +257,6 @@ export async function generateWireframeGlb(
 
       addEdgePositions(allEdgeSet, globalAllEdgePositions);
       addEdgePositions(hardEdgeSet, globalHardEdgePositions);
-    }
   }
 
   // Use hard edges if they have a reasonable count, otherwise fall back to all edges
@@ -193,33 +273,44 @@ export async function generateWireframeGlb(
     return await io.writeBinary(outputDoc);
   }
 
-  const posArray = new Float32Array(finalPositions);
-  const vertexCount = posArray.length / 3;
-
-  // Create line indices (pairs)
-  const lineIndices = new Uint32Array(vertexCount);
-  for (let i = 0; i < vertexCount; i++) {
-    lineIndices[i] = i;
+  // Edge half-thickness, relative to model size so it reads as a thin line at any
+  // scale (the model may be a normalized ~1 m part or a larger full assembly).
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < finalPositions.length; i += 3) {
+    const x = finalPositions[i], y = finalPositions[i + 1], z = finalPositions[i + 2];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
   }
+  const diag = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) || 1;
+  const radius = Math.max(diag * 0.004 * radiusScale, 1e-5);
+
+  const { positions: tubePositions, indices: tubeIndices } = buildEdgeTubes(
+    finalPositions,
+    radius,
+  );
 
   const posAccessor = outputDoc
     .createAccessor('wireframe_positions')
     .setType('VEC3')
-    .setArray(posArray)
+    .setArray(tubePositions)
     .setBuffer(buffer);
 
   const idxAccessor = outputDoc
     .createAccessor('wireframe_indices')
     .setType('SCALAR')
-    .setArray(lineIndices)
+    .setArray(tubeIndices)
     .setBuffer(buffer);
 
+  // TRIANGLES (mode 4) — Viro renders these; LINES (mode 1) it does not. The
+  // scene applies a Constant unlit material, so the tubes need no normals.
   const prim = outputDoc
     .createPrimitive()
     .setAttribute('POSITION', posAccessor)
     .setIndices(idxAccessor)
     .setMaterial(wireMaterial)
-    .setMode(1); // LINES
+    .setMode(4);
 
   const wireMesh = outputDoc.createMesh('wireframe').addPrimitive(prim);
   const node = outputDoc.createNode('wireframe_root').setMesh(wireMesh);
