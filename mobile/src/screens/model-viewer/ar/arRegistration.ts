@@ -9,7 +9,7 @@ import { Vec3, RenderMode } from './types';
 
 const KEY_PREFIX = 'pcs_ar_registration:';
 
-export interface SavedRegistration {
+interface SavedRegistration {
   scale: Vec3;
   rotation: Vec3;
   renderMode: RenderMode;

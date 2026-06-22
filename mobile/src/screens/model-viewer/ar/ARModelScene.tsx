@@ -27,8 +27,6 @@ let Viro3DObject: any = null;
 let ViroNode: any = null;
 let ViroTrackingStateConstants: any = null;
 let ViroMaterials: any = null;
-let ViroARTrackingTargets: any = null;
-let ViroText: any = null;
 
 try {
   const viro = require('@reactvision/react-viro');
@@ -39,8 +37,6 @@ try {
   ViroNode = viro.ViroNode;
   ViroTrackingStateConstants = viro.ViroTrackingStateConstants;
   ViroMaterials = viro.ViroMaterials;
-  ViroARTrackingTargets = viro.ViroARTrackingTargets;
-  ViroText = viro.ViroText;
 } catch {
   // Viro not available — host screen shows a fallback instead.
 }
@@ -59,18 +55,6 @@ try {
     steelSolid: {
       diffuseColor: '#aab2bd',
       lightingModel: 'Constant',
-    },
-  });
-} catch {
-  // ignore
-}
-
-try {
-  ViroARTrackingTargets?.createTargets?.({
-    reference: {
-      source: require('../../../../assets/icon.png'),
-      orientation: 'Up',
-      physicalWidth: 0.1,
     },
   });
 } catch {

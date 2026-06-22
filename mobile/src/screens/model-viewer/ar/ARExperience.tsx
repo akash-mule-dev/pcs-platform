@@ -98,7 +98,6 @@ export default function ARExperience({
   } = useModelState();
 
   const baseRotationRef = useRef<Vec3>([0, 0, 0]);
-  const positionRef = useRef<Vec3>([0, 0, 0]);
   const [modelStatus, setModelStatus] = useState<string>('loading');
   const [precisionMode, setPrecisionMode] = useState(false);
   const [measurePanelOpen, setMeasurePanelOpen] = useState(false);
@@ -185,10 +184,6 @@ export default function ARExperience({
   useEffect(() => {
     setMeasurements(DEFAULT_MEASUREMENTS);
   }, [model.uri]);
-
-  useEffect(() => {
-    positionRef.current = state.position;
-  }, [state.position]);
 
   // Tracking-loss drift suspicion (only meaningful once placed).
   useEffect(() => {
