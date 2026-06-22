@@ -13,9 +13,15 @@
 // when Apple ships new hardware. Append new LiDAR models here as they release.
 //
 // modelId values come from expo-device's `Device.modelId` (iOS only), e.g.
-// "iPad14,3". Note: the 2018 iPad Pro (iPad8,1–iPad8,8) does NOT have LiDAR, so
-// matching on the "iPad Pro" name alone would misclassify it — the explicit
-// id list is required.
+// "iPad14,3". `modelId` is the raw `hw.machine` identifier, so it resolves for
+// EVERY device — current or future — independent of expo-device's version.
+// Do NOT switch this to `Device.modelName`: that name comes from expo-device's
+// own lookup table, which goes stale (e.g. 7.0.3 maps nothing past iPad16,x, so
+// the M5 iPad Pro `iPad17,1` would report no usable name) — a name-based check
+// silently misses brand-new devices. Numeric ranges are also unsafe: Apple mixes
+// Pro / Air / mini within one `iPadN,*` family. Note too: the 2018 iPad Pro
+// (iPad8,1–iPad8,8) and iPhone 11 Pro (iPhone12,3/12,5) do NOT have LiDAR, so an
+// "is it a Pro" heuristic would misclassify them — the explicit id list is required.
 const LIDAR_MODEL_IDS = new Set<string>([
   // iPad Pro 11" (2020, 2nd gen) / 12.9" (2020, 4th gen) — first LiDAR iPads
   'iPad8,9', 'iPad8,10', 'iPad8,11', 'iPad8,12',
@@ -26,12 +32,15 @@ const LIDAR_MODEL_IDS = new Set<string>([
   'iPad14,3', 'iPad14,4', 'iPad14,5', 'iPad14,6',
   // iPad Pro 11" / 13" — 2024, M4
   'iPad16,3', 'iPad16,4', 'iPad16,5', 'iPad16,6',
-  // iPhone Pro / Pro Max with LiDAR (12 Pro → 16 Pro) — handheld alternative
+  // iPad Pro 11" / 13" — 2025, M5 (odd id = Wi-Fi, even = Cellular; .1/.2 = 11", .3/.4 = 13")
+  'iPad17,1', 'iPad17,2', 'iPad17,3', 'iPad17,4',
+  // iPhone Pro / Pro Max with LiDAR (12 Pro → 17 Pro) — handheld alternative
   'iPhone13,3', 'iPhone13,4', // 12 Pro / Pro Max
   'iPhone14,2', 'iPhone14,3', // 13 Pro / Pro Max
   'iPhone15,2', 'iPhone15,3', // 14 Pro / Pro Max
   'iPhone16,1', 'iPhone16,2', // 15 Pro / Pro Max
   'iPhone17,1', 'iPhone17,2', // 16 Pro / Pro Max
+  'iPhone18,1', 'iPhone18,2', // 17 Pro / Pro Max
 ]);
 
 /**
