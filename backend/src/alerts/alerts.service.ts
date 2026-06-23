@@ -56,6 +56,57 @@ export class AlertsService {
     }
   }
 
+  /**
+   * Escalate aging open NCRs once a day (08:00). Tiered: > 7 days notifies the
+   * org's QA managers/supervisors; > 30 days also escalates to admins. Reuses the
+   * `resolved_at IS NULL` + `created_at` predicate from the quality-insights aging
+   * buckets. A daily cadence is the intended nag until the NCR is closed.
+   */
+  @Cron('0 0 8 * * *')
+  async checkOverdueNcrs(): Promise<void> {
+    const rows: { id: string; number: string; organization_id: string; age_days: number }[] = await this.woRepo.query(
+      `SELECT id, number, organization_id, EXTRACT(DAY FROM now() - created_at)::int AS age_days
+         FROM quality_reports
+        WHERE template_type = 'ncr' AND resolved_at IS NULL
+          AND created_at < now() - interval '7 days'`,
+    );
+    if (!rows.length) return;
+    this.logger.log(`Found ${rows.length} aging open NCRs`);
+
+    // Cache the audience per (org, tier) so we resolve users once.
+    const audienceCache = new Map<string, string[]>();
+    const audience = async (org: string, withAdmins: boolean): Promise<string[]> => {
+      const key = `${org}|${withAdmins}`;
+      const cached = audienceCache.get(key);
+      if (cached) return cached;
+      const roles = withAdmins ? ['admin', 'manager', 'supervisor'] : ['manager', 'supervisor'];
+      const users = await this.userRepo
+        .createQueryBuilder('u')
+        .leftJoin('u.role', 'r')
+        .where('r.name IN (:...roles)', { roles })
+        .andWhere('u.is_active = true')
+        .andWhere('u.organization_id = :org', { org })
+        .getMany();
+      const ids = users.map((u) => u.id);
+      audienceCache.set(key, ids);
+      return ids;
+    };
+
+    for (const ncr of rows) {
+      const critical = ncr.age_days > 30;
+      const ids = await audience(ncr.organization_id, critical);
+      if (!ids.length) continue;
+      await this.notificationsService.createForUsers(ids, {
+        title: `NCR overdue: ${ncr.number}`,
+        message: `${ncr.number} has been open for ${ncr.age_days} day${ncr.age_days === 1 ? '' : 's'}${critical ? ' — escalated' : ''}. Disposition and close it.`,
+        type: NotificationType.NCR_OVERDUE,
+        priority: critical ? NotificationPriority.CRITICAL : NotificationPriority.HIGH,
+        entityType: 'quality_report',
+        entityId: ncr.id,
+      });
+    }
+  }
+
   /** Check for idle stations every 10 minutes */
   @Cron('0 */10 * * * *')
   async checkIdleStations(): Promise<void> {

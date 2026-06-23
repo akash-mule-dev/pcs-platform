@@ -296,6 +296,77 @@ export class ShippingService extends TenantScopedService<Shipment> {
   }
 
   /**
+   * QC sign-off dossier (customer hand-off package) for a shipment: the delivery
+   * note header + MTR rollup, plus every inspection record, NCR (with disposition)
+   * and filled report for the SHIPPED nodes (descendant-aware), and a
+   * releasability summary (open NCRs / unsigned failures / MTR coverage gaps).
+   * Reuses the deliveryNote assembler; rendered to PDF via the web print view.
+   */
+  async qcPackage(id: string) {
+    const organizationId = TenantContext.requireOrganizationId();
+    const note = await this.deliveryNote(id, true); // header + items + heats (MTR), org-scoped + existence-checked
+    const shipment = await this.repo.findOne({ where: { id, organizationId }, relations: ['items'] });
+    if (!shipment) throw new NotFoundException('Shipment not found');
+
+    // Shipped scope = each shipped item's node + all its descendants.
+    const tree: { id: string; parent_id: string | null }[] = await this.nodeRepo.query(
+      `SELECT id, parent_id FROM assembly_nodes WHERE organization_id = $1 AND project_id = $2`,
+      [organizationId, shipment.projectId],
+    );
+    const children = new Map<string, string[]>();
+    for (const t of tree) { if (t.parent_id) { const a = children.get(t.parent_id) ?? []; a.push(t.id); children.set(t.parent_id, a); } }
+    const scope = new Set<string>();
+    for (const it of shipment.items) {
+      const stack = [it.assemblyNodeId];
+      for (let i = 0; i < stack.length; i++) { scope.add(stack[i]); for (const c of children.get(stack[i]) ?? []) stack.push(c); }
+    }
+    const nodeIds = [...scope];
+
+    const inspections = nodeIds.length ? await this.nodeRepo.query(
+      `SELECT q.id, q.mesh_name, q.status, q.signoff_status, q.severity, q.defect_type,
+              q.measurement_value, q.measurement_unit, q.tolerance_min, q.tolerance_max,
+              q.inspector, q.created_at, n.mark AS node_mark
+         FROM quality_data q LEFT JOIN assembly_nodes n ON n.id = q.assembly_node_id
+        WHERE q.organization_id = $1 AND q.assembly_node_id = ANY($2) AND q.is_active = true
+        ORDER BY q.created_at DESC`,
+      [organizationId, nodeIds],
+    ) : [];
+
+    const reportRows = nodeIds.length ? await this.reportRepo.query(
+      `SELECT r.id, r.number, r.template_name, r.template_type, r.status, r.ncr_status,
+              r.disposition, r.disposition_notes, r.root_cause, r.corrective_action,
+              r.concession_reason, r.resolved_at, r.created_at, n.mark AS node_mark
+         FROM quality_reports r LEFT JOIN assembly_nodes n ON n.id = r.assembly_node_id
+        WHERE r.organization_id = $1 AND r.assembly_node_id = ANY($2)
+        ORDER BY r.created_at DESC`,
+      [organizationId, nodeIds],
+    ) : [];
+    const ncrs = reportRows.filter((r: any) => r.template_type === 'ncr');
+    const reports = reportRows.filter((r: any) => r.template_type !== 'ncr');
+
+    // Releasability checks.
+    const openNcrs = ncrs.filter((r: any) => r.resolved_at == null).length;
+    const unsignedFailures = inspections.filter((q: any) => q.status === 'fail' && q.signoff_status !== 'approved').length;
+    const itemsMissingMtr = note.items.filter((it: any) => !it.heats || it.heats.length === 0).length;
+
+    return {
+      ...note,
+      qc: {
+        inspections,
+        ncrs,
+        reports,
+        scopeNodeCount: nodeIds.length,
+        releasability: {
+          openNcrs,
+          unsignedFailures,
+          itemsMissingMtr,
+          releasable: openNcrs === 0 && unsignedFailures === 0,
+        },
+      },
+    };
+  }
+
+  /**
    * Ship board for ONE work order (production order): every assembly this order
    * has fabricated to production-complete, with how many units are shipped,
    * already allocated to its open loads, and still available — plus an open-NCR

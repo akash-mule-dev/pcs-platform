@@ -22,12 +22,15 @@ import { QualityViewScreen } from '../screens/model-viewer/QualityViewScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { MoreMenuScreen } from '../screens/more/MoreMenuScreen';
 import { MaterialListScreen } from '../screens/more/MaterialListScreen';
+import { NotificationsScreen } from '../screens/more/NotificationsScreen';
 import { ProjectListScreen } from '../screens/projects/ProjectListScreen';
 import { ProjectDetailScreen } from '../screens/projects/ProjectDetailScreen';
+import { ProjectViewerScreen } from '../screens/projects/ProjectViewerScreen';
 import { AssemblyDetailScreen } from '../screens/projects/AssemblyDetailScreen';
 import { PartViewerScreen } from '../screens/projects/PartViewerScreen';
 import { OrderBoardScreen } from '../screens/projects/OrderBoardScreen';
 import { QcReportScreen } from '../screens/projects/QcReportScreen';
+import { QcReportFillScreen } from '../screens/projects/QcReportFillScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -49,6 +52,7 @@ function WorkOrdersStack() {
       <WOStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
       <WOStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <WOStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
+      <WOStack.Screen name="QcReportFill" component={QcReportFillScreen} options={{ title: 'QC Report' }} />
       <WOStack.Screen name="QcReport" component={QcReportScreen} options={{ title: 'QC Report' }} />
     </WOStack.Navigator>
   );
@@ -72,6 +76,7 @@ function MoreStackNav() {
     <MoreStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
       <MoreStack.Screen name="MoreMenu" component={MoreMenuScreen} options={{ title: 'More' }} />
       <MoreStack.Screen name="MaterialList" component={MaterialListScreen} options={{ title: 'Materials' }} />
+      <MoreStack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
     </MoreStack.Navigator>
   );
 }
@@ -84,6 +89,7 @@ function ProjectsStack() {
       <PStack.Screen name="ProjectList" component={ProjectListScreen} options={{ title: 'Projects' }} />
       <PStack.Screen name="Scan" component={ScanScreen} options={{ title: 'Scan label' }} />
       <PStack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: 'Project' }} />
+      <PStack.Screen name="ProjectViewer" component={ProjectViewerScreen} options={{ title: '3D Viewer' }} />
       <PStack.Screen name="OrderBoard" component={OrderBoardScreen} options={{ title: 'Work Order' }} />
       <PStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />
       <PStack.Screen name="PartViewer" component={PartViewerScreen} options={{ title: '3D Viewer' }} />
@@ -91,6 +97,7 @@ function ProjectsStack() {
       <PStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
       <PStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <PStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
+      <PStack.Screen name="QcReportFill" component={QcReportFillScreen} options={{ title: 'QC Report' }} />
       <PStack.Screen name="QcReport" component={QcReportScreen} options={{ title: 'QC Report' }} />
     </PStack.Navigator>
   );

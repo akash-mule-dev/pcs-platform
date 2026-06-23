@@ -42,6 +42,8 @@ export type WorkOrdersStackParamList = {
   };
   WorkOrderList: undefined;
   WorkOrderDetail: { workOrderId: string };
+  // Native QC report fill (offline-capable); falls back to QcReport (WebView) for NCRs/complex schemas.
+  QcReportFill: { reportId: string; title?: string };
   // QC report fill page rendered in-app (WebView) instead of the device browser.
   QcReport: { reportId: string; title?: string };
 } & ViewerScreenParams;
@@ -51,6 +53,7 @@ export type ProjectsStackParamList = {
   ProjectList: undefined;
   Scan: undefined;
   ProjectDetail: { projectId: string; name: string };
+  ProjectViewer: { projectId: string; name: string };
   OrderBoard: { orderId: string; projectId: string; orderNumber: string };
   AssemblyDetail: { orderId: string; projectId: string; nodeId: string; mark: string };
   PartViewer: {
@@ -63,6 +66,8 @@ export type ProjectsStackParamList = {
     lengthMm?: number | null;
     weightKg?: number | null;
   };
+  // Native QC report fill (offline-capable); falls back to QcReport (WebView) for NCRs/complex schemas.
+  QcReportFill: { reportId: string; title?: string };
   // QC report fill page rendered in-app (WebView) instead of the device browser.
   QcReport: { reportId: string; title?: string };
 } & ViewerScreenParams;
@@ -77,6 +82,7 @@ export type TimeTrackingStackParamList = {
 export type MoreStackParamList = {
   MoreMenu: undefined;
   MaterialList: undefined;
+  Notifications: undefined;
 };
 
 // ── Root Navigator ──

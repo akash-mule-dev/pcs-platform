@@ -83,6 +83,71 @@ export class QualityNotifyService {
     }
   }
 
+  /**
+   * An NCR was raised (created or spawned from a failed inspection). Notifies the
+   * QA audience to disposition it, and broadcasts a `quality-alert` for live refresh.
+   */
+  async ncrRaised(input: {
+    reportId: string;
+    number: string;
+    label: string;            // item mark / report number
+    assemblyNodeId?: string | null;
+    productionOrderId?: string | null;
+    severity?: string | null;
+    raisedByUserId?: string | null;
+  }): Promise<void> {
+    try {
+      this.events.emitQualityAlert({
+        kind: 'ncr-raised',
+        reportId: input.reportId,
+        number: input.number,
+        ncrStatus: 'open',
+        assemblyNodeId: input.assemblyNodeId ?? null,
+        productionOrderId: input.productionOrderId ?? null,
+      }, TenantContext.getOrganizationId());
+      const audience = await this.qaAudience(input.raisedByUserId);
+      if (audience.length) {
+        await this.notifications.createForUsers(audience, {
+          title: `NCR raised: ${input.number}`,
+          message: `${input.label} — a non-conformance (${input.number}) was raised and needs disposition.`,
+          type: NotificationType.QUALITY_FAIL,
+          priority: severityToPriority(input.severity) as NotificationPriority,
+          entityType: 'quality_report',
+          entityId: input.reportId,
+        });
+      }
+    } catch (e) {
+      this.logger.warn(`ncrRaised notification skipped: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * An NCR moved through its lifecycle (under_review / dispositioned / closed /
+   * reopened / cancelled). Broadcast-only (`quality-alert`) so every connected
+   * client viewing the assembly/order refreshes live — including the other device.
+   */
+  async ncrLifecycle(input: {
+    reportId: string;
+    number: string;
+    kind: 'under_review' | 'dispositioned' | 'closed' | 'reopened' | 'cancelled';
+    ncrStatus: string | null;
+    assemblyNodeId?: string | null;
+    productionOrderId?: string | null;
+  }): Promise<void> {
+    try {
+      this.events.emitQualityAlert({
+        kind: `ncr-${input.kind}`,
+        reportId: input.reportId,
+        number: input.number,
+        ncrStatus: input.ncrStatus,
+        assemblyNodeId: input.assemblyNodeId ?? null,
+        productionOrderId: input.productionOrderId ?? null,
+      }, TenantContext.getOrganizationId());
+    } catch (e) {
+      this.logger.warn(`ncrLifecycle notification skipped: ${(e as Error).message}`);
+    }
+  }
+
   /** A sign-off decision was made on an inspection entry. */
   async signoffDecided(input: {
     qualityDataId: string;

@@ -42,6 +42,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export const api = {
+  /** Absolute API base (e.g. http://host/api) — for building file/stream URLs. */
+  baseUrl: BASE_URL,
+
   async get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
     const headers = await getHeaders();
     const response = await fetch(`${BASE_URL}${path}${buildQueryString(params)}`, {

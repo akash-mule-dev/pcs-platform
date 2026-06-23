@@ -10,6 +10,7 @@ import {
   inspectionGateError,
   isQualityStageName,
   qcGateMessage,
+  isHoldPoint,
 } from './qc-gate.ts';
 
 let passed = 0;
@@ -70,6 +71,20 @@ ok('gate: approved concession satisfies requiresInspection', () => {
 
 ok('gate: resolved failure + no other inspection still satisfies always-on rule', () => {
   assert.equal(inspectionGateError('B1001', [{ status: 'fail', signoffStatus: 'approved' }], false), null);
+});
+
+ok('ITP: hold blocks, witness/review advisory, legacy flag honoured', () => {
+  assert.equal(isHoldPoint({ inspectionType: 'hold' }), true);
+  assert.equal(isHoldPoint({ inspectionType: 'witness' }), false);
+  assert.equal(isHoldPoint({ inspectionType: 'review' }), false);
+  assert.equal(isHoldPoint({ requiresInspection: true }), true); // legacy
+  assert.equal(isHoldPoint({ inspectionType: 'witness', requiresInspection: true }), false); // type wins
+  assert.equal(isHoldPoint({}), false);
+});
+
+ok('ITP: a witness point does not block on inspection presence, but an unsigned fail still blocks', () => {
+  assert.equal(inspectionGateError('B1', [], false), null); // witness/none + nothing recorded → OK
+  assert.notEqual(inspectionGateError('B1', [{ status: 'fail', signoffStatus: 'pending' }], false), null);
 });
 
 console.log(`\nqc-gate: ${passed} assertions passed`);

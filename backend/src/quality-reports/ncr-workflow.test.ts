@@ -76,9 +76,19 @@ ok('rework cannot close without a passing re-inspection', () => {
   assert.ok(okClose.ok);
 });
 
-ok('scrap / use-as-is close without re-inspection', () => {
+ok('scrap closes without re-inspection or concession', () => {
   assert.ok(assertCloseable({ status: 'dispositioned', disposition: 'scrap', hasPassingReinspection: false }).ok);
-  assert.ok(assertCloseable({ status: 'dispositioned', disposition: 'use_as_is', hasPassingReinspection: false }).ok);
+});
+
+ok('use-as-is / repair need an authorized concession before close', () => {
+  // use-as-is: no re-inspection needed, but a concession IS.
+  const noConcession = assertCloseable({ status: 'dispositioned', disposition: 'use_as_is', hasPassingReinspection: true, hasConcession: false });
+  assert.ok(!noConcession.ok && /concession/i.test(noConcession.reason));
+  assert.ok(assertCloseable({ status: 'dispositioned', disposition: 'use_as_is', hasPassingReinspection: true, hasConcession: true }).ok);
+  // repair: needs BOTH a concession and a passing re-inspection.
+  assert.ok(!assertCloseable({ status: 'dispositioned', disposition: 'repair', hasPassingReinspection: true, hasConcession: false }).ok);
+  assert.ok(!assertCloseable({ status: 'dispositioned', disposition: 'repair', hasPassingReinspection: false, hasConcession: true }).ok);
+  assert.ok(assertCloseable({ status: 'dispositioned', disposition: 'repair', hasPassingReinspection: true, hasConcession: true }).ok);
 });
 
 ok('already-closed / cancelled cannot be closed again', () => {

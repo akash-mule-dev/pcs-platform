@@ -34,6 +34,25 @@ export interface InspectionSnapshot {
   signoffStatus?: string | null;     // pending | approved | rejected
 }
 
+export type InspectionType = 'hold' | 'witness' | 'review' | null | undefined;
+
+export const INSPECTION_TYPE_LABELS: Record<string, string> = {
+  hold: 'Hold point',
+  witness: 'Witness point',
+  review: 'Review point',
+};
+
+/**
+ * Is this stage a HOLD point — work must not pass without an acceptable
+ * inspection? `inspectionType='hold'` is the ITP expression; the legacy
+ * `requiresInspection` boolean is honoured when no inspectionType is set.
+ * Witness/review points are advisory and never gate on inspection presence.
+ */
+export function isHoldPoint(stage: { inspectionType?: InspectionType; requiresInspection?: boolean | null }): boolean {
+  if (stage.inspectionType) return stage.inspectionType === 'hold';
+  return !!stage.requiresInspection;
+}
+
 /** Failed inspections still awaiting (or denied) a sign-off decision. */
 export function countUnresolvedFailures(entries: InspectionSnapshot[]): number {
   return entries.filter((e) => e.status === 'fail' && e.signoffStatus !== 'approved').length;

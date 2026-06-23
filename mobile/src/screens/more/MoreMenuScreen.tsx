@@ -24,11 +24,16 @@ const ITEMS: MenuItem[] = [
   { key: 'MaterialList', label: 'Materials', subtitle: 'Inventory & parts master', icon: 'layers', feature: 'materials' },
 ];
 
+// Always available to every signed-in user (no feature gate).
+const ALWAYS: MenuItem[] = [
+  { key: 'Notifications', label: 'Notifications', subtitle: 'Quality alerts, NCRs & overdue items', icon: 'notifications', feature: '' },
+];
+
 export function MoreMenuScreen() {
   const navigation = useNavigation<Nav>();
   const { user } = useAuth();
   const role = user?.role?.name || '';
-  const items = ITEMS.filter((i) => canView(i.feature, role));
+  const items = [...ALWAYS, ...ITEMS.filter((i) => canView(i.feature, role))];
 
   return (
     <FlatList

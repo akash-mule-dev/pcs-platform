@@ -54,6 +54,11 @@ export function requiresReinspection(d: string | null | undefined): boolean {
   return !!NCR_DISPOSITIONS.find((x) => x.value === d)?.needsReinspection;
 }
 
+/** Repair + use-as-is accept a deviation → need an authorized concession before close. */
+export function requiresConcession(d: string | null | undefined): boolean {
+  return !!NCR_DISPOSITIONS.find((x) => x.value === d)?.needsConcession;
+}
+
 /** A report is gate-blocking exactly while it is neither closed nor cancelled. */
 export function isGateBlocking(status: NcrStatus): boolean {
   return status !== 'closed' && status !== 'cancelled';
@@ -86,11 +91,18 @@ export function assertCloseable(input: {
   status: NcrStatus;
   disposition: string | null;
   hasPassingReinspection: boolean;
+  hasConcession?: boolean;
 }): { ok: true } | { ok: false; reason: string } {
   if (input.status === 'closed') return { ok: false, reason: 'This NCR is already closed.' };
   if (input.status === 'cancelled') return { ok: false, reason: 'A cancelled NCR cannot be closed — reopen it first.' };
   if (!input.disposition) {
     return { ok: false, reason: 'Record a disposition (rework / repair / use-as-is / scrap / return) before closing this NCR.' };
+  }
+  if (requiresConcession(input.disposition) && !input.hasConcession) {
+    return {
+      ok: false,
+      reason: `A ${dispositionLabel(input.disposition).toLowerCase()} accepts a deviation from spec — record an authorized concession (a reason) before closing this NCR.`,
+    };
   }
   if (requiresReinspection(input.disposition) && !input.hasPassingReinspection) {
     return {

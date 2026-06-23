@@ -6,7 +6,7 @@ import { WorkOrderStage, WorkOrderStageStatus } from './work-order-stage.entity.
 import { Stage } from '../stages/stage.entity.js';
 import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { AssemblyNode } from '../projects/assembly-node.entity.js';
-import { inspectionGateError, isQualityStageName, qcGateMessage, InspectionSnapshot } from './qc-gate.js';
+import { inspectionGateError, isQualityStageName, qcGateMessage, isHoldPoint, InspectionSnapshot } from './qc-gate.js';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto.js';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto.js';
 import { AssignWorkOrderDto } from './dto/assign-work-order.dto.js';
@@ -68,7 +68,7 @@ export class WorkOrdersService {
    */
   private async assertQualityGate(
     wo: WorkOrder | null,
-    stage: { name?: string | null; requiresInspection?: boolean } | null | undefined,
+    stage: { name?: string | null; requiresInspection?: boolean; inspectionType?: 'hold' | 'witness' | 'review' | null } | null | undefined,
   ): Promise<void> {
     if (!wo?.assemblyNodeId || !isQualityStageName(stage?.name)) return;
     const open = await this.countOpenNcrs(wo.assemblyNodeId);
@@ -77,7 +77,7 @@ export class WorkOrdersService {
     const err = inspectionGateError(
       await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber),
       entries,
-      !!stage?.requiresInspection,
+      isHoldPoint(stage ?? {}), // hold blocks on inspection presence; witness/review are advisory
     );
     if (err) throw new BadRequestException(err);
   }
@@ -370,7 +370,7 @@ export class WorkOrdersService {
         const err = inspectionGateError(
           await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber),
           entries,
-          quality.some((s) => s.requiresInspection),
+          quality.some((s) => isHoldPoint(s)),
         );
         if (err) throw new BadRequestException(err);
       }

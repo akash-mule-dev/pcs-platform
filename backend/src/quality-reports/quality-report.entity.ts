@@ -40,6 +40,13 @@ export class QualityReport extends TenantOwnedEntity {
   @Column({ name: 'project_id', type: 'uuid', nullable: true }) projectId: string | null;
   @Column({ name: 'assembly_node_id', type: 'uuid', nullable: true }) assemblyNodeId: string | null;
 
+  /**
+   * When this report (an NCR) was raised FROM a failed inspection, the source
+   * `quality_data` row — the §8.7 audit link between the detected nonconformity
+   * and its formal record. Null for reports created directly from a template.
+   */
+  @Column({ name: 'source_quality_data_id', type: 'uuid', nullable: true }) sourceQualityDataId: string | null;
+
   // The filled form
   @Column({ type: 'jsonb', nullable: true }) data: Record<string, any> | null;
   @Column({ type: 'enum', enum: QualityReportStatus, default: QualityReportStatus.DRAFT })
@@ -66,6 +73,15 @@ export class QualityReport extends TenantOwnedEntity {
   /** Investigation outcome + the action taken (ISO 9001 §8.7.2 "actions taken"). */
   @Column({ name: 'root_cause', type: 'text', nullable: true }) rootCause: string | null;
   @Column({ name: 'corrective_action', type: 'text', nullable: true }) correctiveAction: string | null;
+
+  /**
+   * Concession authorization (ISO §8.7.1 c/d). `repair` and `use_as_is` accept a
+   * deviation from spec and so require an authorized concession — captured here
+   * and enforced before close by `assertCloseable`. `concessionBy` is the
+   * authority; `concessionReason` is the justification on record.
+   */
+  @Column({ name: 'concession_by', type: 'uuid', nullable: true }) concessionBy: string | null;
+  @Column({ name: 'concession_reason', type: 'text', nullable: true }) concessionReason: string | null;
 
   /**
    * NCR close: an `ncr`-type report is OPEN (blocks gates) while `resolvedAt` is
