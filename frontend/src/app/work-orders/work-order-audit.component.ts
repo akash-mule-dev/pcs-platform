@@ -289,6 +289,66 @@ const PAGE = 200;
                 }
               </div>
 
+              <!-- Final QC — release cockpit: consolidates every stage's QC -->
+              @if (detail?.finalQc; as fq) {
+                <div class="fqc" [class.ready]="fq.releasable" [class.held]="!fq.releasable">
+                  <div class="fqc-head">
+                    <mat-icon>{{ fq.releasable ? 'verified' : 'gpp_maybe' }}</mat-icon>
+                    <div class="fqc-txt">
+                      <h3>Final QC — release gate</h3>
+                      <p>
+                        @if (fq.releasable) {
+                          All stage QC cleared. Completing the Final QC stage releases this piece for shipping.
+                        } @else {
+                          Held — {{ fq.openNcrs }} open NCR{{ fq.openNcrs === 1 ? '' : 's' }}@if (fq.unsignedFailures > 0) { · {{ fq.unsignedFailures }} unsigned inspection failure{{ fq.unsignedFailures === 1 ? '' : 's' }} } to resolve.
+                        }
+                      </p>
+                      <div class="fqc-sum">
+                        <span class="fqc-spill ok">{{ fq.inspections.pass }} pass</span>
+                        <span class="fqc-spill warn">{{ fq.inspections.warning }} warning</span>
+                        <span class="fqc-spill bad">{{ fq.inspections.fail }} fail</span>
+                        <span class="fqc-spill ncr">{{ fq.openNcrs }} open NCR</span>
+                        <span class="fqc-spill">{{ fq.inspections.total }} inspections total</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Per-stage QC at a glance — the inspector reviews everything here -->
+                  <div class="fqc-tbl">
+                    <div class="fqc-thd"><span>Stage</span><span>Status</span><span>Inspections</span><span class="num">NCR</span><span class="ctr">Gate</span></div>
+                    @for (s of fq.byStage; track s.stageId) {
+                      <button class="fqc-trow" [class.cur]="s.stageId === selStageId" [class.held]="s.gateBlocked" (click)="pickStage(s.stageId)">
+                        <span class="fqc-tname">
+                          {{ s.name }}
+                          @if (s.isFinalQc) { <span class="fqc-tag final">Final QC</span> }
+                          @else if (s.inspectionType === 'hold') { <span class="fqc-tag hold">Hold</span> }
+                          @else if (s.inspectionType) { <span class="fqc-tag">{{ s.inspectionType }}</span> }
+                        </span>
+                        <span class="ss sm ss-{{ s.status }}">{{ stageStatusLabel(s.status) }}</span>
+                        <span class="fqc-insp">
+                          @if (s.inspections.pass) { <em class="ip">{{ s.inspections.pass }}✓</em> }
+                          @if (s.inspections.warning) { <em class="iw">{{ s.inspections.warning }}!</em> }
+                          @if (s.inspections.fail) { <em class="ifl">{{ s.inspections.fail }}✕</em> }
+                          @if (s.inspections.pendingSignoff) { <em class="ipd" matTooltip="failed, awaiting sign-off">{{ s.inspections.pendingSignoff }} unsigned</em> }
+                          @if (!s.inspections.pass && !s.inspections.warning && !s.inspections.fail) { <em class="imut">—</em> }
+                        </span>
+                        <span class="num">@if (s.openNcrs) { <em class="fqc-badge">{{ s.openNcrs }}</em> } @else { <em class="imut">—</em> }</span>
+                        <span class="ctr">@if (s.gateBlocked) { <mat-icon class="gate-lock" [matTooltip]="s.gateReason || ''">lock</mat-icon> } @else { <mat-icon class="fqc-ok">check_circle</mat-icon> }</span>
+                      </button>
+                    }
+                  </div>
+                  @if (finalQcStage(); as fqRow) {
+                    <div class="fqc-actions">
+                      <button class="fqc-release" [disabled]="!fq.releasable || fqRow.status === 'completed'" (click)="releasePiece()">
+                        <mat-icon>local_shipping</mat-icon>
+                        {{ fqRow.status === 'completed' ? 'Released' : 'Release piece — complete Final QC' }}
+                      </button>
+                      @if (!fq.releasable && fqRow.status !== 'completed') { <span class="fqc-hint">Resolve all open NCRs to enable release.</span> }
+                    </div>
+                  }
+                </div>
+              }
+
               <!-- audit trail: change history + time entries + NCRs -->
               <div class="trail">
                 <div class="tr-head"><h3><mat-icon>fact_check</mat-icon>Change history</h3>@if (detailLoading) { <mat-spinner diameter="14"></mat-spinner> }</div>
@@ -341,6 +401,7 @@ const PAGE = 200;
                     <a class="ncr-row" [routerLink]="['/qr', n.id]" target="_blank">
                       <b class="mono">{{ n.number }}</b>
                       <span class="ncr-title">{{ n.title }}</span>
+                      @if (n.stageName) { <span class="ncr-stage" matTooltip="Raised at this operation">{{ n.stageName }}</span> }
                       <span class="sev sev-{{ n.severity }}">{{ n.severity }}</span>
                       <span class="nst nst-{{ n.status }}">{{ n.status }}</span>
                       <span class="dt">{{ n.createdAt | date:'MMM d' }}</span>
@@ -682,6 +743,46 @@ const PAGE = 200;
     .nst { font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 8px; background: var(--clay-bg-warm); color: var(--clay-text-secondary); text-transform: capitalize; }
     .nst-open, .nst-in_progress { background: var(--danger-bg); color: var(--danger-text); }
     .nst-closed { background: var(--success-bg); color: var(--success-text); }
+    .ncr-stage { font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 8px; background: var(--info-bg, #eef2ff); color: var(--clay-primary, #2563eb); white-space: nowrap; }
+    /* Final QC release cockpit */
+    .fqc { border: 1px solid var(--clay-border); border-radius: var(--clay-radius); padding: 14px 16px; margin: 6px 0 18px; }
+    .fqc.ready { border-color: var(--success); }
+    .fqc.held { border-color: var(--danger); }
+    .fqc-head { display: flex; align-items: flex-start; gap: 10px; }
+    .fqc-head mat-icon { font-size: 24px; width: 24px; height: 24px; flex-shrink: 0; }
+    .fqc.ready .fqc-head mat-icon { color: var(--success); }
+    .fqc.held .fqc-head mat-icon { color: var(--danger); }
+    .fqc-txt { flex: 1; min-width: 0; }
+    .fqc-txt h3 { margin: 0; font-size: 13.5px; font-weight: 800; }
+    .fqc-txt p { margin: 3px 0 0; font-size: 12px; color: var(--clay-text-secondary); line-height: 1.45; }
+    .fqc-sum { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+    .fqc-spill { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 1px 8px; background: var(--clay-bg-warm); color: var(--clay-text-secondary); }
+    .fqc-spill.ok { background: var(--success-bg); color: var(--success-text); }
+    .fqc-spill.warn { background: var(--warning-bg); color: var(--warning-text); }
+    .fqc-spill.bad { background: var(--danger-bg); color: var(--danger-text); }
+    .fqc-spill.ncr { background: var(--danger-bg); color: var(--danger-text); }
+    .fqc-tbl { margin: 12px 0 2px; border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); overflow: hidden; background: var(--clay-surface); }
+    .fqc-thd, .fqc-trow { display: grid; grid-template-columns: minmax(120px, 1.6fr) 92px 1fr 44px 48px; align-items: center; gap: 8px; padding: 7px 10px; }
+    .fqc-thd { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--clay-text-muted); background: var(--clay-bg-warm); }
+    .fqc-trow { width: 100%; border: none; border-top: 1px solid var(--clay-border); background: var(--clay-surface); cursor: pointer; font-family: inherit; text-align: left; font-size: 12px; }
+    .fqc-trow:hover { background: var(--clay-surface-hover); }
+    .fqc-trow.cur { background: var(--info-bg); }
+    .fqc-trow.held { background: color-mix(in srgb, var(--danger-bg) 30%, transparent); }
+    .fqc-tname { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--clay-text); min-width: 0; }
+    .fqc-tag { font-size: 9.5px; font-weight: 800; text-transform: uppercase; border-radius: 999px; padding: 0 6px; background: var(--clay-bg-warm); color: var(--clay-text-secondary); }
+    .fqc-tag.final { background: var(--clay-primary); color: #fff; }
+    .fqc-tag.hold { background: var(--warning-bg); color: var(--warning-text); }
+    .fqc-insp { display: inline-flex; gap: 7px; flex-wrap: wrap; font-weight: 700; }
+    .fqc-insp .ip { color: var(--success-text); } .fqc-insp .iw { color: var(--warning-text); } .fqc-insp .ifl { color: var(--danger-text); }
+    .fqc-insp .ipd { color: var(--danger-text); font-weight: 800; } .fqc-insp .imut, .imut { color: var(--clay-text-muted); font-style: normal; }
+    .ctr { display: flex; justify-content: center; }
+    .fqc-ok { font-size: 15px; width: 15px; height: 15px; color: var(--success); }
+    .fqc-badge { background: var(--danger); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 10.5px; font-weight: 800; }
+    .fqc-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+    .fqc-release { display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: var(--clay-radius-sm); padding: 8px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; color: #fff; background: var(--success, #16a34a); }
+    .fqc-release:disabled { opacity: .5; cursor: default; background: var(--clay-text-muted); }
+    .fqc-release mat-icon { font-size: 17px; width: 17px; height: 17px; }
+    .fqc-hint { font-size: 11.5px; color: var(--danger-text); }
 
     @media (max-width: 1100px) {
       .grid { grid-template-columns: 1fr; }
@@ -911,6 +1012,17 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
     this.selStageId = stageId;
     this.recompute();
     this.syncUrl();
+  }
+
+  /** The selected assembly's terminal final-QC / release stage row, if any. */
+  finalQcStage(): AuditStageRow | null {
+    return this.selItem?.stages.find((s) => s.isFinalQc) ?? null;
+  }
+
+  /** Release the piece = complete the Final QC stage (server-gated on open NCRs). */
+  releasePiece(): void {
+    const row = this.finalQcStage();
+    if (row && row.status !== 'completed') this.setStatus(row, 'completed');
   }
 
   /** Keep the selection shareable/refresh-proof without polluting history. */

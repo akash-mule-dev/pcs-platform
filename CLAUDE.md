@@ -283,11 +283,29 @@ standalone `quality-ncr` module + `ncrs`/`capas`/`ncr_events` tables were retire
 - **RBAC:** filling/submitting/commenting = `quality-reports.update` (manager/supervisor/operator);
   deciding disposition + close/reopen/cancel = **`quality-reports.disposition`** (manager/supervisor
   only) — "report it" is separated from "decide its fate". `quality-reports.create` raises NCRs.
-- **Stage quality gates** (work-orders + order bulk/board paths): a quality-named stage cannot
-  COMPLETE while the assembly has (1) open NCRs (NCR-type reports with `resolved_at IS NULL`), or
-  (2) failed inspections not yet signed off (approve = formal concession); a stage flagged
-  `stages.requires_inspection` (hold point) additionally needs ≥1 acceptable inspection. Audit
-  endpoints return `gateBlocked` + human `gateReason` per stage row for pre-warn chips/tooltips.
+- **Stage quality gates — TWO gates, per stage** (`work-orders/qc-gate.ts` pure module → all
+  work-orders + order bulk/board call sites; `npm run test:quality`). QC is per operation AND
+  consolidated at a release step (the fabrication-industry model: ITP hold points + final QC):
+  - **FINAL QC stage** (`stages.is_final_qc`) — the terminal release gate. Cannot COMPLETE while the
+    assembly has ANY open NCR (raised at any stage), any failed inspection not signed off, or (if a
+    hold point) no acceptable inspection — all evaluated assembly-wide (the **rollup**). Completing
+    it releases the piece; shipping also blocks on any open NCR. `ProcessesService.create` +
+    `ensureStandard` + the library seed **auto-append** a `Final QC` stage (`is_final_qc`+`hold`);
+    opt out with `appendFinalQc:false` or by flagging your own stage `isFinalQc`.
+  - **HOLD point** (`stages.inspection_type='hold'`, opt-in per stage) — an in-process gate that
+    blocks ITS OWN stage only, scoped by `stage_id`. Witness/review + plain stages never block.
+  - `is_final_qc` is **tri-state**: `true`=explicit gate, `false`=explicitly not, `null`=legacy →
+    fall back to the `isQualityStageName` name regex (so pre-existing "Quality Check" stages keep
+    gating). `isFinalQcStage()`/`stageQcGateError()` are the single source of truth — **never** gate
+    on the name regex directly. The `QcStageScoping` migration adds the columns and backfills each
+    process's terminal quality-named stage to `is_final_qc=true`.
+  - **NCRs + inspections carry the operation** (`quality_reports`/`quality_data`.`stage_id` +
+    `work_order_stage_id`): the final-QC rollup counts all of an assembly's NCRs; a hold point counts
+    only its own stage's. An NCR with no `stage_id` (legacy / assembly-level / mobile) counts toward
+    the rollup but never a per-stage hold. Set from the order Quality tab's stage picker; NCR-from-
+    inspection inherits it. Audit endpoints return `gateBlocked` + human `gateReason` per stage row;
+    `GET orders/:id/nodes/:nodeId/audit` also returns a `finalQc` rollup (`releasable`, per-stage open
+    NCRs) for the web audit's Final-QC release cockpit.
 - **Identity is server-stamped:** `inspector`/`inspectorUserId` default from the JWT on create;
   `PATCH /quality-data/:id/signoff` ignores client `signoffBy` and stamps it from the authed user
   (needs `quality-analysis.signoff`). NCR disposition/close authority is the JWT user

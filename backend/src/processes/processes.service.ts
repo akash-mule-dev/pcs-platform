@@ -7,6 +7,7 @@ import { CreateProcessDto } from './dto/create-process.dto.js';
 import { UpdateProcessDto } from './dto/update-process.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import { FINAL_QC_STAGE } from '../library/library-content.js';
 
 @Injectable()
 export class ProcessesService {
@@ -38,8 +39,16 @@ export class ProcessesService {
     { name: 'Cutting', targetTimeSeconds: 1800, description: 'Cut raw stock to size' },
     { name: 'Fit-Up', targetTimeSeconds: 3600, description: 'Assemble and tack the parts' },
     { name: 'Welding', targetTimeSeconds: 7200, description: 'Full welds per WPS' },
-    { name: 'Quality Check', targetTimeSeconds: 1800, description: 'Visual + dimensional inspection — blocked while NCRs are open' },
     { name: 'Painting', targetTimeSeconds: 3600, description: 'Surface prep and coating' },
+    // Terminal final-QC / release gate (consolidates every stage's QC).
+    {
+      name: FINAL_QC_STAGE.name,
+      targetTimeSeconds: FINAL_QC_STAGE.targetTimeSeconds,
+      description: FINAL_QC_STAGE.description,
+      inspectionType: FINAL_QC_STAGE.inspectionType,
+      requiresInspection: FINAL_QC_STAGE.requiresInspection,
+      isFinalQc: FINAL_QC_STAGE.isFinalQc,
+    },
   ];
 
   /** Get-or-create the organization's "Standard Fabrication" process (Cut → Fit → Weld → QC → Paint). */
@@ -61,12 +70,38 @@ export class ProcessesService {
     // Processes are standalone workflow templates — not tied to a product.
     const entity = this.repo.create({ name: dto.name, version: dto.version ?? 1 });
     const saved = await this.repo.save(entity);
-    if (dto.stages?.length) {
-      const stageEntities = dto.stages.map((s, i) =>
-        this.stageRepo.create({ ...s, sequence: i + 1, processId: saved.id }),
-      );
-      await this.stageRepo.save(stageEntities);
+
+    const inputStages = dto.stages ?? [];
+    const stageEntities = inputStages.map((s, i) =>
+      this.stageRepo.create({
+        name: s.name,
+        targetTimeSeconds: s.targetTimeSeconds,
+        description: s.description,
+        inspectionType: s.inspectionType ?? null,
+        requiresInspection: s.requiresInspection ?? false,
+        isFinalQc: s.isFinalQc ?? null,
+        sequence: i + 1,
+        processId: saved.id,
+      }),
+    );
+
+    // Always cap the routing with a final-QC release gate unless the caller
+    // opted out or already designated one of its own stages as the final QC.
+    const hasFinalQc = inputStages.some((s) => s.isFinalQc);
+    if (dto.appendFinalQc !== false && !hasFinalQc) {
+      stageEntities.push(this.stageRepo.create({
+        name: FINAL_QC_STAGE.name,
+        targetTimeSeconds: FINAL_QC_STAGE.targetTimeSeconds,
+        description: FINAL_QC_STAGE.description,
+        inspectionType: FINAL_QC_STAGE.inspectionType,
+        requiresInspection: FINAL_QC_STAGE.requiresInspection,
+        isFinalQc: true,
+        sequence: stageEntities.length + 1,
+        processId: saved.id,
+      }));
     }
+
+    if (stageEntities.length) await this.stageRepo.save(stageEntities);
     return this.findOne(saved.id);
   }
 

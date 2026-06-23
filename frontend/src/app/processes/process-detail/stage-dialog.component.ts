@@ -55,6 +55,15 @@ type ItpType = '' | 'hold' | 'witness' | 'review';
           <p class="itp-hint">{{ itpHint() }}</p>
         </div>
 
+        <!-- Final QC / release gate -->
+        <label class="finalqc">
+          <mat-checkbox [(ngModel)]="form.isFinalQc" (change)="onFinalQcChange()"></mat-checkbox>
+          <span>
+            <strong>Final QC / release gate</strong>
+            <small>The terminal stage that consolidates every stage’s QC. It cannot complete while the assembly has <em>any</em> open NCR, and completing it releases the piece for shipping. Usually the last stage.</small>
+          </span>
+        </label>
+
         @if (form.inspectionType) {
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>What to verify / acceptance criteria</mat-label>
@@ -82,17 +91,26 @@ type ItpType = '' | 'hold' | 'witness' | 'review';
     .itp-chip { border: 1px solid var(--clay-border, #d8dde6); background: var(--clay-surface, #fff); color: var(--clay-text-secondary, #475569); border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
     .itp-chip.on { background: var(--clay-primary, #2563eb); color: #fff; border-color: var(--clay-primary, #2563eb); }
     .itp-hint { font-size: 11.5px; color: var(--clay-text-muted, #64748b); margin: 7px 2px 0; }
+    .finalqc { display: flex; align-items: flex-start; gap: 8px; margin: 4px 2px 12px; padding: 10px 12px; border: 1px solid var(--clay-border, #d8dde6); border-radius: 10px; background: var(--clay-surface-muted, #f8fafc); cursor: pointer; }
+    .finalqc span { display: flex; flex-direction: column; gap: 2px; }
+    .finalqc strong { font-size: 13px; color: var(--clay-text, #0f172a); }
+    .finalqc small { font-size: 11.5px; color: var(--clay-text-muted, #64748b); line-height: 1.4; }
   `]
 })
 export class StageDialogComponent {
   isEdit = false;
   form: {
     name: string; targetTimeSeconds: number; description: string; requiresInspection: boolean; hourlyRate: number;
-    inspectionType: ItpType; inspectionCriteria: string; requiredSignoffRole: string;
+    inspectionType: ItpType; inspectionCriteria: string; requiredSignoffRole: string; isFinalQc: boolean;
   } = {
     name: '', targetTimeSeconds: 600, description: '', requiresInspection: false, hourlyRate: 0,
-    inspectionType: '', inspectionCriteria: '', requiredSignoffRole: '',
+    inspectionType: '', inspectionCriteria: '', requiredSignoffRole: '', isFinalQc: false,
   };
+
+  /** A final-QC gate is inherently a hold point — default its ITP type to Hold when ticked. */
+  onFinalQcChange(): void {
+    if (this.form.isFinalQc && !this.form.inspectionType) this.form.inspectionType = 'hold';
+  }
 
   readonly itpOptions: { key: ItpType; label: string }[] = [
     { key: '', label: 'None' },
@@ -130,6 +148,7 @@ export class StageDialogComponent {
         inspectionType,
         inspectionCriteria: s.inspectionCharacteristics?.criteria ?? '',
         requiredSignoffRole: s.requiredSignoffRole ?? '',
+        isFinalQc: !!s.isFinalQc,
       };
     }
   }
@@ -147,6 +166,7 @@ export class StageDialogComponent {
       inspectionType: this.form.inspectionType || null,
       inspectionCharacteristics: this.form.inspectionType && criteria ? { criteria } : null,
       requiredSignoffRole: this.form.inspectionType ? (this.form.requiredSignoffRole.trim() || null) : null,
+      isFinalQc: this.form.isFinalQc,
     };
   }
 

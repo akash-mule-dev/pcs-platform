@@ -21,6 +21,9 @@ export interface CreateReportInput {
   templateId: string;
   productionOrderId: string;
   assemblyNodeId?: string;
+  /** The fabrication operation the NCR is raised at (process stage + WO-stage instance). */
+  stageId?: string;
+  workOrderStageId?: string;
   /** When spawned from a failed inspection: the source quality_data row + pre-filled values. */
   sourceQualityDataId?: string;
   initialData?: Record<string, any>;
@@ -96,6 +99,8 @@ export class QualityReportsService {
           productionOrderId: order.id,
           projectId: order.projectId,
           assemblyNodeId: node?.id ?? null,
+          stageId: input.stageId ?? null,
+          workOrderStageId: input.workOrderStageId ?? null,
           data: input.initialData ?? null,
           sourceQualityDataId: input.sourceQualityDataId ?? null,
           status: QualityReportStatus.DRAFT,
@@ -135,16 +140,18 @@ export class QualityReportsService {
     templateId: string;
     productionOrderId: string;
     assemblyNodeId?: string;
+    stageId?: string;
+    workOrderStageId?: string;
   }): Promise<QualityReport> {
     const org = this.org;
     const rows: {
       id: string; defect_type: string | null; severity: string | null; mesh_name: string | null;
       notes: string | null; measurement_value: number | null; measurement_unit: string | null;
       tolerance_min: number | null; tolerance_max: number | null;
-      assembly_node_id: string | null;
+      assembly_node_id: string | null; stage_id: string | null; work_order_stage_id: string | null;
     }[] = await this.repo.query(
       `SELECT id, defect_type, severity, mesh_name, notes, measurement_value, measurement_unit,
-              tolerance_min, tolerance_max, assembly_node_id
+              tolerance_min, tolerance_max, assembly_node_id, stage_id, work_order_stage_id
          FROM quality_data WHERE id = $1 AND organization_id = $2`,
       [input.qualityDataId, org],
     );
@@ -169,6 +176,10 @@ export class QualityReportsService {
       templateId: input.templateId,
       productionOrderId: input.productionOrderId,
       assemblyNodeId: input.assemblyNodeId ?? qd.assembly_node_id ?? undefined,
+      // Inherit the operation the failure was found at, so the spawned NCR gates
+      // the right stage (and rolls up to final QC).
+      stageId: input.stageId ?? qd.stage_id ?? undefined,
+      workOrderStageId: input.workOrderStageId ?? qd.work_order_stage_id ?? undefined,
       sourceQualityDataId: qd.id,
       initialData,
     });

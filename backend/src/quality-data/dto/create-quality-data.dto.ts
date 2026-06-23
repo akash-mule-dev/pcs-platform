@@ -19,6 +19,9 @@ export class CreateQualityDataDto {
   @ApiPropertyOptional() @IsNumber() @IsOptional() toleranceMax?: number;
   @ApiPropertyOptional() @IsUUID() @IsOptional() assemblyNodeId?: string;
   @ApiPropertyOptional() @IsUUID() @IsOptional() projectId?: string;
+  /** Fabrication operation this inspection was recorded at (process stage + WO-stage instance). */
+  @ApiPropertyOptional() @IsUUID() @IsOptional() stageId?: string;
+  @ApiPropertyOptional() @IsUUID() @IsOptional() workOrderStageId?: string;
   @ApiPropertyOptional({ description: 'Idempotency key (uuid): replays of the same create return the original row' })
   @IsUUID() @IsOptional() clientKey?: string;
 }

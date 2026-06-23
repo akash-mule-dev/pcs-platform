@@ -36,13 +36,15 @@ export class QualityReportsController {
   @Post()
   @RequirePermissions('quality-reports.create')
   @ApiOperation({ summary: 'Start a BLANK report from a template against a work order' })
-  create(@Body() body: { templateId?: string; productionOrderId?: string; assemblyNodeId?: string }) {
+  create(@Body() body: { templateId?: string; productionOrderId?: string; assemblyNodeId?: string; stageId?: string; workOrderStageId?: string }) {
     if (!body?.templateId) throw new BadRequestException('templateId is required');
     if (!body?.productionOrderId) throw new BadRequestException('productionOrderId is required');
     return this.service.create({
       templateId: body.templateId,
       productionOrderId: body.productionOrderId,
       assemblyNodeId: body.assemblyNodeId,
+      stageId: body.stageId,
+      workOrderStageId: body.workOrderStageId,
     });
   }
 
@@ -50,7 +52,7 @@ export class QualityReportsController {
   @RequirePermissions('quality-reports.create')
   @ApiOperation({ summary: 'Raise an NCR from a failed inspection (pre-filled + linked to the quality_data row)' })
   fromInspection(
-    @Body() body: { qualityDataId?: string; templateId?: string; productionOrderId?: string; assemblyNodeId?: string },
+    @Body() body: { qualityDataId?: string; templateId?: string; productionOrderId?: string; assemblyNodeId?: string; stageId?: string; workOrderStageId?: string },
   ) {
     if (!body?.qualityDataId) throw new BadRequestException('qualityDataId is required');
     if (!body?.templateId) throw new BadRequestException('templateId is required');
@@ -60,6 +62,8 @@ export class QualityReportsController {
       templateId: body.templateId,
       productionOrderId: body.productionOrderId,
       assemblyNodeId: body.assemblyNodeId,
+      stageId: body.stageId,
+      workOrderStageId: body.workOrderStageId,
     });
   }
 

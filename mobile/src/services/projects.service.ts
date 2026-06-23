@@ -82,6 +82,9 @@ export interface MRecordQuality {
   measurementUnit?: string;
   toleranceMin?: number;
   toleranceMax?: number;
+  /** Fabrication operation this check was recorded at (process stage + WO-stage instance). */
+  stageId?: string;
+  workOrderStageId?: string;
 }
 export const projectsService = {
   list: () => api.getList<MProject>('/projects'),
@@ -124,8 +127,12 @@ export interface MAuditStageRow {
   assignedUser: { id: string; name: string } | null;
   station: { id: string; name: string } | null;
   timeSeconds: number; timeEntries: number;
-  /** Quality stage that cannot complete while the assembly has open NCRs. */
+  /** The terminal final-QC / release gate stage (consolidates every stage's QC). */
+  isFinalQc?: boolean;
+  /** A final-QC stage (assembly-wide NCR rollup) or a hold point (own stage) that cannot yet complete. */
   gateBlocked: boolean;
+  /** Human-readable reason the gate holds (final-QC rollup vs per-stage hold). */
+  gateReason?: string | null;
 }
 export interface MAuditItem {
   nodeId: string | null; workOrderId: string; workOrderNumber: string;
@@ -164,7 +171,21 @@ export interface MNodeAudit {
     startTime: string; endTime: string | null; durationSeconds: number | null;
     isRework: boolean; notes: string | null; inputMethod: string | null;
   }[];
-  ncrs: { id: string; number: string; title: string; status: string; severity: string; createdAt: string }[];
+  ncrs: { id: string; number: string; title: string; status: string; severity: string; stageId?: string | null; stageName?: string | null; createdAt: string }[];
+  /** Final-QC release cockpit: full per-stage QC picture in one view. */
+  finalQc?: {
+    releasable: boolean;
+    openNcrs: number;
+    unsignedFailures: number;
+    inspections: { total: number; pass: number; warning: number; fail: number };
+    byStage: {
+      stageId: string; name: string; sequence: number; status: string;
+      isFinalQc: boolean; inspectionType: 'hold' | 'witness' | 'review' | null;
+      openNcrs: number;
+      inspections: { pass: number; warning: number; fail: number; pendingSignoff: number };
+      gateBlocked: boolean; gateReason?: string | null;
+    }[];
+  };
 }
 export interface MBulkResult { requested: number; updated: number; failed: { nodeId: string; mark: string; message: string }[] }
 export interface MDashboardOrder {
@@ -241,8 +262,8 @@ export const qcReportsService = {
   get: (id: string) => api.get<MQualityReport>(`/quality-reports/${id}`),
   create: (body: { templateId: string; productionOrderId: string; assemblyNodeId?: string }) =>
     api.post<MQualityReport>('/quality-reports', body),
-  /** Raise an NCR from a failed inspection — pre-filled + linked to the quality_data row. */
-  createFromInspection: (body: { qualityDataId: string; templateId: string; productionOrderId: string; assemblyNodeId?: string }) =>
+  /** Raise an NCR from a failed inspection — pre-filled + linked to the quality_data row (inherits its stage). */
+  createFromInspection: (body: { qualityDataId: string; templateId: string; productionOrderId: string; assemblyNodeId?: string; stageId?: string; workOrderStageId?: string }) =>
     api.post<MQualityReport>('/quality-reports/from-inspection', body),
   // ── NCR lifecycle (templateType === 'ncr') ──
   events: (id: string) => api.getList<MNcrEvent>(`/quality-reports/${id}/events`),

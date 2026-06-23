@@ -16,7 +16,12 @@ export type TabParamList = {
 // context (from an assembly or part) without leaving the current flow.
 export type ViewerScreenParams = {
   ModelView: { modelId: string; modelName: string; fileUrl: string };
-  ARView: { modelId: string; fileUrl: string; meshNames?: string[]; partLabel?: string };
+  ARView: {
+    modelId: string; fileUrl: string; meshNames?: string[]; partLabel?: string;
+    // Optional fabrication context when AR is opened from an assembly's stage —
+    // tags AR inspections to that operation (gates the stage + rolls up to Final QC).
+    assemblyNodeId?: string; projectId?: string; stageId?: string; workOrderStageId?: string;
+  };
   VRView: { modelId: string; modelName: string; fileUrl: string };
   QualityView: { modelId: string; modelName: string; fileUrl: string };
 };
