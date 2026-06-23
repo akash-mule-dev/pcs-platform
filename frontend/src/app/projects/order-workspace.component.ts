@@ -96,6 +96,7 @@ export class OrderWorkspaceComponent implements OnInit, OnDestroy {
 
   readonly tabs: OrderTab[] = [
     { path: 'board', label: 'Board', icon: 'view_kanban' },
+    { path: '3d', label: '3D', icon: 'view_in_ar' },
     { path: 'progress', label: 'Progress', icon: 'insights' },
     { path: 'materials', label: 'Materials', icon: 'category' },
     { path: 'time', label: 'Time & Labor', icon: 'timer' },

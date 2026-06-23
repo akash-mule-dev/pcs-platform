@@ -15,9 +15,9 @@ export function ProjectListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     try {
-      setProjects(await projectsService.list());
+      setProjects(await projectsService.list(force));
     } catch {
       setProjects([]);
     } finally {
@@ -26,12 +26,12 @@ export function ProjectListScreen() {
   }, []);
 
   useEffect(() => {
-    load();
+    load(); // cache-first: instant from local storage if already loaded
   }, [load]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load(true); // pull-to-refresh bypasses the cache
     setRefreshing(false);
   };
 

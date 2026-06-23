@@ -15,12 +15,33 @@ export function formatDuration(seconds: number | null | undefined): string {
 }
 
 /**
- * Format elapsed seconds as MM:SS for the timer display.
+ * Format elapsed seconds for the live timer display: MM:SS under an hour,
+ * H:MM:SS once it passes an hour (so a long shift doesn't read "183:45").
  */
 export function formatTimer(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
   const s = Math.floor(totalSeconds % 60);
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  const mm = m.toString().padStart(2, '0');
+  const ss = s.toString().padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
+ * Compact duration for summaries/totals: "3h 20m", "45m", or "0m" (no seconds).
+ */
+export function formatHm(seconds: number | null | undefined): string {
+  const total = seconds && seconds > 0 ? Math.floor(seconds) : 0;
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
+/** Clock time like "2:05 PM" for entry rows. */
+export function formatClock(dateString: string | null): string {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 /**

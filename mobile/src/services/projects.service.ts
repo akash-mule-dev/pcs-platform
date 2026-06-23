@@ -1,4 +1,5 @@
 import { api } from './api.service';
+import { dataCache } from './dataCache';
 
 export interface MProject {
   id: string;
@@ -84,8 +85,12 @@ export interface MRecordQuality {
   toleranceMax?: number;
 }
 export const projectsService = {
-  list: () => api.getList<MProject>('/projects'),
-  getNodes: (projectId: string) => api.getList<MNode>(`/projects/${projectId}/nodes`),
+  // Cache-first (persists across logout): once loaded, projects + their assembly
+  // trees are served from local storage and not re-fetched. Pass force=true
+  // (pull-to-refresh) to bypass the cache and refresh the stored copy.
+  list: (force = false) => dataCache.cached('projects:list', () => api.getList<MProject>('/projects'), force),
+  getNodes: (projectId: string, force = false) =>
+    dataCache.cached(`projects:nodes:${projectId}`, () => api.getList<MNode>(`/projects/${projectId}/nodes`), force),
   getNode: (projectId: string, nodeId: string) => api.get<MNode>(`/projects/${projectId}/nodes/${nodeId}`),
   getNodeMeshes: (projectId: string, nodeId: string) => api.get<string[]>(`/projects/${projectId}/nodes/${nodeId}/meshes`),
   getNodeQuality: (projectId: string, nodeId: string) =>

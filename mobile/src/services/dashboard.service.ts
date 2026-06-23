@@ -37,6 +37,23 @@ export interface MyDayStats {
   workOrdersWorked: number;
 }
 
+/**
+ * Org-level quality KPIs (mirrors `GET /quality-data/insights`). The home
+ * screen reads FPY + the 30-day inspection mix as health signals and the
+ * open-NCR / pending-sign-off / aging counts as its QC attention queue — one
+ * call backs the whole Quality section.
+ */
+export interface QualityInsights {
+  inspections30d: { total: number; pass: number; fail: number; warning: number };
+  pendingSignoffs: number;
+  firstPassYield: { ratePct: number | null; passedFirst: number; inspectedNodes: number };
+  openNcrBySeverity: Record<string, number>;
+  ncrAging: { under7: number; d7to30: number; over30: number };
+  avgCloseDays90d: number | null;
+  closed90d: number;
+  topDefects: { defectType: string; count: number; failCount: number }[];
+}
+
 export const dashboardService = {
   /** Org-wide KPIs — identical payload to the web dashboard. */
   async getSummary(): Promise<DashboardSummary> {
@@ -51,5 +68,10 @@ export const dashboardService = {
   /** The caller's own stats for today, computed server-side. */
   async getMyDay(): Promise<MyDayStats> {
     return api.get<MyDayStats>('/dashboard/my-day');
+  },
+
+  /** Org-level quality KPIs — backs the home screen's Quality + attention sections. */
+  async getQualityInsights(): Promise<QualityInsights> {
+    return api.get<QualityInsights>('/quality-data/insights');
   },
 };

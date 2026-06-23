@@ -4,6 +4,7 @@ jest.mock('../api.service', () => ({
   api: {
     post: jest.fn(),
     get: jest.fn(),
+    getList: jest.fn(),
   },
 }));
 
@@ -82,16 +83,16 @@ describe('time-tracking.service', () => {
         { id: 'e1', user: { firstName: 'John' }, endTime: null },
         { id: 'e2', user: { firstName: 'Jane' }, endTime: null },
       ];
-      api.get.mockResolvedValue(mockList);
+      api.getList.mockResolvedValue(mockList);
 
       const result = await timeTrackingService.getActive();
 
-      expect(api.get).toHaveBeenCalledWith('/time-tracking/active');
+      expect(api.getList).toHaveBeenCalledWith('/time-tracking/active');
       expect(result).toEqual(mockList);
     });
 
     it('returns empty array when no active entries', async () => {
-      api.get.mockResolvedValue([]);
+      api.getList.mockResolvedValue([]);
 
       const result = await timeTrackingService.getActive();
 
@@ -102,16 +103,16 @@ describe('time-tracking.service', () => {
   describe('getHistory', () => {
     it('calls GET /time-tracking/history without params', async () => {
       const mockHistory = [{ id: 'e1', durationSeconds: 1200 }];
-      api.get.mockResolvedValue(mockHistory);
+      api.getList.mockResolvedValue(mockHistory);
 
       const result = await timeTrackingService.getHistory();
 
-      expect(api.get).toHaveBeenCalledWith('/time-tracking/history', undefined);
+      expect(api.getList).toHaveBeenCalledWith('/time-tracking/history', undefined);
       expect(result).toEqual(mockHistory);
     });
 
     it('passes pagination + filter params', async () => {
-      api.get.mockResolvedValue([]);
+      api.getList.mockResolvedValue([]);
 
       await timeTrackingService.getHistory({
         page: 1,
@@ -121,7 +122,7 @@ describe('time-tracking.service', () => {
         endDate: '2026-04-17',
       });
 
-      expect(api.get).toHaveBeenCalledWith('/time-tracking/history', {
+      expect(api.getList).toHaveBeenCalledWith('/time-tracking/history', {
         page: 1,
         limit: 20,
         userId: 'user-123',

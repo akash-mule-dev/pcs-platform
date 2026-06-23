@@ -128,14 +128,9 @@ export function OrderBoardScreen() {
     navigation.setOptions({
       title: orderNumber || 'Work order',
       headerRight: () => (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          <TouchableOpacity onPress={() => (navigation as any).navigate('Scan')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
+        </TouchableOpacity>
       ),
     });
   }, [navigation, orderNumber, openTemplates]);

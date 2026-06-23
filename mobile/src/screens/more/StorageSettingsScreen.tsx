@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Scr
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { modelCache } from '../../services/modelCache';
+import { dataCache } from '../../services/dataCache';
 
 function fmtBytes(b: number): string {
   if (!b) return '0 MB';
@@ -29,14 +30,19 @@ export function StorageSettingsScreen() {
 
   const onClear = () => {
     Alert.alert(
-      'Clear cached models',
-      `Remove all ${stats?.count ?? 0} cached model${(stats?.count ?? 0) === 1 ? '' : 's'} (${fmtBytes(stats?.bytes ?? 0)})? They’ll re-download the next time you open them.`,
+      'Clear offline cache',
+      `Remove all ${stats?.count ?? 0} cached model${(stats?.count ?? 0) === 1 ? '' : 's'} (${fmtBytes(stats?.bytes ?? 0)}) and saved project data? They’ll re-download / re-fetch the next time you open them.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Clear',
           style: 'destructive',
-          onPress: async () => { setBusy('clear'); await modelCache.clear(); await refresh(); setBusy(null); },
+          onPress: async () => {
+            setBusy('clear');
+            await Promise.all([modelCache.clear(), dataCache.clear()]);
+            await refresh();
+            setBusy(null);
+          },
         },
       ],
     );
@@ -63,7 +69,7 @@ export function StorageSettingsScreen() {
           <View style={styles.iconWrap}><Ionicons name="cube" size={22} color={Colors.primary} /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Offline 3D models</Text>
-            <Text style={styles.subtitle}>Project models are saved on this device so the 3D & AR viewers open instantly and work offline.</Text>
+            <Text style={styles.subtitle}>Project models and assembly data are saved on this device (kept across sign-outs) so the 3D & AR viewers open instantly and work offline.</Text>
           </View>
         </View>
 
