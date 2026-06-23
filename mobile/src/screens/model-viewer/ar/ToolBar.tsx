@@ -1,7 +1,11 @@
 // AR bottom toolbar (pure RN, no native deps). Three tabs, each toggling a
-// docked panel: Align (move/rotate/scale), Edges (view/colour/weight), Measure.
-// There is no separate render-mode button — Solid/Ghost/Edges live inside the
-// Edges panel's VIEW section, so the toolbar is just the three panel tabs.
+// docked panel above it: Align (move/rotate/scale), Edges (view/colour/weight),
+// Measure (dimensions/rulers). There is no separate render-mode button —
+// Solid/Edges live inside the Edges panel's VIEW section.
+//
+// The open tab is clearly highlighted: bright fill + white text + a white
+// indicator bar on top. Inactive tabs are muted. The indicator slot is always
+// present (transparent when inactive) so the row height never shifts.
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
 
@@ -16,6 +20,30 @@ interface ToolBarProps {
   onToggleMeasure: () => void;
 }
 
+function Tab({
+  icon,
+  label,
+  active,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.button, active && styles.buttonActive]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <View style={[styles.indicator, active && styles.indicatorActive]} />
+      <Text style={[styles.buttonIcon, active && styles.textActive]}>{icon}</Text>
+      <Text style={[styles.buttonLabel, active && styles.textActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function ToolBar({
   placed,
   modelLoaded,
@@ -26,7 +54,7 @@ export default function ToolBar({
   onToggleEdges,
   onToggleMeasure,
 }: ToolBarProps) {
-  const ready = modelLoaded && placed;
+  if (!(modelLoaded && placed)) return null;
 
   return (
     <View style={styles.container}>
@@ -36,38 +64,9 @@ export default function ToolBar({
         contentContainerStyle={styles.toolbar}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Align */}
-        {ready && (
-          <TouchableOpacity
-            style={[styles.button, precisionMode ? styles.alignActiveButton : styles.alignButton]}
-            onPress={onTogglePrecision}
-          >
-            <Text style={styles.buttonIcon}>#</Text>
-            <Text style={styles.buttonLabel}>Align</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Edges */}
-        {ready && (
-          <TouchableOpacity
-            style={[styles.button, edgesPanelOpen ? styles.edgesActiveButton : styles.edgesButton]}
-            onPress={onToggleEdges}
-          >
-            <Text style={styles.buttonIcon}>◰</Text>
-            <Text style={styles.buttonLabel}>Edges</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Measure */}
-        {ready && (
-          <TouchableOpacity
-            style={[styles.button, measurePanelOpen ? styles.measureActiveButton : styles.measureButton]}
-            onPress={onToggleMeasure}
-          >
-            <Text style={styles.buttonIcon}>M</Text>
-            <Text style={styles.buttonLabel}>Measure</Text>
-          </TouchableOpacity>
-        )}
+        <Tab icon="#" label="Align" active={precisionMode} onPress={onTogglePrecision} />
+        <Tab icon="◰" label="Edges" active={edgesPanelOpen} onPress={onToggleEdges} />
+        <Tab icon="M" label="Measure" active={measurePanelOpen} onPress={onToggleMeasure} />
       </ScrollView>
     </View>
   );
@@ -85,8 +84,8 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
+    alignItems: 'flex-end',
+    gap: 12,
     paddingVertical: 12,
     paddingHorizontal: 8,
     flexGrow: 1,
@@ -95,34 +94,42 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
     borderRadius: 16,
-    minWidth: 68,
-  },
-  alignButton: { backgroundColor: 'rgba(139, 92, 246, 0.9)' },
-  alignActiveButton: { backgroundColor: 'rgba(236, 72, 153, 0.9)' },
-  edgesButton: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    minWidth: 80,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.9)',
+    borderColor: 'transparent',
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
   },
-  edgesActiveButton: {
-    backgroundColor: 'rgba(14, 165, 233, 0.95)',
-    borderWidth: 1,
+  buttonActive: {
+    backgroundColor: 'rgba(14, 165, 233, 0.97)',
     borderColor: '#ffffff',
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
-  measureButton: { backgroundColor: 'rgba(6, 182, 212, 0.9)' },
-  measureActiveButton: { backgroundColor: 'rgba(14, 165, 233, 0.95)' },
+  // Always-present slot so active/inactive heights match; only painted when active.
+  indicator: {
+    width: 26,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 6,
+    backgroundColor: 'transparent',
+  },
+  indicatorActive: { backgroundColor: '#ffffff' },
   buttonIcon: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: '#cbd5e1',
   },
   buttonLabel: {
-    fontSize: 10,
-    color: '#ffffff',
+    fontSize: 11,
+    color: '#cbd5e1',
     marginTop: 2,
-    fontWeight: '600',
+    fontWeight: '700',
   },
+  textActive: { color: '#ffffff' },
 });

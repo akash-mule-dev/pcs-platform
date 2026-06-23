@@ -3,7 +3,7 @@
 
 export type Vec3 = [number, number, number];
 
-export type RenderMode = 'solid' | 'ghost' | 'wireframe';
+export type RenderMode = 'solid' | 'wireframe';
 
 export type TrackingMode = 'world' | 'plane' | 'image';
 
@@ -30,18 +30,24 @@ export const EDGE_COLORS: EdgeColorOption[] = [
 
 export const DEFAULT_EDGE_COLOR = EDGE_COLORS[0].hex; // cyan
 
-// Edge thickness is BAKED into the tube geometry (radius), so changing it
-// regenerates + re-caches the wireframe GLB at this radius multiplier. The three
-// presets map to the line-weight a fabricator picks for visibility.
-export type EdgeThickness = 'thin' | 'medium' | 'thick';
+// Edge weight (line thickness) is BAKED into the tube geometry (radius), so
+// changing it regenerates + re-caches the wireframe GLB at this radius
+// multiplier. The Edges panel exposes both quick presets and a free slider over
+// [EDGE_WEIGHT_MIN, EDGE_WEIGHT_MAX]; 1 = the default medium line.
+export interface EdgeWeightPreset {
+  label: string;
+  scale: number;
+}
 
-export const EDGE_THICKNESS_SCALE: Record<EdgeThickness, number> = {
-  thin: 0.55,
-  medium: 1,
-  thick: 2.2,
-};
+export const EDGE_WEIGHT_PRESETS: EdgeWeightPreset[] = [
+  { label: 'Thin', scale: 0.55 },
+  { label: 'Medium', scale: 1 },
+  { label: 'Thick', scale: 2.2 },
+];
 
-export const DEFAULT_EDGE_THICKNESS: EdgeThickness = 'medium';
+export const DEFAULT_EDGE_WEIGHT = 1;
+export const EDGE_WEIGHT_MIN = 0.3;
+export const EDGE_WEIGHT_MAX = 4;
 
 // Lifecycle of the on-device model load. The camera is live the whole time —
 // these phases only describe the model streaming in over the live camera.
@@ -52,13 +58,20 @@ export interface MeasurementState {
   showParts: boolean;
   modelRulerActive: boolean;
   realRulerActive: boolean;
-  modelRulerPoints: Vec3[]; // up to 2 points, in model-local space
-  realRulerPoints: Vec3[]; // up to 2 points, in world space
+  // Both up to 2 points, in WORLD space. Model-ruler points are taps on the
+  // autofit-scaled model, so divide their world distance by the model scale
+  // (state.scale[0]) to recover the model's true dimension.
+  modelRulerPoints: Vec3[];
+  realRulerPoints: Vec3[];
   // Deviation probe: pair a point on the virtual model with the matching point
   // on the real part to measure how far the as-built deviates from the model.
   deviationActive: boolean;
   deviationModelPoint: Vec3 | null; // first tap, on the model
   deviationRealPoint: Vec3 | null; // second tap, on the real surface
+  // Multiplier for the 3D label size (the Measure panel's Size slider). The
+  // overlays counter-scale by the model's autofit scale, so this reads as a
+  // stable on-screen size regardless of the model.
+  labelSize: number;
 }
 
 export const DEFAULT_MEASUREMENTS: MeasurementState = {
@@ -71,7 +84,11 @@ export const DEFAULT_MEASUREMENTS: MeasurementState = {
   deviationActive: false,
   deviationModelPoint: null,
   deviationRealPoint: null,
+  labelSize: 1,
 };
+
+export const LABEL_SIZE_MIN = 0.3;
+export const LABEL_SIZE_MAX = 4;
 
 export const TRACKING_MODE_INFO: Record<
   TrackingMode,

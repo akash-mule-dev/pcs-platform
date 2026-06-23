@@ -64,6 +64,7 @@ const DEFAULT_MEASUREMENTS = {
   deviationActive: false,
   deviationModelPoint: null,
   deviationRealPoint: null,
+  labelSize: 1,
 };
 
 function makeProps(overrides: Record<string, any> = {}) {

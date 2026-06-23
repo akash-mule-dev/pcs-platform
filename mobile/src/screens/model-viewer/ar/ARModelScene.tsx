@@ -43,11 +43,6 @@ try {
 
 try {
   ViroMaterials?.createMaterials?.({
-    ghostOverlay: {
-      diffuseColor: '#35e0a155',
-      lightingModel: 'Constant',
-      blendMode: 'Alpha',
-    },
     // IFC-converted GLBs carry NO materials and NO vertex normals (the same
     // reason the web 3D viewer assigns a material + computeVertexNormals), so a
     // lit material renders them invisible. 'Constant' shows the diffuseColor
@@ -110,6 +105,9 @@ interface SceneProps {
       qaSelectable?: boolean;
       focusMeshName?: string | null;
       onPartTap?: (meshName: string) => void;
+      /** Incremented by the HUD's "Place point" button to drop a point at the
+       * reticle (center of view) — far more precise than tapping a small target. */
+      placeNonce?: number;
     };
   };
 }
@@ -149,12 +147,18 @@ function ARModelScene(props: SceneProps) {
     qaSelectable,
     focusMeshName,
     onPartTap,
+    placeNonce = 0,
   } = props.sceneNavigator.viroAppProps;
 
   const sceneRef = useRef<any>(null);
   const modelRef = useRef<any>(null); // active model node — read its bbox on load
   const tapPlacingRef = useRef(false);
   const autoFitDoneRef = useRef(false);
+  // Reticle placement: the latest real-world AR hit at the center of view, and
+  // the live camera pose (for a forward-ray fallback when there's no hit yet).
+  const cameraHitRef = useRef<Vec3 | null>(null);
+  const cameraPoseRef = useRef<{ pos: Vec3; forward: Vec3 } | null>(null);
+  const lastPlaceNonceRef = useRef(0);
   // Last-resort fit timer: if neither Viro's AR bbox NOR the JS-extracted
   // geometry size yields a scale, apply a visible default after a grace period so
   // the model is never left stuck at the microscopic provisional scale.
@@ -362,6 +366,88 @@ function ARModelScene(props: SceneProps) {
     }
   };
 
+  // ── Reticle hit-testing (fires every frame while a ruler tool is active) ──
+  // Store the closest real-world hit at the center of view + the live camera
+  // pose in refs (no setState → no per-frame re-render); the "Place point" button
+  // reads these to drop a precise point under the reticle.
+  const handleCameraARHitTest = (event: any) => {
+    const results = event?.hitTestResults ?? event?.nativeEvent?.hitTestResults;
+    if (!Array.isArray(results) || results.length === 0) {
+      cameraHitRef.current = null;
+      return;
+    }
+    // Prefer a hit on a detected plane, else the closest result with a position.
+    const onPlane = results.find(
+      (r: any) => typeof r?.type === 'string' && r.type.toLowerCase().includes('plane'),
+    );
+    const best = onPlane ?? results.find((r: any) => r?.transform?.position ?? r?.position) ?? results[0];
+    const pos = best?.transform?.position ?? best?.position;
+    cameraHitRef.current =
+      Array.isArray(pos) && pos.length >= 3 ? [pos[0], pos[1], pos[2]] : null;
+  };
+
+  const handleCameraTransformUpdate = (t: any) => {
+    const pos = t?.position ?? t?.cameraTransform?.position;
+    const fwd = t?.forward ?? t?.cameraTransform?.forward;
+    if (Array.isArray(pos) && Array.isArray(fwd)) {
+      cameraPoseRef.current = {
+        pos: [pos[0], pos[1], pos[2]],
+        forward: [fwd[0], fwd[1], fwd[2]],
+      };
+    }
+  };
+
+  // ── "Place point" → drop a REAL-world point at the reticle ──
+  // Model points are placed by tapping the model directly (surface-accurate);
+  // real-world points (real ruler / deviation real point) are placed here at the
+  // center-of-view AR hit, or a forward-ray fallback if no hit is available.
+  useEffect(() => {
+    if (!placeNonce || placeNonce === lastPlaceNonceRef.current) return;
+    lastPlaceNonceRef.current = placeNonce;
+    const needRealForDeviation =
+      measurements.deviationActive &&
+      !!measurements.deviationModelPoint &&
+      !measurements.deviationRealPoint;
+    const realStep = measurements.realRulerActive || needRealForDeviation;
+    if (!realStep || !placed) return;
+
+    const add = (p: Vec3) => {
+      if (needRealForDeviation) onAddDeviationRealPoint?.(p);
+      else onAddRealRulerPoint(p);
+    };
+    const forwardFrom = (pos: number[], fwd: number[], d = 1.2): Vec3 => [
+      pos[0] + fwd[0] * d,
+      pos[1] + fwd[1] * d,
+      pos[2] + fwd[2] * d,
+    ];
+
+    // Best: the real AR hit under the reticle. Next: a forward-ray from the live
+    // camera pose. Last resort (refs not populated yet, e.g. just entered the
+    // step in world mode): query the camera orientation so the press is never a
+    // silent no-op.
+    if (cameraHitRef.current) {
+      add(cameraHitRef.current);
+      return;
+    }
+    const c = cameraPoseRef.current;
+    if (c) {
+      add(forwardFrom(c.pos, c.forward));
+      return;
+    }
+    const scene = sceneRef.current;
+    if (scene?.getCameraOrientationAsync) {
+      scene
+        .getCameraOrientationAsync()
+        .then((cam: any) => {
+          if (Array.isArray(cam?.position) && Array.isArray(cam?.forward)) {
+            add(forwardFrom(cam.position, cam.forward));
+          }
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeNonce]);
+
   // Read the loaded model's world-space bbox → derive a one-shot fit scale and
   // reveal it. Distinguishes a load success from a scale/visibility problem.
   //
@@ -431,23 +517,17 @@ function ARModelScene(props: SceneProps) {
 
   const renderModelObject = () => {
     if (renderMode === 'wireframe' && wireframeUri) {
+      // Each colour/weight is a distinct GLB (baked + per-combo URI); the key on
+      // the URI remounts on a change, and Viro applies the matching Constant
+      // material on the fresh load. (The wireframe GLB is small + local, so the
+      // reload is quick.)
       return (
         <Viro3DObject
+          key={wireframeUri}
           ref={modelRef}
           source={{ uri: wireframeUri }}
           type="GLB"
           materials={[edgeMaterialFor(edgeColor)]}
-          {...modelObjectProps}
-        />
-      );
-    }
-    if (renderMode === 'ghost') {
-      return (
-        <Viro3DObject
-          ref={modelRef}
-          source={{ uri: modelUri }}
-          type="GLB"
-          materials={['ghostOverlay']}
           {...modelObjectProps}
         />
       );
@@ -472,9 +552,19 @@ function ARModelScene(props: SceneProps) {
     <ViroNode position={position} scale={scale} rotation={rotation} {...modelGestureProps}>
       <ViroNode opacity={opacity}>{renderModelObject()}</ViroNode>
       {measurements.showOverall && dimensions && (
-        <OverallDimensionsOverlay dimensions={dimensions} />
+        <OverallDimensionsOverlay
+          dimensions={dimensions}
+          modelScale={scale[0]}
+          labelSize={measurements.labelSize}
+        />
       )}
-      {measurements.showParts && dimensions && <PartDimensionsOverlay dimensions={dimensions} />}
+      {measurements.showParts && dimensions && (
+        <PartDimensionsOverlay
+          dimensions={dimensions}
+          modelScale={scale[0]}
+          labelSize={measurements.labelSize}
+        />
+      )}
       {qualityEntries && qualityEntries.length > 0 && (
         <QualityStatusOverlay entries={qualityEntries} dimensions={dimensions} />
       )}
@@ -494,15 +584,25 @@ function ARModelScene(props: SceneProps) {
   const rulerOverlays = (
     <>
       {measurements.modelRulerPoints.length > 0 && (
-        <RulerOverlay points={measurements.modelRulerPoints} colorKey="green" />
+        <RulerOverlay
+          points={measurements.modelRulerPoints}
+          colorKey="green"
+          labelSize={measurements.labelSize}
+          scaleDivisor={scale[0]}
+        />
       )}
       {measurements.realRulerPoints.length > 0 && (
-        <RulerOverlay points={measurements.realRulerPoints} colorKey="blue" />
+        <RulerOverlay
+          points={measurements.realRulerPoints}
+          colorKey="blue"
+          labelSize={measurements.labelSize}
+        />
       )}
       {measurements.deviationModelPoint && measurements.deviationRealPoint && (
         <RulerOverlay
           points={[measurements.deviationModelPoint, measurements.deviationRealPoint]}
           colorKey="green"
+          labelSize={measurements.labelSize}
         />
       )}
     </>
@@ -530,6 +630,10 @@ function ARModelScene(props: SceneProps) {
       anchorDetectionTypes={anchorDetectionTypes as any}
       onTrackingUpdated={handleTrackingUpdated}
       onClick={handleSceneTap}
+      // Center-of-view hit testing + camera pose feed the "Place point" reticle.
+      // Only enabled while measuring so it costs nothing the rest of the time.
+      onCameraARHitTest={rulerActive ? handleCameraARHitTest : undefined}
+      onCameraTransformUpdate={rulerActive ? handleCameraTransformUpdate : undefined}
     >
       {lights}
       {placed && modelNode}

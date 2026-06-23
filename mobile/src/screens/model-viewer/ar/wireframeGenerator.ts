@@ -1,6 +1,6 @@
 // Ported verbatim from glb-viewer. Pure JS (no native deps) — runs on-device
 // via @gltf-transform/core's WebIO over in-memory GLB bytes. Callers must treat
-// failures as non-fatal (solid/ghost modes still work without a wireframe).
+// failures as non-fatal (solid mode still works without a wireframe).
 import { Document, WebIO } from '@gltf-transform/core';
 import { buildEdgeTubes } from './edgeTubes';
 
@@ -8,8 +8,14 @@ const CREASE_ANGLE_DEG = 30;
 const CREASE_ANGLE_RAD = (CREASE_ANGLE_DEG * Math.PI) / 180;
 const CREASE_COS = Math.cos(CREASE_ANGLE_RAD);
 
-// Blue emissive wireframe color
-const WIREFRAME_COLOR: [number, number, number, number] = [0, 0, 1, 1]; // #0000FF
+// Parse "#rrggbb" (or "#rgb") → [r, g, b] in 0..1 for a glTF colour factor.
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  if (!Number.isFinite(n)) return [0, 0.9, 1]; // fallback ~cyan
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
 
 interface Vec3Array {
   x: number;
@@ -141,12 +147,17 @@ function worldTriPrimitives(doc: Document): WorldPrimitive[] {
  * Falls back to all edges if hard edge extraction produces too few edges.
  *
  * `radiusScale` multiplies the auto-derived edge-tube radius (the Edges panel's
- * Thin/Medium/Thick line weight); 1 = the default thin line.
+ * line weight); 1 = the default thin line. `colorHex` is BAKED into the emissive
+ * material so each colour is a genuinely different GLB — Viro caches a loaded GLB
+ * by URI and won't re-apply a changed material prop, so a per-colour file is the
+ * only reliable way to recolour the edge view.
  */
 export async function generateWireframeGlb(
   glbData: Uint8Array,
   radiusScale = 1,
+  colorHex = '#00e5ff',
 ): Promise<Uint8Array> {
+  const [cr, cg, cb] = hexToRgb(colorHex);
   const io = new WebIO();
   const inputDoc = await io.readBinary(glbData);
 
@@ -154,11 +165,14 @@ export async function generateWireframeGlb(
   const buffer = outputDoc.createBuffer('wireframe');
   const scene = outputDoc.createScene('Wireframe');
 
-  // Create unlit blue material
+  // Bright emissive material in the requested colour (the bake that makes each
+  // colour a distinct GLB). The scene also applies a Constant Viro material of
+  // the same colour for unlit rendering; this embedded one keeps the bytes — and
+  // therefore the URI's content — unique per colour.
   const wireMaterial = outputDoc
-    .createMaterial('wireframe_blue')
-    .setBaseColorFactor(WIREFRAME_COLOR)
-    .setEmissiveFactor([0, 0, 1])
+    .createMaterial(`wireframe_${colorHex.replace('#', '')}`)
+    .setBaseColorFactor([cr, cg, cb, 1])
+    .setEmissiveFactor([cr, cg, cb])
     .setMetallicFactor(0)
     .setRoughnessFactor(1);
 

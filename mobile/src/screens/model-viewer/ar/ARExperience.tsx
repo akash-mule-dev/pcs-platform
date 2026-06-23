@@ -43,9 +43,8 @@ import {
   TrackingMode,
   MeasurementState,
   DEFAULT_MEASUREMENTS,
-  EdgeThickness,
   DEFAULT_EDGE_COLOR,
-  DEFAULT_EDGE_THICKNESS,
+  DEFAULT_EDGE_WEIGHT,
 } from './types';
 import { captureSnapshot } from './arSnapshot';
 import { loadRegistration, saveRegistration } from './arRegistration';
@@ -109,9 +108,12 @@ export default function ARExperience({
   const [edgesPanelOpen, setEdgesPanelOpen] = useState(false);
   const [measurePanelOpen, setMeasurePanelOpen] = useState(false);
   // Edge-view styling (the Edges panel): colour is a live material swap, weight
-  // re-bakes the tube radius via an on-demand wireframe build.
+  // (a continuous line-thickness multiplier) re-bakes the tube radius via an
+  // on-demand wireframe build.
   const [edgeColor, setEdgeColor] = useState<string>(DEFAULT_EDGE_COLOR);
-  const [edgeThickness, setEdgeThickness] = useState<EdgeThickness>(DEFAULT_EDGE_THICKNESS);
+  const [edgeWeight, setEdgeWeight] = useState<number>(DEFAULT_EDGE_WEIGHT);
+  // Bumped by the "Place point" button to drop a real-world point at the reticle.
+  const [placeNonce, setPlaceNonce] = useState(0);
   const [trackingStatus, setTrackingStatus] = useState<string>('normal');
   const [measurements, setMeasurements] = useState<MeasurementState>(DEFAULT_MEASUREMENTS);
   const [trackingMode, setTrackingMode] = useState<TrackingMode>(initialTrackingMode);
@@ -149,14 +151,6 @@ export default function ARExperience({
   // at that moment so the transition from pill → model is seamless.
   const modelVisible = state.placed;
 
-  const confidence: 'high' | 'medium' | 'low' | null = !state.placed
-    ? null
-    : trackingStatus !== 'normal'
-      ? 'low'
-      : caps.hasDepthSensor
-        ? 'high'
-        : 'medium';
-
   const confidenceTag = useCallback((): string => {
     const flags: string[] = [];
     if (!caps.hasDepthSensor) flags.push('no-LiDAR');
@@ -165,13 +159,16 @@ export default function ARExperience({
   }, [caps.hasDepthSensor, trackingStatus]);
 
   const partNames = dimensions ? dimensions.parts.map((p) => p.name) : [];
+  // Model-ruler points are WORLD-space taps on the autofit-scaled model, so the
+  // world distance must be divided by the model scale to get the true length
+  // (matching the panel readout + 3D label). This pre-fills the Log-QA form.
   const lastRulerMeters =
     measurements.modelRulerPoints.length === 2
       ? Math.hypot(
           measurements.modelRulerPoints[1][0] - measurements.modelRulerPoints[0][0],
           measurements.modelRulerPoints[1][1] - measurements.modelRulerPoints[0][1],
           measurements.modelRulerPoints[1][2] - measurements.modelRulerPoints[0][2],
-        )
+        ) / (state.scale[0] || 1)
       : null;
 
   // ── Feed the loaded model into the scene state (camera was already live) ──
@@ -493,7 +490,9 @@ export default function ARExperience({
       applyAutoFit(reg.scale); // sets scale + marks autoFitted (skips auto-fit)
       baseRotationRef.current = reg.rotation;
       setRotation(reg.rotation);
-      if (reg.renderMode !== 'wireframe') setRenderMode(reg.renderMode);
+      // Wireframe isn't auto-restored (needs on-demand generation); anything else
+      // (incl. legacy 'ghost') resolves to the only other view, solid.
+      if (reg.renderMode !== 'wireframe') setRenderMode('solid');
     })();
   }, [state.uri, modelId, applyAutoFit, setRotation, setRenderMode]);
 
@@ -550,35 +549,52 @@ export default function ARExperience({
     setEdgesPanelOpen(false);
   }, []);
 
-  // ── Edge view: VIEW switch (Solid / Ghost / Edges), live colour, line weight ──
+  // ── Edge view: VIEW switch (Solid / Edges), colour, line weight ──
   // Selecting Edges needs a wireframe GLB at the current weight; it generates on
-  // demand and pendingWireframe flips the mode in once it's ready.
+  // demand (requestWireframe dedups internally) and pendingWireframe flips the
+  // mode in once the first build lands.
   const handleSelectView = useCallback(
     (mode: RenderMode) => {
       if (mode !== 'wireframe') {
         setRenderMode(mode);
         return;
       }
-      if (model.wireframeUri && model.wireframeUri.endsWith(`_${edgeThickness}.glb`)) {
-        setRenderMode('wireframe');
-        return;
+      if (model.wireframeUri) {
+        setRenderMode('wireframe'); // show what's already built
+      } else {
+        setPendingWireframe(true); // switch in once the first build lands
+        if (!model.wireframeBusy) notifySuccess('Generating edges…');
       }
-      setPendingWireframe(true);
-      model.requestWireframe(edgeThickness);
-      if (!model.wireframeBusy) notifySuccess('Generating edges…');
+      model.requestWireframe(edgeWeight, edgeColor); // ensure the current weight+colour
     },
-    [model, setRenderMode, edgeThickness],
+    [model, setRenderMode, edgeWeight, edgeColor],
   );
 
-  const handleSelectThickness = useCallback(
-    (thickness: EdgeThickness) => {
-      setEdgeThickness(thickness);
+  // Swatch tap: rebuild the edge view in the new colour (each colour is a
+  // distinct GLB — Viro won't recolour a loaded GLB via a prop change).
+  const handleSelectColor = useCallback(
+    (hex: string) => {
+      setEdgeColor(hex);
       if (state.renderMode === 'wireframe') {
         setPendingWireframe(true);
-        model.requestWireframe(thickness);
+        model.requestWireframe(edgeWeight, hex);
       }
     },
-    [state.renderMode, model],
+    [state.renderMode, model, edgeWeight],
+  );
+
+  // Preset tap / slider release: commit the weight and rebuild the edge view.
+  // (The slider tracks its own drag locally and only reports on release, so the
+  // panel doesn't re-render mid-drag.)
+  const handleCommitWeight = useCallback(
+    (weight: number) => {
+      setEdgeWeight(weight);
+      if (state.renderMode === 'wireframe') {
+        setPendingWireframe(true);
+        model.requestWireframe(weight, edgeColor);
+      }
+    },
+    [state.renderMode, model, edgeColor],
   );
 
 
@@ -650,6 +666,7 @@ export default function ARExperience({
           qaSelectable: qaOverlay === 'parts',
           focusMeshName,
           onPartTap: handlePartTap,
+          placeNonce,
         }}
         style={styles.arView}
       />
@@ -796,48 +813,25 @@ export default function ARExperience({
         </View>
       )}
 
-      {/* ── Capture-confidence badge + offline-queue sync pill ── */}
-      {!state.locked && !precisionMode && !edgesPanelOpen && (confidence || pendingCount > 0) && (
+      {/* ── Offline-queue sync pill ── */}
+      {!state.locked && !precisionMode && !edgesPanelOpen && !measurePanelOpen && pendingCount > 0 && (
         <View style={styles.bottomCenter} pointerEvents="box-none">
-          {confidence && (
-            <View
-              pointerEvents="none"
-              style={[
-                styles.confidenceBadge,
-                confidence === 'high'
-                  ? styles.confHigh
-                  : confidence === 'medium'
-                    ? styles.confMedium
-                    : styles.confLow,
-              ]}
-            >
-              <Text style={[styles.confidenceText, confidence === 'low' && styles.confTextLight]}>
-                {confidence === 'high'
-                  ? 'LiDAR · high accuracy'
-                  : confidence === 'medium'
-                    ? 'No LiDAR · approximate'
-                    : 'Tracking poor · hold steady'}
-              </Text>
-            </View>
-          )}
-          {pendingCount > 0 && (
-            <TouchableOpacity
-              style={[styles.queueChip, syncingQueue && styles.queueChipBusy]}
-              onPress={handleSyncQueue}
-              disabled={syncingQueue}
-              activeOpacity={0.8}
-              hitSlop={{ top: 10, bottom: 10, left: 16, right: 16 }}
-            >
-              {syncingQueue ? (
-                <ActivityIndicator size="small" color="#0b1220" />
-              ) : (
-                <Text style={styles.queueChipIcon}>⟳</Text>
-              )}
-              <Text style={styles.queueChipText}>
-                {syncingQueue ? 'Syncing…' : `${pendingCount} queued offline · tap to sync`}
-              </Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[styles.queueChip, syncingQueue && styles.queueChipBusy]}
+            onPress={handleSyncQueue}
+            disabled={syncingQueue}
+            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 16, right: 16 }}
+          >
+            {syncingQueue ? (
+              <ActivityIndicator size="small" color="#0b1220" />
+            ) : (
+              <Text style={styles.queueChipIcon}>⟳</Text>
+            )}
+            <Text style={styles.queueChipText}>
+              {syncingQueue ? 'Syncing…' : `${pendingCount} queued offline · tap to sync`}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -859,11 +853,11 @@ export default function ARExperience({
         <EdgesPanel
           renderMode={state.renderMode}
           edgeColor={edgeColor}
-          edgeThickness={edgeThickness}
+          edgeWeight={edgeWeight}
           busy={model.wireframeBusy}
           onSelectView={handleSelectView}
-          onSelectColor={setEdgeColor}
-          onSelectThickness={handleSelectThickness}
+          onSelectColor={handleSelectColor}
+          onCommitWeight={handleCommitWeight}
         />
       )}
 
@@ -872,11 +866,37 @@ export default function ARExperience({
         <MeasurementPanel
           measurements={measurements}
           dimensions={dimensions}
+          modelScale={state.scale[0]}
           onChange={updateMeasurements}
           onClearRulers={clearRulers}
           onLogDeviation={handleLogDeviation}
         />
       )}
+
+      {/* ── Aim reticle + "Place point" for real-world points (real ruler /
+          deviation real point). Aiming + pressing is far more precise than
+          tapping a small target; model points are tapped on the model. ── */}
+      {!state.locked &&
+        measurePanelOpen &&
+        state.placed &&
+        (measurements.realRulerActive ||
+          (measurements.deviationActive &&
+            !!measurements.deviationModelPoint &&
+            !measurements.deviationRealPoint)) && (
+          <View style={styles.reticleWrap} pointerEvents="box-none">
+            <View style={styles.reticle} pointerEvents="none">
+              <View style={styles.reticleRing} />
+              <View style={styles.reticleDot} />
+            </View>
+            <TouchableOpacity
+              style={styles.placeButton}
+              onPress={() => setPlaceNonce((n) => n + 1)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.placeButtonText}>＋ Place point</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
       {/* ── Lock / Unlock ── */}
       {state.placed && state.locked && !precisionMode && (
@@ -908,19 +928,6 @@ export default function ARExperience({
         >
           <Text style={styles.qaButtonText}>{qaPanelOpen ? 'Close QA' : 'QA'}</Text>
         </TouchableOpacity>
-      )}
-
-      {/* ── Primary "Log QA" FAB ── */}
-      {state.placed && !qaPanelOpen && !precisionMode && !edgesPanelOpen && (
-        <View style={styles.logQaWrap} pointerEvents="box-none">
-          <TouchableOpacity
-            style={styles.logQaButton}
-            onPress={() => setLogFormOpen(true)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.logQaButtonText}>＋ Log QA</Text>
-          </TouchableOpacity>
-        </View>
       )}
 
       {/* ── QA inspection panel ── */}
@@ -1056,26 +1063,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   errorBackText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
-  logQaWrap: {
-    position: 'absolute',
-    bottom: 160,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 26,
-  },
-  logQaButton: {
-    backgroundColor: 'rgba(16, 185, 129, 0.95)',
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 26,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
-  },
-  logQaButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
   bannerStack: {
     position: 'absolute',
     top: 200,
@@ -1133,6 +1120,48 @@ const styles = StyleSheet.create({
     zIndex: 25,
   },
   qaButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  // Aim reticle (screen centre) + Place button for real-world point capture.
+  reticleWrap: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
+  },
+  reticle: { alignItems: 'center', justifyContent: 'center' },
+  reticleRing: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  reticleDot: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#0ea5e9',
+  },
+  placeButton: {
+    marginTop: 76,
+    backgroundColor: 'rgba(14, 165, 233, 0.97)',
+    paddingVertical: 13,
+    paddingHorizontal: 30,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
+  },
+  placeButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
   vizRail: { position: 'absolute', right: 12, top: 248, gap: 8, zIndex: 18 },
   vizButton: {
     backgroundColor: 'rgba(13, 17, 23, 0.85)',
@@ -1155,12 +1184,6 @@ const styles = StyleSheet.create({
     gap: 6,
     zIndex: 15,
   },
-  confidenceBadge: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 16 },
-  confHigh: { backgroundColor: 'rgba(16, 185, 129, 0.92)' },
-  confMedium: { backgroundColor: 'rgba(245, 158, 11, 0.92)' },
-  confLow: { backgroundColor: 'rgba(239, 68, 68, 0.92)' },
-  confidenceText: { color: '#0b1220', fontSize: 15, fontWeight: '800' },
-  confTextLight: { color: '#ffffff' },
   queueChip: {
     flexDirection: 'row',
     alignItems: 'center',

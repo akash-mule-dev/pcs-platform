@@ -107,53 +107,65 @@ export default function AlignPanel({
   return (
     <View style={styles.panel} pointerEvents="box-none">
       <View style={styles.bar}>
-        {/* ── MOVE: X (left/right), Y (up/down), Z (near/far depth) ── */}
-        <Section title="MOVE">
-          <View style={styles.grid}>
-            <HoldButton glyph="◀" caption="Left" locked={locked} onHold={() => onNudgePosition([-POS_STEP, 0, 0])} />
-            <HoldButton glyph="▲" caption="Up" locked={locked} onHold={() => onNudgePosition([0, POS_STEP, 0])} />
-            <HoldButton glyph="▶" caption="Right" locked={locked} onHold={() => onNudgePosition([POS_STEP, 0, 0])} />
-            <HoldButton glyph="⊕" caption="Near" locked={locked} onHold={() => onNudgePosition([0, 0, POS_STEP])} />
-            <HoldButton glyph="▼" caption="Down" locked={locked} onHold={() => onNudgePosition([0, -POS_STEP, 0])} />
-            <HoldButton glyph="⊖" caption="Far" locked={locked} onHold={() => onNudgePosition([0, 0, -POS_STEP])} />
-          </View>
-        </Section>
+        {/* When locked the transform can't change, so the move/rotate/scale
+            controls are hidden — only the unlock control remains. */}
+        {!locked && (
+          <>
+            {/* ── MOVE: X (left/right), Y (up/down), Z (near/far depth) ── */}
+            <Section title="MOVE">
+              <View style={styles.grid}>
+                <HoldButton glyph="◀" caption="Left" locked={locked} onHold={() => onNudgePosition([-POS_STEP, 0, 0])} />
+                <HoldButton glyph="▲" caption="Up" locked={locked} onHold={() => onNudgePosition([0, POS_STEP, 0])} />
+                <HoldButton glyph="▶" caption="Right" locked={locked} onHold={() => onNudgePosition([POS_STEP, 0, 0])} />
+                <HoldButton glyph="⊕" caption="Near" locked={locked} onHold={() => onNudgePosition([0, 0, POS_STEP])} />
+                <HoldButton glyph="▼" caption="Down" locked={locked} onHold={() => onNudgePosition([0, -POS_STEP, 0])} />
+                <HoldButton glyph="⊖" caption="Far" locked={locked} onHold={() => onNudgePosition([0, 0, -POS_STEP])} />
+              </View>
+            </Section>
 
-        <View style={styles.divider} />
+            <View style={styles.divider} />
 
-        {/* ── ROTATE: pitch (X), yaw (Y), roll (Z) + quick-rotate ── */}
-        <Section title="ROTATE">
-          <View style={styles.grid}>
-            <HoldButton glyph="⤢" caption="Pitch+" locked={locked} onHold={() => onNudgeRotation([ROT_STEP, 0, 0])} />
-            <HoldButton glyph="↺" caption="Yaw+" locked={locked} onHold={() => onNudgeRotation([0, ROT_STEP, 0])} />
-            <HoldButton glyph="⟲" caption="Roll+" locked={locked} onHold={() => onNudgeRotation([0, 0, ROT_STEP])} />
-            <HoldButton glyph="⤡" caption="Pitch−" locked={locked} onHold={() => onNudgeRotation([-ROT_STEP, 0, 0])} />
-            <HoldButton glyph="↻" caption="Yaw−" locked={locked} onHold={() => onNudgeRotation([0, -ROT_STEP, 0])} />
-            <HoldButton glyph="⟳" caption="Roll−" locked={locked} onHold={() => onNudgeRotation([0, 0, -ROT_STEP])} />
-          </View>
-          <View style={styles.quickRow}>
-            <HoldButton glyph="90°" caption="Turn" locked={locked} repeat={false} wide onHold={() => onQuickRotate(90)} />
-            <HoldButton glyph="180°" caption="Flip" locked={locked} repeat={false} wide onHold={() => onQuickRotate(180)} />
-          </View>
-        </Section>
+            {/* ── ROTATE: pitch (X), yaw (Y), roll (Z) + quick-rotate ── */}
+            <Section title="ROTATE">
+              <View style={styles.grid}>
+                <HoldButton glyph="⤢" caption="Pitch+" locked={locked} onHold={() => onNudgeRotation([ROT_STEP, 0, 0])} />
+                <HoldButton glyph="↺" caption="Yaw+" locked={locked} onHold={() => onNudgeRotation([0, ROT_STEP, 0])} />
+                <HoldButton glyph="⟲" caption="Roll+" locked={locked} onHold={() => onNudgeRotation([0, 0, ROT_STEP])} />
+                <HoldButton glyph="⤡" caption="Pitch−" locked={locked} onHold={() => onNudgeRotation([-ROT_STEP, 0, 0])} />
+                <HoldButton glyph="↻" caption="Yaw−" locked={locked} onHold={() => onNudgeRotation([0, -ROT_STEP, 0])} />
+                <HoldButton glyph="⟳" caption="Roll−" locked={locked} onHold={() => onNudgeRotation([0, 0, -ROT_STEP])} />
+              </View>
+              <View style={styles.quickRow}>
+                <HoldButton glyph="90°" caption="Turn" locked={locked} repeat={false} wide onHold={() => onQuickRotate(90)} />
+                <HoldButton glyph="180°" caption="Flip" locked={locked} repeat={false} wide onHold={() => onQuickRotate(180)} />
+              </View>
+            </Section>
 
-        <View style={styles.divider} />
+            <View style={styles.divider} />
 
-        {/* ── SCALE + Lock ── */}
-        <Section title="SCALE">
-          <View style={styles.scaleRow}>
-            <HoldButton glyph="−" caption="Smaller" locked={locked} onHold={() => onScaleBy(1 / SCALE_STEP)} />
-            <View style={styles.scaleReadout}>
-              <Text style={styles.scaleReadoutText}>{scaleLabel}</Text>
-            </View>
-            <HoldButton glyph="+" caption="Bigger" locked={locked} onHold={() => onScaleBy(SCALE_STEP)} />
-          </View>
+            {/* ── SCALE ── */}
+            <Section title="SCALE">
+              <View style={styles.scaleRow}>
+                <HoldButton glyph="−" caption="Smaller" locked={locked} onHold={() => onScaleBy(1 / SCALE_STEP)} />
+                <View style={styles.scaleReadout}>
+                  <Text style={styles.scaleReadoutText}>{scaleLabel}</Text>
+                </View>
+                <HoldButton glyph="+" caption="Bigger" locked={locked} onHold={() => onScaleBy(SCALE_STEP)} />
+              </View>
+            </Section>
+
+            <View style={styles.divider} />
+          </>
+        )}
+
+        {/* ── LOCK — always shown; the only control left once locked ── */}
+        <Section title={locked ? 'LOCKED' : 'LOCK'}>
           <TouchableOpacity
             style={[styles.lockBtn, locked ? styles.lockBtnLocked : styles.lockBtnUnlocked]}
             onPress={onToggleLock}
             activeOpacity={0.8}
           >
-            <Text style={styles.lockBtnText}>{locked ? '🔒 Locked' : '🔓 Lock'}</Text>
+            <Text style={styles.lockBtnText}>{locked ? '🔒 Tap to unlock' : '🔓 Lock'}</Text>
           </TouchableOpacity>
         </Section>
       </View>
@@ -166,7 +178,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 96,
+    // Clears the toolbar (~129px tall: 40 safe-area + ~65 button + 24 padding)
+    // so the panel sits ABOVE the tabs instead of overlaying them.
+    bottom: 148,
     alignItems: 'center',
     zIndex: 22,
   },
