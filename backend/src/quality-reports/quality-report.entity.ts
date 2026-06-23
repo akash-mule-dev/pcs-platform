@@ -17,6 +17,7 @@ export enum QualityReportStatus {
 @Index(['organizationId', 'productionOrderId'])
 @Index(['organizationId', 'status'])
 @Index(['organizationId', 'assemblyNodeId'])
+@Index(['organizationId', 'assemblyNodeId', 'stageId'])
 @Index(['organizationId', 'number'], { unique: true })
 export class QualityReport extends TenantOwnedEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
@@ -39,6 +40,17 @@ export class QualityReport extends TenantOwnedEntity {
   @Column({ name: 'production_order_id', type: 'uuid' }) productionOrderId: string;
   @Column({ name: 'project_id', type: 'uuid', nullable: true }) projectId: string | null;
   @Column({ name: 'assembly_node_id', type: 'uuid', nullable: true }) assemblyNodeId: string | null;
+
+  /**
+   * The fabrication OPERATION the nonconformity was found at — the process
+   * `stages.id` (and the specific `work_order_stages.id` instance). Lets a
+   * per-stage HOLD point gate on only its own stage's NCRs while the FINAL QC
+   * stage still consolidates every stage's NCRs. Null for NCRs raised without an
+   * operation context (legacy / assembly-level findings) — those count only
+   * toward the final-QC rollup, never a per-stage hold.
+   */
+  @Column({ name: 'stage_id', type: 'uuid', nullable: true }) stageId: string | null;
+  @Column({ name: 'work_order_stage_id', type: 'uuid', nullable: true }) workOrderStageId: string | null;
 
   /**
    * When this report (an NCR) was raised FROM a failed inspection, the source

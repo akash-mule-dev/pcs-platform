@@ -29,7 +29,7 @@ try {
 export function ARViewScreen() {
   const route = useRoute<Route>();
   const navigation = useNavigation<Nav>();
-  const { modelId, fileUrl, meshNames, partLabel } = route.params;
+  const { modelId, fileUrl, meshNames, partLabel, assemblyNodeId, projectId, stageId, workOrderStageId } = route.params;
   const modelName = partLabel || 'Model';
 
   const openQualityData = useCallback(() => {
@@ -78,6 +78,7 @@ export function ARViewScreen() {
         meshNames={meshNames && meshNames.length ? meshNames : null}
         partLabel={partLabel}
         initialTrackingMode="plane"
+        qaContext={{ assemblyNodeId, projectId, stageId, workOrderStageId }}
         onViewRecords={openQualityData}
         onBack={() => navigation.goBack()}
       />

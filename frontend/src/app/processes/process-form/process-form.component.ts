@@ -71,7 +71,7 @@ interface StageDraft {
             <div class="stages-header">
               <div class="stages-title">
                 <span class="section-label">Stages</span>
-                <span class="count-pill">{{ stages.length }}</span>
+                <span class="count-pill">{{ stages.length + 1 }}</span>
               </div>
               <button type="button" class="btn-outline" (click)="addStage()">
                 <mat-icon>add</mat-icon> Add Stage
@@ -81,8 +81,8 @@ interface StageDraft {
             @if (stages.length === 0) {
               <button type="button" class="stages-empty" (click)="addStage()">
                 <mat-icon>layers</mat-icon>
-                <span class="empty-title">No stages yet</span>
-                <span class="empty-sub">Add the first stage to define the manufacturing sequence — or create the process without stages and add them later.</span>
+                <span class="empty-title">No production stages yet</span>
+                <span class="empty-sub">Add your first production stage — a Final QC release gate (below) is always added at the end automatically.</span>
               </button>
             } @else {
               <p class="hint-text reorder-hint">
@@ -158,6 +158,19 @@ interface StageDraft {
                 </button>
               </div>
             }
+
+            <!-- Pinned terminal Final QC / release gate — always added, not removable -->
+            <div class="finalqc-card">
+              <div class="fq-num"><mat-icon>verified</mat-icon></div>
+              <div class="fq-body">
+                <div class="fq-title">
+                  <span class="fq-name">{{ stages.length + 1 }}. {{ FINAL_QC.name }}</span>
+                  <span class="fq-badge">Release gate</span>
+                  <span class="fq-lock"><mat-icon>lock</mat-icon>Auto-added</span>
+                </div>
+                <p class="fq-desc">Consolidates every stage’s QC. Can’t complete while the assembly has any open NCR; completing it releases the piece for shipping. Always the last stage.</p>
+              </div>
+            </div>
           </section>
         }
       </div>
@@ -167,7 +180,7 @@ interface StageDraft {
         @if (!data) {
           <div class="footer-summary">
             <mat-icon>layers</mat-icon>
-            <span><strong>{{ stages.length }}</strong> stage{{ stages.length === 1 ? '' : 's' }}</span>
+            <span><strong>{{ stages.length + 1 }}</strong> stage{{ stages.length + 1 === 1 ? '' : 's' }}</span>
             <span class="dot">·</span>
             <span class="mono">{{ totalTargetSeconds | duration }} total</span>
           </div>
@@ -328,6 +341,26 @@ interface StageDraft {
     .add-stage-row:hover { border-color: var(--clay-primary); color: var(--clay-primary); background: var(--clay-surface-hover); }
     .add-stage-row mat-icon { font-size: 18px; width: 18px; height: 18px; }
 
+    /* Pinned Final QC card */
+    .finalqc-card {
+      display: flex; align-items: flex-start; gap: 12px; margin-top: 10px;
+      padding: 12px 14px; border: 1px dashed var(--clay-primary, #2563eb); border-radius: var(--clay-radius-sm);
+      background: var(--info-bg, #eef2ff);
+    }
+    .fq-num {
+      width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+      background: var(--clay-primary, #2563eb); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .fq-num mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .fq-body { flex: 1; min-width: 0; }
+    .fq-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .fq-name { font-size: 13px; font-weight: 700; color: var(--clay-text); }
+    .fq-badge { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; background: var(--clay-primary, #2563eb); color: #fff; border-radius: 999px; padding: 1px 8px; }
+    .fq-lock { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; color: var(--clay-text-muted); }
+    .fq-lock mat-icon { font-size: 13px; width: 13px; height: 13px; }
+    .fq-desc { margin: 4px 0 0; font-size: 11.5px; color: var(--clay-text-secondary); line-height: 1.45; }
+
     /* Drag feedback */
     .cdk-drag-placeholder { opacity: 0.25; }
     .cdk-drag-animating { transition: transform 250ms cubic-bezier(0, 0, 0.2, 1); }
@@ -373,6 +406,14 @@ export class ProcessFormComponent {
   saving = false;
   private _seq = 0;
 
+  /** The terminal Final QC / release gate, always appended to a new process. */
+  readonly FINAL_QC = {
+    name: 'Final QC',
+    targetTimeSeconds: 1800,
+    description:
+      'Final dimensional + coating + marking check; consolidates every stage’s QC and releases the piece for shipping — blocked while any NCR is open.',
+  };
+
   constructor(
     public dialogRef: MatDialogRef<ProcessFormComponent>,
     @Inject(MAT_DIALOG_DATA) public data: any,
@@ -386,7 +427,9 @@ export class ProcessFormComponent {
   }
 
   get totalTargetSeconds(): number {
-    return this.stages.reduce((sum, s) => sum + (Number(s.targetTimeSeconds) || 0), 0);
+    const base = this.stages.reduce((sum, s) => sum + (Number(s.targetTimeSeconds) || 0), 0);
+    // The pinned Final QC stage is always part of a new process's total.
+    return this.data ? base : base + this.FINAL_QC.targetTimeSeconds;
   }
 
   addStage(): void {
@@ -428,9 +471,16 @@ export class ProcessFormComponent {
           if (s.description?.trim()) stage.description = s.description.trim();
           return stage;
         });
-      if (validStages.length > 0) {
-        body.stages = validStages;
-      }
+      // Always cap the routing with the terminal Final QC / release gate.
+      validStages.push({
+        name: this.FINAL_QC.name,
+        targetTimeSeconds: this.FINAL_QC.targetTimeSeconds,
+        description: this.FINAL_QC.description,
+        inspectionType: 'hold',
+        requiresInspection: true,
+        isFinalQc: true,
+      });
+      body.stages = validStages;
     }
     const obs = this.data
       ? this.api.patch(`/processes/${this.data.id}`, body)

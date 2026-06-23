@@ -87,6 +87,7 @@ export class LibraryService {
       const stageRows = seed.stages.map((s, i) => ({
         name: s.name, sequence: i + 1, targetTimeSeconds: s.targetTimeSeconds,
         description: s.description ?? null, requiresInspection: !!s.requiresInspection,
+        inspectionType: s.inspectionType ?? null, isFinalQc: s.isFinalQc ?? null,
         processId: proc.id, organizationId: platformOrg.id,
       }));
       await this.stageRepo.save(this.stageRepo.create(stageRows as any));
@@ -172,6 +173,7 @@ export class LibraryService {
           await stgRepo.update({ id: u.id }, {
             name: u.fields.name, targetTimeSeconds: u.fields.targetTimeSeconds,
             description: u.fields.description ?? null, requiresInspection: !!u.fields.requiresInspection,
+            inspectionType: u.fields.inspectionType ?? null, isFinalQc: u.fields.isFinalQc ?? null,
           } as any);
         }
       }

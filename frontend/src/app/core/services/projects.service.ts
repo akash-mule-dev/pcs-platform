@@ -294,6 +294,9 @@ export interface RecordQuality {
   toleranceMin?: number;
   toleranceMax?: number;
   regionLabel?: string;
+  /** Fabrication operation this check was recorded at (process stage + WO-stage instance). */
+  stageId?: string;
+  workOrderStageId?: string;
 }
 
 export interface NodeQualityStatus {
@@ -338,6 +341,8 @@ export interface OrdersDashboard {
 export type ShipStatus = 'in_production' | 'blocked_ncr' | 'ready' | 'allocated' | 'shipped';
 export interface AuditStageRow {
   wosId: string; stageId: string; name: string; sequence: number;
+  /** The terminal final-QC / release gate stage (consolidates every stage's QC). */
+  isFinalQc?: boolean;
   status: string; qtyDone: number; qtyTotal: number;
   startedAt: string | null; completedAt: string | null; statusUpdatedAt: string | null;
   assignedUser: { id: string; name: string } | null;
@@ -361,7 +366,7 @@ export interface AuditItem {
 export interface OrderAudit {
   order: ProductionOrder & { notes?: string | null };
   project: { id: string; name: string; number: string | null } | null;
-  stages: { id: string; name: string; sequence: number }[];
+  stages: { id: string; name: string; sequence: number; isFinalQc?: boolean }[];
   totals: {
     items: number; itemsDone: number; unitsDone: number; unitsTotal: number; percent: number;
     totalTimeSeconds: number; openNcrs: number; readyToShip: number; shippedItems: number;
@@ -385,7 +390,21 @@ export interface NodeAuditDetail {
     startTime: string; endTime: string | null; durationSeconds: number | null;
     isRework: boolean; notes: string | null; inputMethod: string | null;
   }[];
-  ncrs: { id: string; number: string; title: string; status: string; severity: string; createdAt: string }[];
+  ncrs: { id: string; number: string; title: string; status: string; severity: string; stageId?: string | null; stageName?: string | null; createdAt: string }[];
+  /** Final-QC release cockpit: full per-stage QC picture in one view (status, inspections, NCRs, gate). */
+  finalQc?: {
+    releasable: boolean;
+    openNcrs: number;
+    unsignedFailures: number;
+    inspections: { total: number; pass: number; warning: number; fail: number };
+    byStage: {
+      stageId: string; name: string; sequence: number; status: string;
+      isFinalQc: boolean; inspectionType: 'hold' | 'witness' | 'review' | null;
+      openNcrs: number;
+      inspections: { pass: number; warning: number; fail: number; pendingSignoff: number };
+      gateBlocked: boolean; gateReason?: string | null;
+    }[];
+  };
 }
 export interface BulkStageUpdate { stageId: string; nodeIds: string[]; qtyDone?: number; status?: string; }
 export interface BulkStageResult { requested: number; updated: number; failed: { nodeId: string; mark: string; message: string }[]; }

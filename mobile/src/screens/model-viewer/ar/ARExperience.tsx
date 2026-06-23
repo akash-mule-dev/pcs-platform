@@ -67,6 +67,10 @@ interface ARExperienceProps {
   partLabel?: string | null;
   /** Mode the session opens in; switchable live in-AR. */
   initialTrackingMode: TrackingMode;
+  /** Fabrication context — when AR is opened from an assembly's stage, every
+   *  inspection logged here is tagged to that operation (so a hold point gates
+   *  the stage and the result rolls up to Final QC). Omitted = model-only AR. */
+  qaContext?: { assemblyNodeId?: string; projectId?: string; stageId?: string; workOrderStageId?: string };
   /** Open the (non-AR) Quality records viewer for this model. */
   onViewRecords?: () => void;
   onBack: () => void;
@@ -79,6 +83,7 @@ export default function ARExperience({
   meshNames = null,
   partLabel,
   initialTrackingMode,
+  qaContext,
   onViewRecords,
   onBack,
 }: ARExperienceProps) {
@@ -337,6 +342,7 @@ export default function ARExperience({
           status,
           inspector: inspectorName,
           notes: `AR per-part inspection${confidenceTag()}`,
+          ...qaContext,
         });
         notifySuccess(`${meshName}: ${status}`);
       } catch (e) {
@@ -344,7 +350,7 @@ export default function ARExperience({
         Alert.alert('Could not save', e instanceof Error ? e.message : 'Failed to save result');
       }
     },
-    [createQuality, modelId, inspectorName, confidenceTag],
+    [createQuality, modelId, inspectorName, confidenceTag, qaContext],
   );
 
   const handlePartTap = useCallback(
@@ -378,6 +384,7 @@ export default function ARExperience({
         measurementValue: mm,
         measurementUnit: 'mm',
         notes: `AR deviation probe${confidenceTag()}`,
+        ...qaContext,
       });
       setMeasurements((m) => ({ ...m, deviationModelPoint: null, deviationRealPoint: null }));
       notifySuccess();
@@ -394,6 +401,7 @@ export default function ARExperience({
     focusMeshName,
     inspectorName,
     confidenceTag,
+    qaContext,
   ]);
 
   // ── Evidence capture ──
@@ -438,7 +446,7 @@ export default function ARExperience({
     async (result: InspectionFormResult) => {
       setSavingInspection(true);
       try {
-        await createQuality({ modelId, inspector: inspectorName, ...result });
+        await createQuality({ modelId, inspector: inspectorName, ...qaContext, ...result });
         setLogFormOpen(false);
         notifySuccess(offlineService.isOnline ? 'Inspection logged' : 'Saved offline — will sync');
       } catch (e) {
@@ -448,7 +456,7 @@ export default function ARExperience({
         setSavingInspection(false);
       }
     },
-    [createQuality, modelId, inspectorName],
+    [createQuality, modelId, inspectorName, qaContext],
   );
 
   const handleSyncQueue = useCallback(async () => {

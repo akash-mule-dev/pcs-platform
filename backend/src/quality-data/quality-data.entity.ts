@@ -83,6 +83,19 @@ export class QualityData extends TenantOwnedEntity {
   @Column({ name: 'project_id', type: 'uuid', nullable: true })
   projectId: string | null;
 
+  /**
+   * The fabrication OPERATION this inspection was recorded at — the process
+   * `stages.id` (and the specific `work_order_stages.id` instance). Lets a
+   * per-stage hold point check for an acceptable inspection on its OWN stage,
+   * and a re-inspection be tied to the operation that was reworked. Null for
+   * inspections recorded without an operation context.
+   */
+  @Column({ name: 'stage_id', type: 'uuid', nullable: true })
+  stageId: string | null;
+
+  @Column({ name: 'work_order_stage_id', type: 'uuid', nullable: true })
+  workOrderStageId: string | null;
+
   // Phase 6: Sign-off workflow
   @Column({ name: 'signoff_status', type: 'varchar', length: 20, default: 'pending' })
   signoffStatus: string; // 'pending' | 'approved' | 'rejected'

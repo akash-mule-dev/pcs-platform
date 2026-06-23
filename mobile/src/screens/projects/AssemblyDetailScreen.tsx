@@ -267,14 +267,21 @@ export function AssemblyDetailScreen() {
         fileUrl: `${environment.apiUrl}/models/${node.modelId}/file`,
         meshNames: meshes && meshes.length ? meshes : undefined,
         partLabel: mark,
+        // Tag AR inspections to this assembly + the stage currently in view.
+        assemblyNodeId: nodeId,
+        projectId,
+        stageId: sel?.stageId,
+        workOrderStageId: sel?.wosId,
       });
     } catch { /* ignore */ }
   };
 
   // ── Quality ──
+  // Tag checks/NCRs with the OPERATION being viewed (the selected stage) so a
+  // hold point gates that stage; with no stage they still roll up to Final QC.
   const recordQuick = async (status: string) => {
     setQaBusy(true);
-    try { await projectsService.recordNodeQuality(projectId, nodeId, { status, inspector }); await load(); }
+    try { await projectsService.recordNodeQuality(projectId, nodeId, { status, inspector, stageId: sel?.stageId, workOrderStageId: sel?.wosId }); await load(); }
     catch { /* ignore */ } finally { setQaBusy(false); }
   };
   const recordMeasure = async () => {
@@ -285,7 +292,7 @@ export function AssemblyDetailScreen() {
       await projectsService.recordNodeQuality(projectId, nodeId, {
         status: 'pass', measurementValue: value, measurementUnit: meas.unit || undefined,
         toleranceMin: meas.min ? parseFloat(meas.min) : undefined, toleranceMax: meas.max ? parseFloat(meas.max) : undefined,
-        notes: meas.notes || undefined, inspector,
+        notes: meas.notes || undefined, inspector, stageId: sel?.stageId, workOrderStageId: sel?.wosId,
       });
       setMeas({ value: '', unit: 'mm', min: '', max: '', notes: '' });
       setMeasureOpen(false); await load();
@@ -303,6 +310,7 @@ export function AssemblyDetailScreen() {
       if (!ncrTpl) { Alert.alert('Raise NCR', 'No NCR template exists yet — create one in the web portal.'); return; }
       const r = await qcReportsService.createFromInspection({
         qualityDataId: q.id, templateId: ncrTpl.id, productionOrderId: orderId, assemblyNodeId: nodeId,
+        stageId: sel?.stageId, workOrderStageId: sel?.wosId,
       });
       await load();
       openReport(r.id, r.number); // NCR → opens the lifecycle editor (disposition)
@@ -431,8 +439,10 @@ export function AssemblyDetailScreen() {
 
         {sel.gateBlocked && (
           <View style={styles.gateBanner}>
-            <Ionicons name="lock-closed" size={14} color={WO.warn} />
-            <Text style={styles.gateTxt}>Quality gate: close the open NCR(s) before this stage can complete.</Text>
+            <Ionicons name={sel.isFinalQc ? 'shield-checkmark' : 'lock-closed'} size={14} color={WO.warn} />
+            <Text style={styles.gateTxt}>{sel.gateReason || (sel.isFinalQc
+              ? 'Final QC: close every open NCR across the stages before releasing this piece.'
+              : 'Quality gate: resolve this stage’s open NCR(s) before it can complete.')}</Text>
           </View>
         )}
 
@@ -484,6 +494,37 @@ export function AssemblyDetailScreen() {
           <View style={styles.metaCell}><Text style={styles.metaK}>Station</Text><Text style={styles.metaV}>{sel.station?.name || '—'}</Text></View>
           <View style={styles.metaCell}><Text style={styles.metaK}>Stage time</Text><Text style={styles.metaV}>{fmtDur(sel.timeSeconds)}{sel.timeEntries ? ` (${sel.timeEntries})` : ''}</Text></View>
         </View>
+
+        {/* Final QC release cockpit — the whole assembly's QC in one place */}
+        {sel.isFinalQc && audit.finalQc && (
+          <View style={styles.fqc}>
+            <View style={styles.fqcHead}>
+              <Ionicons name={audit.finalQc.releasable ? 'shield-checkmark' : 'alert-circle'} size={18} color={audit.finalQc.releasable ? Colors.success : Colors.danger} />
+              <Text style={styles.fqcTitle}>{audit.finalQc.releasable ? 'Ready to release' : `Held — ${audit.finalQc.openNcrs} open NCR${audit.finalQc.openNcrs === 1 ? '' : 's'}${audit.finalQc.unsignedFailures ? ` · ${audit.finalQc.unsignedFailures} unsigned` : ''}`}</Text>
+            </View>
+            <Text style={styles.fqcSub}>{audit.finalQc.inspections.pass} pass · {audit.finalQc.inspections.warning} warning · {audit.finalQc.inspections.fail} fail · {audit.finalQc.inspections.total} inspections</Text>
+            {audit.finalQc.byStage.map((s) => (
+              <TouchableOpacity key={s.stageId} style={[styles.fqcRow, s.gateBlocked && styles.fqcRowHeld]} onPress={() => setSelStageId(s.stageId)}>
+                <Text style={styles.fqcName} numberOfLines={1}>{s.name}{s.isFinalQc ? '  ★' : s.inspectionType === 'hold' ? '  ⏸' : ''}</Text>
+                <Text style={[styles.fqcStat, { color: ST_COLOR[s.status] || Colors.medium }]}>{ST_LABEL[s.status] || s.status}</Text>
+                <Text style={styles.fqcInsp}>{s.inspections.pass ? `${s.inspections.pass}✓ ` : ''}{s.inspections.warning ? `${s.inspections.warning}! ` : ''}{s.inspections.fail ? `${s.inspections.fail}✕` : ''}{(!s.inspections.pass && !s.inspections.warning && !s.inspections.fail) ? '—' : ''}</Text>
+                {s.openNcrs > 0
+                  ? <Text style={styles.fqcNcr}>{s.openNcrs} NCR</Text>
+                  : s.gateBlocked
+                    ? <Ionicons name="lock-closed" size={13} color={WO.warn} />
+                    : <Ionicons name="checkmark-circle" size={14} color={Colors.success} />}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={[styles.fqcRelease, (busy || !audit.finalQc.releasable || sel.status === 'completed') && styles.fqcReleaseOff]}
+              disabled={busy || !audit.finalQc.releasable || sel.status === 'completed'}
+              onPress={() => setStage(sel, { status: 'completed' })}>
+              <Ionicons name="cube" size={16} color={Colors.white} />
+              <Text style={styles.fqcReleaseTxt}>{sel.status === 'completed' ? 'Released' : 'Release piece — complete Final QC'}</Text>
+            </TouchableOpacity>
+            {!audit.finalQc.releasable && sel.status !== 'completed' && <Text style={styles.fqcHint}>Resolve all open NCRs to enable release.</Text>}
+          </View>
+        )}
 
         {/* tracker */}
         <View style={styles.tracker}>
@@ -675,6 +716,21 @@ const styles = StyleSheet.create({
   gateBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: WO.warnBg, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8, marginTop: 11 },
   gateTxt: { flex: 1, fontSize: 12, color: WO.warn, fontWeight: '600' },
   syncNow: { fontSize: 12, fontWeight: '800', color: WO.accent },
+  // Final QC release cockpit
+  fqc: { marginTop: 14, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 },
+  fqcHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  fqcTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: Colors.text },
+  fqcSub: { fontSize: 11.5, color: Colors.textSecondary, marginTop: 2, marginBottom: 8 },
+  fqcRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderTopWidth: 1, borderTopColor: Colors.border },
+  fqcRowHeld: { backgroundColor: WO.warnBg },
+  fqcName: { flex: 1, fontSize: 12.5, fontWeight: '600', color: Colors.text },
+  fqcStat: { width: 76, fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
+  fqcInsp: { width: 64, fontSize: 11.5, fontWeight: '700', color: Colors.textSecondary },
+  fqcNcr: { fontSize: 11, fontWeight: '800', color: Colors.white, backgroundColor: Colors.danger, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 1, overflow: 'hidden' },
+  fqcRelease: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.success, borderRadius: 10, paddingVertical: 13, marginTop: 12 },
+  fqcReleaseOff: { backgroundColor: Colors.medium, opacity: 0.7 },
+  fqcReleaseTxt: { color: Colors.white, fontSize: 14, fontWeight: '800' },
+  fqcHint: { fontSize: 11, color: Colors.danger, textAlign: 'center', marginTop: 6 },
   rowMainNoCap: { color: WO.text, fontWeight: '600', fontSize: 13 },
   srcTag: { fontSize: 9, fontWeight: '800', color: WO.textSoft, backgroundColor: WO.muteBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, overflow: 'hidden' },
 

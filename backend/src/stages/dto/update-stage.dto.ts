@@ -11,6 +11,8 @@ export class UpdateStageDto {
   @IsBoolean() @IsOptional() requiresInspection?: boolean;
   @ApiPropertyOptional({ description: 'ITP intent: hold (blocks) | witness | review. Null = not an inspection point.' })
   @IsIn(['hold', 'witness', 'review']) @IsOptional() inspectionType?: 'hold' | 'witness' | 'review' | null;
+  @ApiPropertyOptional({ description: 'Terminal final-QC / release gate: consolidates every stage’s QC. Blocked while ANY NCR is open.' })
+  @IsBoolean() @IsOptional() isFinalQc?: boolean | null;
   @ApiPropertyOptional({ description: 'ITP line detail: what to verify + acceptance criteria (free-form).' })
   @IsObject() @IsOptional() inspectionCharacteristics?: Record<string, any>;
   @ApiPropertyOptional({ description: 'Role required to sign this inspection point (e.g. cwi, qa_manager).' })
