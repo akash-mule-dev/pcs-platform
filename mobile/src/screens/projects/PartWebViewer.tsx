@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
-import { environment } from '../../config/environment';
+import { modelCache } from '../../services/modelCache';
 
 /**
  * Reusable three.js WebView model viewer — the mesh-pick + recolor ENABLER and
@@ -65,6 +65,7 @@ window._measurePts = [];      // THREE.Vector3[] for the in-progress ruler
 window._dimsOn = false;
 window._loading = false;      // re-entry guard for loadModelFromBase64
 window._fitDist = 4;          // camera distance that frames the model
+window._camAnim = null;       // active camera fly-to (focus-on-selection)
 var BASE_COLOR = 0x9aa2ad;
 var HILITE = 0x1565c0;
 var DIM_COLOR = 0xb8c0cc;
@@ -113,7 +114,21 @@ var grid = new THREE.GridHelper(10, 20, 0xb9cbdc, 0xd9e5f0); scene.add(grid);
 var measureGroup = new THREE.Group(); scene.add(measureGroup);
 var dimGroup = new THREE.Group(); scene.add(dimGroup);
 
-function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); }
+function animate() {
+  requestAnimationFrame(animate);
+  // Camera fly-to (focus-on-selection): lerp position + target over the duration.
+  if (window._camAnim) {
+    var a = window._camAnim;
+    var t = Math.min(1, (performance.now() - a.start) / a.duration);
+    var e = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; // easeInOutQuad
+    camera.position.lerpVectors(a.fromPos, a.toPos, e);
+    controls.target.lerpVectors(a.fromTgt, a.toTgt, e);
+    if (t >= 1) { window._camAnim = null; controls.enableDamping = true; } // restore free-orbit damping
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
 animate();
 window.addEventListener('resize', function() {
   camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
@@ -244,6 +259,38 @@ window.setCamera = function(p){
   camera.up.set(0, 1, 0);
   camera.position.copy(t.clone().add(dir.multiplyScalar(d)));
   controls.update();
+};
+
+// ── Focus-on-selection: frame a set of mesh names, keeping the view direction ──
+// so the user never loses orientation (mirrors the web viewer's autoFocus).
+window.focusOn = function(json){
+  var names; try { names = JSON.parse(json); } catch(e) { return; }
+  if (!Array.isArray(names) || !names.length || !window._meshes.length) return;
+  var set = {}; for (var i = 0; i < names.length; i++) set[names[i]] = true;
+  var box = new THREE.Box3(), tmp = new THREE.Box3(), found = false;
+  window._meshes.forEach(function(it){
+    var m = it.mesh, on = false, p = m;
+    while (p) { if (set[p.name]) { on = true; break; } p = p.parent; }
+    if (on && m.visible) { tmp.setFromObject(m); if (!tmp.isEmpty()) { box.union(tmp); found = true; } }
+  });
+  if (!found || box.isEmpty()) return;
+  var sphere = box.getBoundingSphere(new THREE.Sphere());
+  var radius = Math.max(sphere.radius, 0.01);
+  var vFov = camera.fov * Math.PI / 180;
+  var hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  var fitDist = radius / Math.sin(Math.min(vFov, hFov) / 2) * 1.15;
+  var dir = camera.position.clone().sub(controls.target);
+  if (dir.lengthSq() < 1e-6) dir.set(3, 2, 5);
+  dir.normalize();
+  controls.enableDamping = false; // avoid leftover orbit momentum fighting the fly-to
+  window._camAnim = {
+    fromPos: camera.position.clone(),
+    toPos: sphere.center.clone().add(dir.multiplyScalar(fitDist)),
+    fromTgt: controls.target.clone(),
+    toTgt: sphere.center.clone(),
+    start: performance.now(),
+    duration: 600,
+  };
 };
 
 // ── Calibration: derive mm-per-world-unit from known part lengths ──
@@ -392,6 +439,10 @@ export interface PartWebViewerProps {
   isolate?: string[] | null;
   /** Mesh names to emissive-highlight (others dimmed but visible). */
   highlight?: string[];
+  /** When true, animate the camera to frame the highlighted meshes. */
+  autoFocus?: boolean;
+  /** Bump on every selection (even re-selecting the same part) to re-fire the focus zoom. */
+  focusNonce?: number;
   /** name → hex color map to paint the model (status/readiness overlay). */
   colors?: Record<string, number> | null;
   // ── Opt-in inspection tools (3D Viewer screen). Omitted → unchanged embeds. ──
@@ -422,6 +473,8 @@ export function PartWebViewer({
   modelId,
   isolate,
   highlight,
+  autoFocus = false,
+  focusNonce,
   colors,
   referenceLengths,
   measureMode = 'none',
@@ -440,8 +493,6 @@ export function PartWebViewer({
   const [fetching, setFetching] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  const fileUrl = `${environment.apiUrl}/models/${modelId}/file`;
-
   // Isolation set is baked into the page (rarely changes for a mount).
   const html = useMemo(
     () => VIEWER_HTML.replace('__ISO_SET__', JSON.stringify(isolate ?? [])),
@@ -455,33 +506,32 @@ export function PartWebViewer({
     if (fetching) return;
     setFetching(true);
     try {
-      const res = await fetch(fileUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const base64: string = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve((r.result as string).split(',')[1]);
-        r.onerror = reject;
-        r.readAsDataURL(blob);
+      // From the persistent on-device cache (downloaded once at login or first
+      // view) — no network on a cache hit, and it works offline.
+      const base64 = await modelCache.getBase64(modelId, (pct) => {
+        webRef.current?.injectJavaScript(
+          `var p=document.getElementById('pct'); if(p)p.textContent='Downloading… ${pct}%';` +
+          `var f=document.getElementById('fill'); if(f)f.style.width='${Math.round(pct * 0.4)}%'; true;`,
+        );
       });
       const CHUNK = 512 * 1024;
       const total = Math.ceil(base64.length / CHUNK);
       webRef.current?.injectJavaScript(`window._c=[];window._t=${total};true;`);
       for (let i = 0; i < total; i++) {
         const chunk = base64.substring(i * CHUNK, (i + 1) * CHUNK);
-        const pct = Math.round(((i + 1) / total) * 70);
+        const pct = 40 + Math.round(((i + 1) / total) * 55);
         webRef.current?.injectJavaScript(`
           window._c.push("${chunk}");
-          document.getElementById('pct').textContent='Downloading… ${pct}%';
+          document.getElementById('pct').textContent='Loading… ${pct}%';
           document.getElementById('fill').style.width='${pct}%';
           if (window._c.length===window._t) window.loadModelFromBase64(window._c.join(''));
           true;`);
       }
     } catch (err: any) {
-      webRef.current?.injectJavaScript(`document.getElementById('loading').innerHTML='<div id="err">Fetch error: ${String(err.message).replace(/'/g, "\\'")}</div>';true;`);
+      webRef.current?.injectJavaScript(`document.getElementById('loading').innerHTML='<div id="err">Load error: ${String(err.message).replace(/'/g, "\\'")}</div>';true;`);
     }
     setFetching(false);
-  }, [fileUrl, fetching]);
+  }, [modelId, fetching]);
 
   // Apply the active paint after load (and whenever it changes). A non-empty
   // `colors` map (status/readiness overlay) takes precedence; otherwise the
@@ -514,6 +564,15 @@ export function PartWebViewer({
     if (!loaded) return;
     webRef.current?.injectJavaScript(`window.setMeasureMode && window.setMeasureMode('${measureMode}');true;`);
   }, [loaded, measureMode]);
+
+  // Frame the current selection — nonce-driven so re-selecting the SAME part
+  // (after orbiting away) re-fires the zoom, mirroring cameraCommand.
+  useEffect(() => {
+    if (!loaded || !autoFocus || !focusNonce) return;
+    const names = highlight ?? [];
+    if (!names.length) return;
+    webRef.current?.injectJavaScript(`window.focusOn && window.focusOn(${JSON.stringify(JSON.stringify(names))});true;`);
+  }, [loaded, autoFocus, focusNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One-shot camera moves (nonce-driven so the same preset re-fires).
   useEffect(() => {

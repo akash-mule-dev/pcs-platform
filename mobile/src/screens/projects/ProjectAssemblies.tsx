@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -9,32 +10,29 @@ import { Colors } from '../../theme/colors';
 import { WO } from '../../theme/wo';
 import { environment } from '../../config/environment';
 import { ProjectsStackParamList } from '../../navigation/types';
-import { projectsService, ordersService, MNode, MOrder, MOrderAudit, MAuditItem } from '../../services/projects.service';
+import { projectsService, MNode } from '../../services/projects.service';
 import { PartWebViewer } from './PartWebViewer';
-import { PieceStatusSheet } from './PieceStatusSheet';
-import { pieceColor, STATUS_LEGEND as LEGEND, hex } from './assembly/statusOverlay';
 import { displayName, defined } from './assembly/treeIndex';
 
-type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'ProjectDetail'>;
+type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'ProjectViewer'>;
 
 interface Row { node: MNode; depth: number; hasChildren: boolean }
-
-// Status palette (pieceColor / LEGEND / hex) + name helpers (displayName /
-// defined) are shared with the per-work-order viewer — see ./assembly/*.
 
 const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   group: 'folder-outline', assembly: 'cube', subassembly: 'git-branch-outline', part: 'square-outline',
 };
 
 /**
- * Project Assemblies tab: the assembly tree (search / collapse / drill) synced
- * with an embedded 3D viewer — the mobile front door for "find a piece by mark"
- * the app previously lacked (geometry was only reachable via a work order or QR
- * scan). Tap a tree row OR a part in 3D to highlight it and open its live
- * production-status card.
+ * Project Assemblies & 3D — the assembly tree (left) synced with the 3D model
+ * (right), mirroring the web portal's project viewer. A project is a pure DESIGN
+ * container (no production status — that lives on work orders), so this view
+ * carries no status overlay: tapping a tree row or a part highlights it, zooms
+ * the camera to frame it (focus-on-selection), and shows its design facts.
  */
 export function ProjectAssemblies({ projectId }: { projectId: string }) {
   const navigation = useNavigation<Nav>();
+  const { width } = useWindowDimensions();
+  const wide = width >= 700; // side-by-side (tablet) vs stacked (phone)
 
   const [nodes, setNodes] = useState<MNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,15 +41,8 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string[]>([]);
-  const [sheetOpen, setSheetOpen] = useState(false);
-
-  // ── Status / readiness overlay ──
-  const [orders, setOrders] = useState<MOrder[]>([]);
-  const [statusOn, setStatusOn] = useState(false);
-  const [statusOrderId, setStatusOrderId] = useState<string | null>(null);
-  const [statusAudit, setStatusAudit] = useState<MOrderAudit | null>(null);
-  const [statusLoading, setStatusLoading] = useState(false);
-  const [statusErr, setStatusErr] = useState<string | null>(null);
+  const [focusNonce, setFocusNonce] = useState(0); // bumped on TREE taps → flies the 3D camera to the part
+  const [scrollNonce, setScrollNonce] = useState(0); // bumped on every selection → scrolls the tree to the row
 
   const listRef = useRef<FlatList<Row>>(null);
 
@@ -62,30 +53,8 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
       .then((n) => { if (alive) setNodes(n || []); })
       .catch((e) => { if (alive) setError(e?.message || 'Could not load assemblies.'); })
       .finally(() => { if (alive) setLoading(false); });
-    ordersService.listByProject(projectId)
-      .then((o) => { if (alive) setOrders(o || []); })
-      .catch(() => { if (alive) setOrders([]); });
     return () => { alive = false; };
   }, [projectId]);
-
-  // Pick a sensible default order the first time the overlay is switched on.
-  useEffect(() => {
-    if (!statusOn || statusOrderId || orders.length === 0) return;
-    const def = orders.find((o) => o.status === 'in_progress') ?? orders[0];
-    setStatusOrderId(def?.id ?? null);
-  }, [statusOn, statusOrderId, orders]);
-
-  // Fetch the chosen order's audit (per-assembly ship/production status).
-  useEffect(() => {
-    if (!statusOn || !statusOrderId) { setStatusAudit(null); return; }
-    let alive = true;
-    setStatusLoading(true); setStatusErr(null);
-    ordersService.audit(statusOrderId)
-      .then((a) => { if (alive) setStatusAudit(a); })
-      .catch((e) => { if (alive) { setStatusAudit(null); setStatusErr(e?.message || 'No access to this order’s status.'); } })
-      .finally(() => { if (alive) setStatusLoading(false); });
-    return () => { alive = false; };
-  }, [statusOn, statusOrderId]);
 
   // ── Indexes ──
   const byId = useMemo(() => { const m = new Map<string, MNode>(); nodes.forEach((n) => m.set(n.id, n)); return m; }, [nodes]);
@@ -95,7 +64,6 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
     return m;
   }, [nodes]);
   const roots = useMemo(() => nodes.filter((n) => !n.parentId || !byId.has(n.parentId)), [nodes, byId]);
-
   const modelId = useMemo(() => nodes.find((n) => n.modelId)?.modelId ?? null, [nodes]);
 
   // Map a tapped mesh name (== ifc_guid / mesh_name) back to its node.
@@ -135,17 +103,20 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
     return out;
   }, [childrenByParent]);
 
-  const selectNode = useCallback((n: MNode, openSheet: boolean) => {
+  // focusCamera = fly the 3D camera to the part (TREE taps). A 3D tap selects +
+  // scrolls the tree but must NOT move the camera (you tapped what you see).
+  const selectNode = useCallback((n: MNode, focusCamera: boolean) => {
     setSelectedId(n.id);
     setHighlight(descendantGuids(n));
-    if (openSheet) setSheetOpen(true);
+    setScrollNonce((v) => v + 1);
+    if (focusCamera) setFocusNonce((v) => v + 1);
   }, [descendantGuids]);
 
   const onMeshClicked = useCallback((name: string | null) => {
     if (!name) return;
     const n = nodeByMesh.get(name);
     if (!n) { setHighlight([name]); return; }
-    // Expand ancestors so the row is reachable, then scroll to it.
+    // Expand ancestors so the row is reachable, then scroll the tree to it.
     setCollapsed((prev) => {
       if (!prev.size) return prev;
       const next = new Set(prev);
@@ -153,43 +124,23 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
       while (p) { if (next.delete(p)) changed = true; p = byId.get(p)?.parentId ?? null; }
       return changed ? next : prev;
     });
-    selectNode(n, true);
+    selectNode(n, false); // 3D tap → select + scroll tree, keep the camera put
   }, [nodeByMesh, byId, selectNode]);
 
-  // Scroll the selected row into view when selection changes (not in search).
+  // Scroll the selected row into view on every selection (bump-driven so a
+  // re-tap re-scrolls; rows in deps so it re-fires after ancestors expand).
   useEffect(() => {
     if (!selectedId || query) return;
     const idx = rows.findIndex((r) => r.node.id === selectedId);
     if (idx >= 0) { try { listRef.current?.scrollToIndex({ index: idx, viewPosition: 0.4, animated: true }); } catch {} }
-  }, [selectedId, rows, query]);
+  }, [scrollNonce, rows, selectedId, query]);
 
   const toggle = (id: string) => setCollapsed((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const expandAll = () => setCollapsed(new Set());
   const collapseAll = () => setCollapsed(new Set(nodes.filter((n) => (childrenByParent.get(n.id)?.length ?? 0) > 0).map((n) => n.id)));
 
-  // Per-mesh color map: each work order's status propagated to its assembly's
-  // descendant part meshes (the join key is ifc_guid == mesh name).
-  const statusColors = useMemo<Record<string, number>>(() => {
-    if (!statusOn || !statusAudit) return {};
-    const map: Record<string, number> = {};
-    for (const item of statusAudit.items as MAuditItem[]) {
-      if (!item.nodeId) continue;
-      const node = byId.get(item.nodeId);
-      if (!node) continue;
-      const color = pieceColor(item);
-      for (const g of descendantGuids(node)) map[g] = color;
-    }
-    return map;
-  }, [statusOn, statusAudit, byId, descendantGuids]);
-
   const selectedNode = selectedId ? byId.get(selectedId) ?? null : null;
-  const ancestorIds = useMemo(() => {
-    if (!selectedId) return [];
-    const out: string[] = [];
-    let p = byId.get(selectedId)?.parentId ?? null;
-    while (p) { out.push(p); p = byId.get(p)?.parentId ?? null; }
-    return out;
-  }, [selectedId, byId]);
+  const clearSelection = () => { setSelectedId(null); setHighlight([]); };
 
   const openAr = useCallback(() => {
     if (!modelId) return;
@@ -239,79 +190,63 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      {/* Embedded synced 3D viewer */}
+  // ── Selected-piece design facts (no production status — this is a design view) ──
+  const facts: string[] = [];
+  if (selectedNode) {
+    const p = defined(selectedNode.profile); if (p) facts.push(p);
+    const g = defined(selectedNode.materialGrade); if (g) facts.push(g);
+    if (selectedNode.lengthMm) facts.push(`${Math.round(selectedNode.lengthMm)} mm`);
+    if (selectedNode.weightKg) facts.push(`${Math.round(selectedNode.weightKg * 10) / 10} kg`);
+    if (selectedNode.quantity > 1) facts.push(`×${selectedNode.quantity}`);
+  }
+
+  const ViewerPane = (
+    <View style={[styles.viewerPane, wide ? styles.viewerPaneWide : styles.viewerPaneTall]}>
       {modelId ? (
-        <View style={styles.viewerBox}>
+        <>
           <PartWebViewer
             modelId={modelId}
             highlight={highlight}
-            colors={statusOn ? statusColors : {}}
+            autoFocus
+            focusNonce={focusNonce}
             onMeshClicked={onMeshClicked}
           />
+          {/* Design detail of the selection (no status) */}
+          {selectedNode && (
+            <View style={styles.detailCard} pointerEvents="box-none">
+              <View style={styles.detailHead}>
+                <Ionicons name={TYPE_ICON[selectedNode.nodeType] || 'ellipse-outline'} size={16} color={Colors.primary} />
+                <Text style={styles.detailName} numberOfLines={1}>{displayName(selectedNode)}</Text>
+                {!!selectedNode.mark && <Text style={styles.mark}>{selectedNode.mark}</Text>}
+                <Text style={styles.detailType}>{selectedNode.nodeType}</Text>
+                <TouchableOpacity onPress={clearSelection} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close" size={18} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              {facts.length > 0 && <Text style={styles.detailFacts}>{facts.join('  ·  ')}</Text>}
+            </View>
+          )}
           <View style={styles.viewerBar} pointerEvents="box-none">
             <Text style={styles.viewerHint} numberOfLines={1}>
-              {selectedNode ? displayName(selectedNode) : statusOn ? 'Coloured by production status' : 'Tap a part or pick from the tree'}
+              {selectedNode ? 'Zoomed to selection' : 'Tap a part or pick from the tree'}
             </Text>
-            <TouchableOpacity
-              style={[styles.statusBtn, statusOn && styles.statusBtnOn, orders.length === 0 && styles.statusBtnOff]}
-              disabled={orders.length === 0}
-              onPress={() => setStatusOn((v) => !v)}
-            >
-              <Ionicons name="color-palette-outline" size={15} color={Colors.white} />
-              <Text style={styles.arTxt}>Status</Text>
+            <TouchableOpacity style={styles.arBtn} onPress={openAr}>
+              <Ionicons name="scan-outline" size={15} color={Colors.white} />
+              <Text style={styles.arTxt}>AR</Text>
             </TouchableOpacity>
-            {selectedNode && (
-              <TouchableOpacity style={styles.arBtn} onPress={openAr}>
-                <Ionicons name="scan-outline" size={15} color={Colors.white} />
-                <Text style={styles.arTxt}>AR</Text>
-              </TouchableOpacity>
-            )}
           </View>
-        </View>
+        </>
       ) : (
         <View style={styles.noViewer}>
           <Ionicons name="cube-outline" size={26} color={Colors.medium} />
-          <Text style={styles.muted}>3D model is still converting — the tree is ready below.</Text>
+          <Text style={styles.muted}>3D model is still converting — the tree is ready.</Text>
         </View>
       )}
+    </View>
+  );
 
-      {/* Status overlay controls: order picker + legend */}
-      {statusOn && modelId && (
-        <View style={styles.statusPanel}>
-          {orders.length > 1 && (
-            <View style={styles.orderChips}>
-              {orders.map((o) => {
-                const on = o.id === statusOrderId;
-                return (
-                  <TouchableOpacity key={o.id} style={[styles.orderChip, on && styles.orderChipOn]} onPress={() => setStatusOrderId(o.id)}>
-                    <Text style={[styles.orderChipTxt, on && styles.orderChipTxtOn]} numberOfLines={1}>
-                      {o.number}{o.customerName ? ` · ${o.customerName}` : ''}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-          {statusLoading ? (
-            <View style={styles.statusInline}><ActivityIndicator size="small" color={Colors.primary} /><Text style={styles.muted}>Loading status…</Text></View>
-          ) : statusErr ? (
-            <Text style={styles.statusErr}>{statusErr}</Text>
-          ) : (
-            <View style={styles.legend}>
-              {LEGEND.map((l) => (
-                <View key={l.label} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: hex(l.c) }]} />
-                  <Text style={styles.legendTxt}>{l.label}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Search */}
+  const TreePane = (
+    <View style={[styles.treePane, wide && styles.treePaneWide]}>
       <View style={styles.searchRow}>
         <Ionicons name="search" size={16} color={Colors.textSecondary} />
         <TextInput
@@ -330,7 +265,6 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
         )}
       </View>
 
-      {/* Tools / match count */}
       <View style={styles.toolsRow}>
         {query ? (
           <Text style={styles.toolsInfo}>{rows.length} match{rows.length === 1 ? '' : 'es'} — flat list</Text>
@@ -351,52 +285,54 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
         renderItem={renderRow}
         initialNumToRender={30}
         windowSize={11}
-        onScrollToIndexFailed={() => {}}
+        onScrollToIndexFailed={(info) => {
+          // The target row isn't measured yet (common for far-down items): jump
+          // approximately, let it render, then scroll precisely.
+          listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true });
+          setTimeout(() => {
+            try { listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.4, animated: true }); } catch {}
+          }, 280);
+        }}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={<Text style={styles.muted}>No matching items.</Text>}
       />
+    </View>
+  );
 
-      <PieceStatusSheet
-        visible={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        nodeId={selectedId}
-        facts={selectedNode}
-        ancestorIds={ancestorIds}
-        onOpenAssembly={(orderId, nodeId, mark) =>
-          navigation.navigate('AssemblyDetail', { orderId, projectId, nodeId, mark })
-        }
-      />
+  // Web parity: tree LEFT, 3D RIGHT (tablet). Phones stack: 3D on top, tree below.
+  return (
+    <View style={[styles.container, wide && styles.splitRow]}>
+      {wide ? (<>{TreePane}{ViewerPane}</>) : (<>{ViewerPane}{TreePane}</>)}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  splitRow: { flexDirection: 'row' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 },
   muted: { color: Colors.textSecondary, fontSize: 13, textAlign: 'center' },
 
-  viewerBox: { height: 280, backgroundColor: '#1a1a2e' },
+  // Panes
+  treePane: { flex: 1, backgroundColor: Colors.background },
+  treePaneWide: { flex: 0, width: 320, borderRightWidth: 1, borderRightColor: Colors.border },
+  viewerPane: { backgroundColor: '#1a1a2e' },
+  viewerPaneWide: { flex: 1 },
+  viewerPaneTall: { height: 300 },
+
   viewerBar: { position: 'absolute', left: 10, right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   viewerHint: { flex: 1, color: '#fff', fontSize: 12.5, fontWeight: '600', backgroundColor: 'rgba(13,17,23,0.6)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, overflow: 'hidden' },
   arBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.tertiary, paddingHorizontal: 14, height: 34, borderRadius: 17, justifyContent: 'center' },
   arTxt: { color: Colors.white, fontWeight: '700', fontSize: 13 },
-  statusBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(13,17,23,0.72)', paddingHorizontal: 12, height: 34, borderRadius: 17, justifyContent: 'center' },
-  statusBtnOn: { backgroundColor: Colors.primary },
-  statusBtnOff: { opacity: 0.4 },
-  noViewer: { height: 120, alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.card, borderBottomWidth: 1, borderBottomColor: Colors.border, paddingHorizontal: 16 },
 
-  statusPanel: { backgroundColor: Colors.card, borderBottomWidth: 1, borderBottomColor: Colors.border, paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
-  orderChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  orderChip: { borderWidth: 1, borderColor: Colors.border, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: Colors.white },
-  orderChipOn: { borderColor: Colors.primary, backgroundColor: '#e8f0fe' },
-  orderChipTxt: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
-  orderChipTxtOn: { color: Colors.primary },
-  statusInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  statusErr: { fontSize: 12, color: Colors.danger },
-  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, rowGap: 6 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot: { width: 11, height: 11, borderRadius: 3 },
-  legendTxt: { fontSize: 11.5, color: Colors.textSecondary, fontWeight: '600' },
+  // Selection detail card (design facts only)
+  detailCard: { position: 'absolute', left: 10, right: 10, top: 10, backgroundColor: 'rgba(13,17,23,0.92)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, gap: 4 },
+  detailHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  detailName: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '700' },
+  detailType: { color: '#9fb3c8', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 },
+  detailFacts: { color: '#c7d6e6', fontSize: 12.5, fontWeight: '600' },
+
+  noViewer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16 },
 
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, margin: 12, marginBottom: 8 },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },

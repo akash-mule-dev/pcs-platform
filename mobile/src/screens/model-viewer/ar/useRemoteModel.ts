@@ -23,6 +23,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { modelCache } from '../../../services/modelCache';
 import { generateWireframeGlb } from './wireframeGenerator';
 import { extractDimensions, ModelDimensions } from './dimensionExtractor';
 import { extractPartGlb } from './partExtractor';
@@ -154,7 +155,7 @@ export function useRemoteModel(
 
     const dir = `${cacheRoot}${MODELS_SUBDIR}/`;
     const baseKey = safeName(modelId);
-    const fullUri = `${dir}${baseKey}.glb`;
+    let fullUri = ''; // resolved from the shared persistent model cache below
     // `p2` cache version: older builds cached EMPTY isolated GLBs; bump forces a
     // fresh extraction with the fixed subtree-keeping logic.
     const variantKey = isolateKey ? `${baseKey}__p2_${isolateKey}` : baseKey;
@@ -170,28 +171,11 @@ export function useRemoteModel(
       try {
         await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
 
-        // ── 1. Download the full project GLB once (reuse cached copy) ──
-        const existingFull = await FileSystem.getInfoAsync(fullUri);
-        if (!existingFull.exists) {
-          const headers = await authHeaders();
-          const resumable = FileSystem.createDownloadResumable(
-            fileUrl,
-            fullUri,
-            { headers },
-            (p) => {
-              if (!p.totalBytesExpectedToWrite || p.totalBytesExpectedToWrite < 0) return;
-              const pct = Math.max(
-                0,
-                Math.min(100, Math.round((p.totalBytesWritten / p.totalBytesExpectedToWrite) * 100)),
-              );
-              set({ downloadPct: pct, progress: `Downloading model… ${pct}%` });
-            },
-          );
-          const dl = await resumable.downloadAsync();
-          if (!dl || (dl.status && dl.status >= 400)) {
-            throw new Error(`Download failed (HTTP ${dl?.status ?? '???'})`);
-          }
-        }
+        // ── 1. Base full GLB from the SHARED persistent cache (downloaded once
+        //       at login / first view; reused across 3D + AR — no re-download) ──
+        fullUri = await modelCache.getLocalUri(modelId, (pct) =>
+          set({ downloadPct: pct, progress: `Downloading model… ${pct}%` }),
+        );
         if (!alive()) return;
 
         // ── 2. Isolate the requested part(s) — only when a sub-part is asked for ──

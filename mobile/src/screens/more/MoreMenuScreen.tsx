@@ -27,6 +27,7 @@ const ITEMS: MenuItem[] = [
 // Always available to every signed-in user (no feature gate).
 const ALWAYS: MenuItem[] = [
   { key: 'Notifications', label: 'Notifications', subtitle: 'Quality alerts, NCRs & overdue items', icon: 'notifications', feature: '' },
+  { key: 'Storage', label: 'Offline 3D models', subtitle: 'Cached models for fast, offline viewing', icon: 'cube', feature: '' },
 ];
 
 export function MoreMenuScreen() {

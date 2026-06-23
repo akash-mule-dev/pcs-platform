@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectsService, ProductionOrder, ShipmentTraceability } from '../core/services/projects.service';
-import { ShippingService, Shipment, ShipmentStatus, ShipReadyRow, DeliveryNote } from '../core/services/shipping.service';
+import { ShippingService, Shipment, ShipmentStatus, ShipReadyRow, DeliveryNote, QcPackage } from '../core/services/shipping.service';
 import { ToastService } from '../core/services/toast.service';
 
 const ORDER_STATUS_LABEL: Record<string, string> = { planned: 'Planned', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled' };
@@ -76,6 +76,9 @@ const ORDER_STATUS_LABEL: Record<string, string> = { planned: 'Planned', in_prog
                     </select>
                     <button class="icon-x" (click)="printDeliveryNote(s); $event.stopPropagation()" [disabled]="!s.items.length" title="Delivery note / packing slip (PDF)">
                       <mat-icon>receipt_long</mat-icon>
+                    </button>
+                    <button class="icon-x" (click)="printQcPackage(s); $event.stopPropagation()" [disabled]="!s.items.length || qcBusy === s.id" title="QC sign-off package (inspections, NCRs, MTR, releasability)">
+                      <mat-icon>fact_check</mat-icon>
                     </button>
                     <button class="icon-x" (click)="toggleMtr(s); $event.stopPropagation()" [title]="mtrFor === s.id ? 'Hide MTR package' : 'MTR package: heat numbers + certs per item'">
                       <mat-icon>{{ mtrFor === s.id ? 'expand_less' : 'verified' }}</mat-icon>
@@ -298,6 +301,7 @@ export class WorkOrderShippingComponent implements OnInit {
 
   // ── MTR / traceability rollup ──
   mtrFor: string | null = null;
+  qcBusy: string | null = null;
   mtr: ShipmentTraceability | null = null;
 
   readonly statuses: ShipmentStatus[] = ['planned', 'loaded', 'shipped', 'delivered', 'cancelled'];
@@ -464,6 +468,120 @@ export class WorkOrderShippingComponent implements OnInit {
   ${dn.shipment.notes ? `<div class="notes"><strong>Notes:</strong> ${this.esc(dn.shipment.notes)}</div>` : ''}
   <div class="sign"><div>Dispatched by / date</div><div>Received by / date</div></div>
   <div class="foot">${dn.totals.lines} line item(s) · generated ${new Date(dn.generatedAt).toLocaleString()}${hasHeats ? ' · heat numbers shown are mill-certified material lots (MTR on file)' : ''}</div>
+</body></html>`;
+  }
+
+  /** Open the QC sign-off package (inspections + NCRs + MTR + releasability) → browser "Save as PDF". */
+  printQcPackage(s: Shipment): void {
+    if (this.qcBusy) return;
+    this.qcBusy = s.id;
+    this.shippingSvc.qcPackage(s.id).subscribe({
+      next: (pkg) => {
+        this.qcBusy = null;
+        const w = window.open('', '_blank');
+        if (!w) return;
+        w.document.write(this.qcPackageHtml(pkg));
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 350);
+      },
+      error: () => { this.qcBusy = null; },
+    });
+  }
+
+  private qcPackageHtml(pkg: QcPackage): string {
+    const fmtDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+    const rel = pkg.qc.releasability;
+    const dispLabel = (d: string | null) => ({ rework: 'Rework', repair: 'Repair', use_as_is: 'Use as-is', scrap: 'Scrap', return_to_supplier: 'Return to supplier' } as Record<string, string>)[d ?? ''] ?? (d ?? '—');
+
+    const mtrRows = pkg.items.map((it, i) => `
+      <tr><td class="c">${i + 1}</td><td class="mark">${this.esc(it.mark || it.name || '—')}</td>
+      <td>${this.esc(it.profile || '')}</td><td>${this.esc(it.materialGrade || '')}</td>
+      <td class="r">${it.quantity}</td>
+      <td class="heats">${it.heats.length ? it.heats.map((h) => this.esc((h.heatNumber || h.lotNumber) + (h.certReference ? ` (cert ${h.certReference})` : ''))).join(', ') : '<span class="gap">— no MTR —</span>'}</td></tr>`).join('');
+
+    const inspRows = pkg.qc.inspections.length ? pkg.qc.inspections.map((q) => `
+      <tr><td class="mark">${this.esc(q.node_mark || q.mesh_name || '—')}</td>
+      <td><span class="b b-${this.esc(q.status || '')}">${this.esc(q.status || '—')}</span>${q.signoff_status === 'approved' ? ' <span class="b b-ok">signed</span>' : (q.status === 'fail' ? ' <span class="b b-warn">unsigned</span>' : '')}</td>
+      <td>${q.measurement_value != null ? this.esc(q.measurement_value + (q.measurement_unit || '')) : '—'}</td>
+      <td>${this.esc(q.defect_type || '')}</td><td>${this.esc(q.inspector || '')}</td><td>${fmtDate(q.created_at)}</td></tr>`).join('')
+      : '<tr><td colspan="6" class="empty">No inspection records for the shipped items.</td></tr>';
+
+    const ncrRows = pkg.qc.ncrs.length ? pkg.qc.ncrs.map((n) => `
+      <tr><td class="mark">${this.esc(n.number)}</td><td>${this.esc(n.node_mark || '—')}</td>
+      <td><span class="b b-${n.resolved_at ? 'ok' : 'bad'}">${this.esc((n.ncr_status || (n.resolved_at ? 'closed' : 'open')).replace('_', ' '))}</span></td>
+      <td>${this.esc(dispLabel(n.disposition))}</td>
+      <td>${this.esc(n.root_cause || '')}${n.concession_reason ? `<div class="sub">Concession: ${this.esc(n.concession_reason)}</div>` : ''}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="empty">No non-conformances raised against the shipped items.</td></tr>';
+
+    return `<!doctype html><html><head><meta charset="utf-8">
+<title>QC Package ${this.esc(pkg.shipment.number)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a2b34; margin: 32px; font-size: 12px; }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #123; padding-bottom: 14px; }
+  .org { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
+  .doc-title { text-align: right; }
+  .doc-title h1 { margin: 0; font-size: 21px; letter-spacing: 1px; color: #123; }
+  .doc-title .num { font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin: 16px 0 18px; }
+  .meta .row { display: flex; gap: 8px; }
+  .meta .lbl { color: #6b7c85; font-weight: 600; min-width: 96px; text-transform: uppercase; font-size: 10px; letter-spacing: .5px; padding-top: 1px; }
+  .meta .val { font-weight: 600; }
+  .rel { display: flex; align-items: center; gap: 14px; padding: 11px 14px; border-radius: 6px; margin-bottom: 20px; font-weight: 700; }
+  .rel.ok { background: #e7f6ec; color: #1b6e3a; } .rel.bad { background: #fdeaea; color: #b3261e; }
+  .rel .badge { font-size: 18px; }
+  .rel .det { font-weight: 600; font-size: 11px; color: #44555e; margin-left: auto; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #123; border-bottom: 2px solid #123; padding-bottom: 4px; margin: 22px 0 8px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+  th { background: #123; color: #fff; text-align: left; padding: 6px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
+  td { padding: 6px 8px; border-bottom: 1px solid #dde3e6; vertical-align: top; }
+  td.r, th.r { text-align: right; } td.c, th.c { text-align: center; width: 28px; }
+  td.mark { font-weight: 700; }
+  td.heats { font-size: 10.5px; color: #44555e; } .gap { color: #b3261e; font-weight: 700; }
+  td.empty { color: #93a2a8; text-align: center; font-style: italic; }
+  .sub { font-size: 10px; color: #6b7c85; margin-top: 2px; }
+  .b { padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: capitalize; }
+  .b-pass, .b-ok { background: #e7f6ec; color: #1b6e3a; } .b-fail, .b-bad { background: #fdeaea; color: #b3261e; }
+  .b-warning, .b-warn { background: #fdf3e0; color: #92560a; }
+  .foot { margin-top: 24px; font-size: 9.5px; color: #93a2a8; text-align: center; }
+  @media print { body { margin: 14mm; } }
+</style></head><body>
+  <div class="top">
+    <div><div class="org">${this.esc(pkg.organization.name)}</div><div style="color:#6b7c85;margin-top:2px">Quality Sign-off Package</div></div>
+    <div class="doc-title"><h1>QC PACKAGE</h1><div class="num">${this.esc(pkg.shipment.number)}</div></div>
+  </div>
+  <div class="meta">
+    <div class="row"><span class="lbl">Project</span><span class="val">${this.esc(pkg.project.name)}${pkg.project.number ? ' (' + this.esc(pkg.project.number) + ')' : ''}</span></div>
+    <div class="row"><span class="lbl">Work order</span><span class="val">${this.esc(pkg.order.number || '—')}</span></div>
+    <div class="row"><span class="lbl">Client</span><span class="val">${this.esc(pkg.order.customerName || pkg.project.client || '—')}</span></div>
+    <div class="row"><span class="lbl">Date</span><span class="val">${fmtDate(pkg.shipment.shippedAt || pkg.shipment.plannedDate)}</span></div>
+  </div>
+  <div class="rel ${rel.releasable ? 'ok' : 'bad'}">
+    <span class="badge">${rel.releasable ? '✓' : '⚠'}</span>
+    <span>${rel.releasable ? 'RELEASABLE — no open NCRs or unsigned failures' : 'NOT RELEASABLE — resolve the items below'}</span>
+    <span class="det">${rel.openNcrs} open NCR(s) · ${rel.unsignedFailures} unsigned failure(s) · ${rel.itemsMissingMtr} item(s) missing MTR</span>
+  </div>
+
+  <h2>Material traceability (MTR)</h2>
+  <table>
+    <thead><tr><th class="c">#</th><th>Mark</th><th>Profile</th><th>Grade</th><th class="r">Qty</th><th>Heat / Lot / Cert</th></tr></thead>
+    <tbody>${mtrRows}</tbody>
+  </table>
+
+  <h2>Inspections (${pkg.qc.inspections.length})</h2>
+  <table>
+    <thead><tr><th>Item</th><th>Result</th><th>Measurement</th><th>Defect</th><th>Inspector</th><th>Date</th></tr></thead>
+    <tbody>${inspRows}</tbody>
+  </table>
+
+  <h2>Non-conformances (${pkg.qc.ncrs.length})</h2>
+  <table>
+    <thead><tr><th>NCR</th><th>Item</th><th>State</th><th>Disposition</th><th>Root cause / concession</th></tr></thead>
+    <tbody>${ncrRows}</tbody>
+  </table>
+
+  <div class="foot">QC sign-off package · ${pkg.qc.scopeNodeCount} node(s) in scope · generated ${new Date(pkg.generatedAt).toLocaleString()}</div>
 </body></html>`;
   }
 }

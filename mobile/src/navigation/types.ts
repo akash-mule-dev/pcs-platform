@@ -83,6 +83,7 @@ export type MoreStackParamList = {
   MoreMenu: undefined;
   MaterialList: undefined;
   Notifications: undefined;
+  Storage: undefined;
 };
 
 // ── Root Navigator ──

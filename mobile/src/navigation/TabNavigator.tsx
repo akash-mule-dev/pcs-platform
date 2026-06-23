@@ -23,6 +23,7 @@ import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { MoreMenuScreen } from '../screens/more/MoreMenuScreen';
 import { MaterialListScreen } from '../screens/more/MaterialListScreen';
 import { NotificationsScreen } from '../screens/more/NotificationsScreen';
+import { StorageSettingsScreen } from '../screens/more/StorageSettingsScreen';
 import { ProjectListScreen } from '../screens/projects/ProjectListScreen';
 import { ProjectDetailScreen } from '../screens/projects/ProjectDetailScreen';
 import { ProjectViewerScreen } from '../screens/projects/ProjectViewerScreen';
@@ -77,6 +78,7 @@ function MoreStackNav() {
       <MoreStack.Screen name="MoreMenu" component={MoreMenuScreen} options={{ title: 'More' }} />
       <MoreStack.Screen name="MaterialList" component={MaterialListScreen} options={{ title: 'Materials' }} />
       <MoreStack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+      <MoreStack.Screen name="Storage" component={StorageSettingsScreen} options={{ title: 'Offline 3D models' }} />
     </MoreStack.Navigator>
   );
 }

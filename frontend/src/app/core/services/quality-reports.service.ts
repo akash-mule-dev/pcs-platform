@@ -32,6 +32,9 @@ export interface QualityReport {
   dispositionAt: string | null;
   rootCause: string | null;
   correctiveAction: string | null;
+  concessionBy: string | null;
+  concessionReason: string | null;
+  sourceQualityDataId: string | null;
   createdAt: string;
   updatedAt: string;
   // Enriched context
@@ -99,7 +102,7 @@ export class QualityReportsService {
   }
 
   /** Record the Material-Review disposition (rework/repair/use-as-is/scrap/return). */
-  disposition(id: string, body: { disposition: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string }): Observable<QualityReport> {
+  disposition(id: string, body: { disposition: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string; concessionReason?: string }): Observable<QualityReport> {
     return this.http.post<QualityReport>(`${this.base}/${id}/disposition`, body);
   }
 

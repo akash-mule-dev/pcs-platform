@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TemplatesApiService } from './templates.service';
+import { QualityReportsService } from '../core/services/quality-reports.service';
 
 const TYPES = ['inspection', 'checklist', 'ncr', 'other'];
 const TYPE_LABEL: Record<string, string> = {
@@ -90,18 +91,21 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
             <button class="primary" (click)="startNew()"><mat-icon>add</mat-icon>New template</button>
           </div>
         } @else if (templates.length > 0) {
-          <div class="thead"><span>Name</span><span>Type</span><span>Version</span><span>Fields</span><span></span></div>
-          @for (t of templates; track t.id) {
-            <div class="trow">
-              <span class="t-name">{{ t.name }}</span>
-              <span><span class="type-chip tt-{{ t.type }}">{{ typeLabel(t.type) }}</span></span>
-              <span class="t-ver">v{{ t.version }}</span>
-              <span class="t-fields">{{ (t.schema?.components?.length) || 0 }} fields</span>
-              <span class="t-actions">
-                <button class="link" (click)="edit(t)"><mat-icon>edit</mat-icon>Edit</button>
-                <button class="link danger" (click)="remove(t)"><mat-icon>delete</mat-icon></button>
-              </span>
-            </div>
+          <div class="thead"><span>Name</span><span>Version</span><span>Fields</span><span>Used by</span><span></span></div>
+          @for (g of groups(); track g.type) {
+            <div class="grp"><span class="type-chip tt-{{ g.type }}">{{ g.label }}</span><span class="grp-count">{{ g.items.length }}</span></div>
+            @for (t of g.items; track t.id) {
+              <div class="trow">
+                <span class="t-name">{{ t.name }}@if (t.libraryOriginId) { <span class="lib-badge" title="Published from the shared library"><mat-icon>auto_awesome</mat-icon>Library</span> }</span>
+                <span class="t-ver">v{{ t.version }}</span>
+                <span class="t-fields">{{ (t.schema?.components?.length) || 0 }} fields</span>
+                <span class="t-use">@if (usage[t.id]) { <span class="use-chip">{{ usage[t.id] }} report{{ usage[t.id] === 1 ? '' : 's' }}</span> } @else { <span class="use-none">unused</span> }</span>
+                <span class="t-actions">
+                  <button class="link" (click)="edit(t)"><mat-icon>edit</mat-icon>Edit</button>
+                  <button class="link danger" (click)="remove(t)" [disabled]="!!usage[t.id]" [title]="usage[t.id] ? 'In use by ' + usage[t.id] + ' report(s) — cannot delete' : 'Delete template'"><mat-icon>delete</mat-icon></button>
+                </span>
+              </div>
+            }
           }
         }
       </section>
@@ -145,8 +149,16 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
     .ed-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
 
     .list-card { overflow: hidden; }
-    .thead, .trow { display: grid; grid-template-columns: 2fr 130px 80px 110px 140px; gap: 12px; align-items: center; padding: 11px 16px; }
+    .thead, .trow { display: grid; grid-template-columns: 2fr 80px 110px 120px 140px; gap: 12px; align-items: center; padding: 11px 16px; }
     .thead { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); border-bottom: 1px solid var(--clay-border); background: var(--clay-bg-warm); }
+    .grp { display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-bottom: 1px solid var(--clay-border); background: var(--clay-bg-warm); }
+    .grp-count { font-size: 11px; font-weight: 700; color: var(--clay-text-muted); }
+    .lib-badge { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; padding: 1px 7px; border-radius: 5px; font-size: 10px; font-weight: 700; background: #ede9fe; color: #6d28d9; vertical-align: middle; }
+    .lib-badge mat-icon { font-size: 12px; width: 12px; height: 12px; }
+    .t-use { font-size: 12px; }
+    .use-chip { padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--info-bg); color: var(--info-text); }
+    .use-none { font-size: 11px; color: var(--clay-text-muted); }
+    .link:disabled { opacity: .4; cursor: default; }
     .trow { border-bottom: 1px solid var(--clay-border); }
     .trow:last-child { border-bottom: none; }
     .trow:hover { background: var(--clay-surface-hover); }
@@ -190,15 +202,42 @@ export class TemplatesComponent implements OnInit, OnDestroy {
   private static formioPromise: Promise<any> | null = null;
   private prevBodyFont: string | null = null;
 
-  constructor(private api: TemplatesApiService, private snack: MatSnackBar, private zone: NgZone) {}
+  usage: Record<string, number> = {};
 
-  ngOnInit(): void { this.load(); }
+  constructor(private api: TemplatesApiService, private snack: MatSnackBar, private zone: NgZone, private qr: QualityReportsService) {}
+
+  ngOnInit(): void { this.load(); this.loadUsage(); }
   ngOnDestroy(): void { this.destroyBuilder(); this.detachCss(); }
 
   typeLabel(t: string): string { return TYPE_LABEL[t] ?? t; }
 
   load(): void {
     this.api.list().subscribe({ next: (d) => this.templates = Array.isArray(d) ? d : (d?.data || []), error: () => {} });
+  }
+
+  /** Count how many reports were filled from each template (for the usage badge). */
+  private loadUsage(): void {
+    this.qr.list().subscribe({
+      next: (reports) => {
+        const m: Record<string, number> = {};
+        for (const r of reports) if (r.templateId) m[r.templateId] = (m[r.templateId] ?? 0) + 1;
+        this.usage = m;
+      },
+      error: () => {},
+    });
+  }
+
+  /** Templates grouped by type, in the canonical type order, skipping empty groups. */
+  groups(): { type: string; label: string; items: any[] }[] {
+    return TYPES
+      .map((type) => ({ type, label: this.typeLabel(type), items: this.templates.filter((t) => (t.type ?? 'other') === type) }))
+      .filter((g) => g.items.length > 0)
+      .concat(
+        // any unknown types fall into a trailing "Other" bucket
+        this.templates.some((t) => !TYPES.includes(t.type ?? 'other'))
+          ? [{ type: '_misc', label: 'Other', items: this.templates.filter((t) => !TYPES.includes(t.type ?? 'other')) }]
+          : [],
+      );
   }
 
   startNew(): void {
