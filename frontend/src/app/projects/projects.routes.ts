@@ -24,6 +24,12 @@ export const PROJECTS_ROUTES: Routes = [
     path: '',
     loadComponent: () => import('./project-list.component').then((m) => m.ProjectListComponent),
   },
+  // The Trash: soft-deleted projects, restorable for 30 days. MUST precede `:id`
+  // so the literal segment isn't matched as a project id.
+  {
+    path: 'trash',
+    loadComponent: () => import('./project-trash.component').then((m) => m.ProjectTrashComponent),
+  },
   {
     path: ':id',
     providers: [ProjectWorkspaceStore],

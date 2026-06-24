@@ -148,7 +148,7 @@ ok('catalog covers every permission referenced by controllers (no orphans)', () 
   // in CI/manual verification, this is the fast in-code safety net).
   const used = [
     'organizations.view', 'organizations.manage',
-    'stations.view', 'stations.manage', 'stations.delete',
+    'stations.view', 'stations.manage', 'stations.operate', 'stations.delete-station', 'stations.delete',
     'materials.view', 'materials.transact', 'materials.manage', 'materials.delete',
     'processes.view', 'processes.create', 'processes.update', 'processes.delete',
     'scheduling.view', 'costing.view', 'audit.view',

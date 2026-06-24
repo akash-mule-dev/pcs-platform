@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   OneToMany,
   Index,
 } from 'typeorm';
@@ -52,4 +53,14 @@ export class Project extends TenantOwnedEntity {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
+  /**
+   * Soft-delete marker. Set when the project is moved to the Trash; cleared on
+   * restore. TypeORM auto-excludes rows with a non-null `deleted_at` from every
+   * `find`/`findOne` (so deleted projects vanish from all the normal lists),
+   * while remaining recoverable for a retention window before a scheduled purge
+   * (`ProjectPurgeService`) permanently deletes the project and its whole subtree.
+   */
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
 }
