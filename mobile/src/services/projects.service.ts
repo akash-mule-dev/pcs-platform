@@ -291,3 +291,75 @@ export interface MNcrEvent {
   createdByName: string | null;
   createdAt: string;
 }
+
+// ── Shipping (per work order). A shipment is a load (truck/lift) carrying this
+//    order's production-complete assemblies; an assembly becomes shippable once
+//    its stages roll up complete, it has no open NCR, and units remain. ──
+export type MShipmentStatus = 'planned' | 'loaded' | 'shipped' | 'delivered' | 'cancelled';
+
+export interface MShipmentItem {
+  id: string;
+  assemblyNodeId: string;
+  quantity: number;
+  assemblyNode?: { id: string; name: string | null; mark: string | null; weightKg: number | null } | null;
+}
+export interface MShipment {
+  id: string;
+  productionOrderId: string | null;
+  projectId: string;
+  shipmentNumber: string;
+  status: MShipmentStatus;
+  destination: string | null;
+  carrier: string | null;
+  plannedDate: string | null;
+  shippedAt: string | null;
+  notes: string | null;
+  items: MShipmentItem[];
+  createdAt: string;
+}
+/** One production-complete assembly of an order with its ship allocation. */
+export interface MShipReadyRow {
+  nodeId: string;
+  mark: string | null;
+  name: string | null;
+  profile: string | null;
+  weightKg: number | null;
+  completedQty: number;
+  shippedQty: number;
+  allocatedQty: number;
+  availableQty: number;
+  openNcr: number;
+  blocked: boolean;
+}
+export interface MDeliveryNoteItem {
+  mark: string | null; name: string | null; profile: string | null; materialGrade: string | null;
+  quantity: number; unitWeightKg: number | null; lineWeightKg: number | null;
+  heats: { heatNumber: string | null; lotNumber: string; certReference: string | null }[];
+}
+export interface MDeliveryNote {
+  organization: { name: string };
+  project: { id: string; name: string | null; number: string | null; client: string | null };
+  order: { id: string | null; number: string | null; customerName: string | null };
+  shipment: { id: string; number: string; status: string; destination: string | null; carrier: string | null; plannedDate: string | null; shippedAt: string | null; notes: string | null };
+  items: MDeliveryNoteItem[];
+  totals: { lines: number; pieces: number; weightKg: number };
+  generatedAt: string;
+}
+
+export const MShipStatusLabels: Record<MShipmentStatus, string> = {
+  planned: 'Planned', loaded: 'Loaded', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled',
+};
+
+export const shippingService = {
+  listByOrder: (orderId: string) => api.getList<MShipment>('/shipments', { orderId }),
+  board: (orderId: string) => api.getList<MShipReadyRow>('/shipments/board', { orderId }),
+  get: (id: string) => api.get<MShipment>(`/shipments/${id}`),
+  create: (body: { productionOrderId: string; shipmentNumber: string; destination?: string; carrier?: string; plannedDate?: string; notes?: string }) =>
+    api.post<MShipment>('/shipments', body),
+  addItem: (shipmentId: string, assemblyNodeId: string, quantity: number) =>
+    api.post<MShipmentItem>(`/shipments/${shipmentId}/items`, { assemblyNodeId, quantity }),
+  removeItem: (shipmentId: string, itemId: string) => api.delete<void>(`/shipments/${shipmentId}/items/${itemId}`),
+  setStatus: (id: string, status: MShipmentStatus) => api.patch<MShipment>(`/shipments/${id}/status`, { status }),
+  remove: (id: string) => api.delete<void>(`/shipments/${id}`),
+  deliveryNote: (id: string) => api.get<MDeliveryNote>(`/shipments/${id}/delivery-note`),
+};
