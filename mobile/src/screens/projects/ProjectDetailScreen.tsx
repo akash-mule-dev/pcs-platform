@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, TextInput, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
 import { ProjectsStackParamList } from '../../navigation/types';
 import { ordersService, MOrder, MProcess, OrderStatusColors, OrderStatusLabels } from '../../services/projects.service';
-import { ProjectAssemblies } from './ProjectAssemblies';
 
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'ProjectDetail'>;
 type Rt = RouteProp<ProjectsStackParamList, 'ProjectDetail'>;
@@ -16,7 +16,6 @@ export function ProjectDetailScreen() {
   const route = useRoute<Rt>();
   const { projectId, name } = route.params;
 
-  const [tab, setTab] = useState<'orders' | 'assemblies'>('orders');
   const [orders, setOrders] = useState<MOrder[]>([]);
   const [processes, setProcesses] = useState<MProcess[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +28,21 @@ export function ProjectDetailScreen() {
   const [processId, setProcessId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  useLayoutEffect(() => { navigation.setOptions({ title: name || 'Project' }); }, [navigation, name]);
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: name || 'Project',
+      headerRight: () => (
+        <TouchableOpacity
+          style={styles.headBtn}
+          onPress={() => navigation.navigate('ProjectViewer', { projectId, name })}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="cube-outline" size={18} color={Colors.primary} />
+          <Text style={styles.headBtnTxt}>3D</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, name, projectId]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -121,22 +134,9 @@ export function ProjectDetailScreen() {
     );
   };
 
-  const SegBar = (
-    <View style={styles.segWrap}>
-      {(['orders', 'assemblies'] as const).map((t) => (
-        <TouchableOpacity key={t} style={[styles.seg, tab === t && styles.segOn]} onPress={() => setTab(t)} activeOpacity={0.8}>
-          <Text style={[styles.segTxt, tab === t && styles.segTxtOn]}>{t === 'orders' ? 'Work orders' : 'Assemblies & 3D'}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
   return (
     <View style={styles.screen}>
-      {SegBar}
-      {tab === 'assemblies' ? (
-        <ProjectAssemblies projectId={projectId} />
-      ) : loading ? (
+      {loading ? (
         <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>
       ) : (
         <FlatList
@@ -156,6 +156,8 @@ export function ProjectDetailScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
+  headBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headBtnTxt: { color: Colors.primary, fontWeight: '700', fontSize: 14 },
   segWrap: { flexDirection: 'row', gap: 8, padding: 12, paddingBottom: 6, backgroundColor: Colors.background },
   seg: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white },
   segOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },

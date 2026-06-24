@@ -12,6 +12,8 @@ import { ProjectWorkspaceStore, IMPORT_STAGE_LABELS } from './project-workspace.
 import { ProjectEditDialogComponent } from './project-edit-dialog.component';
 import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/confirm-dialog.component';
 import { ProjectsService, Project } from '../core/services/projects.service';
+import { PermissionsService } from '../core/services/permissions.service';
+import { ToastService } from '../core/services/toast.service';
 import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
 interface WorkspaceTab { path: string; label: string; icon: string; }
@@ -58,7 +60,9 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
               <button class="act-icon" [matMenuTriggerFor]="more" matTooltip="More actions"><mat-icon>more_vert</mat-icon></button>
               <mat-menu #more="matMenu">
                 <button mat-menu-item (click)="store.reload()"><mat-icon>refresh</mat-icon><span>Reload</span></button>
-                <button mat-menu-item class="danger-item" (click)="deleteProject()"><mat-icon>delete</mat-icon><span>Delete project</span></button>
+                @if (perms.can('projects.delete')) {
+                  <button mat-menu-item class="danger-item" (click)="deleteProject()"><mat-icon>delete</mat-icon><span>Delete project</span></button>
+                }
               </mat-menu>
             </div>
           </div>
@@ -245,6 +249,8 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   private dialog = inject(MatDialog);
   private svc = inject(ProjectsService);
+  private toast = inject(ToastService);
+  perms = inject(PermissionsService);
   store = inject(ProjectWorkspaceStore);
 
   private sub?: Subscription;
@@ -301,11 +307,15 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
     this.dialog.open(ConfirmDialogComponent, {
       data: {
         title: 'Delete project?',
-        message: `"${p.name}" and its assemblies, work orders and shipments will be permanently removed. This cannot be undone.`,
+        message: `"${p.name}" will be moved to the Trash. You can restore it for 30 days from Projects → Recently deleted, after which it (and its assemblies, work orders and shipments) is permanently removed.`,
         confirmText: 'Delete project',
       },
     }).afterClosed().subscribe((ok: boolean) => {
-      if (ok) this.svc.remove(p.id).subscribe({ next: () => this.router.navigate(['/projects']), error: () => {} });
+      if (!ok) return;
+      this.svc.remove(p.id).subscribe({
+        next: () => { this.toast.success('Project moved to Trash — recoverable for 30 days'); this.router.navigate(['/projects']); },
+        error: (e) => this.toast.error(e?.error?.message || 'Could not delete project'),
+      });
     });
   }
 }

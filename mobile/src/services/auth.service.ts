@@ -63,6 +63,24 @@ export const authService = {
     return user;
   },
 
+  /**
+   * Self-service profile edit. The backend has no dedicated `/auth/profile`
+   * mutation, so this PATCHes the user row (gated by `users.update`, which
+   * managers/admins hold) and then re-pulls the canonical profile so the cached
+   * user — and every subscriber — reflects the change.
+   */
+  async updateProfile(patch: { firstName?: string; lastName?: string; mobileNo?: string; email?: string }): Promise<User> {
+    if (!_currentUser) throw new Error('Not signed in');
+    await api.patch(`/users/${_currentUser.id}`, patch);
+    return this.getProfile();
+  },
+
+  /** Set a new password for the signed-in user (same `users.update`-gated path). */
+  async changePassword(newPassword: string): Promise<void> {
+    if (!_currentUser) throw new Error('Not signed in');
+    await api.patch(`/users/${_currentUser.id}`, { password: newPassword });
+  },
+
   async logout(): Promise<void> {
     await AsyncStorage.removeItem(TOKEN_KEY);
     await AsyncStorage.removeItem(USER_KEY);

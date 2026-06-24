@@ -24,6 +24,12 @@ export const PROJECTS_ROUTES: Routes = [
     path: '',
     loadComponent: () => import('./project-list.component').then((m) => m.ProjectListComponent),
   },
+  // The Trash: soft-deleted projects, restorable for 30 days. MUST precede `:id`
+  // so the literal segment isn't matched as a project id.
+  {
+    path: 'trash',
+    loadComponent: () => import('./project-trash.component').then((m) => m.ProjectTrashComponent),
+  },
   {
     path: ':id',
     providers: [ProjectWorkspaceStore],
@@ -45,6 +51,8 @@ export const PROJECTS_ROUTES: Routes = [
         children: [
           { path: '', redirectTo: 'board', pathMatch: 'full' },
           { path: 'board', loadComponent: () => import('./order-board.component').then((m) => m.OrderBoardComponent) },
+          // Per-order 3D viewer: the order's pieces coloured by THIS order's status.
+          { path: '3d', loadComponent: () => import('./order-viewer.component').then((m) => m.OrderViewerComponent) },
           { path: 'progress', loadComponent: () => import('./project-progress.component').then((m) => m.ProjectProgressComponent) },
           // Requirement × order quantity, issue-from-stock, fulfillment.
           { path: 'materials', loadComponent: () => import('./order-materials.component').then((m) => m.OrderMaterialsComponent) },

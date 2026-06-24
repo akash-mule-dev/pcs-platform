@@ -3,6 +3,7 @@ import { workOrderService } from '../work-order.service';
 jest.mock('../api.service', () => ({
   api: {
     get: jest.fn(),
+    getList: jest.fn(),
     patch: jest.fn(),
   },
 }));
@@ -19,20 +20,20 @@ describe('work-order.service', () => {
       const mockList = [
         { id: 'wo1', orderNumber: 'WO-2026-0001', status: 'in_progress' },
       ];
-      api.get.mockResolvedValue(mockList);
+      api.getList.mockResolvedValue(mockList);
 
       const result = await workOrderService.getAll();
 
-      expect(api.get).toHaveBeenCalledWith('/work-orders', undefined);
+      expect(api.getList).toHaveBeenCalledWith('/work-orders', undefined);
       expect(result).toEqual(mockList);
     });
 
     it('passes filter params (status, priority, page)', async () => {
-      api.get.mockResolvedValue([]);
+      api.getList.mockResolvedValue([]);
 
       await workOrderService.getAll({ status: 'in_progress', limit: 50 });
 
-      expect(api.get).toHaveBeenCalledWith('/work-orders', {
+      expect(api.getList).toHaveBeenCalledWith('/work-orders', {
         status: 'in_progress',
         limit: 50,
       });

@@ -34,6 +34,13 @@ export const routes: Routes = [
         loadComponent: () => import('./projects/package-monitor.component').then(m => m.PackageMonitorComponent)
       },
       {
+        // On-device 3D model cache management (IndexedDB) — list cached project
+        // models, see storage usage, and clear them. Persists across logout.
+        path: 'cached-projects',
+        canActivate: [featureGuard('projects')],
+        loadComponent: () => import('./projects/cached-projects.component').then(m => m.CachedProjectsComponent)
+      },
+      {
         path: 'processes',
         canActivate: [featureGuard('processes')],
         loadComponent: () => import('./processes/process-list/process-list.component').then(m => m.ProcessListComponent)
@@ -96,7 +103,13 @@ export const routes: Routes = [
       {
         path: 'stations',
         canActivate: [featureGuard('stations')],
-        loadComponent: () => import('./stations/station-management/station-management.component').then(m => m.StationManagementComponent)
+        loadComponent: () => import('./stations/stations-directory.component').then(m => m.StationsDirectoryComponent)
+      },
+      {
+        // Per-station cockpit: live occupancy, work-order queue, equipment, utilization & cost.
+        path: 'stations/:id',
+        canActivate: [featureGuard('stations')],
+        loadComponent: () => import('./stations/station-cockpit.component').then(m => m.StationCockpitComponent)
       },
       {
         path: 'quality-analysis',

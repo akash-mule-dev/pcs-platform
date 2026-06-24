@@ -1,0 +1,58 @@
+name: Scheduled backend jobs
+
+# The Vercel free/Hobby plan caps Cron at 2 jobs and daily granularity, so the
+# operational alert sweeps (originally in-process @Cron timers that pinned the
+# Fluid instance always-on) are triggered here instead, by hitting the
+# secret-guarded /api/internal/alerts/* endpoints. The daily retention purge
+# stays a native Vercel Cron (backend/vercel.json).
+#
+# REQUIRED SETUP (same value in BOTH places, or the endpoints reject with 503):
+#   - GitHub repo secret  CRON_SECRET   (sent as the Bearer token below)
+#   - Vercel env var      CRON_SECRET   on the PRODUCTION backend project
+#
+# NOTE: GitHub's scheduled triggers are best-effort and can be delayed/skipped
+# under load. The every-30-min cadence is a free-tier-friendly approximation of
+# the original in-process 10/15-min sweeps (each run bills ~1 GitHub Actions
+# minute). Adjust the cron(s) below to taste, or wire an external pinger
+# (e.g. cron-job.org) for exact minute-level timing without Actions minutes.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # overdue work orders + idle stations
+    - cron: '0 8 * * *'      # overdue-NCR escalation (08:00 UTC)
+    - cron: '0 18 * * *'     # shift summary (18:00 UTC)
+  workflow_dispatch: {}       # allow manual runs from the Actions tab
+
+concurrency:
+  group: scheduled-backend-jobs
+  cancel-in-progress: false
+
+env:
+  API_BASE: https://api.fabrixr.com
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Overdue work orders + idle stations (every 30 min)
+        if: github.event.schedule == '*/30 * * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          curl -fsS -X GET "$API_BASE/api/internal/alerts/overdue-work-orders" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          curl -fsS -X GET "$API_BASE/api/internal/alerts/idle-stations" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+      - name: Overdue NCR escalation (daily 08:00 UTC)
+        if: github.event.schedule == '0 8 * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          curl -fsS -X GET "$API_BASE/api/internal/alerts/overdue-ncrs" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+      - name: Shift summary (daily 18:00 UTC)
+        if: github.event.schedule == '0 18 * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          curl -fsS -X GET "$API_BASE/api/internal/alerts/shift-summary" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

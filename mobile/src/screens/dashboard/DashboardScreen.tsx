@@ -9,15 +9,17 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, StatusColors } from '../../theme/colors';
+import { Colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { can } from '../../config/permissions';
 import { timeTrackingService } from '../../services/time-tracking.service';
 import {
   dashboardService,
   DashboardSummary,
-  LiveStatusEntry,
   MyDayStats,
+  QualityInsights,
 } from '../../services/dashboard.service';
+import { notificationsService } from '../../services/notifications.service';
 import { TimeEntry } from '../../types';
 import { formatDuration, formatTimer } from '../../utils/duration';
 import { useSocketEvents } from '../../hooks/useSocketEvent';
@@ -29,41 +31,75 @@ function getGreeting(): string {
   return 'Good Evening';
 }
 
-/** Stable display order for the status breakdown (web keeps API order, which
- *  is GROUP BY dependent — on a phone a fixed order reads better). */
-const STATUS_ORDER = ['draft', 'pending', 'in_progress', 'completed', 'cancelled'];
-
-function statusLabel(status: string): string {
-  return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+/** First-pass-yield colour bands (fabrication: ≥95% is healthy, <85% poor). */
+function fpyTone(rate: number | null): string {
+  if (rate == null) return Colors.medium;
+  if (rate >= 95) return Colors.success;
+  if (rate >= 85) return Colors.warning;
+  return Colors.danger;
 }
 
-const LIVE_ROWS_SHOWN = 5;
+const ATTENTION_TONES: Record<string, string> = {
+  primary: Colors.primary,
+  warning: Colors.warning,
+  danger: Colors.danger,
+};
+
+interface AttentionItem {
+  key: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  tone: 'primary' | 'warning' | 'danger';
+  label: string;
+  onPress: () => void;
+}
 
 export function DashboardScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<any>();
   const [refreshing, setRefreshing] = useState(false);
 
-  // Server-driven state — same endpoints as the web portal dashboard.
+  // The home screen is action-first: the caller's own state (active timer, "my
+  // day") + the things that need a response (attention queue) + the quality
+  // health that the floor actually acts on — NOT the web portal's org-wide
+  // management charts.
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [liveEntries, setLiveEntries] = useState<LiveStatusEntry[]>([]);
   const [myDay, setMyDay] = useState<MyDayStats | null>(null);
+  const [quality, setQuality] = useState<QualityInsights | null>(null);
+  const [unread, setUnread] = useState(0);
   const [activeEntry, setActiveEntry] = useState<TimeEntry | null>(null);
   const [now, setNow] = useState(Date.now());
+  // Has the first fetch settled? Gates the timer slot + attention empty-state so
+  // we never flash a false "not clocked in" / "all caught up" before data lands.
+  const [loaded, setLoaded] = useState(false);
+
+  // Role gating: the Quality section is only meaningful to inspectors / QC
+  // authority. Computed once per render (reads the cached permission set).
+  const canQuality = can('quality-analysis.view') || can('quality-reports.view');
+  const canProjects = can('projects.view');
+  const canWorkOrders = can('work-orders.view');
+  const canTimer = can('time-tracking.view');
+  // Scan lives inside the Work Orders / Projects stacks; target whichever tab
+  // the user can actually see (navigating to a permission-hidden tab crashes).
+  const scanStack = canWorkOrders ? 'WorkOrders' : canProjects ? 'Projects' : null;
 
   const loadData = useCallback(async () => {
-    // Each section degrades independently (mirrors the web dashboard, where a
-    // failing widget shows "—" instead of blanking the whole page).
-    const [summaryRes, liveRes, myDayRes, activeRes] = await Promise.allSettled([
+    // Each section degrades independently — a failing widget shows "—" or
+    // hides, never blanks the whole page (mirrors the web dashboard).
+    const tasks = [
       dashboardService.getSummary(),
-      dashboardService.getLiveStatus(),
       dashboardService.getMyDay(),
       timeTrackingService.getActive(),
-    ]);
+      notificationsService.unreadCount(),
+      canQuality ? dashboardService.getQualityInsights() : Promise.resolve(null),
+    ] as const;
+
+    const [summaryRes, myDayRes, activeRes, unreadRes, qualityRes] =
+      await Promise.allSettled(tasks);
 
     if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value);
-    if (liveRes.status === 'fulfilled') setLiveEntries(liveRes.value ?? []);
     if (myDayRes.status === 'fulfilled') setMyDay(myDayRes.value);
+    if (unreadRes.status === 'fulfilled') setUnread(unreadRes.value?.count ?? 0);
+    if (qualityRes.status === 'fulfilled') setQuality(qualityRes.value);
     if (activeRes.status === 'fulfilled') {
       const mine = (activeRes.value ?? []).find(
         (e) => e.userId === user?.id && !e.endTime,
@@ -72,36 +108,43 @@ export function DashboardScreen() {
     }
 
     if (__DEV__) {
-      [summaryRes, liveRes, myDayRes, activeRes]
+      [summaryRes, myDayRes, activeRes, unreadRes, qualityRes]
         .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
         .forEach((r) => console.warn('Dashboard load failed:', r.reason));
     }
-  }, [user?.id]);
+    setLoaded(true);
+  }, [user?.id, canQuality]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Real-time: refresh the moment anything changes on any client (web or
-  // mobile) — the same event set the web dashboard subscribes to.
+  // Real-time: refresh the moment anything relevant changes on any client —
+  // including QC events so the attention queue stays live.
   useSocketEvents(
-    ['dashboard-refresh', 'time-entry-update', 'stage-update', 'work-order-update'],
+    [
+      'dashboard-refresh',
+      'time-entry-update',
+      'stage-update',
+      'work-order-update',
+      'quality-alert',
+      'notification',
+    ],
     loadData,
   );
 
-  // 30s polling safety-net (web parity) in case socket events are missed.
+  // 30s polling safety-net in case socket events are missed.
   useEffect(() => {
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, [loadData]);
 
-  // 1s tick drives the active-timer card and the live elapsed columns.
-  const needsTick = !!activeEntry || liveEntries.length > 0;
+  // 1s tick drives the active-timer card only when one is running.
   useEffect(() => {
-    if (!needsTick) return;
+    if (!activeEntry) return;
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, [needsTick]);
+  }, [activeEntry]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -112,31 +155,46 @@ export function DashboardScreen() {
   const elapsedSeconds = (startTime: string): number =>
     startTime ? Math.max(0, Math.floor((now - new Date(startTime).getTime()) / 1000)) : 0;
 
-  // ── Derived KPI values (same math as the web component) ──
-  const statusRows = useMemo(() => {
-    const rows = [...(summary?.workOrdersByStatus ?? [])];
-    rows.sort((a, b) => {
-      const ai = STATUS_ORDER.indexOf(a.status);
-      const bi = STATUS_ORDER.indexOf(b.status);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.status.localeCompare(b.status);
-    });
-    return rows.map((r) => ({ ...r, value: parseInt(r.count, 10) || 0 }));
-  }, [summary]);
-
-  const totalWorkOrders = useMemo(
-    () => statusRows.reduce((sum, r) => sum + r.value, 0),
-    [statusRows],
+  // ── Derived production numbers (compact, current — not the full status chart) ──
+  const statusCount = useCallback(
+    (status: string): number => {
+      const row = summary?.workOrdersByStatus?.find((r) => r.status === status);
+      return row ? parseInt(row.count, 10) || 0 : 0;
+    },
+    [summary],
   );
-  const maxStatusCount = useMemo(
-    () => Math.max(1, ...statusRows.map((r) => r.value)),
-    [statusRows],
-  );
-  const efficiencyLabel = summary?.avgEfficiency
-    ? `${Math.round(Math.min(summary.avgEfficiency, 100))}%`
-    : '—';
+  const inProgress = statusCount('in_progress');
 
-  const liveShown = liveEntries.slice(0, LIVE_ROWS_SHOWN);
-  const liveOverflow = liveEntries.length - liveShown.length;
+  // ── Derived quality numbers ──
+  const openNcrTotal = useMemo(
+    () => Object.values(quality?.openNcrBySeverity ?? {}).reduce((s, n) => s + n, 0),
+    [quality],
+  );
+  const overdueNcr = quality?.ncrAging?.over30 ?? 0;
+  const pendingSignoffs = quality?.pendingSignoffs ?? 0;
+  const mix = quality?.inspections30d;
+
+  // ── The attention queue ──
+  // Only surfaces items that have a TRUE mobile destination. Unread
+  // notifications go to the Notifications feed — which is where NCR-raised /
+  // failed-inspection alerts actually land. The standing QC counts (open NCRs,
+  // pending sign-offs) are shown as health figures in the Quality card instead,
+  // because there is no mobile list those counts could honestly deep-link to.
+  const goNotifications = () => navigation.navigate('More', { screen: 'Notifications' });
+  const attention = useMemo<AttentionItem[]>(() => {
+    const items: AttentionItem[] = [];
+    if (unread > 0) {
+      items.push({
+        key: 'notif',
+        icon: 'notifications',
+        tone: 'primary',
+        label: `${unread} new notification${unread === 1 ? '' : 's'}`,
+        onPress: goNotifications,
+      });
+    }
+    return items;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unread]);
 
   return (
     <ScrollView
@@ -144,123 +202,81 @@ export function DashboardScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
     >
-      <Text style={styles.greeting}>
-        {getGreeting()}, {user?.firstName || 'Operator'}
-      </Text>
+      {/* Header: greeting + notification bell */}
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.greeting} numberOfLines={1}>
+            {getGreeting()}, {user?.firstName || 'Operator'}
+          </Text>
+          <Text style={styles.subGreeting}>Here's what needs you today.</Text>
+        </View>
+        <TouchableOpacity style={styles.bell} onPress={goNotifications} accessibilityLabel="Notifications">
+          <Ionicons name="notifications-outline" size={24} color={Colors.text} />
+          {unread > 0 && (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>{unread > 99 ? '99+' : unread}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
 
-      {/* Active Timer Card */}
-      {activeEntry && (
-        <TouchableOpacity
-          style={styles.activeCard}
-          onPress={() => navigation.navigate('Timer')}
-        >
+      {/* Active timer hero — or an idle "clock in" prompt */}
+      {activeEntry ? (
+        <TouchableOpacity style={styles.activeCard} onPress={() => navigation.navigate('Timer')}>
           <View style={styles.activeCardHeader}>
             <Ionicons name="timer" size={20} color={Colors.white} />
             <Text style={styles.activeCardTitle}>Active Timer</Text>
+            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" style={{ marginLeft: 'auto' }} />
           </View>
-          <Text style={styles.activeTimer}>
-            {formatTimer(elapsedSeconds(activeEntry.startTime))}
-          </Text>
+          <Text style={styles.activeTimer}>{formatTimer(elapsedSeconds(activeEntry.startTime))}</Text>
           <Text style={styles.activeLabel}>
-            {activeEntry.workOrderStage?.stage?.name || 'Stage'} -{' '}
-            {activeEntry.workOrderStage?.workOrder?.orderNumber || ''}
+            {activeEntry.workOrderStage?.stage?.name || 'Stage'}
+            {activeEntry.workOrderStage?.workOrder?.orderNumber ? ` · ${activeEntry.workOrderStage.workOrder.orderNumber}` : ''}
           </Text>
         </TouchableOpacity>
-      )}
+      ) : loaded && canTimer ? (
+        // Only after the first fetch settles — never flash "not clocked in" at a
+        // user whose timer is in fact running.
+        <TouchableOpacity style={styles.idleCard} onPress={() => navigation.navigate('Timer')}>
+          <View style={[styles.idleIcon]}>
+            <Ionicons name="timer-outline" size={22} color={Colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.idleTitle}>You're not clocked in</Text>
+            <Text style={styles.idleSub}>Start a timer when you begin a stage</Text>
+          </View>
+          <Text style={styles.idleAction}>Start</Text>
+        </TouchableOpacity>
+      ) : null}
 
-      {/* Org-wide KPIs — same values as the web portal dashboard */}
-      <Text style={styles.sectionTitle}>Production Overview</Text>
-      <View style={styles.kpiGrid}>
-        <View style={styles.kpiCard}>
-          <View style={[styles.kpiIcon, { backgroundColor: '#e3f2fd' }]}>
-            <Ionicons name="clipboard" size={20} color={Colors.primary} />
-          </View>
-          <Text style={styles.kpiValue}>{summary ? totalWorkOrders : '—'}</Text>
-          <Text style={styles.kpiLabel}>Total Work Orders</Text>
-        </View>
-        <View style={styles.kpiCard}>
-          <View style={[styles.kpiIcon, { backgroundColor: '#e8f5e9' }]}>
-            <Ionicons name="people" size={20} color={Colors.success} />
-          </View>
-          <Text style={styles.kpiValue}>{summary?.activeOperators ?? '—'}</Text>
-          <Text style={styles.kpiLabel}>Active Operators</Text>
-        </View>
-        <View style={styles.kpiCard}>
-          <View style={[styles.kpiIcon, { backgroundColor: '#fff3e0' }]}>
-            <Ionicons name="checkmark-circle" size={20} color={Colors.warning} />
-          </View>
-          <Text style={styles.kpiValue}>{summary?.todayCompletedStages ?? '—'}</Text>
-          <Text style={styles.kpiLabel}>Completed Today</Text>
-        </View>
-        <View style={styles.kpiCard}>
-          <View style={[styles.kpiIcon, { backgroundColor: '#ede7f6' }]}>
-            <Ionicons name="speedometer" size={20} color={Colors.tertiary} />
-          </View>
-          <Text style={styles.kpiValue}>{efficiencyLabel}</Text>
-          <Text style={styles.kpiLabel}>Avg Efficiency</Text>
-        </View>
-      </View>
-
-      {/* Work Orders by Status */}
-      <Text style={styles.sectionTitle}>Work Orders by Status</Text>
+      {/* Needs attention — the action queue */}
+      <Text style={styles.sectionTitle}>Needs attention</Text>
       <View style={styles.card}>
-        {statusRows.length === 0 && (
-          <Text style={styles.emptyText}>No work orders yet</Text>
-        )}
-        {statusRows.map((row) => (
-          <View key={row.status} style={styles.statusRow}>
-            <View style={[styles.statusDot, { backgroundColor: StatusColors[row.status] || Colors.medium }]} />
-            <Text style={styles.statusLabel}>{statusLabel(row.status)}</Text>
-            <View style={styles.statusBarTrack}>
-              <View
-                style={[
-                  styles.statusBarFill,
-                  {
-                    backgroundColor: StatusColors[row.status] || Colors.medium,
-                    width: `${Math.max(4, (row.value / maxStatusCount) * 100)}%` as `${number}%`,
-                  },
-                ]}
-              />
-            </View>
-            <Text style={styles.statusCount}>{row.value}</Text>
+        {!loaded ? (
+          <Text style={styles.checkingText}>Checking…</Text>
+        ) : attention.length === 0 ? (
+          <View style={styles.allClear}>
+            <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+            <Text style={styles.allClearText}>You're all caught up</Text>
           </View>
-        ))}
-      </View>
-
-      {/* Live Stage Status */}
-      <Text style={styles.sectionTitle}>Live Stage Status</Text>
-      <View style={styles.card}>
-        {liveShown.length === 0 && (
-          <Text style={styles.emptyText}>No active entries</Text>
-        )}
-        {liveShown.map((entry, idx) => (
-          <View
-            key={entry.id}
-            style={[styles.liveRow, idx < liveShown.length - 1 && styles.liveRowBorder]}
-          >
-            <View style={styles.liveDot} />
-            <View style={styles.liveInfo}>
-              <Text style={styles.liveOperator} numberOfLines={1}>
-                {[entry.user?.firstName, entry.user?.lastName].filter(Boolean).join(' ') || 'Operator'}
-              </Text>
-              <Text style={styles.liveDetail} numberOfLines={1}>
-                {entry.workOrderStage?.workOrder?.orderNumber || '—'}
-                {' · '}
-                {entry.workOrderStage?.stage?.name || '—'}
-                {entry.station?.name ? ` · ${entry.station.name}` : ''}
-              </Text>
-            </View>
-            <Text style={styles.liveElapsed}>
-              {formatDuration(elapsedSeconds(entry.startTime))}
-            </Text>
-          </View>
-        ))}
-        {liveOverflow > 0 && (
-          <Text style={styles.moreText}>+{liveOverflow} more active</Text>
+        ) : (
+          attention.map((item, idx) => (
+            <TouchableOpacity
+              key={item.key}
+              style={[styles.attnRow, idx < attention.length - 1 && styles.attnRowBorder]}
+              onPress={item.onPress}
+            >
+              <View style={[styles.attnIcon, { backgroundColor: `${ATTENTION_TONES[item.tone]}1a` }]}>
+                <Ionicons name={item.icon} size={18} color={ATTENTION_TONES[item.tone]} />
+              </View>
+              <Text style={styles.attnLabel} numberOfLines={2}>{item.label}</Text>
+              <Ionicons name="chevron-forward" size={18} color={Colors.medium} />
+            </TouchableOpacity>
+          ))
         )}
       </View>
 
-      {/* My Day — the caller's own stats, computed server-side */}
+      {/* My Day — the caller's own stats */}
       <Text style={styles.sectionTitle}>My Day</Text>
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
@@ -277,30 +293,109 @@ export function DashboardScreen() {
         </View>
       </View>
 
-      {/* Quick Actions */}
+      {/* Quality — FPY + 30-day mix + open work, role-gated */}
+      {canQuality && (
+        <>
+          <Text style={styles.sectionTitle}>Quality</Text>
+          <View style={styles.card}>
+            <View style={styles.qualityTop}>
+              <View style={styles.fpyBlock}>
+                <Text style={[styles.fpyValue, { color: fpyTone(quality?.firstPassYield?.ratePct ?? null) }]}>
+                  {quality?.firstPassYield?.ratePct != null ? `${quality.firstPassYield.ratePct}%` : '—'}
+                </Text>
+                <Text style={styles.fpyLabel}>First-pass yield</Text>
+              </View>
+              <View style={styles.qualityStats}>
+                <View style={styles.qStat}>
+                  <Text style={[styles.qStatValue, openNcrTotal > 0 && { color: Colors.danger }]}>{openNcrTotal}</Text>
+                  <Text style={styles.qStatLabel}>Open NCRs</Text>
+                  {overdueNcr > 0 && <Text style={styles.qStatSub}>{overdueNcr} overdue</Text>}
+                </View>
+                <View style={styles.qStat}>
+                  <Text style={[styles.qStatValue, pendingSignoffs > 0 && { color: Colors.warning }]}>{pendingSignoffs}</Text>
+                  <Text style={styles.qStatLabel}>To sign off</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* 30-day pass / warn / fail mix */}
+            {mix && mix.total > 0 ? (
+              <View style={styles.mixBlock}>
+                <View style={styles.mixBar}>
+                  {mix.pass > 0 && <View style={{ flex: mix.pass, backgroundColor: Colors.success }} />}
+                  {mix.warning > 0 && <View style={{ flex: mix.warning, backgroundColor: Colors.warning }} />}
+                  {mix.fail > 0 && <View style={{ flex: mix.fail, backgroundColor: Colors.danger }} />}
+                </View>
+                <Text style={styles.mixLegend}>
+                  Last 30 days · {mix.total} inspected · {mix.pass} pass · {mix.warning} warn · {mix.fail} fail
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.mixEmpty}>No inspections in the last 30 days</Text>
+            )}
+          </View>
+        </>
+      )}
+
+      {/* Production today — compact, current numbers (not the full status chart) */}
+      <Text style={styles.sectionTitle}>Production today</Text>
+      <View style={styles.kpiGrid}>
+        <View style={styles.kpiCard}>
+          <View style={[styles.kpiIcon, { backgroundColor: '#e8f5e9' }]}>
+            <Ionicons name="checkmark-done" size={20} color={Colors.success} />
+          </View>
+          <Text style={styles.kpiValue}>{summary?.todayCompletedStages ?? '—'}</Text>
+          <Text style={styles.kpiLabel}>Stages Completed</Text>
+        </View>
+        <View style={styles.kpiCard}>
+          <View style={[styles.kpiIcon, { backgroundColor: '#e3f2fd' }]}>
+            <Ionicons name="construct" size={20} color={Colors.primary} />
+          </View>
+          <Text style={styles.kpiValue}>{summary ? inProgress : '—'}</Text>
+          <Text style={styles.kpiLabel}>Orders In Progress</Text>
+        </View>
+        <View style={styles.kpiCard}>
+          <View style={[styles.kpiIcon, { backgroundColor: '#ede7f6' }]}>
+            <Ionicons name="people" size={20} color={Colors.tertiary} />
+          </View>
+          <Text style={styles.kpiValue}>{summary?.activeOperators ?? '—'}</Text>
+          <Text style={styles.kpiLabel}>Working Now</Text>
+        </View>
+      </View>
+
+      {/* Quick Actions — role-filtered, scan-first for the floor */}
       <Text style={styles.sectionTitle}>Quick Actions</Text>
       <View style={styles.actionsRow}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => navigation.navigate('WorkOrders')}
-        >
-          <Ionicons name="clipboard" size={28} color={Colors.primary} />
-          <Text style={styles.actionLabel}>Work Orders</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => navigation.navigate('Timer')}
-        >
-          <Ionicons name="timer" size={28} color={Colors.primary} />
-          <Text style={styles.actionLabel}>Timer</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => navigation.navigate('Projects')}
-        >
-          <Ionicons name="folder" size={28} color={Colors.primary} />
-          <Text style={styles.actionLabel}>Projects</Text>
-        </TouchableOpacity>
+        {scanStack && (
+          <TouchableOpacity
+            style={styles.actionButton}
+            // `initial: false` seeds the stack's hub screen beneath Scan, so the
+            // scanner gets a working back button (without it, Scan is the only
+            // route in a freshly-focused tab → no way back from the camera).
+            onPress={() => navigation.navigate(scanStack, { screen: 'Scan', initial: false })}
+          >
+            <Ionicons name="qr-code" size={26} color={Colors.primary} />
+            <Text style={styles.actionLabel}>Scan</Text>
+          </TouchableOpacity>
+        )}
+        {canWorkOrders && (
+          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('WorkOrders')}>
+            <Ionicons name="clipboard" size={26} color={Colors.primary} />
+            <Text style={styles.actionLabel}>Orders</Text>
+          </TouchableOpacity>
+        )}
+        {canProjects && (
+          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Projects')}>
+            <Ionicons name="folder" size={26} color={Colors.primary} />
+            <Text style={styles.actionLabel}>Projects</Text>
+          </TouchableOpacity>
+        )}
+        {canTimer && (
+          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Timer')}>
+            <Ionicons name="timer" size={26} color={Colors.primary} />
+            <Text style={styles.actionLabel}>Timer</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ScrollView>
   );
@@ -316,12 +411,54 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 32,
   },
+  // ── Header ──
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
   greeting: {
     fontSize: 24,
     fontWeight: '700',
     color: Colors.text,
-    marginBottom: 20,
   },
+  subGreeting: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  bell: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.danger,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellBadgeText: {
+    color: Colors.white,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  // ── Active timer hero ──
   activeCard: {
     backgroundColor: Colors.primary,
     borderRadius: 12,
@@ -350,48 +487,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 4,
   },
+  // ── Idle (not clocked in) ──
+  idleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+  },
+  idleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e3f2fd',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  idleTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  idleSub: {
+    fontSize: 12.5,
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  idleAction: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginLeft: 8,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.text,
     marginBottom: 12,
-  },
-  // ── KPI grid ──
-  kpiGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 24,
-  },
-  kpiCard: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 10,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  kpiIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  kpiValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  kpiLabel: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginTop: 2,
   },
   // ── Shared card ──
   card: {
@@ -405,91 +542,47 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  emptyText: {
-    color: Colors.textSecondary,
+  // ── Attention queue ──
+  checkingText: {
     fontSize: 13,
+    color: Colors.textSecondary,
     textAlign: 'center',
-    paddingVertical: 8,
-  },
-  // ── Status breakdown ──
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingVertical: 6,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  statusLabel: {
-    width: 92,
-    fontSize: 13,
-    color: Colors.text,
-  },
-  statusBarTrack: {
-    flex: 1,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.light,
-    marginHorizontal: 8,
-    overflow: 'hidden',
-  },
-  statusBarFill: {
-    height: 6,
-    borderRadius: 3,
-  },
-  statusCount: {
-    width: 32,
-    textAlign: 'right',
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.text,
-    fontVariant: ['tabular-nums'],
-  },
-  // ── Live status ──
-  liveRow: {
+  allClear: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    justifyContent: 'center',
+    paddingVertical: 6,
   },
-  liveRowBorder: {
+  allClearText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginLeft: 8,
+  },
+  attnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  attnRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.success,
-    marginRight: 10,
+  attnIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  liveInfo: {
+  attnLabel: {
     flex: 1,
-    marginRight: 8,
-  },
-  liveOperator: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
     color: Colors.text,
-  },
-  liveDetail: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginTop: 1,
-  },
-  liveElapsed: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.primary,
-    fontVariant: ['tabular-nums'],
-  },
-  moreText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    paddingTop: 8,
+    marginRight: 8,
   },
   // ── My Day ──
   statsRow: {
@@ -519,6 +612,109 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
   },
+  // ── Quality ──
+  qualityTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  fpyBlock: {
+    paddingRight: 16,
+    marginRight: 16,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: Colors.border,
+  },
+  fpyValue: {
+    fontSize: 30,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  fpyLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  qualityStats: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  qStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  qStatValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  qStatLabel: {
+    fontSize: 11.5,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  qStatSub: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: Colors.danger,
+    marginTop: 1,
+  },
+  mixBlock: {
+    marginTop: 16,
+  },
+  mixBar: {
+    flexDirection: 'row',
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: Colors.light,
+  },
+  mixLegend: {
+    fontSize: 11.5,
+    color: Colors.textSecondary,
+    marginTop: 8,
+  },
+  mixEmpty: {
+    fontSize: 12.5,
+    color: Colors.textSecondary,
+    marginTop: 14,
+    textAlign: 'center',
+  },
+  // ── Production KPI grid ──
+  kpiGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  kpiCard: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  kpiIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  kpiValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  kpiLabel: {
+    fontSize: 11.5,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  // ── Quick actions ──
   actionsRow: {
     flexDirection: 'row',
     gap: 12,
@@ -528,7 +724,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
     borderRadius: 10,
-    padding: 20,
+    paddingVertical: 18,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },

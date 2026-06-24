@@ -88,6 +88,8 @@ export class ProjectQualityService {
       toleranceMax: dto.toleranceMax,
       assemblyNodeId: node.id,
       projectId,
+      stageId: dto.stageId,
+      workOrderStageId: dto.workOrderStageId,
     });
   }
 

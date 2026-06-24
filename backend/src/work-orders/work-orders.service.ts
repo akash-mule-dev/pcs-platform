@@ -6,7 +6,14 @@ import { WorkOrderStage, WorkOrderStageStatus } from './work-order-stage.entity.
 import { Stage } from '../stages/stage.entity.js';
 import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { AssemblyNode } from '../projects/assembly-node.entity.js';
-import { inspectionGateError, isQualityStageName, qcGateMessage, InspectionSnapshot } from './qc-gate.js';
+import {
+  inspectionGateError,
+  isFinalQcStage,
+  finalQcNcrMessage,
+  isHoldPoint,
+  stageQcGateError,
+  InspectionSnapshot,
+} from './qc-gate.js';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto.js';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto.js';
 import { AssignWorkOrderDto } from './dto/assign-work-order.dto.js';
@@ -27,11 +34,24 @@ export class WorkOrdersService {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  /** Open NCR reports linked to a fabricated assembly (an unresolved `ncr`-type QC report blocks the quality gate). */
+  /** Open NCR reports linked to a fabricated assembly (the final-QC rollup gate counts ALL of them). */
   private countOpenNcrs(assemblyNodeId: string): Promise<number> {
     return this.reportRepo.count({
       where: {
         assemblyNodeId,
+        templateType: 'ncr',
+        resolvedAt: IsNull(),
+        organizationId: TenantContext.getOrganizationId() ?? undefined,
+      },
+    });
+  }
+
+  /** Open NCRs raised AT a specific stage of an assembly (the per-stage hold-point gate). */
+  private countOpenNcrsAtStage(assemblyNodeId: string, stageId: string): Promise<number> {
+    return this.reportRepo.count({
+      where: {
+        assemblyNodeId,
+        stageId,
         templateType: 'ncr',
         resolvedAt: IsNull(),
         organizationId: TenantContext.getOrganizationId() ?? undefined,
@@ -45,7 +65,7 @@ export class WorkOrdersService {
     return node?.mark || node?.name || fallback;
   }
 
-  /** Inspection rows (status + sign-off) for an assembly — feeds the inspection gate. */
+  /** Inspection rows (status + sign-off) for an assembly — feeds the final-QC inspection gate. */
   private async inspectionSnapshots(assemblyNodeId: string): Promise<InspectionSnapshot[]> {
     const org = TenantContext.getOrganizationId();
     const rows: { status: string; signoff_status: string | null }[] = org
@@ -60,25 +80,49 @@ export class WorkOrdersService {
     return rows.map((r) => ({ status: r.status, signoffStatus: r.signoff_status }));
   }
 
+  /** Inspection rows recorded AT a specific stage of an assembly — feeds the hold-point gate. */
+  private async inspectionSnapshotsAtStage(assemblyNodeId: string, stageId: string): Promise<InspectionSnapshot[]> {
+    const org = TenantContext.getOrganizationId();
+    const rows: { status: string; signoff_status: string | null }[] = org
+      ? await this.woRepo.query(
+          `SELECT status, signoff_status FROM quality_data WHERE assembly_node_id = $1 AND stage_id = $2 AND organization_id = $3 AND is_active = true`,
+          [assemblyNodeId, stageId, org],
+        )
+      : await this.woRepo.query(
+          `SELECT status, signoff_status FROM quality_data WHERE assembly_node_id = $1 AND stage_id = $2 AND is_active = true`,
+          [assemblyNodeId, stageId],
+        );
+    return rows.map((r) => ({ status: r.status, signoffStatus: r.signoff_status }));
+  }
+
   /**
-   * Quality gate: a quality stage of a fabrication work order cannot be
-   * completed while the assembly has open NCRs or unresolved failed
-   * inspections; a `requiresInspection` hold-point stage additionally needs at
-   * least one acceptable inspection recorded. Throws 400 when blocked.
+   * Quality gate for completing one stage of a fabrication work order:
+   *  - a FINAL QC stage consolidates the WHOLE assembly (any open NCR / unsigned
+   *    failure anywhere blocks the release);
+   *  - a per-stage HOLD point blocks only on its OWN stage's NCRs / inspection;
+   *  - plain / witness / review stages never block.
+   * See `stageQcGateError`. Throws 400 when blocked.
    */
   private async assertQualityGate(
     wo: WorkOrder | null,
-    stage: { name?: string | null; requiresInspection?: boolean } | null | undefined,
+    stage:
+      | { id?: string; name?: string | null; isFinalQc?: boolean | null; requiresInspection?: boolean; inspectionType?: 'hold' | 'witness' | 'review' | null }
+      | null
+      | undefined,
   ): Promise<void> {
-    if (!wo?.assemblyNodeId || !isQualityStageName(stage?.name)) return;
-    const open = await this.countOpenNcrs(wo.assemblyNodeId);
-    if (open > 0) throw new BadRequestException(qcGateMessage(await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber), open));
-    const entries = await this.inspectionSnapshots(wo.assemblyNodeId);
-    const err = inspectionGateError(
-      await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber),
-      entries,
-      !!stage?.requiresInspection,
-    );
+    if (!wo?.assemblyNodeId || !stage) return;
+    const final = isFinalQcStage(stage);
+    const hold = !final && isHoldPoint(stage);
+    if (!final && !hold) return;
+    const label = await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber);
+    const err = stageQcGateError({
+      itemLabel: label,
+      stage,
+      assemblyOpenNcrs: final ? await this.countOpenNcrs(wo.assemblyNodeId) : 0,
+      assemblyInspections: final ? await this.inspectionSnapshots(wo.assemblyNodeId) : [],
+      stageOpenNcrs: hold && stage.id ? await this.countOpenNcrsAtStage(wo.assemblyNodeId, stage.id) : 0,
+      stageInspections: hold && stage.id ? await this.inspectionSnapshotsAtStage(wo.assemblyNodeId, stage.id) : [],
+    });
     if (err) throw new BadRequestException(err);
   }
 
@@ -151,7 +195,7 @@ export class WorkOrdersService {
     const woIds = wos.map((w) => w.id);
     const stageRows: any[] = await this.woRepo.query(
       `SELECT s.id AS wos_id, s.work_order_id, s.status, s.qty_done, s.qty_total,
-              st.id AS stage_id, st.name, st.sequence, st.requires_inspection,
+              st.id AS stage_id, st.name, st.sequence, st.requires_inspection, st.inspection_type, st.is_final_qc,
               u.first_name, u.last_name, sta.name AS station_name
          FROM work_order_stages s
          JOIN stages st ON st.id = s.stage_id
@@ -168,19 +212,26 @@ export class WorkOrdersService {
       stagesByWo.set(r.work_order_id, arr);
     }
 
-    // 3. Quality holds per assembly (blocks the QC column's "complete").
+    // 3. Quality holds per assembly — open NCRs grouped by (assembly, stage) so
+    //    the FINAL QC column blocks on the assembly's whole rollup while a HOLD
+    //    point blocks only on its own stage. NCRs with no stage context count
+    //    toward the assembly rollup but never a per-stage hold.
     const nodeIds = [...new Set(wos.map((w) => w.assembly_node_id).filter(Boolean))];
     const ncrByNode = new Map<string, number>();
+    const ncrByNodeStage = new Map<string, number>(); // key: `${nodeId}:${stageId}`
     if (nodeIds.length) {
       const ncrs: any[] = await this.woRepo.query(
-        `SELECT assembly_node_id AS node_id, COUNT(*)::int AS open
+        `SELECT assembly_node_id AS node_id, stage_id, COUNT(*)::int AS open
            FROM quality_reports
           WHERE organization_id = $1 AND assembly_node_id = ANY($2::uuid[])
             AND template_type = 'ncr' AND resolved_at IS NULL
-          GROUP BY assembly_node_id`,
+          GROUP BY assembly_node_id, stage_id`,
         [org, nodeIds],
       );
-      for (const r of ncrs) ncrByNode.set(r.node_id, Number(r.open));
+      for (const r of ncrs) {
+        ncrByNode.set(r.node_id, (ncrByNode.get(r.node_id) ?? 0) + Number(r.open));
+        if (r.stage_id) ncrByNodeStage.set(`${r.node_id}:${r.stage_id}`, Number(r.open));
+      }
     }
 
     // Column skeleton: distinct stage names ordered by their first sequence.
@@ -210,6 +261,15 @@ export class WorkOrdersService {
         : active.filter((r) => r.status === 'completed').length;
       const current = active.find((r) => r.status !== 'completed') ?? null;
       const openNcrs = w.assembly_node_id ? ncrByNode.get(w.assembly_node_id) ?? 0 : 0;
+      // Gate flag for the column the card currently sits in: a final-QC stage
+      // blocks on the assembly rollup; a hold point on its own stage's NCRs.
+      const curStage = current
+        ? { name: current.name, isFinalQc: current.is_final_qc, inspectionType: current.inspection_type, requiresInspection: current.requires_inspection }
+        : null;
+      const curIsFinal = curStage ? isFinalQcStage(curStage) : false;
+      const curIsHold = curStage ? !curIsFinal && isHoldPoint(curStage) : false;
+      const curStageNcrs = current && w.assembly_node_id ? ncrByNodeStage.get(`${w.assembly_node_id}:${current.stage_id}`) ?? 0 : 0;
+      const curGateBlocked = curIsFinal ? openNcrs > 0 : curIsHold ? curStageNcrs > 0 : false;
       const due = w.due_date ?? w.po_due ?? null;
 
       const card = {
@@ -247,8 +307,9 @@ export class WorkOrdersService {
               qtyTotal: current.qty_total != null ? Number(current.qty_total) : null,
               assignedTo: current.first_name ? `${current.first_name} ${current.last_name ?? ''}`.trim() : null,
               station: current.station_name ?? null,
-              isQuality: isQualityStageName(current.name),
-              gateBlocked: isQualityStageName(current.name) && openNcrs > 0,
+              isQuality: curIsFinal || curIsHold,
+              isFinalQc: curIsFinal,
+              gateBlocked: curGateBlocked,
             }
           : null,
       };
@@ -356,22 +417,18 @@ export class WorkOrdersService {
     }
 
     // Quality gate: completing the whole WO cascades every stage (incl. quality)
-    // to completed — blocked while the fabricated assembly has open NCRs,
-    // unresolved failed inspections, or an unsatisfied inspection hold point.
+    // to completed — so it can't complete while the fabricated assembly has ANY
+    // open NCR (the final-QC rollup would block), unresolved failed inspections,
+    // or an unsatisfied inspection hold point.
     if (newStatus === WorkOrderStatus.COMPLETED && wo.assemblyNodeId) {
+      const label = await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber);
       const open = await this.countOpenNcrs(wo.assemblyNodeId);
-      if (open > 0) throw new BadRequestException(qcGateMessage(await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber), open));
-      const qualityStages = wo.processId
-        ? await this.stageRepo.find({ where: { processId: wo.processId } })
-        : [];
-      const quality = qualityStages.filter((s) => isQualityStageName(s.name));
-      if (quality.length) {
+      if (open > 0) throw new BadRequestException(finalQcNcrMessage(label, open));
+      const stages = wo.processId ? await this.stageRepo.find({ where: { processId: wo.processId } }) : [];
+      const gating = stages.filter((s) => isFinalQcStage(s) || isHoldPoint(s));
+      if (gating.length) {
         const entries = await this.inspectionSnapshots(wo.assemblyNodeId);
-        const err = inspectionGateError(
-          await this.nodeLabel(wo.assemblyNodeId, wo.orderNumber),
-          entries,
-          quality.some((s) => s.requiresInspection),
-        );
+        const err = inspectionGateError(label, entries, gating.some((s) => isHoldPoint(s)));
         if (err) throw new BadRequestException(err);
       }
     }

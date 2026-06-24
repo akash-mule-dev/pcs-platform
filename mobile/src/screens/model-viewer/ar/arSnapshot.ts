@@ -4,7 +4,7 @@
 // Viro's _takeScreenshot(fileName, saveToCameraRoll) resolves to
 // { success, url } where url is the saved image path.
 
-export interface SnapshotResult {
+interface SnapshotResult {
   uri: string;
 }
 

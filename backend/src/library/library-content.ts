@@ -13,7 +13,27 @@ export interface LibraryStageSeed {
   targetTimeSeconds: number;
   description?: string;
   requiresInspection?: boolean;
+  /** ITP intent — a 'hold' point gates on its own stage's NCRs (see qc-gate.ts). */
+  inspectionType?: 'hold' | 'witness' | 'review' | null;
+  /** Marks the terminal FINAL QC / release gate (consolidates all stages' QC). */
+  isFinalQc?: boolean;
 }
+
+/**
+ * The default terminal FINAL QC / release stage appended to a routing: a hold
+ * point that consolidates every prior stage's QC and releases the piece for
+ * shipping. Shared by the library seed and `ProcessesService` so the
+ * auto-append and the seeded routing stay identical.
+ */
+export const FINAL_QC_STAGE: LibraryStageSeed = {
+  name: 'Final QC',
+  targetTimeSeconds: 1800,
+  description:
+    'Final dimensional + coating + marking check; consolidates every stage’s QC and releases the piece for shipping — blocked while any NCR is open.',
+  inspectionType: 'hold',
+  requiresInspection: true,
+  isFinalQc: true,
+};
 
 export interface LibraryProcessSeed {
   /** Stable key used to find-or-create the master copy in the platform org. */
@@ -42,8 +62,8 @@ export const DEFAULT_LIBRARY_PROCESSES: LibraryProcessSeed[] = [
       { name: 'Cutting', targetTimeSeconds: 1800, description: 'Cut raw stock to size' },
       { name: 'Fit-Up', targetTimeSeconds: 3600, description: 'Assemble and tack the parts' },
       { name: 'Welding', targetTimeSeconds: 7200, description: 'Full welds per WPS' },
-      { name: 'Quality Check', targetTimeSeconds: 1800, description: 'Visual + dimensional inspection — blocked while NCRs are open', requiresInspection: true },
       { name: 'Painting', targetTimeSeconds: 3600, description: 'Surface prep and coating' },
+      FINAL_QC_STAGE,
     ],
   },
 ];
@@ -105,6 +125,8 @@ export interface StageRow {
   targetTimeSeconds: number;
   description?: string | null;
   requiresInspection?: boolean;
+  inspectionType?: 'hold' | 'witness' | 'review' | null;
+  isFinalQc?: boolean | null;
   hourlyRate?: number | null;
 }
 export interface TemplateRow {
@@ -138,6 +160,8 @@ export function stageCopyFields(source: StageRow, targetProcessId: string, targe
     targetTimeSeconds: source.targetTimeSeconds,
     description: source.description ?? null,
     requiresInspection: !!source.requiresInspection,
+    inspectionType: source.inspectionType ?? null,
+    isFinalQc: source.isFinalQc ?? null,
     hourlyRate: source.hourlyRate ?? null,
     processId: targetProcessId,
     organizationId: targetOrgId,

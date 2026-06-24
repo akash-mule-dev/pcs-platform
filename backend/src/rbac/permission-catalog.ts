@@ -152,8 +152,10 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
   {
     key: 'stations', label: 'Lines & Stations', category: 'Shop Floor',
     actions: [
-      { action: 'view', label: 'View', description: 'Browse production lines and stations', defaultRoles: MSO },
+      { action: 'view', label: 'View', description: 'Browse the work-center directory, station cockpit and utilization', defaultRoles: MSO },
       { action: 'manage', label: 'Manage', description: 'Create and edit lines and stations', defaultRoles: M },
+      { action: 'operate', label: 'Set status', description: 'Change a station’s operational status (available/down/maintenance/…)', defaultRoles: MS },
+      { action: 'delete-station', label: 'Delete stations', description: 'Delete stations (refused while in use — deactivate instead)', defaultRoles: M },
       { action: 'delete', label: 'Delete lines', description: 'Delete production lines', defaultRoles: NONE },
     ],
   },

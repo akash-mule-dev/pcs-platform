@@ -96,6 +96,11 @@ export class ShippingService {
   deliveryNote(shipmentId: string, heats = true): Observable<DeliveryNote> {
     return this.http.get<DeliveryNote>(`${this.base}/${shipmentId}/delivery-note`, { params: { heats: String(heats) } });
   }
+
+  /** QC sign-off dossier for a shipment (delivery header + MTR + inspections + NCRs + releasability). */
+  qcPackage(shipmentId: string): Observable<QcPackage> {
+    return this.http.get<QcPackage>(`${this.base}/${shipmentId}/qc-package`);
+  }
 }
 
 export interface DeliveryNoteItem {
@@ -112,4 +117,24 @@ export interface DeliveryNote {
   items: DeliveryNoteItem[];
   totals: { lines: number; pieces: number; weightKg: number };
   generatedAt: string;
+}
+
+export interface QcDossierInspection {
+  id: string; node_mark: string | null; mesh_name: string | null; status: string | null; signoff_status: string | null;
+  severity: string | null; defect_type: string | null; measurement_value: number | null; measurement_unit: string | null;
+  tolerance_min: number | null; tolerance_max: number | null; inspector: string | null; created_at: string;
+}
+export interface QcDossierReport {
+  id: string; number: string; template_name: string; template_type: string | null; status: string; ncr_status: string | null;
+  disposition: string | null; disposition_notes: string | null; root_cause: string | null; corrective_action: string | null;
+  concession_reason: string | null; resolved_at: string | null; created_at: string; node_mark: string | null;
+}
+export interface QcPackage extends DeliveryNote {
+  qc: {
+    inspections: QcDossierInspection[];
+    ncrs: QcDossierReport[];
+    reports: QcDossierReport[];
+    scopeNodeCount: number;
+    releasability: { openNcrs: number; unsignedFailures: number; itemsMissingMtr: number; releasable: boolean };
+  };
 }

@@ -6,8 +6,8 @@ Two isolated environments. **They never share a database.**
 |---|---|---|
 | Git branch | `main` | `dev` |
 | Neon DB | `pcs-db` — host `ep-noisy-butterfly-an022nus` | `pcs-dev-db` — host `ep-red-hall-aqifonr3` |
-| Backend URL | `https://pcsapi.fabrixr.com` | `https://backend-git-dev-akash-mule-devs-projects.vercel.app` |
-| Frontend URL | `https://pcsweb.fabrixr.com` | `https://frontend-git-dev-akash-mule-devs-projects.vercel.app` |
+| Backend URL | `https://pcsapi.fabrixr.com` | `https://demo-api.fabrixr.com` |
+| Frontend URL | `https://pcsweb.fabrixr.com` | `https://dev.fabrixr.com` |
 | Vercel target | Production | Preview (auto-tracks the `dev` branch) |
 | Access | public (custom domains) | public (Vercel auth wall disabled) |
 

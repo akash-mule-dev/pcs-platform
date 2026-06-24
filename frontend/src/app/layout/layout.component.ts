@@ -537,6 +537,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     { label: 'Production', icon: 'precision_manufacturing', expanded: true, items: [
       { label: 'Projects', icon: 'foundation', route: '/projects', feature: 'projects' },
       { label: 'Package Monitor', icon: 'monitor_heart', route: '/package-monitor', feature: 'projects' },
+      { label: 'Cached Projects', icon: 'cloud_done', route: '/cached-projects', feature: 'projects' },
       { label: 'Work Orders', icon: 'assignment', route: '/work-orders', feature: 'work-orders' },
       { label: 'Kanban', icon: 'view_kanban', route: '/work-orders/kanban', feature: 'kanban' },
       { label: 'Processes', icon: 'account_tree', route: '/processes', feature: 'processes' },

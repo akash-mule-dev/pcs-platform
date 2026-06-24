@@ -61,30 +61,30 @@ export class SeedService {
 
     // Always ensure the requested platform operator exists, including on an
     // already-seeded database. Existing passwords are deliberately preserved.
-    const akashEmail = 'akashmule350@gmail.com';
-    const existingAkash = await this.userRepo.findOne({ where: { email: akashEmail } });
-    if (existingAkash) {
-      existingAkash.firstName = 'Akash';
-      existingAkash.lastName = 'Mule';
-      existingAkash.mobileNo = '7066013478';
-      existingAkash.roleId = roles['platform-admin'].id;
-      existingAkash.organizationId = null;
-      existingAkash.isActive = true;
-      await this.userRepo.save(existingAkash);
-      this.logger.log(`Ensured platform admin ${akashEmail}`);
+    const platformEmail = 'platform@fabrixr.com';
+    const existingPlatform = await this.userRepo.findOne({ where: { email: platformEmail } });
+    if (existingPlatform) {
+      existingPlatform.firstName = 'Platform';
+      existingPlatform.lastName = 'Admin';
+      existingPlatform.mobileNo = '9000000000';
+      existingPlatform.roleId = roles['platform-admin'].id;
+      existingPlatform.organizationId = null;
+      existingPlatform.isActive = true;
+      await this.userRepo.save(existingPlatform);
+      this.logger.log(`Ensured platform admin ${platformEmail}`);
     } else {
       await this.userRepo.save(this.userRepo.create({
-        employeeId: 'PLATFORM-AKASH',
-        email: akashEmail,
-        mobileNo: '7066013478',
+        employeeId: 'PLATFORM-ADMIN',
+        email: platformEmail,
+        mobileNo: '9000000000',
         passwordHash: hash,
-        firstName: 'Akash',
-        lastName: 'Mule',
+        firstName: 'Platform',
+        lastName: 'Admin',
         roleId: roles['platform-admin'].id,
         organizationId: null,
         isActive: true,
       }));
-      this.logger.log(`Created platform admin ${akashEmail}`);
+      this.logger.log(`Created platform admin ${platformEmail}`);
     }
 
     if (existingUsers > 0) {

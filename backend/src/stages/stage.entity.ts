@@ -34,10 +34,47 @@ export class Stage extends TenantOwnedEntity {
   /**
    * Hold point: when true, the quality gate additionally requires at least one
    * acceptable inspection on the assembly before this stage can be completed
-   * (see work-orders/qc-gate.ts). Meaningful on quality stages.
+   * (see work-orders/qc-gate.ts). Meaningful on quality stages. Legacy flag —
+   * `inspectionType = 'hold'` is the richer ITP expression and takes precedence.
    */
   @Column({ name: 'requires_inspection', type: 'boolean', default: false })
   requiresInspection: boolean;
+
+  /**
+   * ITP (Inspection & Test Plan) intent for this routing stage:
+   *   hold    — work stops; an acceptable inspection must exist to complete (blocks, = a hold point);
+   *   witness — customer/3rd-party may attend; advisory, does NOT block completion;
+   *   review  — document review point; advisory, does NOT block;
+   *   null    — not an inspection point.
+   * The ITP for a Process is the ordered list of its stages where this is non-null.
+   */
+  @Column({ name: 'inspection_type', type: 'varchar', length: 16, nullable: true })
+  inspectionType: 'hold' | 'witness' | 'review' | null;
+
+  /**
+   * Marks THIS stage as the terminal FINAL QC / release gate of the routing —
+   * the consolidation point that cannot complete while the assembly has ANY open
+   * NCR (raised at any stage) or unsigned failed inspection, and whose completion
+   * releases the piece for shipping. Distinct from a per-stage hold point
+   * (`inspectionType='hold'`), which gates only on its OWN stage's NCRs.
+   *
+   * Tri-state on purpose:
+   *   true  — explicitly the final QC gate (set on the auto-appended stage);
+   *   false — explicitly NOT a gate (suppresses the legacy name heuristic);
+   *   null  — unknown/legacy → fall back to the `isQualityStageName` name match
+   *           (see work-orders/qc-gate.ts → isFinalQcStage), so pre-existing
+   *           "Quality Check" stages keep gating exactly as before.
+   */
+  @Column({ name: 'is_final_qc', type: 'boolean', nullable: true })
+  isFinalQc: boolean | null;
+
+  /** ITP line detail: what to verify + acceptance criteria (free-form, e.g. "AWS D1.1 visual weld"). */
+  @Column({ name: 'inspection_characteristics', type: 'jsonb', nullable: true })
+  inspectionCharacteristics: Record<string, any> | null;
+
+  /** Optional role that must sign this inspection point (e.g. "cwi", "qa_manager"). Advisory metadata. */
+  @Column({ name: 'required_signoff_role', type: 'varchar', length: 60, nullable: true })
+  requiredSignoffRole: string | null;
 
   /**
    * Costing: standard labor rate for work at THIS stage (currency/hour), e.g.

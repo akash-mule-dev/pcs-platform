@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsIn, IsNumber } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsIn, IsNumber, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** Record a quality check on an assembly node (model/mesh/node/project filled server-side). */
@@ -15,4 +15,7 @@ export class RecordNodeQualityDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() toleranceMin?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() toleranceMax?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() regionLabel?: string;
+  /** Fabrication operation this check was recorded at (process stage + WO-stage instance). */
+  @ApiPropertyOptional() @IsOptional() @IsUUID() stageId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() workOrderStageId?: string;
 }

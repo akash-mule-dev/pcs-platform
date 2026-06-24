@@ -15,9 +15,9 @@ export function ProjectListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     try {
-      setProjects(await projectsService.list());
+      setProjects(await projectsService.list(force));
     } catch {
       setProjects([]);
     } finally {
@@ -26,12 +26,12 @@ export function ProjectListScreen() {
   }, []);
 
   useEffect(() => {
-    load();
+    load(); // cache-first: instant from local storage if already loaded
   }, [load]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load(true); // pull-to-refresh bypasses the cache
     setRefreshing(false);
   };
 
@@ -51,6 +51,15 @@ export function ProjectListScreen() {
           </Text>
         )}
       </View>
+      {/* Jump straight into the project's 3D model + status overlay. */}
+      <TouchableOpacity
+        style={styles.viewBtn}
+        onPress={() => navigation.navigate('ProjectViewer', { projectId: item.id, name: item.name })}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Ionicons name="cube-outline" size={16} color={Colors.primary} />
+        <Text style={styles.viewBtnTxt}>3D</Text>
+      </TouchableOpacity>
       <Ionicons name="chevron-forward" size={20} color={Colors.medium} />
     </TouchableOpacity>
   );
@@ -95,6 +104,8 @@ const styles = StyleSheet.create({
   },
   icon: { marginRight: 12 },
   body: { flex: 1 },
+  viewBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: Colors.primary, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5, marginRight: 8 },
+  viewBtnTxt: { color: Colors.primary, fontWeight: '700', fontSize: 12 },
   name: { fontSize: 15, fontWeight: '600', color: Colors.text },
   sub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },

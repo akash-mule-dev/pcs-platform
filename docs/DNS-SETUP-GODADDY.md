@@ -14,7 +14,7 @@
 | Registrar | GoDaddy |
 | Nameservers | `ns33.domaincontrol.com`, `ns34.domaincontrol.com` |
 | DNS Management URL | https://dcc.godaddy.com/manage/fabrixr.com/dns |
-| Account Email | `akashmule341@gmail.com` |
+| Account Email | `<godaddy-account-email>` |
 | Hosting | Vercel (auto SSL + CDN) |
 
 ---

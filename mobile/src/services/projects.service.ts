@@ -1,4 +1,5 @@
 import { api } from './api.service';
+import { dataCache } from './dataCache';
 
 export interface MProject {
   id: string;
@@ -22,10 +23,39 @@ export interface MNode {
   materialGrade?: string | null;
   modelId?: string | null;
   ifcGuid?: string | null;
+  ifcClass?: string | null;
   meshName?: string | null;
   lengthMm?: number | null;
   weightKg?: number | null;
   properties?: Record<string, unknown> | null;
+}
+
+/** A shop drawing / cert attached to an assembly node (camelCase entity fields). */
+export interface MAssemblyDocument {
+  id: string;
+  nodeId: string | null;
+  originalName: string;
+  contentType: string;
+  size: number;
+  label?: string | null;
+  createdByName?: string | null;
+  createdAt: string;
+}
+
+/** Heat-number / material-lot traceability assigned to a node (raw SQL row → snake_case). */
+export interface MNodeLot {
+  id: string;
+  quantity: number;
+  note: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  lot_id: string;
+  lot_number: string | null;
+  heat_number: string | null;
+  supplier: string | null;
+  cert_reference: string | null;
+  material_code: string | null;
+  material_name: string | null;
 }
 
 export interface MStage { id: string; name: string; sequence: number; targetTimeSeconds: number }
@@ -53,16 +83,31 @@ export interface MRecordQuality {
   measurementUnit?: string;
   toleranceMin?: number;
   toleranceMax?: number;
+  /** Fabrication operation this check was recorded at (process stage + WO-stage instance). */
+  stageId?: string;
+  workOrderStageId?: string;
 }
 export const projectsService = {
-  list: () => api.getList<MProject>('/projects'),
-  getNodes: (projectId: string) => api.getList<MNode>(`/projects/${projectId}/nodes`),
+  // Cache-first (persists across logout): once loaded, projects + their assembly
+  // trees are served from local storage and not re-fetched. Pass force=true
+  // (pull-to-refresh) to bypass the cache and refresh the stored copy.
+  list: (force = false) => dataCache.cached('projects:list', () => api.getList<MProject>('/projects'), force),
+  getNodes: (projectId: string, force = false) =>
+    dataCache.cached(`projects:nodes:${projectId}`, () => api.getList<MNode>(`/projects/${projectId}/nodes`), force),
   getNode: (projectId: string, nodeId: string) => api.get<MNode>(`/projects/${projectId}/nodes/${nodeId}`),
   getNodeMeshes: (projectId: string, nodeId: string) => api.get<string[]>(`/projects/${projectId}/nodes/${nodeId}/meshes`),
   getNodeQuality: (projectId: string, nodeId: string) =>
     api.get<MQualityEntry[]>(`/projects/${projectId}/nodes/${nodeId}/quality`),
   recordNodeQuality: (projectId: string, nodeId: string, body: MRecordQuality) =>
     api.post<MQualityEntry>(`/projects/${projectId}/nodes/${nodeId}/quality`, body),
+  // ── Assembly Info enrichment ──
+  getNodeDocuments: (projectId: string, nodeId: string) =>
+    api.getList<MAssemblyDocument>(`/projects/${projectId}/nodes/${nodeId}/documents`),
+  getNodeLots: (projectId: string, nodeId: string) =>
+    api.getList<MNodeLot>(`/projects/${projectId}/nodes/${nodeId}/lots`),
+  /** Absolute URL of a document's file stream (auth via Bearer header at fetch time). */
+  nodeDocumentFileUrl: (projectId: string, docId: string) =>
+    `${api.baseUrl}/projects/${projectId}/documents/${docId}/file`,
 };
 
 // ── Production orders (per-customer/run instances of a project) ──
@@ -87,8 +132,12 @@ export interface MAuditStageRow {
   assignedUser: { id: string; name: string } | null;
   station: { id: string; name: string } | null;
   timeSeconds: number; timeEntries: number;
-  /** Quality stage that cannot complete while the assembly has open NCRs. */
+  /** The terminal final-QC / release gate stage (consolidates every stage's QC). */
+  isFinalQc?: boolean;
+  /** A final-QC stage (assembly-wide NCR rollup) or a hold point (own stage) that cannot yet complete. */
   gateBlocked: boolean;
+  /** Human-readable reason the gate holds (final-QC rollup vs per-stage hold). */
+  gateReason?: string | null;
 }
 export interface MAuditItem {
   nodeId: string | null; workOrderId: string; workOrderNumber: string;
@@ -127,7 +176,21 @@ export interface MNodeAudit {
     startTime: string; endTime: string | null; durationSeconds: number | null;
     isRework: boolean; notes: string | null; inputMethod: string | null;
   }[];
-  ncrs: { id: string; number: string; title: string; status: string; severity: string; createdAt: string }[];
+  ncrs: { id: string; number: string; title: string; status: string; severity: string; stageId?: string | null; stageName?: string | null; createdAt: string }[];
+  /** Final-QC release cockpit: full per-stage QC picture in one view. */
+  finalQc?: {
+    releasable: boolean;
+    openNcrs: number;
+    unsignedFailures: number;
+    inspections: { total: number; pass: number; warning: number; fail: number };
+    byStage: {
+      stageId: string; name: string; sequence: number; status: string;
+      isFinalQc: boolean; inspectionType: 'hold' | 'witness' | 'review' | null;
+      openNcrs: number;
+      inspections: { pass: number; warning: number; fail: number; pendingSignoff: number };
+      gateBlocked: boolean; gateReason?: string | null;
+    }[];
+  };
 }
 export interface MBulkResult { requested: number; updated: number; failed: { nodeId: string; mark: string; message: string }[] }
 export interface MDashboardOrder {
@@ -174,14 +237,57 @@ export const OrderStatusLabels: Record<string, string> = {
   planned: 'Planned', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled',
 };
 
-// ── QC report templates + reports (reports are FILLED on the web portal:
-//    the app creates a blank one, then opens /qr/:id?token=<jwt> in the browser) ──
+// ── QC report templates + reports. A report (incl. NCRs — an NCR is a report
+//    whose templateType === 'ncr') is FILLED on the web /qr/:id page; the app
+//    creates/opens it in an in-app WebView (or the device browser). ──
 export interface MTemplate { id: string; name: string; type: string }
-export interface MQualityReport { id: string; number: string; status: string; templateName?: string }
+export interface MQualityReport {
+  id: string;
+  number: string;
+  status: string; // draft | submitted
+  templateName?: string | null;
+  templateType?: string | null; // ncr | inspection | checklist | capa | other
+  templateSchema?: Record<string, any>; // Form.io schema snapshot (for native rendering)
+  assemblyNodeId?: string | null;
+  productionOrderId?: string | null;
+  // NCR lifecycle (only when templateType === 'ncr')
+  ncrStatus?: string | null; // open | under_review | dispositioned | closed | cancelled
+  disposition?: string | null;
+  resolvedAt?: string | null;
+  filledByName?: string | null;
+  itemMark?: string | null;
+  data?: Record<string, unknown> | null;
+  submittedAt?: string | null;
+  createdAt?: string | null;
+}
 export const qcReportsService = {
   templates: () => api.getList<MTemplate>('/templates'),
   listByOrder: (productionOrderId: string) =>
     api.getList<MQualityReport>(`/quality-reports?productionOrderId=${encodeURIComponent(productionOrderId)}`),
+  get: (id: string) => api.get<MQualityReport>(`/quality-reports/${id}`),
   create: (body: { templateId: string; productionOrderId: string; assemblyNodeId?: string }) =>
     api.post<MQualityReport>('/quality-reports', body),
+  /** Raise an NCR from a failed inspection — pre-filled + linked to the quality_data row (inherits its stage). */
+  createFromInspection: (body: { qualityDataId: string; templateId: string; productionOrderId: string; assemblyNodeId?: string; stageId?: string; workOrderStageId?: string }) =>
+    api.post<MQualityReport>('/quality-reports/from-inspection', body),
+  // ── NCR lifecycle (templateType === 'ncr') ──
+  events: (id: string) => api.getList<MNcrEvent>(`/quality-reports/${id}/events`),
+  comment: (id: string, note: string) => api.post<{ ok: true }>(`/quality-reports/${id}/comment`, { note }),
+  startReview: (id: string, note?: string) => api.post<MQualityReport>(`/quality-reports/${id}/start-review`, { note }),
+  disposition: (id: string, body: { disposition: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string; concessionReason?: string }) =>
+    api.post<MQualityReport>(`/quality-reports/${id}/disposition`, body),
+  resolve: (id: string) => api.post<MQualityReport>(`/quality-reports/${id}/resolve`),
+  reopen: (id: string) => api.post<MQualityReport>(`/quality-reports/${id}/reopen`),
+  cancel: (id: string, note?: string) => api.post<MQualityReport>(`/quality-reports/${id}/cancel`, { note }),
 };
+
+export interface MNcrEvent {
+  id: string;
+  type: string; // created | submitted | status | disposition | comment | resolved | reopened | cancelled | linked
+  fromStatus: string | null;
+  toStatus: string | null;
+  disposition: string | null;
+  note: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}

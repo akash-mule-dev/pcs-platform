@@ -158,8 +158,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   actionChipText: { color: '#cbd5e1', fontSize: 11, fontWeight: '700' },
-  ncrChip: { backgroundColor: 'rgba(239,68,68,0.22)' },
-  ncrChipText: { color: '#fca5a5' },
   signoffBadge: { fontSize: 16, fontWeight: '700', marginLeft: 6 },
   empty: { color: '#8892b0', fontSize: 12, textAlign: 'center', marginTop: 16, lineHeight: 18 },
 });

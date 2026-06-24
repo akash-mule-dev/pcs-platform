@@ -11,7 +11,7 @@
 //
 // Returns the new bytes plus how many meshes survived, so the caller can fall
 // back to the full model when nothing matched (e.g. a group with no geometry).
-import { WebIO } from '@gltf-transform/core';
+import { WebIO, getBounds } from '@gltf-transform/core';
 
 export interface PartGlbResult {
   data: Uint8Array;
@@ -83,6 +83,39 @@ export async function extractPartGlb(
       .some((p: any) => (p.getAttribute('POSITION')?.getCount() ?? 0) > 0);
     if (hasVerts) meshCount++;
   }
+
+  // Recenter the isolated geometry to the origin and normalize it to a sane,
+  // measurable size. A single part inherits the whole-model's fit-down scale, so
+  // in WORLD space it can be only millimetres across — Viro then reports a zero
+  // bounding box, AR's auto-fit can't size it, and the part renders invisibly far
+  // too small. Centering + scaling the surviving geometry to ~1 m makes it
+  // placeable and measurable; ARModelScene's auto-fit still refines the on-screen
+  // size, and the measure tool re-derives mm/unit from the rendered geometry.
+  if (meshCount > 0) {
+    const scene = root.getDefaultScene() ?? root.listScenes()[0];
+    if (scene) {
+      const b = getBounds(scene);
+      const finite =
+        b && b.min.every((n: number) => isFinite(n)) && b.max.every((n: number) => isFinite(n));
+      if (finite) {
+        const center = [0, 1, 2].map((i) => (b.min[i] + b.max[i]) / 2);
+        const longest = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
+        const s = longest > 1e-9 ? 1.0 / longest : 1;
+        if (s !== 1 || center.some((v) => Math.abs(v) > 1e-6)) {
+          const pivot = doc
+            .createNode('pcs-fit')
+            .setScale([s, s, s])
+            .setTranslation([-s * center[0], -s * center[1], -s * center[2]]);
+          for (const child of scene.listChildren()) {
+            scene.removeChild(child);
+            pivot.addChild(child);
+          }
+          scene.addChild(pivot);
+        }
+      }
+    }
+  }
+
   const data = await io.writeBinary(doc);
   return { data, meshCount };
 }

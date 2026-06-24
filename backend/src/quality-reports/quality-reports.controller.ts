@@ -36,13 +36,34 @@ export class QualityReportsController {
   @Post()
   @RequirePermissions('quality-reports.create')
   @ApiOperation({ summary: 'Start a BLANK report from a template against a work order' })
-  create(@Body() body: { templateId?: string; productionOrderId?: string; assemblyNodeId?: string }) {
+  create(@Body() body: { templateId?: string; productionOrderId?: string; assemblyNodeId?: string; stageId?: string; workOrderStageId?: string }) {
     if (!body?.templateId) throw new BadRequestException('templateId is required');
     if (!body?.productionOrderId) throw new BadRequestException('productionOrderId is required');
     return this.service.create({
       templateId: body.templateId,
       productionOrderId: body.productionOrderId,
       assemblyNodeId: body.assemblyNodeId,
+      stageId: body.stageId,
+      workOrderStageId: body.workOrderStageId,
+    });
+  }
+
+  @Post('from-inspection')
+  @RequirePermissions('quality-reports.create')
+  @ApiOperation({ summary: 'Raise an NCR from a failed inspection (pre-filled + linked to the quality_data row)' })
+  fromInspection(
+    @Body() body: { qualityDataId?: string; templateId?: string; productionOrderId?: string; assemblyNodeId?: string; stageId?: string; workOrderStageId?: string },
+  ) {
+    if (!body?.qualityDataId) throw new BadRequestException('qualityDataId is required');
+    if (!body?.templateId) throw new BadRequestException('templateId is required');
+    if (!body?.productionOrderId) throw new BadRequestException('productionOrderId is required');
+    return this.service.createFromInspection({
+      qualityDataId: body.qualityDataId,
+      templateId: body.templateId,
+      productionOrderId: body.productionOrderId,
+      assemblyNodeId: body.assemblyNodeId,
+      stageId: body.stageId,
+      workOrderStageId: body.workOrderStageId,
     });
   }
 
@@ -80,7 +101,7 @@ export class QualityReportsController {
   @ApiOperation({ summary: 'Record the Material-Review disposition (rework/repair/use-as-is/scrap/return)' })
   disposition(
     @Param('id') id: string,
-    @Body() body: { disposition?: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string },
+    @Body() body: { disposition?: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string; concessionReason?: string },
   ) {
     if (!body?.disposition) throw new BadRequestException('disposition is required');
     return this.service.recordDisposition(id, {
@@ -88,6 +109,7 @@ export class QualityReportsController {
       dispositionNotes: body.dispositionNotes,
       rootCause: body.rootCause,
       correctiveAction: body.correctiveAction,
+      concessionReason: body.concessionReason,
     });
   }
 

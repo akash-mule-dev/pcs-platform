@@ -21,7 +21,7 @@ def a_rect(x,y): return x*y
 def a_ishape(b,h,tw,tf): return 2*b*tf+(h-2*tf)*tw
 
 f=ifcopenshell.file(schema="IFC4")
-person=f.create_entity("IfcPerson",FamilyName="Mule",GivenName="Akash"); org=f.create_entity("IfcOrganization",Name="Eterio")
+person=f.create_entity("IfcPerson",FamilyName="FabriXR"); org=f.create_entity("IfcOrganization",Name="FabriXR")
 appn=f.create_entity("IfcApplication",ApplicationDeveloper=org,Version="7.0",ApplicationFullName="PCS AR Demo Assembly Generator",ApplicationIdentifier="PCS-DAG")
 OH=f.create_entity("IfcOwnerHistory",OwningUser=f.create_entity("IfcPersonAndOrganization",ThePerson=person,TheOrganization=org),OwningApplication=appn,ChangeAction="ADDED",CreationDate=int(time.time()))
 units=f.create_entity("IfcUnitAssignment",Units=[f.create_entity("IfcSIUnit",UnitType="LENGTHUNIT",Prefix="MILLI",Name="METRE"),f.create_entity("IfcSIUnit",UnitType="PLANEANGLEUNIT",Name="RADIAN")])

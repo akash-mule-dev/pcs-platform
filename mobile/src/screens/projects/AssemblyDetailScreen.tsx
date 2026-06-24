@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
-  ActivityIndicator, TextInput, Modal, Linking, Alert,
+  ActivityIndicator, TextInput, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -11,16 +11,17 @@ import { WO, SHIP_META } from '../../theme/wo';
 import { ProjectsStackParamList } from '../../navigation/types';
 import {
   ordersService, projectsService, qcReportsService,
-  MNode, MNodeAudit, MAuditStageRow, MQualityEntry, MTemplate, MStageEvent,
+  MNode, MNodeAudit, MAuditStageRow, MQualityEntry, MStageEvent, MTemplate,
 } from '../../services/projects.service';
 import { timeTrackingService } from '../../services/time-tracking.service';
 import { offlineService, isNetworkError } from '../../services/offline.service';
-import { authService } from '../../services/auth.service';
 import { environment } from '../../config/environment';
 import { useAuth } from '../../context/AuthContext';
 import { ProgressRing } from '../../components/ProgressRing';
 import { useSocketEvent } from '../../hooks/useSocketEvent';
 import { TimeEntry } from '../../types';
+import { AssemblyInfoSheet } from './AssemblyInfoSheet';
+import { QcReportsSheet } from './QcReportsSheet';
 
 type Rt = RouteProp<ProjectsStackParamList, 'AssemblyDetail'>;
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'AssemblyDetail'>;
@@ -90,24 +91,27 @@ export function AssemblyDetailScreen() {
   const [trackBusy, setTrackBusy] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
 
-  // QC report (per-assembly) template sheet
-  const [tplVisible, setTplVisible] = useState(false);
-  const [templates, setTemplates] = useState<MTemplate[]>([]);
-  const [tplLoading, setTplLoading] = useState(false);
-  const [tplBusy, setTplBusy] = useState(false);
+  // QC reports (per-assembly) hub sheet
+  const [reportsOpen, setReportsOpen] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: mark || 'Assembly',
       headerRight: () => (
-        <TouchableOpacity onPress={openReportSheet} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.hdrNcr}>
+        <TouchableOpacity onPress={() => setReportsOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.hdrNcr}>
           <Ionicons name="document-text-outline" size={18} color={Colors.primary} />
-          <Text style={styles.hdrReportTxt}>QC Report</Text>
+          <Text style={styles.hdrReportTxt}>QC Reports</Text>
         </TouchableOpacity>
       ),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation, mark]);
+
+  const openReport = useCallback((reportId: string, title: string) => {
+    setReportsOpen(false);
+    // Native fill (offline-capable); it falls back to the WebView for NCRs / complex schemas.
+    navigation.navigate('QcReportFill', { reportId, title });
+  }, [navigation]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -145,6 +149,14 @@ export function AssemblyDetailScreen() {
   const rtTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useSocketEvent('work-order-update', (p: any) => {
     if (p?.productionOrderId && p.productionOrderId !== orderId) return;
+    if (busyRef.current) return;
+    if (rtTimer.current) clearTimeout(rtTimer.current);
+    rtTimer.current = setTimeout(() => { if (!busyRef.current) load(); }, 400);
+  });
+  // Live QC/NCR refresh — covers the cross-device case (a QC manager dispositions
+  // or closes an NCR on another device → this assembly's gates/chips update live).
+  useSocketEvent('quality-alert', (p: any) => {
+    if (p?.assemblyNodeId && p.assemblyNodeId !== nodeId && p?.productionOrderId && p.productionOrderId !== orderId) return;
     if (busyRef.current) return;
     if (rtTimer.current) clearTimeout(rtTimer.current);
     rtTimer.current = setTimeout(() => { if (!busyRef.current) load(); }, 400);
@@ -255,37 +267,21 @@ export function AssemblyDetailScreen() {
         fileUrl: `${environment.apiUrl}/models/${node.modelId}/file`,
         meshNames: meshes && meshes.length ? meshes : undefined,
         partLabel: mark,
+        // Tag AR inspections to this assembly + the stage currently in view.
+        assemblyNodeId: nodeId,
+        projectId,
+        stageId: sel?.stageId,
+        workOrderStageId: sel?.wosId,
       });
     } catch { /* ignore */ }
   };
-  const openReportSheet = async () => {
-    setTplVisible(true);
-    if (templates.length === 0) {
-      setTplLoading(true);
-      try { setTemplates(await qcReportsService.templates()); } catch { /* ignore */ }
-      finally { setTplLoading(false); }
-    }
-  };
-  const startReport = async (t: MTemplate, mode: 'app' | 'browser') => {
-    if (tplBusy) return;
-    setTplBusy(true);
-    try {
-      const r = await qcReportsService.create({ templateId: t.id, productionOrderId: orderId, assemblyNodeId: nodeId });
-      setTplVisible(false);
-      if (mode === 'browser') {
-        const token = (await authService.getToken()) ?? '';
-        await Linking.openURL(`${environment.webUrl}/qr/${r.id}?token=${encodeURIComponent(token)}`);
-      } else {
-        navigation.navigate('QcReport', { reportId: r.id, title: mark });
-      }
-    } catch { Alert.alert('QC report', 'Could not start the report.'); }
-    finally { setTplBusy(false); }
-  };
 
   // ── Quality ──
+  // Tag checks/NCRs with the OPERATION being viewed (the selected stage) so a
+  // hold point gates that stage; with no stage they still roll up to Final QC.
   const recordQuick = async (status: string) => {
     setQaBusy(true);
-    try { await projectsService.recordNodeQuality(projectId, nodeId, { status, inspector }); await load(); }
+    try { await projectsService.recordNodeQuality(projectId, nodeId, { status, inspector, stageId: sel?.stageId, workOrderStageId: sel?.wosId }); await load(); }
     catch { /* ignore */ } finally { setQaBusy(false); }
   };
   const recordMeasure = async () => {
@@ -296,25 +292,34 @@ export function AssemblyDetailScreen() {
       await projectsService.recordNodeQuality(projectId, nodeId, {
         status: 'pass', measurementValue: value, measurementUnit: meas.unit || undefined,
         toleranceMin: meas.min ? parseFloat(meas.min) : undefined, toleranceMax: meas.max ? parseFloat(meas.max) : undefined,
-        notes: meas.notes || undefined, inspector,
+        notes: meas.notes || undefined, inspector, stageId: sel?.stageId, workOrderStageId: sel?.wosId,
       });
       setMeas({ value: '', unit: 'mm', min: '', max: '', notes: '' });
       setMeasureOpen(false); await load();
     } catch { /* ignore */ } finally { setQaBusy(false); }
   };
-  const specRows = useMemo(() => {
-    const out: { k: string; v: string }[] = [];
-    if (audit) out.push({ k: 'Work order', v: audit.workOrderNumber });
-    if (node?.name && node.name !== mark) out.push({ k: 'Name', v: node.name });
-    if (node?.profile) out.push({ k: 'Profile / section', v: node.profile });
-    if (node?.materialGrade) out.push({ k: 'Material / grade', v: node.materialGrade });
-    if (node?.lengthMm) out.push({ k: 'Length', v: `${Math.round(node.lengthMm)} mm` });
-    if (node?.weightKg) out.push({ k: 'Weight', v: `${Math.round(node.weightKg * 10) / 10} kg` });
-    if (node && node.quantity > 1) out.push({ k: 'Qty in design', v: `×${node.quantity}` });
-    if (node?.ifcGuid) out.push({ k: 'IFC GUID', v: node.ifcGuid });
-    return out;
-  }, [node, audit, mark]);
 
+  // One-tap: escalate a failed inspection into a formal NCR (pre-filled + linked).
+  const [raisingId, setRaisingId] = useState<string | null>(null);
+  const raiseNcr = async (q: MQualityEntry) => {
+    if (raisingId) return;
+    setRaisingId(q.id);
+    try {
+      const templates = await qcReportsService.templates();
+      const ncrTpl = templates.find((t: MTemplate) => (t.type ?? '').toLowerCase() === 'ncr');
+      if (!ncrTpl) { Alert.alert('Raise NCR', 'No NCR template exists yet — create one in the web portal.'); return; }
+      const r = await qcReportsService.createFromInspection({
+        qualityDataId: q.id, templateId: ncrTpl.id, productionOrderId: orderId, assemblyNodeId: nodeId,
+        stageId: sel?.stageId, workOrderStageId: sel?.wosId,
+      });
+      await load();
+      openReport(r.id, r.number); // NCR → opens the lifecycle editor (disposition)
+    } catch (e: any) {
+      Alert.alert('Raise NCR', e?.message || 'Could not raise the NCR.');
+    } finally {
+      setRaisingId(null);
+    }
+  };
   if (loading) return <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>;
   if (!audit || !sel) {
     return (
@@ -374,9 +379,9 @@ export function AssemblyDetailScreen() {
           <Ionicons name="information-circle-outline" size={26} color={Colors.primary} />
           <Text style={styles.tileTxt}>Assembly Info</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.tile} onPress={openReportSheet}>
+        <TouchableOpacity style={styles.tile} onPress={() => setReportsOpen(true)}>
           <Ionicons name="document-text-outline" size={26} color={Colors.primary} />
-          <Text style={styles.tileTxt}>QC Report</Text>
+          <Text style={styles.tileTxt}>QC Reports</Text>
         </TouchableOpacity>
       </View>
       {!node?.modelId && <Text style={styles.tileHint}>AR &amp; 3D unlock once the project model finishes converting.</Text>}
@@ -434,8 +439,10 @@ export function AssemblyDetailScreen() {
 
         {sel.gateBlocked && (
           <View style={styles.gateBanner}>
-            <Ionicons name="lock-closed" size={14} color={WO.warn} />
-            <Text style={styles.gateTxt}>Quality gate: close the open NCR(s) before this stage can complete.</Text>
+            <Ionicons name={sel.isFinalQc ? 'shield-checkmark' : 'lock-closed'} size={14} color={WO.warn} />
+            <Text style={styles.gateTxt}>{sel.gateReason || (sel.isFinalQc
+              ? 'Final QC: close every open NCR across the stages before releasing this piece.'
+              : 'Quality gate: resolve this stage’s open NCR(s) before it can complete.')}</Text>
           </View>
         )}
 
@@ -487,6 +494,37 @@ export function AssemblyDetailScreen() {
           <View style={styles.metaCell}><Text style={styles.metaK}>Station</Text><Text style={styles.metaV}>{sel.station?.name || '—'}</Text></View>
           <View style={styles.metaCell}><Text style={styles.metaK}>Stage time</Text><Text style={styles.metaV}>{fmtDur(sel.timeSeconds)}{sel.timeEntries ? ` (${sel.timeEntries})` : ''}</Text></View>
         </View>
+
+        {/* Final QC release cockpit — the whole assembly's QC in one place */}
+        {sel.isFinalQc && audit.finalQc && (
+          <View style={styles.fqc}>
+            <View style={styles.fqcHead}>
+              <Ionicons name={audit.finalQc.releasable ? 'shield-checkmark' : 'alert-circle'} size={18} color={audit.finalQc.releasable ? Colors.success : Colors.danger} />
+              <Text style={styles.fqcTitle}>{audit.finalQc.releasable ? 'Ready to release' : `Held — ${audit.finalQc.openNcrs} open NCR${audit.finalQc.openNcrs === 1 ? '' : 's'}${audit.finalQc.unsignedFailures ? ` · ${audit.finalQc.unsignedFailures} unsigned` : ''}`}</Text>
+            </View>
+            <Text style={styles.fqcSub}>{audit.finalQc.inspections.pass} pass · {audit.finalQc.inspections.warning} warning · {audit.finalQc.inspections.fail} fail · {audit.finalQc.inspections.total} inspections</Text>
+            {audit.finalQc.byStage.map((s) => (
+              <TouchableOpacity key={s.stageId} style={[styles.fqcRow, s.gateBlocked && styles.fqcRowHeld]} onPress={() => setSelStageId(s.stageId)}>
+                <Text style={styles.fqcName} numberOfLines={1}>{s.name}{s.isFinalQc ? '  ★' : s.inspectionType === 'hold' ? '  ⏸' : ''}</Text>
+                <Text style={[styles.fqcStat, { color: ST_COLOR[s.status] || Colors.medium }]}>{ST_LABEL[s.status] || s.status}</Text>
+                <Text style={styles.fqcInsp}>{s.inspections.pass ? `${s.inspections.pass}✓ ` : ''}{s.inspections.warning ? `${s.inspections.warning}! ` : ''}{s.inspections.fail ? `${s.inspections.fail}✕` : ''}{(!s.inspections.pass && !s.inspections.warning && !s.inspections.fail) ? '—' : ''}</Text>
+                {s.openNcrs > 0
+                  ? <Text style={styles.fqcNcr}>{s.openNcrs} NCR</Text>
+                  : s.gateBlocked
+                    ? <Ionicons name="lock-closed" size={13} color={WO.warn} />
+                    : <Ionicons name="checkmark-circle" size={14} color={Colors.success} />}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={[styles.fqcRelease, (busy || !audit.finalQc.releasable || sel.status === 'completed') && styles.fqcReleaseOff]}
+              disabled={busy || !audit.finalQc.releasable || sel.status === 'completed'}
+              onPress={() => setStage(sel, { status: 'completed' })}>
+              <Ionicons name="cube" size={16} color={Colors.white} />
+              <Text style={styles.fqcReleaseTxt}>{sel.status === 'completed' ? 'Released' : 'Release piece — complete Final QC'}</Text>
+            </TouchableOpacity>
+            {!audit.finalQc.releasable && sel.status !== 'completed' && <Text style={styles.fqcHint}>Resolve all open NCRs to enable release.</Text>}
+          </View>
+        )}
 
         {/* tracker */}
         <View style={styles.tracker}>
@@ -575,7 +613,15 @@ export function AssemblyDetailScreen() {
                   {q.measurementValue != null && <Text style={styles.rowMeta}>{q.measurementValue}{q.measurementUnit || ''}</Text>}
                   {!!q.defectType && <Text style={styles.rowMeta} numberOfLines={1}>{q.defectType}</Text>}
                   <View style={{ flex: 1 }} />
-                  <Text style={styles.rowMeta}>{q.inspector || ''}</Text>
+                  {q.status === 'fail' ? (
+                    <TouchableOpacity style={styles.raiseNcrBtn} disabled={!!raisingId} onPress={() => raiseNcr(q)}>
+                      {raisingId === q.id
+                        ? <ActivityIndicator size="small" color={WO.bad} />
+                        : (<><Ionicons name="alert-circle-outline" size={13} color={WO.bad} /><Text style={styles.raiseNcrTxt}>Raise NCR</Text></>)}
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={styles.rowMeta}>{q.inspector || ''}</Text>
+                  )}
                 </View>
               ))}
             </View>
@@ -621,55 +667,25 @@ export function AssemblyDetailScreen() {
       )}
 
       {/* ── Assembly info sheet ── */}
-      <Modal visible={infoOpen} transparent animationType="slide" onRequestClose={() => setInfoOpen(false)}>
-        <View style={styles.sheetWrap}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>{mark} — assembly info</Text>
-              <TouchableOpacity onPress={() => setInfoOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Text style={styles.sheetClose}>✕</Text></TouchableOpacity>
-            </View>
-            <ScrollView style={{ marginTop: 8 }}>
-              {specRows.length === 0 ? <Text style={styles.muted}>No details recorded for this assembly.</Text> : specRows.map((r) => (
-                <View key={r.k} style={styles.specRow}>
-                  <Text style={styles.specK}>{r.k}</Text>
-                  <Text style={styles.specV} numberOfLines={2}>{r.v}</Text>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <AssemblyInfoSheet
+        visible={infoOpen}
+        onClose={() => setInfoOpen(false)}
+        projectId={projectId}
+        nodeId={nodeId}
+        mark={mark}
+        node={node}
+        audit={audit}
+      />
 
-      {/* ── QC report template sheet ── */}
-      <Modal visible={tplVisible} transparent animationType="slide" onRequestClose={() => setTplVisible(false)}>
-        <View style={styles.sheetWrap}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>QC report for {mark}</Text>
-              <TouchableOpacity onPress={() => setTplVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Text style={styles.sheetClose}>✕</Text></TouchableOpacity>
-            </View>
-            <Text style={styles.sheetSub}>Tap a template to fill it in the app (linked to this assembly) — or use “Browser” to open it in your phone's browser.</Text>
-            {tplLoading ? <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} /> : templates.length === 0 ? (
-              <Text style={styles.muted}>No templates yet — create one in the web portal.</Text>
-            ) : (
-              <ScrollView style={{ marginTop: 2 }}>
-                {templates.map((t) => (
-                  <View key={t.id} style={styles.tplRow}>
-                    <TouchableOpacity style={styles.tplMain} disabled={tplBusy} onPress={() => startReport(t, 'app')}>
-                      <Text style={styles.tplName}>{t.name}</Text>
-                      <Text style={styles.tplType}>{t.type}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.tplBrowser} disabled={tplBusy} onPress={() => startReport(t, 'browser')} hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}>
-                      <Ionicons name="open-outline" size={16} color={Colors.textSecondary} />
-                      <Text style={styles.tplBrowserTxt}>Browser</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
+      {/* ── QC reports hub ── */}
+      <QcReportsSheet
+        visible={reportsOpen}
+        onClose={() => setReportsOpen(false)}
+        orderId={orderId}
+        nodeId={nodeId}
+        mark={mark}
+        onOpenReport={openReport}
+      />
     </ScrollView>
   );
 }
@@ -700,6 +716,21 @@ const styles = StyleSheet.create({
   gateBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: WO.warnBg, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8, marginTop: 11 },
   gateTxt: { flex: 1, fontSize: 12, color: WO.warn, fontWeight: '600' },
   syncNow: { fontSize: 12, fontWeight: '800', color: WO.accent },
+  // Final QC release cockpit
+  fqc: { marginTop: 14, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 },
+  fqcHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  fqcTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: Colors.text },
+  fqcSub: { fontSize: 11.5, color: Colors.textSecondary, marginTop: 2, marginBottom: 8 },
+  fqcRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderTopWidth: 1, borderTopColor: Colors.border },
+  fqcRowHeld: { backgroundColor: WO.warnBg },
+  fqcName: { flex: 1, fontSize: 12.5, fontWeight: '600', color: Colors.text },
+  fqcStat: { width: 76, fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
+  fqcInsp: { width: 64, fontSize: 11.5, fontWeight: '700', color: Colors.textSecondary },
+  fqcNcr: { fontSize: 11, fontWeight: '800', color: Colors.white, backgroundColor: Colors.danger, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 1, overflow: 'hidden' },
+  fqcRelease: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.success, borderRadius: 10, paddingVertical: 13, marginTop: 12 },
+  fqcReleaseOff: { backgroundColor: Colors.medium, opacity: 0.7 },
+  fqcReleaseTxt: { color: Colors.white, fontSize: 14, fontWeight: '800' },
+  fqcHint: { fontSize: 11, color: Colors.danger, textAlign: 'center', marginTop: 6 },
   rowMainNoCap: { color: WO.text, fontWeight: '600', fontSize: 13 },
   srcTag: { fontSize: 9, fontWeight: '800', color: WO.textSoft, backgroundColor: WO.muteBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, overflow: 'hidden' },
 
@@ -757,6 +788,8 @@ const styles = StyleSheet.create({
   rowDur: { color: Colors.text, fontWeight: '700', fontSize: 12.5 },
   ncrNum: { color: Colors.primary, fontWeight: '800', fontSize: 12.5 },
   qaDot: { width: 10, height: 10, borderRadius: 5 },
+  raiseNcrBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: WO.bad, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5 },
+  raiseNcrTxt: { color: WO.bad, fontWeight: '800', fontSize: 11.5 },
 
   qaActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   qbtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: Colors.card },
@@ -764,27 +797,9 @@ const styles = StyleSheet.create({
   qpass: { borderColor: '#2e7d32' }, qpassT: { color: '#2e7d32', fontWeight: '700', fontSize: 13 },
   qwarn: { borderColor: '#f9a825' }, qwarnT: { color: '#b45309', fontWeight: '700', fontSize: 13 },
   qfail: { borderColor: '#c62828' }, qfailT: { color: '#c62828', fontWeight: '700', fontSize: 13 },
-  qncr: { borderColor: Colors.primary }, qncrT: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
   qsave: { borderColor: Colors.primary, alignItems: 'center' }, qsaveT: { color: Colors.primary, fontWeight: '700' },
   qaHint: { color: Colors.textSecondary, fontSize: 12 },
   measBox: { backgroundColor: Colors.card, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, padding: 10, marginBottom: 12, gap: 8 },
   measRow: { flexDirection: 'row', gap: 8 },
   measInput: { flex: 1, backgroundColor: Colors.white, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: Colors.text },
-
-  specRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border, gap: 12 },
-  specK: { color: Colors.textSecondary, fontSize: 13, flexShrink: 0 },
-  specV: { color: Colors.text, fontSize: 13, fontWeight: '600', flex: 1, textAlign: 'right' },
-
-  sheetWrap: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: Colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 18, maxHeight: '75%' },
-  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sheetTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, flex: 1, marginRight: 8 },
-  sheetClose: { fontSize: 16, color: Colors.textSecondary, fontWeight: '700' },
-  sheetSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 4, marginBottom: 10 },
-  tplRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  tplMain: { flex: 1 },
-  tplName: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  tplType: { fontSize: 11, color: Colors.textSecondary, textTransform: 'capitalize', marginTop: 1 },
-  tplBrowser: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: Colors.border, borderRadius: 8 },
-  tplBrowserTxt: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
 });

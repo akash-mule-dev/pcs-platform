@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { Project } from './project.entity.js';
 import { AssemblyNode } from './assembly-node.entity.js';
 import { TenantScopedService } from '../common/tenant/tenant-scoped.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import { ProjectPurgeService, PROJECT_RETENTION_DAYS } from './project-purge.service.js';
 
 /** Per-project design summary the portfolio list renders without N progress calls. */
 export interface ProjectMetrics {
@@ -15,17 +16,78 @@ export interface ProjectMetrics {
 }
 export type ProjectWithMetrics = Project & { metrics: ProjectMetrics };
 
+/** A soft-deleted project in the Trash, with its countdown to permanent purge. */
+export type DeletedProject = Project & { purgeAt: string; daysRemaining: number };
+
 const EMPTY_METRICS: ProjectMetrics = {
   nodeCount: 0, partCount: 0, assemblyCount: 0, tonnage: { totalKg: 0 },
 };
+
+const RETENTION_MS = PROJECT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ProjectsService extends TenantScopedService<Project> {
   constructor(
     @InjectRepository(Project) repo: Repository<Project>,
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
+    private readonly purgeService: ProjectPurgeService,
   ) {
     super(repo);
+  }
+
+  /**
+   * Soft-delete: move the project to the Trash (stamp `deleted_at`). It vanishes
+   * from every list/read (TypeORM auto-excludes soft-deleted rows) but stays
+   * recoverable for the retention window before the scheduled purge removes it
+   * for good. Overrides the base hard delete.
+   */
+  override async remove(id: string): Promise<void> {
+    await this.findOne(id); // org-scoped existence check (404 if missing / already trashed)
+    await this.repo.softDelete(id);
+  }
+
+  /** Restore a project from the Trash (clear `deleted_at`). */
+  async restore(id: string): Promise<Project> {
+    const found = await this.repo.findOne({
+      where: { id, organizationId: this.organizationId } as any,
+      withDeleted: true,
+    });
+    if (!found) throw new NotFoundException('Resource not found');
+    await this.repo.restore(id);
+    return this.findOne(id);
+  }
+
+  /** The Trash: soft-deleted projects (this org), newest first, with a purge countdown. */
+  async listDeleted(): Promise<DeletedProject[]> {
+    const projects = await this.repo.find({
+      where: { organizationId: this.organizationId, deletedAt: Not(IsNull()) } as any,
+      withDeleted: true,
+      order: { deletedAt: 'DESC' } as any,
+    });
+    const now = Date.now();
+    return projects.map((proj) => {
+      const purgeMs = (proj.deletedAt ? proj.deletedAt.getTime() : now) + RETENTION_MS;
+      // Cap at the retention max so tiny DB/app clock skew never reads "31 days".
+      const daysRemaining = Math.min(
+        PROJECT_RETENTION_DAYS,
+        Math.max(0, Math.ceil((purgeMs - now) / (24 * 60 * 60 * 1000))),
+      );
+      return Object.assign(proj, { purgeAt: new Date(purgeMs).toISOString(), daysRemaining });
+    });
+  }
+
+  /**
+   * Permanently delete a project NOW (skip the retention wait) — the "Delete
+   * permanently" action in the Trash. Org-scoped existence check, then hand off
+   * to the cascade purge (whole subtree + blobs).
+   */
+  async purge(id: string): Promise<void> {
+    const found = await this.repo.findOne({
+      where: { id, organizationId: this.organizationId } as any,
+      withDeleted: true,
+    });
+    if (!found) throw new NotFoundException('Resource not found');
+    await this.purgeService.hardDelete(id);
   }
 
   /**

@@ -17,6 +17,9 @@ export interface QualityReport {
   productionOrderId: string;
   projectId: string | null;
   assemblyNodeId: string | null;
+  /** The fabrication operation the NCR was raised at (process stage + WO-stage instance). */
+  stageId: string | null;
+  workOrderStageId: string | null;
   data: Record<string, any> | null;
   status: QualityReportStatus;
   filledBy: string | null;
@@ -32,6 +35,9 @@ export interface QualityReport {
   dispositionAt: string | null;
   rootCause: string | null;
   correctiveAction: string | null;
+  concessionBy: string | null;
+  concessionReason: string | null;
+  sourceQualityDataId: string | null;
   createdAt: string;
   updatedAt: string;
   // Enriched context
@@ -84,8 +90,8 @@ export class QualityReportsService {
     return this.http.get<QualityReport>(`${this.base}/${id}`);
   }
 
-  /** Start a BLANK report from a template against a work order. */
-  create(body: { templateId: string; productionOrderId: string; assemblyNodeId?: string }): Observable<QualityReport> {
+  /** Start a BLANK report from a template against a work order (optionally at a stage). */
+  create(body: { templateId: string; productionOrderId: string; assemblyNodeId?: string; stageId?: string; workOrderStageId?: string }): Observable<QualityReport> {
     return this.http.post<QualityReport>(this.base, body);
   }
 
@@ -99,7 +105,7 @@ export class QualityReportsService {
   }
 
   /** Record the Material-Review disposition (rework/repair/use-as-is/scrap/return). */
-  disposition(id: string, body: { disposition: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string }): Observable<QualityReport> {
+  disposition(id: string, body: { disposition: string; dispositionNotes?: string; rootCause?: string; correctiveAction?: string; concessionReason?: string }): Observable<QualityReport> {
     return this.http.post<QualityReport>(`${this.base}/${id}/disposition`, body);
   }
 

@@ -205,7 +205,7 @@ An Angular web portal, a React Native operator app, and a documented REST + real
 **Columns:**
 - **Product:** Live visibility · 3D/AR Quality · Labor tracking · Work orders · Operator app · Pricing
 - **Company:** About · Book a demo · Contact
-- **Contact:** demo.fabrixr.com · akash.mule@eterio.ca
+- **Contact:** demo.fabrixr.com · hello@fabrixr.com
 **Tagline line:** FabriXR — production control, 3D/AR quality and live labor visibility for the modern fab floor.
 **Legal:** © 2026 FabriXR. All rights reserved.
 

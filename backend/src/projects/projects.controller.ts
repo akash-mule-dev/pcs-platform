@@ -33,6 +33,14 @@ export class ProjectsController {
     return this.service.findAllWithMetrics();
   }
 
+  // NOTE: must precede `@Get(':id')` so the literal path isn't matched as an id.
+  @Get('deleted')
+  @RequirePermissions('projects.view')
+  @ApiOperation({ summary: 'List soft-deleted (recoverable) projects — the Trash' })
+  listDeleted() {
+    return this.service.listDeleted();
+  }
+
   @Get(':id')
   @RequirePermissions('projects.view')
   @ApiOperation({ summary: 'Get project by ID' })
@@ -84,8 +92,22 @@ export class ProjectsController {
 
   @Delete(':id')
   @RequirePermissions('projects.delete')
-  @ApiOperation({ summary: 'Delete project' })
+  @ApiOperation({ summary: 'Delete project (soft — recoverable from the Trash for 30 days)' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);
+  }
+
+  @Post(':id/restore')
+  @RequirePermissions('projects.delete')
+  @ApiOperation({ summary: 'Restore a soft-deleted project from the Trash' })
+  restore(@Param('id') id: string) {
+    return this.service.restore(id);
+  }
+
+  @Delete(':id/purge')
+  @RequirePermissions('projects.delete')
+  @ApiOperation({ summary: 'Permanently delete a project now (whole subtree + files) — irreversible' })
+  purge(@Param('id') id: string) {
+    return this.service.purge(id);
   }
 }

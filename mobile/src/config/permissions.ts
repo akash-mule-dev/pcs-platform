@@ -59,6 +59,17 @@ export function currentRole(): MyAccess['role'] | null {
   return _role;
 }
 
+/** The caller's granted permission keys (the server-expanded set). `['*']` for
+ *  full-access admins. Used by the Profile screen to summarise what you can access. */
+export function grantedPermissions(): string[] {
+  return [..._granted];
+}
+
+/** True when the user holds blanket access (the tenant/system `*` wildcard). */
+export function hasFullAccess(): boolean {
+  return _granted.has(WILDCARD);
+}
+
 /** Fine-grained check: does the user hold `<feature>.<action>`? (wildcard-aware) */
 export function can(permission: string): boolean {
   if (_granted.has(WILDCARD) || _granted.has(permission)) return true;

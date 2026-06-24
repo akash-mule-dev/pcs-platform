@@ -17,6 +17,7 @@ export enum NotificationType {
   EFFICIENCY_DROP = 'efficiency_drop',
   STATION_IDLE = 'station_idle',
   SHIFT_SUMMARY = 'shift_summary',
+  NCR_OVERDUE = 'ncr_overdue',
   SYSTEM = 'system',
 }
 

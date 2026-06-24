@@ -1,10 +1,14 @@
-// Ported from glb-viewer, adapted for PCS: Viro components are lazy-`require`d
-// (not statically imported) and material/target registration is guarded so the
-// module is safe to import in Expo Go / Jest. Logic is otherwise unchanged:
-// solid / ghost / wireframe render modes, world / plane / image tracking,
-// model + real-world rulers, and dimension overlays.
-import React, { useRef } from 'react';
-import { Vec3, RenderMode, TrackingMode, MeasurementState } from './types';
+// The live AR scene. Camera-first by construction: the scene (and therefore the
+// real camera feed) renders the instant the navigator mounts — it never waits on
+// the model. The model streams in via the `modelUri` prop and, once loaded:
+//   1. auto-places ~1.5 m in front of the camera (no tap required),
+//   2. auto-fits its scale from its own bounding box (so a beam stored in mm and
+//      a part stored in m both arrive at a sensible ~0.6 m viewing size), then
+//   3. fades in — kept invisible until fit so there's no wrong-size "pop".
+// Viro is lazy-`require`d and all native registration is guarded, so importing
+// this module is safe in Expo Go / Jest where the native module is absent.
+import React, { useEffect, useRef, useState } from 'react';
+import { Vec3, RenderMode, TrackingMode, MeasurementState, EDGE_COLORS, DEFAULT_EDGE_COLOR } from './types';
 import { ModelDimensions } from './dimensionExtractor';
 import {
   OverallDimensionsOverlay,
@@ -23,8 +27,6 @@ let Viro3DObject: any = null;
 let ViroNode: any = null;
 let ViroTrackingStateConstants: any = null;
 let ViroMaterials: any = null;
-let ViroARTrackingTargets: any = null;
-let ViroText: any = null;
 
 try {
   const viro = require('@reactvision/react-viro');
@@ -35,42 +37,37 @@ try {
   ViroNode = viro.ViroNode;
   ViroTrackingStateConstants = viro.ViroTrackingStateConstants;
   ViroMaterials = viro.ViroMaterials;
-  ViroARTrackingTargets = viro.ViroARTrackingTargets;
-  ViroText = viro.ViroText;
 } catch {
   // Viro not available — host screen shows a fallback instead.
 }
 
 try {
   ViroMaterials?.createMaterials?.({
-    ghostOverlay: {
-      diffuseColor: '#00FF0022',
-      lightingModel: 'Constant',
-      blendMode: 'Alpha',
-    },
-    // IFC-converted GLBs carry NO materials and NO vertex normals (same reason
-    // the web 3D viewer has to assign a material + computeVertexNormals), so the
-    // Viro default renders the model invisible. 'Constant' lighting shows the
-    // diffuseColor without needing normals, guaranteeing the part is visible in AR.
+    // IFC-converted GLBs carry NO materials and NO vertex normals (the same
+    // reason the web 3D viewer assigns a material + computeVertexNormals), so a
+    // lit material renders them invisible. 'Constant' shows the diffuseColor
+    // without needing normals, guaranteeing the part is visible in AR.
     steelSolid: {
-      diffuseColor: '#9aa2ad',
+      diffuseColor: '#aab2bd',
       lightingModel: 'Constant',
     },
+    // Bright unlit edges for the edge view, ONE material per selectable colour
+    // (the Edges panel swatches). Constant lighting needs no normals (the edge
+    // tubes carry none) and stays vivid over any real-world backdrop, so the
+    // model's edges read clearly against the physical part. Colour swaps are a
+    // material swap on the same GLB — instant, no regeneration.
+    ...Object.fromEntries(
+      EDGE_COLORS.map((c) => [c.material, { diffuseColor: c.hex, lightingModel: 'Constant' }]),
+    ),
   });
 } catch {
   // ignore
 }
 
-try {
-  ViroARTrackingTargets?.createTargets?.({
-    reference: {
-      source: require('../../../../assets/icon.png'),
-      orientation: 'Up',
-      physicalWidth: 0.1,
-    },
-  });
-} catch {
-  // ignore
+// Resolve the registered edge material key for a colour hex (falls back to the
+// first/default colour for an unknown value).
+function edgeMaterialFor(hex: string): string {
+  return (EDGE_COLORS.find((c) => c.hex === hex) ?? EDGE_COLORS[0]).material;
 }
 
 interface SceneProps {
@@ -79,8 +76,11 @@ interface SceneProps {
       modelUri: string;
       wireframeUri: string | null;
       renderMode: RenderMode;
+      /** Edge-view colour (hex) → selects the registered edge material. */
+      edgeColor?: string;
       trackingMode: TrackingMode;
       placed: boolean;
+      autoFitted: boolean;
       position: Vec3;
       scale: Vec3;
       rotation: Vec3;
@@ -88,32 +88,43 @@ interface SceneProps {
       dimensions: ModelDimensions | null;
       measurements: MeasurementState;
       qualityEntries?: ARQualityEntry[];
+      /** Auto-place the model in front of the camera once it's ready. */
+      autoPlace?: boolean;
       onPlace: (position: Vec3) => void;
+      /** Report the one-shot fit scale derived from the loaded bounding box. */
+      onAutoFit?: (scale: Vec3) => void;
       onPinch: (pinchState: number, scaleFactor: number) => void;
       onRotate: (rotateState: number, rotationFactor: number) => void;
       onModelStatus: (status: string) => void;
       onTrackingUpdated?: (state: string) => void;
       onAddModelRulerPoint: (p: Vec3) => void;
       onAddRealRulerPoint: (p: Vec3) => void;
-      // Deviation probe (optional): pair a model point with a real point.
       onAddDeviationModelPoint?: (p: Vec3) => void;
       onAddDeviationRealPoint?: (p: Vec3) => void;
-      // Per-part QA overlay (optional): heat-map / focus / tap-to-inspect.
       qaOverlayVisible?: boolean;
       qaSelectable?: boolean;
       focusMeshName?: string | null;
       onPartTap?: (meshName: string) => void;
+      /** Incremented by the HUD's "Place point" button to drop a point at the
+       * reticle (center of view) — far more precise than tapping a small target. */
+      placeNonce?: number;
     };
   };
 }
+
+// Target viewing size for a freshly loaded model (metres, longest dimension).
+const AUTOFIT_TARGET_M = 0.6;
+const PLACE_DISTANCE_M = 1.5;
 
 function ARModelScene(props: SceneProps) {
   const {
     modelUri,
     wireframeUri,
     renderMode,
+    edgeColor = DEFAULT_EDGE_COLOR,
     trackingMode,
     placed,
+    autoFitted,
     position,
     scale,
     rotation,
@@ -121,7 +132,9 @@ function ARModelScene(props: SceneProps) {
     dimensions,
     measurements,
     qualityEntries,
+    autoPlace = true,
     onPlace,
+    onAutoFit,
     onPinch,
     onRotate,
     onModelStatus,
@@ -134,23 +147,159 @@ function ARModelScene(props: SceneProps) {
     qaSelectable,
     focusMeshName,
     onPartTap,
+    placeNonce = 0,
   } = props.sceneNavigator.viroAppProps;
 
-  const placingRef = useRef(false);
   const sceneRef = useRef<any>(null);
-  const viro3dRef = useRef<any>(null); // solid model node — used to read its bbox on load (diagnostics)
+  const modelRef = useRef<any>(null); // active model node — read its bbox on load
+  const tapPlacingRef = useRef(false);
+  const autoFitDoneRef = useRef(false);
+  // Reticle placement: the latest real-world AR hit at the center of view, and
+  // the live camera pose (for a forward-ray fallback when there's no hit yet).
+  const cameraHitRef = useRef<Vec3 | null>(null);
+  const cameraPoseRef = useRef<{ pos: Vec3; forward: Vec3 } | null>(null);
+  const lastPlaceNonceRef = useRef(0);
+  // Last-resort fit timer: if neither Viro's AR bbox NOR the JS-extracted
+  // geometry size yields a scale, apply a visible default after a grace period so
+  // the model is never left stuck at the microscopic provisional scale.
+  const fallbackFitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fade-in is driven by a tiny JS opacity ramp rather than ViroAnimations, so a
+  // missing/parse-failed animation registration can never leave the model stuck
+  // invisible. The model stays at opacity 0 until it has loaded AND been fit.
+  const [opacity, setOpacity] = useState(0);
+  const [modelReady, setModelReady] = useState(false);
+  const fadeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const rulerActive =
     measurements.modelRulerActive ||
     measurements.realRulerActive ||
     !!measurements.deviationActive;
 
+  // ── Reset per-model load state when the model changes ──
+  useEffect(() => {
+    autoFitDoneRef.current = false;
+    tapPlacingRef.current = false;
+    setModelReady(false);
+    setOpacity(0);
+    if (fadeTimerRef.current) {
+      clearInterval(fadeTimerRef.current);
+      fadeTimerRef.current = null;
+    }
+    if (fallbackFitTimerRef.current) {
+      clearTimeout(fallbackFitTimerRef.current);
+      fallbackFitTimerRef.current = null;
+    }
+  }, [modelUri]);
+
+  // ── Geometry-based auto-fit (the no-depth-sensor path) ──
+  // On a LiDAR device Viro's bounding box is real and handleLoadEnd fits from it.
+  // On a device WITHOUT a depth sensor that box comes back empty (0×0×0), so we
+  // instead fit from the GLB's real geometry size — extracted in JS off-device,
+  // so it's reliable everywhere — the moment it's available. This sizes the part
+  // to ~AUTOFIT_TARGET_M (visible) and lets the HUD show a true on-screen size
+  // instead of 0.00×0.00×0.00m. Strictly one-shot (guarded by autoFitDoneRef and
+  // the reducer's autoFitted flag), and it cancels the last-resort timer.
+  useEffect(() => {
+    if (autoFitted || autoFitDoneRef.current || !modelReady || !dimensions) return;
+    const sz = dimensions.overall.size;
+    const rawLongest = Math.max(sz[0], sz[1], sz[2]);
+    if (!(rawLongest > 0) || !isFinite(rawLongest)) return;
+    autoFitDoneRef.current = true;
+    if (fallbackFitTimerRef.current) {
+      clearTimeout(fallbackFitTimerRef.current);
+      fallbackFitTimerRef.current = null;
+    }
+    let fit = AUTOFIT_TARGET_M / rawLongest;
+    fit = Math.max(0.001, Math.min(8, fit));
+    onAutoFit?.([fit, fit, fit]);
+    onModelStatus(
+      'loaded ' + [sz[0], sz[1], sz[2]].map((n) => (n * fit).toFixed(2)).join('×') + 'm',
+    );
+  }, [modelReady, dimensions, autoFitted, onAutoFit, onModelStatus]);
+
+  // ── Fade in once the model has loaded + been fit ──
+  useEffect(() => {
+    if (!modelReady) return;
+    if (fadeTimerRef.current) clearInterval(fadeTimerRef.current);
+    let o = 0;
+    fadeTimerRef.current = setInterval(() => {
+      o = Math.min(1, o + 0.12);
+      setOpacity(o);
+      if (o >= 1 && fadeTimerRef.current) {
+        clearInterval(fadeTimerRef.current);
+        fadeTimerRef.current = null;
+      }
+    }, 40);
+    return () => {
+      if (fadeTimerRef.current) {
+        clearInterval(fadeTimerRef.current);
+        fadeTimerRef.current = null;
+      }
+    };
+  }, [modelReady]);
+
+  // ── Auto-place in front of the camera the moment the model is ready ──
+  // Re-runs if placement is dropped (e.g. a tracking-mode switch sets placed=false).
+  const inFlightRef = useRef(false);
+  useEffect(() => {
+    if (!modelUri || !autoPlace || placed) {
+      inFlightRef.current = false;
+      return;
+    }
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+
+    let cancelled = false;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const finish = (pos: Vec3) => {
+      if (!cancelled) onPlace(pos);
+    };
+    const scheduleRetry = () => {
+      if (cancelled) return;
+      if (tries++ < 10) timer = setTimeout(attempt, 300);
+      else finish([0, -0.2, -PLACE_DISTANCE_M]); // fallback: straight ahead
+    };
+    const attempt = () => {
+      if (cancelled) return;
+      const scene = sceneRef.current;
+      const getCam = scene?.getCameraOrientationAsync;
+      if (typeof getCam === 'function') {
+        getCam
+          .call(scene)
+          .then((cam: any) => {
+            if (cancelled) return;
+            const p = cam?.position;
+            const f = cam?.forward;
+            if (Array.isArray(p) && Array.isArray(f)) {
+              const d = PLACE_DISTANCE_M;
+              finish([p[0] + f[0] * d, p[1] + f[1] * d, p[2] + f[2] * d]);
+            } else {
+              scheduleRetry();
+            }
+          })
+          .catch(scheduleRetry);
+      } else {
+        scheduleRetry();
+      }
+    };
+    // Small warm-up delay so the AR session has a camera pose to report.
+    timer = setTimeout(attempt, 250);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [modelUri, autoPlace, placed, onPlace]);
+
+  // Manual tap-to-place fallback (if auto-place is slow) + measurement taps.
   const placeInFrontOfCamera = (fallback: number[]) => {
     const scene = sceneRef.current;
     const finish = (pos: Vec3) => {
       onPlace(pos);
       setTimeout(() => {
-        placingRef.current = false;
+        tapPlacingRef.current = false;
       }, 300);
     };
     if (scene?.getCameraOrientationAsync) {
@@ -159,7 +308,7 @@ function ARModelScene(props: SceneProps) {
         .then((cam: any) => {
           const [px, py, pz] = cam.position;
           const [fx, fy, fz] = cam.forward;
-          const d = 1.5;
+          const d = PLACE_DISTANCE_M;
           finish([px + fx * d, py + fy * d, pz + fz * d]);
         })
         .catch(() => finish([fallback[0], fallback[1], fallback[2]]));
@@ -170,8 +319,6 @@ function ARModelScene(props: SceneProps) {
 
   const handleSceneTap = (tapPosition: number[]) => {
     const p: Vec3 = [tapPosition[0], tapPosition[1], tapPosition[2]];
-    // Deviation probe: once the model point is set, the next scene tap is the
-    // matching point on the real surface.
     if (
       measurements.deviationActive &&
       placed &&
@@ -181,23 +328,17 @@ function ARModelScene(props: SceneProps) {
       onAddDeviationRealPoint?.(p);
       return;
     }
-    // Real-world ruler consumes taps anywhere
     if (measurements.realRulerActive && placed) {
       onAddRealRulerPoint(p);
       return;
     }
-    // Placement — IDENTICAL in all three modes: a single tap drops the model in
-    // front of the camera. The tracking mode only changes how ARKit stabilizes
-    // the world (anchorDetectionTypes below + worldAlignment on the navigator),
-    // never how the model is placed, so the flow is the same everywhere.
-    if (placed || placingRef.current) return;
-    placingRef.current = true;
+    if (placed || tapPlacingRef.current) return;
+    tapPlacingRef.current = true;
     placeInFrontOfCamera(p);
   };
 
   const handleModelTap = (tapPosition: number[]) => {
     const p: Vec3 = [tapPosition[0], tapPosition[1], tapPosition[2]];
-    // Deviation probe: the first tap lands on the virtual model.
     if (measurements.deviationActive && placed && !measurements.deviationModelPoint) {
       onAddDeviationModelPoint?.(p);
       return;
@@ -225,60 +366,175 @@ function ARModelScene(props: SceneProps) {
     }
   };
 
-  const modelGestureProps =
-    locked || rulerActive ? {} : { onPinch: handlePinch, onRotate: handleRotate };
+  // ── Reticle hit-testing (fires every frame while a ruler tool is active) ──
+  // Store the closest real-world hit at the center of view + the live camera
+  // pose in refs (no setState → no per-frame re-render); the "Place point" button
+  // reads these to drop a precise point under the reticle.
+  const handleCameraARHitTest = (event: any) => {
+    const results = event?.hitTestResults ?? event?.nativeEvent?.hitTestResults;
+    if (!Array.isArray(results) || results.length === 0) {
+      cameraHitRef.current = null;
+      return;
+    }
+    // Prefer a hit on a detected plane, else the closest result with a position.
+    const onPlane = results.find(
+      (r: any) => typeof r?.type === 'string' && r.type.toLowerCase().includes('plane'),
+    );
+    const best = onPlane ?? results.find((r: any) => r?.transform?.position ?? r?.position) ?? results[0];
+    const pos = best?.transform?.position ?? best?.position;
+    cameraHitRef.current =
+      Array.isArray(pos) && pos.length >= 3 ? [pos[0], pos[1], pos[2]] : null;
+  };
+
+  const handleCameraTransformUpdate = (t: any) => {
+    const pos = t?.position ?? t?.cameraTransform?.position;
+    const fwd = t?.forward ?? t?.cameraTransform?.forward;
+    if (Array.isArray(pos) && Array.isArray(fwd)) {
+      cameraPoseRef.current = {
+        pos: [pos[0], pos[1], pos[2]],
+        forward: [fwd[0], fwd[1], fwd[2]],
+      };
+    }
+  };
+
+  // ── "Place point" → drop a REAL-world point at the reticle ──
+  // Model points are placed by tapping the model directly (surface-accurate);
+  // real-world points (real ruler / deviation real point) are placed here at the
+  // center-of-view AR hit, or a forward-ray fallback if no hit is available.
+  useEffect(() => {
+    if (!placeNonce || placeNonce === lastPlaceNonceRef.current) return;
+    lastPlaceNonceRef.current = placeNonce;
+    const needRealForDeviation =
+      measurements.deviationActive &&
+      !!measurements.deviationModelPoint &&
+      !measurements.deviationRealPoint;
+    const realStep = measurements.realRulerActive || needRealForDeviation;
+    if (!realStep || !placed) return;
+
+    const add = (p: Vec3) => {
+      if (needRealForDeviation) onAddDeviationRealPoint?.(p);
+      else onAddRealRulerPoint(p);
+    };
+    const forwardFrom = (pos: number[], fwd: number[], d = 1.2): Vec3 => [
+      pos[0] + fwd[0] * d,
+      pos[1] + fwd[1] * d,
+      pos[2] + fwd[2] * d,
+    ];
+
+    // Best: the real AR hit under the reticle. Next: a forward-ray from the live
+    // camera pose. Last resort (refs not populated yet, e.g. just entered the
+    // step in world mode): query the camera orientation so the press is never a
+    // silent no-op.
+    if (cameraHitRef.current) {
+      add(cameraHitRef.current);
+      return;
+    }
+    const c = cameraPoseRef.current;
+    if (c) {
+      add(forwardFrom(c.pos, c.forward));
+      return;
+    }
+    const scene = sceneRef.current;
+    if (scene?.getCameraOrientationAsync) {
+      scene
+        .getCameraOrientationAsync()
+        .then((cam: any) => {
+          if (Array.isArray(cam?.position) && Array.isArray(cam?.forward)) {
+            add(forwardFrom(cam.position, cam.forward));
+          }
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeNonce]);
+
+  // Read the loaded model's world-space bbox → derive a one-shot fit scale and
+  // reveal it. Distinguishes a load success from a scale/visibility problem.
+  //
+  // On a LiDAR device Viro returns a real box and we fit from it here. On a device
+  // WITHOUT a depth sensor it returns an empty (0×0×0) box — so we deliberately do
+  // NOT guess a fixed scale here (the old [0.2,0.2,0.2] fallback fired immediately
+  // and PERMANENTLY locked the one-shot APPLY_AUTOFIT, leaving every part stuck at
+  // a wrong size). Instead the geometry-based effect above fits from the GLB's
+  // real size as soon as it's extracted; a short timer applies a visible default
+  // only if that extraction never produces a size.
+  const handleLoadEnd = async () => {
+    let measured = false;
+    let sizeLabel = '';
+    try {
+      const r = await modelRef.current?.getBoundingBoxAsync?.();
+      const b = r?.boundingBox ?? r;
+      if (b && typeof b.maxX === 'number') {
+        const dx = b.maxX - b.minX;
+        const dy = b.maxY - b.minY;
+        const dz = b.maxZ - b.minZ;
+        const longest = Math.max(dx, dy, dz);
+        if (longest > 0 && isFinite(longest)) {
+          measured = true;
+          sizeLabel = [dx, dy, dz].map((n: number) => Number(n).toFixed(2)).join('×') + 'm';
+          if (!autoFitted && !autoFitDoneRef.current) {
+            autoFitDoneRef.current = true;
+            const current = scale[0] || 0.05;
+            const rawLongest = longest / current; // longest dimension at scale 1
+            let fit = AUTOFIT_TARGET_M / rawLongest;
+            fit = Math.max(0.001, Math.min(8, fit));
+            onAutoFit?.([fit, fit, fit]);
+          }
+        }
+      }
+    } catch {
+      /* bbox read unsupported on this device — fall through to the geometry fit */
+    }
+    if (!measured && !autoFitted && !autoFitDoneRef.current) {
+      // No usable AR bbox. The geometry-based effect will fit once dimensions are
+      // ready; if extraction never yields a size, apply a visible default so the
+      // model is never stuck microscopic. (Does not run if the effect fits first
+      // — both guard on autoFitDoneRef.)
+      if (fallbackFitTimerRef.current) clearTimeout(fallbackFitTimerRef.current);
+      fallbackFitTimerRef.current = setTimeout(() => {
+        if (!autoFitDoneRef.current) {
+          autoFitDoneRef.current = true;
+          onAutoFit?.([0.2, 0.2, 0.2]);
+        }
+      }, 4000);
+    }
+    onModelStatus(sizeLabel ? 'loaded ' + sizeLabel : 'loaded');
+    setModelReady(true); // triggers the fade-in (and the geometry-fit effect)
+  };
 
   const modelObjectProps = {
     position: [0, 0, 0] as Vec3,
     onClick: handleModelTap,
     onLoadStart: () => onModelStatus('loading'),
-    onLoadEnd: async () => {
-      // Report the loaded model's world-space size so we can tell a load success
-      // from a scale problem (dims here = raw GLB size × the node scale 0.2).
-      try {
-        const r = await viro3dRef.current?.getBoundingBoxAsync?.();
-        const b = r?.boundingBox ?? r;
-        if (b && typeof b.maxX === 'number') {
-          const sz = [b.maxX - b.minX, b.maxY - b.minY, b.maxZ - b.minZ]
-            .map((n: number) => Number(n).toFixed(2))
-            .join('×');
-          onModelStatus('loaded ' + sz + 'm');
-          return;
-        }
-      } catch {
-        /* ignore */
-      }
-      onModelStatus('loaded');
-    },
+    onLoadEnd: handleLoadEnd,
     onError: (event: any) => {
       if (__DEV__) console.warn('Model load error:', event?.nativeEvent);
       onModelStatus('error: ' + (event?.nativeEvent?.error || 'unknown'));
+      // Reveal anyway so a partial/odd model isn't silently invisible.
+      setModelReady(true);
     },
   };
 
   const renderModelObject = () => {
     if (renderMode === 'wireframe' && wireframeUri) {
+      // Each colour/weight is a distinct GLB (baked + per-combo URI); the key on
+      // the URI remounts on a change, and Viro applies the matching Constant
+      // material on the fresh load. (The wireframe GLB is small + local, so the
+      // reload is quick.)
       return (
         <Viro3DObject
+          key={wireframeUri}
+          ref={modelRef}
           source={{ uri: wireframeUri }}
           type="GLB"
-          {...modelObjectProps}
-        />
-      );
-    }
-    if (renderMode === 'ghost') {
-      return (
-        <Viro3DObject
-          source={{ uri: modelUri }}
-          type="GLB"
-          materials={['ghostOverlay']}
+          materials={[edgeMaterialFor(edgeColor)]}
           {...modelObjectProps}
         />
       );
     }
     return (
       <Viro3DObject
-        ref={viro3dRef}
+        ref={modelRef}
         source={{ uri: modelUri }}
         type="GLB"
         materials={['steelSolid']}
@@ -287,21 +543,27 @@ function ARModelScene(props: SceneProps) {
     );
   };
 
-  // modelNode wraps the model + dimension overlays with the same transform,
-  // so labels align with the model in every mode.
+  const modelGestureProps =
+    locked || rulerActive ? {} : { onPinch: handlePinch, onRotate: handleRotate };
+
+  // Transform node carries placement; an inner node carries the fade opacity so
+  // the model can be hidden-until-fit without disturbing overlay positioning.
   const modelNode = (
-    <ViroNode
-      position={position}
-      scale={scale}
-      rotation={rotation}
-      {...modelGestureProps}
-    >
-      {renderModelObject()}
+    <ViroNode position={position} scale={scale} rotation={rotation} {...modelGestureProps}>
+      <ViroNode opacity={opacity}>{renderModelObject()}</ViroNode>
       {measurements.showOverall && dimensions && (
-        <OverallDimensionsOverlay dimensions={dimensions} />
+        <OverallDimensionsOverlay
+          dimensions={dimensions}
+          modelScale={scale[0]}
+          labelSize={measurements.labelSize}
+        />
       )}
       {measurements.showParts && dimensions && (
-        <PartDimensionsOverlay dimensions={dimensions} />
+        <PartDimensionsOverlay
+          dimensions={dimensions}
+          modelScale={scale[0]}
+          labelSize={measurements.labelSize}
+        />
       )}
       {qualityEntries && qualityEntries.length > 0 && (
         <QualityStatusOverlay entries={qualityEntries} dimensions={dimensions} />
@@ -318,68 +580,47 @@ function ARModelScene(props: SceneProps) {
     </ViroNode>
   );
 
-  // Ruler markers live at scene root in world space. Requires the model to
-  // be locked for the model-ruler readings to stay meaningful across moves.
+  // Ruler markers live at scene root in world space.
   const rulerOverlays = (
     <>
       {measurements.modelRulerPoints.length > 0 && (
         <RulerOverlay
           points={measurements.modelRulerPoints}
           colorKey="green"
+          labelSize={measurements.labelSize}
+          scaleDivisor={scale[0]}
         />
       )}
       {measurements.realRulerPoints.length > 0 && (
-        <RulerOverlay points={measurements.realRulerPoints} colorKey="blue" />
+        <RulerOverlay
+          points={measurements.realRulerPoints}
+          colorKey="blue"
+          labelSize={measurements.labelSize}
+        />
       )}
       {measurements.deviationModelPoint && measurements.deviationRealPoint && (
         <RulerOverlay
           points={[measurements.deviationModelPoint, measurements.deviationRealPoint]}
           colorKey="green"
+          labelSize={measurements.labelSize}
         />
       )}
     </>
   );
 
-  const hintText = (text: string) =>
-    ViroText ? (
-      <ViroText
-        text={text}
-        position={[0, 0, -1]}
-        style={{
-          fontFamily: 'Arial',
-          fontSize: 18,
-          color: '#ffffff',
-          textAlign: 'center',
-        }}
-        width={2}
-        height={0.4}
-      />
-    ) : null;
-
   const lights = (
     <>
-      <ViroAmbientLight color="#ffffff" intensity={300} />
-      <ViroDirectionalLight
-        color="#ffffff"
-        direction={[0, -1, -0.5]}
-        castsShadow={true}
-        shadowOpacity={0.4}
-      />
-      <ViroDirectionalLight
-        color="#ffffff"
-        direction={[0, 0.5, -1]}
-        intensity={100}
-      />
+      <ViroAmbientLight color="#ffffff" intensity={320} />
+      <ViroDirectionalLight color="#ffffff" direction={[0, -1, -0.5]} intensity={420} />
+      <ViroDirectionalLight color="#dfe6f2" direction={[0.3, 0.4, -1]} intensity={140} />
     </>
   );
 
-  // All three modes share ONE scene and ONE placement flow: a single tap drops
-  // the model in front of the camera (see handleSceneTap), shown only once
-  // placed. The mode is purely a live tracking PRESET on this never-swapped
-  // scene — no ViroARPlaneSelector / ViroARImageMarker structural swap, which is
-  // what made the old per-mode flows diverge and made switching unreliable.
-  // 'plane'/'image' turn on ARKit plane detection for steadier tracking;
-  // worldAlignment (set on the navigator) further differentiates the presets.
+  // All three modes share ONE scene and ONE placement flow. The mode is a live
+  // tracking PRESET on this never-swapped scene (no ViroARPlaneSelector /
+  // ViroARImageMarker structural swap, which is what made the old per-mode flows
+  // diverge and made switching unreliable). World = no plane detection;
+  // plane/image enable detection for steadier tracking.
   const anchorDetectionTypes =
     trackingMode === 'world' ? ['None'] : ['PlanesHorizontal', 'PlanesVertical'];
 
@@ -389,11 +630,14 @@ function ARModelScene(props: SceneProps) {
       anchorDetectionTypes={anchorDetectionTypes as any}
       onTrackingUpdated={handleTrackingUpdated}
       onClick={handleSceneTap}
+      // Center-of-view hit testing + camera pose feed the "Place point" reticle.
+      // Only enabled while measuring so it costs nothing the rest of the time.
+      onCameraARHitTest={rulerActive ? handleCameraARHitTest : undefined}
+      onCameraTransformUpdate={rulerActive ? handleCameraTransformUpdate : undefined}
     >
       {lights}
       {placed && modelNode}
       {rulerOverlays}
-      {!placed && hintText('Tap to place the model')}
     </ViroARScene>
   );
 }

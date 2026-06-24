@@ -10,6 +10,8 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { ApiService } from '../../core/services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
+type ItpType = '' | 'hold' | 'witness' | 'review';
+
 @Component({
   selector: 'app-stage-dialog',
   standalone: true,
@@ -39,10 +41,39 @@ import { MatSnackBar } from '@angular/material/snack-bar';
           <mat-label>Description</mat-label>
           <textarea matInput [(ngModel)]="form.description" rows="3" placeholder="Optional notes about this stage"></textarea>
         </mat-form-field>
-        <mat-checkbox class="hold-point" [(ngModel)]="form.requiresInspection">
-          Inspection hold point
-          <span class="hold-hint">— stage can only complete once a passing inspection (or approved concession) is recorded on the assembly</span>
-        </mat-checkbox>
+
+        <!-- ITP (Inspection & Test Plan) intent -->
+        <div class="itp">
+          <label class="itp-lbl">Inspection &amp; Test Plan point</label>
+          <div class="itp-opts">
+            @for (o of itpOptions; track o.key) {
+              <button type="button" class="itp-chip" [class.on]="form.inspectionType === o.key" (click)="form.inspectionType = o.key">
+                {{ o.label }}
+              </button>
+            }
+          </div>
+          <p class="itp-hint">{{ itpHint() }}</p>
+        </div>
+
+        <!-- Final QC / release gate -->
+        <label class="finalqc">
+          <mat-checkbox [(ngModel)]="form.isFinalQc" (change)="onFinalQcChange()"></mat-checkbox>
+          <span>
+            <strong>Final QC / release gate</strong>
+            <small>The terminal stage that consolidates every stage’s QC. It cannot complete while the assembly has <em>any</em> open NCR, and completing it releases the piece for shipping. Usually the last stage.</small>
+          </span>
+        </label>
+
+        @if (form.inspectionType) {
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>What to verify / acceptance criteria</mat-label>
+            <textarea matInput [(ngModel)]="form.inspectionCriteria" rows="2" placeholder="e.g. AWS D1.1 visual weld; dimensional ±3 mm"></textarea>
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Required sign-off role (optional)</mat-label>
+            <input matInput [(ngModel)]="form.requiredSignoffRole" placeholder="e.g. CWI, QA manager, customer">
+          </mat-form-field>
+        }
       </div>
 
       <div class="dialog-footer">
@@ -54,13 +85,48 @@ import { MatSnackBar } from '@angular/material/snack-bar';
     </div>
   `,
   styles: [`
-    .hold-point { display: block; margin: 4px 2px 8px; }
-    .hold-hint { font-size: 11.5px; color: var(--clay-text-muted, #64748b); }
+    .itp { margin: 2px 2px 12px; }
+    .itp-lbl { display: block; font-size: 12px; font-weight: 700; color: var(--clay-text-secondary, #475569); margin-bottom: 6px; }
+    .itp-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+    .itp-chip { border: 1px solid var(--clay-border, #d8dde6); background: var(--clay-surface, #fff); color: var(--clay-text-secondary, #475569); border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .itp-chip.on { background: var(--clay-primary, #2563eb); color: #fff; border-color: var(--clay-primary, #2563eb); }
+    .itp-hint { font-size: 11.5px; color: var(--clay-text-muted, #64748b); margin: 7px 2px 0; }
+    .finalqc { display: flex; align-items: flex-start; gap: 8px; margin: 4px 2px 12px; padding: 10px 12px; border: 1px solid var(--clay-border, #d8dde6); border-radius: 10px; background: var(--clay-surface-muted, #f8fafc); cursor: pointer; }
+    .finalqc span { display: flex; flex-direction: column; gap: 2px; }
+    .finalqc strong { font-size: 13px; color: var(--clay-text, #0f172a); }
+    .finalqc small { font-size: 11.5px; color: var(--clay-text-muted, #64748b); line-height: 1.4; }
   `]
 })
 export class StageDialogComponent {
   isEdit = false;
-  form = { name: '', targetTimeSeconds: 600, description: '', requiresInspection: false, hourlyRate: 0 };
+  form: {
+    name: string; targetTimeSeconds: number; description: string; requiresInspection: boolean; hourlyRate: number;
+    inspectionType: ItpType; inspectionCriteria: string; requiredSignoffRole: string; isFinalQc: boolean;
+  } = {
+    name: '', targetTimeSeconds: 600, description: '', requiresInspection: false, hourlyRate: 0,
+    inspectionType: '', inspectionCriteria: '', requiredSignoffRole: '', isFinalQc: false,
+  };
+
+  /** A final-QC gate is inherently a hold point — default its ITP type to Hold when ticked. */
+  onFinalQcChange(): void {
+    if (this.form.isFinalQc && !this.form.inspectionType) this.form.inspectionType = 'hold';
+  }
+
+  readonly itpOptions: { key: ItpType; label: string }[] = [
+    { key: '', label: 'None' },
+    { key: 'hold', label: 'Hold' },
+    { key: 'witness', label: 'Witness' },
+    { key: 'review', label: 'Review' },
+  ];
+
+  itpHint(): string {
+    switch (this.form.inspectionType) {
+      case 'hold': return 'Work stops here — the stage cannot complete until a passing inspection (or approved concession) is recorded on the assembly.';
+      case 'witness': return 'Customer / 3rd-party may attend; advisory — does not block completion.';
+      case 'review': return 'Document review point; advisory — does not block completion.';
+      default: return 'Not an inspection point.';
+    }
+  }
 
   constructor(
     public dialogRef: MatDialogRef<StageDialogComponent>,
@@ -70,24 +136,48 @@ export class StageDialogComponent {
   ) {
     if (data.stage) {
       this.isEdit = true;
+      const s = data.stage;
+      // Migrate the representation: a legacy requiresInspection flag reads as a hold point.
+      const inspectionType: ItpType = (s.inspectionType as ItpType) || (s.requiresInspection ? 'hold' : '');
       this.form = {
-        name: data.stage.name,
-        targetTimeSeconds: data.stage.targetTimeSeconds,
-        description: data.stage.description || '',
-        requiresInspection: !!data.stage.requiresInspection,
-        hourlyRate: Number(data.stage.hourlyRate) || 0
+        name: s.name,
+        targetTimeSeconds: s.targetTimeSeconds,
+        description: s.description || '',
+        requiresInspection: !!s.requiresInspection,
+        hourlyRate: Number(s.hourlyRate) || 0,
+        inspectionType,
+        inspectionCriteria: s.inspectionCharacteristics?.criteria ?? '',
+        requiredSignoffRole: s.requiredSignoffRole ?? '',
+        isFinalQc: !!s.isFinalQc,
       };
     }
   }
 
+  /** Build the API body, translating the ITP form into the backend stage fields. */
+  private body(): Record<string, any> {
+    const criteria = this.form.inspectionCriteria.trim();
+    return {
+      name: this.form.name,
+      targetTimeSeconds: this.form.targetTimeSeconds,
+      description: this.form.description,
+      hourlyRate: this.form.hourlyRate,
+      // Hold points keep the legacy flag in sync; witness/review are advisory.
+      requiresInspection: this.form.inspectionType === 'hold',
+      inspectionType: this.form.inspectionType || null,
+      inspectionCharacteristics: this.form.inspectionType && criteria ? { criteria } : null,
+      requiredSignoffRole: this.form.inspectionType ? (this.form.requiredSignoffRole.trim() || null) : null,
+      isFinalQc: this.form.isFinalQc,
+    };
+  }
+
   save(): void {
     if (this.isEdit) {
-      this.api.patch(`/stages/${this.data.stage.id}`, this.form).subscribe({
+      this.api.patch(`/stages/${this.data.stage.id}`, this.body()).subscribe({
         next: () => { this.snackBar.open('Stage updated', 'Close', { duration: 3000 }); this.dialogRef.close(true); },
         error: () => {}
       });
     } else {
-      const body = { ...this.form, sequence: this.data.sequence };
+      const body = { ...this.body(), sequence: this.data.sequence };
       this.api.post(`/processes/${this.data.processId}/stages`, body).subscribe({
         next: () => { this.snackBar.open('Stage created', 'Close', { duration: 3000 }); this.dialogRef.close(true); },
         error: () => {}

@@ -65,10 +65,16 @@ export class ModelsController {
   async downloadFile(@Param('id') id: string, @Res() res: Response) {
     try {
       const { stream, model } = await this.service.getFileStream(id);
+      // A given model id's GLB is content-stable (a re-import/re-conversion mints
+      // a NEW id), so let the browser HTTP-cache it: repeat loads on tab switches
+      // / viewer remounts are served from cache or revalidated cheaply via ETag,
+      // not re-streamed from blob storage. The client also keeps an IndexedDB copy.
       res.set({
         'Content-Type': model.mimeType || 'application/octet-stream',
         'Content-Disposition': `inline; filename="${model.originalName}"`,
         'Access-Control-Expose-Headers': 'Content-Disposition',
+        'Cache-Control': 'public, max-age=3600',
+        'ETag': `"${model.id}"`,
       });
       (stream as any).pipe(res);
     } catch {

@@ -38,6 +38,12 @@ interface QaRow { node: AssemblyNode; q: NodeQualityStatus; flagged: boolean; }
         </div>
         @if (picked(); as p) {
           <span class="picked"><mat-icon>widgets</mat-icon>{{ p.mark || p.name }}<button class="x" (click)="clearPick()">×</button></span>
+          @if (stages().length) {
+            <select class="stage-select" [(ngModel)]="selectedStageId" title="Operation this check applies to">
+              <option value="">At stage… (optional)</option>
+              @for (s of stages(); track s.id) { <option [value]="s.id">{{ s.name }}</option> }
+            </select>
+          }
           <button class="qbtn pass" [disabled]="busy()" (click)="record('pass')">Pass</button>
           <button class="qbtn warn" [disabled]="busy()" (click)="record('warning')">Warning</button>
           <button class="qbtn fail" [disabled]="busy()" (click)="record('fail')">Fail</button>
@@ -69,6 +75,12 @@ interface QaRow { node: AssemblyNode; q: NodeQualityStatus; flagged: boolean; }
             <option value="">— pick a report template —</option>
             @for (t of templates(); track t.id) { <option [value]="t.id">{{ t.name }} ({{ t.type }})</option> }
           </select>
+          @if (stages().length) {
+            <select class="stage-select" [(ngModel)]="selectedStageId" title="Operation this report applies to">
+              <option value="">At stage… (optional)</option>
+              @for (s of stages(); track s.id) { <option [value]="s.id">{{ s.name }}</option> }
+            </select>
+          }
           <button class="qbtn start" [disabled]="reportBusy() || !reportTemplateId" (click)="startReport()">
             <mat-icon>play_arrow</mat-icon>{{ reportBusy() ? 'Starting…' : 'Start & fill' }}
           </button>
@@ -171,6 +183,7 @@ interface QaRow { node: AssemblyNode; q: NodeQualityStatus; flagged: boolean; }
     .rec-ncr .grow { flex: 1; min-width: 200px; }
     .rec-ncr .num { width: 84px; }
     .meas-hint { font-size: 11px; color: var(--clay-text-muted); }
+    .stage-select { padding: 7px 9px; border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); font-size: 12px; background: var(--clay-surface); color: var(--clay-text); font-family: inherit; max-width: 180px; }
     .rec-msg { margin: 8px 0 0; font-size: 12px; font-weight: 600; color: var(--success-text); }
     .rec-msg.err { color: var(--danger-text); }
 
@@ -250,12 +263,18 @@ export class ProjectQualityComponent implements OnInit {
   reportBusy = signal(false);
   reportError = signal<string | null>(null);
 
+  // The order's routing stages — lets a check / NCR be tagged to the OPERATION
+  // it was found at (so a hold point gates that stage; final QC consolidates).
+  stages = signal<{ id: string; name: string; sequence: number }[]>([]);
+  selectedStageId = '';
+
   ngOnInit(): void {
     // This tab renders under /projects/:id/orders/:orderId/quality — climb for the order.
     let r: ActivatedRoute | null = this.route;
     while (r && !this.orderId) { this.orderId = r.snapshot.paramMap.get('orderId') ?? ''; r = r.parent; }
     if (this.orderId) {
       this.reportsSvc.listTemplates().subscribe({ next: (t) => this.templates.set(t), error: () => {} });
+      this.svc.orderBoard(this.orderId).subscribe({ next: (b) => this.stages.set(b.stages ?? []), error: () => {} });
       this.loadReports();
     }
   }
@@ -274,6 +293,7 @@ export class ProjectQualityComponent implements OnInit {
       templateId: this.reportTemplateId,
       productionOrderId: this.orderId,
       assemblyNodeId: this.picked()?.id,
+      stageId: this.selectedStageId || undefined,
     }).subscribe({
       next: (r) => { this.reportBusy.set(false); this.router.navigate(['/qr', r.id]); },
       error: (e) => { this.reportBusy.set(false); this.reportError.set(e?.error?.message || 'Could not start the report.'); },
@@ -314,7 +334,7 @@ export class ProjectQualityComponent implements OnInit {
   record(status: QaStatus): void {
     const n = this.picked(); if (!n || this.busy()) return;
     this.busy.set(true); this.msg.set(null); this.err.set(false);
-    this.svc.recordQuality(this.store.id(), n.id, { status }).subscribe({
+    this.svc.recordQuality(this.store.id(), n.id, { status, stageId: this.selectedStageId || undefined }).subscribe({
       next: () => { this.busy.set(false); this.msg.set(`Recorded ${status} for ${n.mark || n.name}.`); this.store.refreshQuality(); },
       error: (e) => { this.busy.set(false); this.err.set(true); this.msg.set(e?.error?.message || 'Could not record.'); },
     });
@@ -326,6 +346,7 @@ export class ProjectQualityComponent implements OnInit {
     this.svc.recordQuality(this.store.id(), n.id, {
       status: 'pass', measurementValue: this.meas.value, measurementUnit: this.meas.unit || undefined,
       toleranceMin: this.meas.min ?? undefined, toleranceMax: this.meas.max ?? undefined, notes: this.meas.notes || undefined,
+      stageId: this.selectedStageId || undefined,
     }).subscribe({
       next: (q) => {
         this.busy.set(false); this.measureOpen.set(false);

@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { Colors } from '../../theme/colors';
 import { ViewerScreenParams } from '../../navigation/types';
+import { modelCache } from '../../services/modelCache';
 
 type Route = RouteProp<ViewerScreenParams, 'ModelView'>;
 
@@ -142,18 +143,11 @@ export function ModelViewScreen() {
     if (fetching) return;
     setFetching(true);
     try {
-      const response = await fetch(fileUrl);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-
-      const base64: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(',')[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
+      // Persistent on-device cache (downloaded once; reused across 3D/AR/VR).
+      const base64 = await modelCache.getBase64(modelId, (pct) => {
+        webviewRef.current?.injectJavaScript(
+          `var p=document.getElementById('pct'); if(p)p.textContent='Downloading... ${pct}%'; true;`,
+        );
       });
 
       const CHUNK = 512 * 1024;
@@ -186,7 +180,7 @@ export function ModelViewScreen() {
       `);
     }
     setFetching(false);
-  }, [fileUrl, fetching]);
+  }, [modelId, fetching]);
 
   const onMessage = useCallback((event: WebViewMessageEvent) => {
     try {

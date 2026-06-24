@@ -35,6 +35,11 @@ export interface CreateQualityInput {
   measurementUnit?: string;
   toleranceMin?: number;
   toleranceMax?: number;
+  /** Fabrication context: ties the AR inspection to an assembly + operation. */
+  assemblyNodeId?: string;
+  projectId?: string;
+  stageId?: string;
+  workOrderStageId?: string;
   /** Idempotency key (uuid) — replays of the same create return the original row. */
   clientKey?: string;
 }

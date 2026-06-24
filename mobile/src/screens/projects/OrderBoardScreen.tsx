@@ -17,6 +17,7 @@ import { authService } from '../../services/auth.service';
 import { offlineService } from '../../services/offline.service';
 import { environment } from '../../config/environment';
 import { useSocketEvent } from '../../hooks/useSocketEvent';
+import { OrderAssemblies3D } from './OrderAssemblies3D';
 
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'OrderBoard'>;
 type Rt = RouteProp<ProjectsStackParamList, 'OrderBoard'>;
@@ -45,6 +46,10 @@ export function OrderBoardScreen() {
   const [audit, setAudit] = useState<MOrderAudit | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [view, setView] = useState<'board' | '3d'>('board');
+  // Mount the 3D view lazily on first open, then keep it alive (hidden) so
+  // toggling back to the board never re-downloads the GLB / re-inits the WebView.
+  const [opened3d, setOpened3d] = useState(false);
   const [stageSel, setStageSel] = useState<string>(ALL);
   const [typeSel, setTypeSel] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -123,14 +128,9 @@ export function OrderBoardScreen() {
     navigation.setOptions({
       title: orderNumber || 'Work order',
       headerRight: () => (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          <TouchableOpacity onPress={() => (navigation as any).navigate('Scan')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
+        </TouchableOpacity>
       ),
     });
   }, [navigation, orderNumber, openTemplates]);
@@ -429,13 +429,41 @@ export function OrderBoardScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.bodyRow}>
+      {/* Board ↔ 3D toggle */}
+      <View style={styles.viewToggle}>
+        {([
+          { v: 'board' as const, icon: 'grid-outline', label: 'Board' },
+          { v: '3d' as const, icon: 'cube-outline', label: '3D' },
+        ]).map((t) => {
+          const on = view === t.v;
+          return (
+            <TouchableOpacity
+              key={t.v}
+              style={[styles.viewSeg, on && styles.viewSegOn]}
+              onPress={() => { setView(t.v); if (t.v === '3d') setOpened3d(true); }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={t.icon as any} size={15} color={on ? WO.onInk : WO.textSoft} />
+              <Text style={[styles.viewSegTxt, on && styles.viewSegTxtOn]}>{t.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Both views are kept mounted (hidden via display:none) so switching back
+          to the board never re-downloads the GLB. The 3D view mounts lazily. */}
+      <View style={[styles.bodyRow, view !== 'board' && styles.hidden]}>
         {wide && StageRail}
         {grid}
       </View>
+      {opened3d && (
+        <View style={[styles.fill, view !== '3d' && styles.hidden]}>
+          <OrderAssemblies3D orderId={orderId} projectId={projectId} audit={audit} />
+        </View>
+      )}
 
       {/* Bulk action bar */}
-      {selectMode && (
+      {view === 'board' && selectMode && (
         <View style={styles.bulkBar}>
           <Text style={styles.bulkCount}>{selected.size} selected</Text>
           {stageSel === ALL || stageSel === DONE ? (
@@ -494,6 +522,13 @@ export function OrderBoardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: WO.mist },
+  viewToggle: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, backgroundColor: WO.mist },
+  viewSeg: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: WO.line, backgroundColor: WO.card },
+  viewSegOn: { backgroundColor: WO.ink, borderColor: WO.ink },
+  viewSegTxt: { fontSize: 13, fontWeight: '700', color: WO.textSoft },
+  viewSegTxtOn: { color: WO.onInk },
+  fill: { flex: 1 },
+  hidden: { display: 'none' },
   bodyRow: { flex: 1, flexDirection: 'row' },
   gridList: { flex: 1 },
   list: { padding: 12, paddingBottom: 96 },

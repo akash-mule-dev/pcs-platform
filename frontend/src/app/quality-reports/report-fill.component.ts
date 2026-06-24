@@ -108,6 +108,11 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
                   </select>
                 </label>
                 <textarea [(ngModel)]="dispForm.notes" rows="2" placeholder="Justification / rework instructions / concession reference"></textarea>
+                @if (needsConcession()) {
+                  <label class="fld concession">Concession authorization (required for {{ dispositionLabel(dispForm.disposition).toLowerCase() }})
+                    <textarea [(ngModel)]="dispForm.concessionReason" rows="2" placeholder="Who authorized the deviation from spec, and on what basis"></textarea>
+                  </label>
+                }
                 <div class="two">
                   <textarea [(ngModel)]="dispForm.rootCause" rows="2" placeholder="Root cause (investigation finding)"></textarea>
                   <textarea [(ngModel)]="dispForm.correctiveAction" rows="2" placeholder="Corrective action taken / planned"></textarea>
@@ -117,6 +122,7 @@ const FORMIO_JS = 'https://cdn.form.io/formiojs/formio.full.min.js';
                     <mat-icon>save</mat-icon>{{ report?.disposition ? 'Update disposition' : 'Record disposition' }}
                   </button>
                   @if (needsReinspection()) { <span class="hint"><mat-icon>info</mat-icon>Rework/repair must pass a re-inspection (recorded after this disposition) before the NCR can close.</span> }
+                  @if (needsConcession()) { <span class="hint"><mat-icon>info</mat-icon>Repair/use-as-is accept a deviation — an authorized concession is required before the NCR can close.</span> }
                 </div>
               </div>
             }
@@ -314,7 +320,7 @@ export class ReportFillComponent implements OnInit, OnDestroy {
   // NCR lifecycle
   events: NcrEvent[] = [];
   commentText = '';
-  dispForm = { disposition: '', notes: '', rootCause: '', correctiveAction: '' };
+  dispForm = { disposition: '', notes: '', rootCause: '', correctiveAction: '', concessionReason: '' };
   readonly dispositions = [
     { value: 'rework', label: 'Rework (restore to full conformance)' },
     { value: 'repair', label: 'Repair (acceptable, not to full spec)' },
@@ -582,6 +588,7 @@ export class ReportFillComponent implements OnInit, OnDestroy {
       notes: this.report.dispositionNotes ?? '',
       rootCause: this.report.rootCause ?? '',
       correctiveAction: this.report.correctiveAction ?? '',
+      concessionReason: (this.report as any).concessionReason ?? '',
     };
     this.loadEvents();
   }
@@ -603,6 +610,7 @@ export class ReportFillComponent implements OnInit, OnDestroy {
   severityKey(): string { return (this.severity() ?? '').toLowerCase(); }
   dispositionLabel(d: string | null | undefined): string { return this.dispositions.find((x) => x.value === d)?.label ?? (d ?? '—'); }
   needsReinspection(): boolean { return this.dispForm.disposition === 'rework' || this.dispForm.disposition === 'repair'; }
+  needsConcession(): boolean { return this.dispForm.disposition === 'repair' || this.dispForm.disposition === 'use_as_is'; }
   closeHint(): string { return this.report?.disposition ? 'Close this NCR — lifts the shipping + quality-stage gates' : 'Record a disposition before closing'; }
   eventIcon(e: NcrEvent): string {
     return ({ created: 'flag', submitted: 'task_alt', disposition: 'gavel', resolved: 'check_circle', reopened: 'lock_open', cancelled: 'block', comment: 'chat_bubble' } as Record<string, string>)[e.type] ?? 'radio_button_checked';
@@ -629,6 +637,7 @@ export class ReportFillComponent implements OnInit, OnDestroy {
       dispositionNotes: this.dispForm.notes || undefined,
       rootCause: this.dispForm.rootCause || undefined,
       correctiveAction: this.dispForm.correctiveAction || undefined,
+      concessionReason: this.needsConcession() ? (this.dispForm.concessionReason || undefined) : undefined,
     }).subscribe({
       next: (r) => this.afterNcrAction(r, 'Disposition recorded'),
       error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not record the disposition.'; },

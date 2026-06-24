@@ -16,7 +16,12 @@ export type TabParamList = {
 // context (from an assembly or part) without leaving the current flow.
 export type ViewerScreenParams = {
   ModelView: { modelId: string; modelName: string; fileUrl: string };
-  ARView: { modelId: string; fileUrl: string; meshNames?: string[]; partLabel?: string };
+  ARView: {
+    modelId: string; fileUrl: string; meshNames?: string[]; partLabel?: string;
+    // Optional fabrication context when AR is opened from an assembly's stage —
+    // tags AR inspections to that operation (gates the stage + rolls up to Final QC).
+    assemblyNodeId?: string; projectId?: string; stageId?: string; workOrderStageId?: string;
+  };
   VRView: { modelId: string; modelName: string; fileUrl: string };
   QualityView: { modelId: string; modelName: string; fileUrl: string };
 };
@@ -42,6 +47,8 @@ export type WorkOrdersStackParamList = {
   };
   WorkOrderList: undefined;
   WorkOrderDetail: { workOrderId: string };
+  // Native QC report fill (offline-capable); falls back to QcReport (WebView) for NCRs/complex schemas.
+  QcReportFill: { reportId: string; title?: string };
   // QC report fill page rendered in-app (WebView) instead of the device browser.
   QcReport: { reportId: string; title?: string };
 } & ViewerScreenParams;
@@ -51,6 +58,7 @@ export type ProjectsStackParamList = {
   ProjectList: undefined;
   Scan: undefined;
   ProjectDetail: { projectId: string; name: string };
+  ProjectViewer: { projectId: string; name: string };
   OrderBoard: { orderId: string; projectId: string; orderNumber: string };
   AssemblyDetail: { orderId: string; projectId: string; nodeId: string; mark: string };
   PartViewer: {
@@ -63,6 +71,8 @@ export type ProjectsStackParamList = {
     lengthMm?: number | null;
     weightKg?: number | null;
   };
+  // Native QC report fill (offline-capable); falls back to QcReport (WebView) for NCRs/complex schemas.
+  QcReportFill: { reportId: string; title?: string };
   // QC report fill page rendered in-app (WebView) instead of the device browser.
   QcReport: { reportId: string; title?: string };
 } & ViewerScreenParams;
@@ -77,6 +87,8 @@ export type TimeTrackingStackParamList = {
 export type MoreStackParamList = {
   MoreMenu: undefined;
   MaterialList: undefined;
+  Notifications: undefined;
+  Storage: undefined;
 };
 
 // ── Root Navigator ──

@@ -9,6 +9,12 @@ export interface User {
   badgeId?: string;
   role: { id: string; name: string };
   isActive: boolean;
+  // Enriched fields returned by GET /auth/profile (optional: absent on the lean
+  // login payload, populated after a profile refresh).
+  organizationId?: string | null;
+  lastLoginAt?: string | null;
+  createdAt?: string | null;
+  hourlyRate?: number | null;
 }
 
 export interface LoginResponse {

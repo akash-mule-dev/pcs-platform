@@ -12,13 +12,21 @@ import {
   isNcrDisposition,
   canRecordDisposition,
   requiresReinspection,
+  requiresConcession,
   assertCloseable,
 } from './ncr-workflow.js';
+import { QualityNotifyService } from '../quality-notify/quality-notify.service.js';
 
 export interface CreateReportInput {
   templateId: string;
   productionOrderId: string;
   assemblyNodeId?: string;
+  /** The fabrication operation the NCR is raised at (process stage + WO-stage instance). */
+  stageId?: string;
+  workOrderStageId?: string;
+  /** When spawned from a failed inspection: the source quality_data row + pre-filled values. */
+  sourceQualityDataId?: string;
+  initialData?: Record<string, any>;
 }
 export interface UpdateReportInput {
   data?: Record<string, any>;
@@ -29,11 +37,13 @@ export interface DispositionInput {
   dispositionNotes?: string;
   rootCause?: string;
   correctiveAction?: string;
+  /** Authorized concession justification — required to close repair / use-as-is. */
+  concessionReason?: string;
 }
 
 type EventType =
   | 'created' | 'submitted' | 'status' | 'disposition'
-  | 'comment' | 'resolved' | 'reopened' | 'cancelled';
+  | 'comment' | 'resolved' | 'reopened' | 'cancelled' | 'linked';
 
 /**
  * QC reports: instances of drag-drop FormTemplates filled against a production
@@ -51,6 +61,7 @@ export class QualityReportsService {
     @InjectRepository(FormTemplate) private readonly templateRepo: Repository<FormTemplate>,
     @InjectRepository(ProductionOrder) private readonly orderRepo: Repository<ProductionOrder>,
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
+    private readonly notify: QualityNotifyService,
   ) {}
 
   private get org(): string { return TenantContext.requireOrganizationId(); }
@@ -88,13 +99,27 @@ export class QualityReportsService {
           productionOrderId: order.id,
           projectId: order.projectId,
           assemblyNodeId: node?.id ?? null,
-          data: null,
+          stageId: input.stageId ?? null,
+          workOrderStageId: input.workOrderStageId ?? null,
+          data: input.initialData ?? null,
+          sourceQualityDataId: input.sourceQualityDataId ?? null,
           status: QualityReportStatus.DRAFT,
           ncrStatus: isNcr ? 'open' : null,
           filledBy: this.userId,
           organizationId: org,
         }));
-        if (isNcr) await this.appendEvent(saved, 'created', { toStatus: 'open' });
+        if (isNcr) {
+          await this.appendEvent(saved, 'created', { toStatus: 'open' });
+          await this.notify.ncrRaised({
+            reportId: saved.id,
+            number: saved.number,
+            label: node?.mark ?? node?.name ?? saved.number,
+            assemblyNodeId: saved.assemblyNodeId,
+            productionOrderId: saved.productionOrderId,
+            severity: (input.initialData?.['severity'] as string) ?? null,
+            raisedByUserId: this.userId,
+          });
+        }
         return saved;
       } catch (e: any) {
         if (e?.code === '23505') continue;
@@ -102,6 +127,64 @@ export class QualityReportsService {
       }
     }
     throw new BadRequestException('Could not allocate a unique report number');
+  }
+
+  /**
+   * Raise an NCR FROM a failed inspection: pulls the failure context off the
+   * `quality_data` row to pre-fill the NCR form and links the two records
+   * (`sourceQualityDataId`) for the §8.7 audit trail. The spawned NCR is a normal
+   * `ncr`-type report, so it inherits all gate behaviour automatically.
+   */
+  async createFromInspection(input: {
+    qualityDataId: string;
+    templateId: string;
+    productionOrderId: string;
+    assemblyNodeId?: string;
+    stageId?: string;
+    workOrderStageId?: string;
+  }): Promise<QualityReport> {
+    const org = this.org;
+    const rows: {
+      id: string; defect_type: string | null; severity: string | null; mesh_name: string | null;
+      notes: string | null; measurement_value: number | null; measurement_unit: string | null;
+      tolerance_min: number | null; tolerance_max: number | null;
+      assembly_node_id: string | null; stage_id: string | null; work_order_stage_id: string | null;
+    }[] = await this.repo.query(
+      `SELECT id, defect_type, severity, mesh_name, notes, measurement_value, measurement_unit,
+              tolerance_min, tolerance_max, assembly_node_id, stage_id, work_order_stage_id
+         FROM quality_data WHERE id = $1 AND organization_id = $2`,
+      [input.qualityDataId, org],
+    );
+    const qd = rows?.[0];
+    if (!qd) throw new NotFoundException('Source inspection not found');
+
+    const label = qd.mesh_name || 'item';
+    const measure = qd.measurement_value != null
+      ? ` Measured ${qd.measurement_value}${qd.measurement_unit ?? ''}` +
+        (qd.tolerance_min != null || qd.tolerance_max != null
+          ? ` (tolerance ${qd.tolerance_min ?? '—'}…${qd.tolerance_max ?? '—'})` : '') + '.'
+      : '';
+    const initialData: Record<string, any> = {
+      defectType: qd.defect_type ?? undefined,
+      severity: qd.severity ?? undefined,
+      description:
+        `Raised from a failed inspection on ${label}.` +
+        (qd.notes ? ` ${qd.notes}` : '') + measure,
+    };
+
+    const report = await this.create({
+      templateId: input.templateId,
+      productionOrderId: input.productionOrderId,
+      assemblyNodeId: input.assemblyNodeId ?? qd.assembly_node_id ?? undefined,
+      // Inherit the operation the failure was found at, so the spawned NCR gates
+      // the right stage (and rolls up to final QC).
+      stageId: input.stageId ?? qd.stage_id ?? undefined,
+      workOrderStageId: input.workOrderStageId ?? qd.work_order_stage_id ?? undefined,
+      sourceQualityDataId: qd.id,
+      initialData,
+    });
+    await this.appendEvent(report, 'linked', { note: `Raised from inspection ${qd.id}` });
+    return this.get(report.id) as any;
   }
 
   /** Reports enriched with order/project/item context, newest first. */
@@ -153,6 +236,10 @@ export class QualityReportsService {
     r.ncrStatus = 'under_review';
     const saved = await this.repo.save(r);
     await this.appendEvent(saved, 'status', { fromStatus: from, toStatus: 'under_review', note });
+    await this.notify.ncrLifecycle({
+      reportId: saved.id, number: saved.number, kind: 'under_review', ncrStatus: 'under_review',
+      assemblyNodeId: saved.assemblyNodeId, productionOrderId: saved.productionOrderId,
+    });
     return this.get(id) as any;
   }
 
@@ -175,6 +262,11 @@ export class QualityReportsService {
     r.dispositionNotes = input.dispositionNotes?.trim() || null;
     if (input.rootCause !== undefined) r.rootCause = input.rootCause?.trim() || null;
     if (input.correctiveAction !== undefined) r.correctiveAction = input.correctiveAction?.trim() || null;
+    // Concession authorization for repair / use-as-is (a deviation from spec).
+    if (requiresConcession(input.disposition) && input.concessionReason?.trim()) {
+      r.concessionBy = this.userId;
+      r.concessionReason = input.concessionReason.trim();
+    }
     r.dispositionBy = this.userId;
     r.dispositionAt = new Date();
     r.ncrStatus = 'dispositioned';
@@ -182,6 +274,10 @@ export class QualityReportsService {
     await this.appendEvent(saved, 'disposition', {
       fromStatus: from, toStatus: 'dispositioned', disposition: input.disposition,
       note: input.dispositionNotes?.trim() || undefined,
+    });
+    await this.notify.ncrLifecycle({
+      reportId: saved.id, number: saved.number, kind: 'dispositioned', ncrStatus: 'dispositioned',
+      assemblyNodeId: saved.assemblyNodeId, productionOrderId: saved.productionOrderId,
     });
     return this.get(id) as any;
   }
@@ -197,7 +293,12 @@ export class QualityReportsService {
     const hasReinspection = requiresReinspection(r.disposition)
       ? await this.hasPassingReinspection(r)
       : true;
-    const verdict = assertCloseable({ status, disposition: r.disposition, hasPassingReinspection: hasReinspection });
+    const verdict = assertCloseable({
+      status,
+      disposition: r.disposition,
+      hasPassingReinspection: hasReinspection,
+      hasConcession: !!(r.concessionBy && r.concessionReason),
+    });
     if (!verdict.ok) throw new BadRequestException(verdict.reason);
 
     r.ncrStatus = 'closed';
@@ -205,6 +306,10 @@ export class QualityReportsService {
     r.resolvedBy = this.userId;
     const saved = await this.repo.save(r);
     await this.appendEvent(saved, 'resolved', { fromStatus: status, toStatus: 'closed' });
+    await this.notify.ncrLifecycle({
+      reportId: saved.id, number: saved.number, kind: 'closed', ncrStatus: 'closed',
+      assemblyNodeId: saved.assemblyNodeId, productionOrderId: saved.productionOrderId,
+    });
     return this.get(id) as any;
   }
 
@@ -219,6 +324,10 @@ export class QualityReportsService {
     r.resolvedBy = null;
     const saved = await this.repo.save(r);
     await this.appendEvent(saved, 'reopened', { fromStatus: 'closed', toStatus: 'under_review' });
+    await this.notify.ncrLifecycle({
+      reportId: saved.id, number: saved.number, kind: 'reopened', ncrStatus: 'under_review',
+      assemblyNodeId: saved.assemblyNodeId, productionOrderId: saved.productionOrderId,
+    });
     return this.get(id) as any;
   }
 
@@ -235,6 +344,10 @@ export class QualityReportsService {
     r.resolvedBy = this.userId;
     const saved = await this.repo.save(r);
     await this.appendEvent(saved, 'cancelled', { fromStatus: from, toStatus: 'cancelled', note });
+    await this.notify.ncrLifecycle({
+      reportId: saved.id, number: saved.number, kind: 'cancelled', ncrStatus: 'cancelled',
+      assemblyNodeId: saved.assemblyNodeId, productionOrderId: saved.productionOrderId,
+    });
     return this.get(id) as any;
   }
 

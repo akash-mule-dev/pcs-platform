@@ -1,12 +1,13 @@
 import {
   Component, ElementRef, ViewChild, Input, OnDestroy, AfterViewInit,
-  Output, EventEmitter, OnChanges, SimpleChanges
+  Output, EventEmitter, OnChanges, SimpleChanges, inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { ModelCacheService } from '../../../core/services/model-cache.service';
 
 /** A part's true length in mm, keyed by GLB mesh name (== ifc_guid). Used to
  *  self-calibrate the model's unit scale so on-model measurements read in real mm. */
@@ -227,6 +228,11 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
    *  Opt-in so existing read-only viewer embeds are unchanged. */
   @Input() showTools = false;
 
+  /** Persist downloaded GLB bytes in the on-device cache (read-through) so repeat
+   *  loads — tab switches, remounts, a second viewer — never re-hit the API.
+   *  On by default; set false to always go straight to the network. */
+  @Input() useCache = true;
+
   /** Data-driven color overlay (color-by-property / status). Null clears it and
    *  restores the base material + quality + render-mode styling. */
   @Input() set colorOverlay(o: ViewerColorOverlay | null) {
@@ -253,6 +259,12 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   showDimensions = false;
   measureHint = '';
   calibrated = false;
+
+  private cacheSvc = inject(ModelCacheService);
+  /** Bumped on every loadModel() so a slow async load that's been superseded
+   *  (url changed, isolate toggled) is discarded instead of overwriting the
+   *  newer model. */
+  private loadToken = 0;
 
   private _renderMode: 'solid' | 'xray' = 'solid';
   private renderer!: THREE.WebGLRenderer;
@@ -321,6 +333,10 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private initScene(): void {
+    // Dedupe same-URL GLTFLoader fetches within a session (the fallback path when
+    // the IndexedDB read-through cache is unavailable); harmless otherwise.
+    THREE.Cache.enabled = true;
+
     const canvas = this.canvasRef.nativeElement;
     const container = this.containerRef.nativeElement;
 
@@ -460,61 +476,88 @@ export class ThreeViewerComponent implements AfterViewInit, OnChanges, OnDestroy
       this.currentModel = null;
     }
 
+    // Guard against an out-of-order async load (url changed / isolate toggled
+    // while a slow load is still in flight): only the latest token wins.
+    const token = ++this.loadToken;
     const loader = new GLTFLoader();
-    loader.load(
-      url,
-      (gltf) => {
-        this.currentModel = gltf.scene;
-        this.scene.add(this.currentModel);
-
-        // Auto-center and scale
-        const box = new THREE.Box3().setFromObject(this.currentModel);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 3 / maxDim;
-
-        this.currentModel.scale.setScalar(scale);
-        this.currentModel.position.sub(center.multiplyScalar(scale));
-
-        // Update camera
-        this.camera.position.set(3, 2, 5);
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
-
-        // Store original materials for mode switching
-        this.originalMaterials.clear();
-        this.currentModel.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            this.originalMaterials.set(child, child.material);
-          }
-        });
-
-        this.applyQualityOverlay();
-        this.applyRenderMode();
-        this.calibrate();
-        if (this._overlay) this.applyColorOverlay();
-        if (this._highlight.size > 0) {
-          this.applyHighlight();
-          if (this.autoFocus) this.focusOnHighlight();
-        }
-        if (this.showDimensions) this.rebuildDimensions();
-        this.loadProgress = 0;
-        this.loading = false;
-        this.modelLoaded.emit();
-      },
-      (xhr) => {
-        if (xhr.total > 0) {
-          this.loadProgress = Math.round((xhr.loaded / xhr.total) * 100);
-        }
-      },
-      (err) => {
-        this.loading = false;
-        this.loadProgress = 0;
-        this.error = 'Failed to load 3D model';
-        console.error('GLTFLoader error:', err);
+    const onLoad = (gltf: { scene: THREE.Group }) => {
+      if (token !== this.loadToken) return;
+      this.applyLoadedScene(gltf);
+    };
+    const onError = (err: unknown) => {
+      if (token !== this.loadToken) return;
+      this.loading = false;
+      this.loadProgress = 0;
+      this.error = 'Failed to load 3D model';
+      console.error('Model load error:', err);
+    };
+    const onXhr = (xhr: ProgressEvent) => {
+      if (token === this.loadToken && xhr.total > 0) {
+        this.loadProgress = Math.round((xhr.loaded / xhr.total) * 100);
       }
-    );
+    };
+
+    // Read-through cache: serve cached bytes if present, else download once,
+    // store them, and parse from memory (no object URL → nothing to revoke).
+    // Falls back to a direct network load if the cache/fetch path fails, and is
+    // skipped entirely for non-http URLs (e.g. a locally picked blob: file).
+    if (this.useCache && /^https?:/i.test(url)) {
+      this.cacheSvc.loadModelData(url, (pct) => { if (token === this.loadToken) this.loadProgress = pct; })
+        .then((buffer) => {
+          if (token !== this.loadToken) return;
+          loader.parse(buffer, '', onLoad, onError);
+        })
+        .catch(() => {
+          if (token !== this.loadToken) return;
+          loader.load(url, onLoad, onXhr, onError);
+        });
+    } else {
+      loader.load(url, onLoad, onXhr, onError);
+    }
+  }
+
+  /** Wire a freshly parsed/loaded GLTF scene into the viewer: center + fit-scale,
+   *  capture base materials, then re-apply quality / render-mode / overlay /
+   *  highlight / dimension state and finish loading. */
+  private applyLoadedScene(gltf: { scene: THREE.Group }): void {
+    this.currentModel = gltf.scene;
+    this.scene.add(this.currentModel);
+
+    // Auto-center and scale
+    const box = new THREE.Box3().setFromObject(this.currentModel);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale = 3 / maxDim;
+
+    this.currentModel.scale.setScalar(scale);
+    this.currentModel.position.sub(center.multiplyScalar(scale));
+
+    // Update camera
+    this.camera.position.set(3, 2, 5);
+    this.controls.target.set(0, 0, 0);
+    this.controls.update();
+
+    // Store original materials for mode switching
+    this.originalMaterials.clear();
+    this.currentModel.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        this.originalMaterials.set(child, child.material);
+      }
+    });
+
+    this.applyQualityOverlay();
+    this.applyRenderMode();
+    this.calibrate();
+    if (this._overlay) this.applyColorOverlay();
+    if (this._highlight.size > 0) {
+      this.applyHighlight();
+      if (this.autoFocus) this.focusOnHighlight();
+    }
+    if (this.showDimensions) this.rebuildDimensions();
+    this.loadProgress = 0;
+    this.loading = false;
+    this.modelLoaded.emit();
   }
 
   private applyQualityOverlay(): void {

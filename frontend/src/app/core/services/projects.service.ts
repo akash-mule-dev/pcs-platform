@@ -48,6 +48,15 @@ export interface ProjectMetrics {
 }
 export type ProjectSummary = Project & { metrics: ProjectMetrics };
 
+/** A soft-deleted project in the Trash, with its countdown to permanent purge. */
+export type DeletedProject = Project & {
+  deletedAt: string;
+  /** ISO timestamp when the project is permanently purged. */
+  purgeAt: string;
+  /** Whole days left before the permanent purge (0 once due). */
+  daysRemaining: number;
+};
+
 export interface CreateProject {
   name: string;
   projectNumber?: string | null;
@@ -294,6 +303,9 @@ export interface RecordQuality {
   toleranceMin?: number;
   toleranceMax?: number;
   regionLabel?: string;
+  /** Fabrication operation this check was recorded at (process stage + WO-stage instance). */
+  stageId?: string;
+  workOrderStageId?: string;
 }
 
 export interface NodeQualityStatus {
@@ -338,6 +350,8 @@ export interface OrdersDashboard {
 export type ShipStatus = 'in_production' | 'blocked_ncr' | 'ready' | 'allocated' | 'shipped';
 export interface AuditStageRow {
   wosId: string; stageId: string; name: string; sequence: number;
+  /** The terminal final-QC / release gate stage (consolidates every stage's QC). */
+  isFinalQc?: boolean;
   status: string; qtyDone: number; qtyTotal: number;
   startedAt: string | null; completedAt: string | null; statusUpdatedAt: string | null;
   assignedUser: { id: string; name: string } | null;
@@ -361,7 +375,7 @@ export interface AuditItem {
 export interface OrderAudit {
   order: ProductionOrder & { notes?: string | null };
   project: { id: string; name: string; number: string | null } | null;
-  stages: { id: string; name: string; sequence: number }[];
+  stages: { id: string; name: string; sequence: number; isFinalQc?: boolean }[];
   totals: {
     items: number; itemsDone: number; unitsDone: number; unitsTotal: number; percent: number;
     totalTimeSeconds: number; openNcrs: number; readyToShip: number; shippedItems: number;
@@ -385,7 +399,21 @@ export interface NodeAuditDetail {
     startTime: string; endTime: string | null; durationSeconds: number | null;
     isRework: boolean; notes: string | null; inputMethod: string | null;
   }[];
-  ncrs: { id: string; number: string; title: string; status: string; severity: string; createdAt: string }[];
+  ncrs: { id: string; number: string; title: string; status: string; severity: string; stageId?: string | null; stageName?: string | null; createdAt: string }[];
+  /** Final-QC release cockpit: full per-stage QC picture in one view (status, inspections, NCRs, gate). */
+  finalQc?: {
+    releasable: boolean;
+    openNcrs: number;
+    unsignedFailures: number;
+    inspections: { total: number; pass: number; warning: number; fail: number };
+    byStage: {
+      stageId: string; name: string; sequence: number; status: string;
+      isFinalQc: boolean; inspectionType: 'hold' | 'witness' | 'review' | null;
+      openNcrs: number;
+      inspections: { pass: number; warning: number; fail: number; pendingSignoff: number };
+      gateBlocked: boolean; gateReason?: string | null;
+    }[];
+  };
 }
 export interface BulkStageUpdate { stageId: string; nodeIds: string[]; qtyDone?: number; status?: string; }
 export interface BulkStageResult { requested: number; updated: number; failed: { nodeId: string; mark: string; message: string }[]; }
@@ -417,8 +445,24 @@ export class ProjectsService {
     return this.http.patch<Project>(`${this.base}/${id}`, dto);
   }
 
+  /** Soft-delete: move the project to the Trash (recoverable for 30 days). */
   remove(id: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/${id}`);
+  }
+
+  /** Soft-deleted projects (the Trash), newest first, each with a purge countdown. */
+  listDeleted(): Observable<DeletedProject[]> {
+    return this.http.get<DeletedProject[]>(`${this.base}/deleted`);
+  }
+
+  /** Restore a project from the Trash. */
+  restore(id: string): Observable<Project> {
+    return this.http.post<Project>(`${this.base}/${id}/restore`, {});
+  }
+
+  /** Permanently delete a project now (whole subtree + files) — irreversible. */
+  purge(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/${id}/purge`);
   }
 
   /** Flat list of a project's assembly nodes, ordered for tree rendering. */

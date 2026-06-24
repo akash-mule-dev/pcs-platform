@@ -23,22 +23,26 @@ jest.mock('@reactvision/react-viro', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
-    // forwardRef so the scene can accept the sceneRef the component attaches.
+    // forwardRef but DOES NOT expose a camera — sceneRef.current stays null, so
+    // placement falls back to the tap/fixed position (deterministic in tests).
     ViroARScene: React.forwardRef((props: any, _ref: any) => {
       sceneProps = props;
       return React.createElement(View, { testID: 'viro-ar-scene' }, props.children);
     }),
     ViroAmbientLight: () => null,
     ViroDirectionalLight: () => null,
+    ViroSpotLight: () => null,
     Viro3DObject: () => React.createElement(View, { testID: 'viro-3d-object' }, null),
     ViroNode: (props: any) => React.createElement(View, { testID: 'viro-node' }, props.children),
     ViroText: () => null,
     ViroSphere: () => null,
+    ViroBox: () => null,
     ViroPolyline: () => null,
     ViroARPlaneSelector: (props: any) => React.createElement(View, null, props.children),
     ViroARImageMarker: (props: any) => React.createElement(View, null, props.children),
     ViroMaterials: { createMaterials: jest.fn() },
     ViroARTrackingTargets: { createTargets: jest.fn() },
+    ViroAnimations: { registerAnimations: jest.fn() },
     ViroTrackingStateConstants: {
       TRACKING_NORMAL,
       TRACKING_LIMITED,
@@ -60,6 +64,7 @@ const DEFAULT_MEASUREMENTS = {
   deviationActive: false,
   deviationModelPoint: null,
   deviationRealPoint: null,
+  labelSize: 1,
 };
 
 function makeProps(overrides: Record<string, any> = {}) {
@@ -71,13 +76,17 @@ function makeProps(overrides: Record<string, any> = {}) {
         renderMode: 'solid' as const,
         trackingMode: 'world' as const,
         placed: false,
-        position: [0, 0, -1] as [number, number, number],
-        scale: [0.2, 0.2, 0.2] as [number, number, number],
+        autoFitted: false,
+        // Default OFF so the existing render/tap tests stay timer-free.
+        autoPlace: false,
+        position: [0, 0, -1.5] as [number, number, number],
+        scale: [0.05, 0.05, 0.05] as [number, number, number],
         rotation: [0, 0, 0] as [number, number, number],
         locked: false,
         dimensions: null,
         measurements: DEFAULT_MEASUREMENTS,
         onPlace: jest.fn(),
+        onAutoFit: jest.fn(),
         onPinch: jest.fn(),
         onRotate: jest.fn(),
         onModelStatus: jest.fn(),
@@ -90,13 +99,13 @@ function makeProps(overrides: Record<string, any> = {}) {
   };
 }
 
-describe('ARModelScene (ported glb-viewer AR scene)', () => {
+describe('ARModelScene (camera-first AR scene)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     sceneProps = null;
   });
 
-  it('always renders the AR scene (camera open)', () => {
+  it('always renders the AR scene (camera open before the model)', () => {
     const { getByTestId } = render(<ARModelScene {...makeProps()} />);
     expect(getByTestId('viro-ar-scene')).toBeTruthy();
   });
@@ -107,8 +116,12 @@ describe('ARModelScene (ported glb-viewer AR scene)', () => {
   });
 
   it('renders the model once placed (world mode)', () => {
-    const { queryByTestId } = render(<ARModelScene {...makeProps({ placed: true })} />);
-    expect(queryByTestId('viro-node')).toBeTruthy();
+    const { queryAllByTestId, queryByTestId } = render(
+      <ARModelScene {...makeProps({ placed: true })} />,
+    );
+    // The model is wrapped in a transform node + a fade node, so there are
+    // multiple viro-node hosts once placed.
+    expect(queryAllByTestId('viro-node').length).toBeGreaterThan(0);
     expect(queryByTestId('viro-3d-object')).toBeTruthy();
   });
 
@@ -124,7 +137,7 @@ describe('ARModelScene (ported glb-viewer AR scene)', () => {
     expect(onTrackingUpdated).toHaveBeenCalledWith('limited');
   });
 
-  it('places the model when the scene is tapped (world mode, not yet placed)', () => {
+  it('places the model when the scene is tapped (manual fallback, not yet placed)', () => {
     const props = makeProps({ placed: false });
     render(<ARModelScene {...props} />);
 
@@ -132,7 +145,23 @@ describe('ARModelScene (ported glb-viewer AR scene)', () => {
       sceneProps.onClick([0.1, -0.2, -1]);
     });
 
-    // sceneRef has no camera in the test, so it falls back to the tap position.
+    // No camera exposed in the test, so placement falls back to the tap position.
     expect(props.sceneNavigator.viroAppProps.onPlace).toHaveBeenCalledWith([0.1, -0.2, -1]);
+  });
+
+  it('auto-places the model in front of the camera once ready (no tap)', async () => {
+    jest.useFakeTimers();
+    try {
+      const props = makeProps({ placed: false, autoPlace: true });
+      render(<ARModelScene {...props} />);
+      // The auto-place loop warms up then (with no camera available in the test)
+      // falls back to a fixed position straight ahead.
+      await act(async () => {
+        jest.advanceTimersByTime(6000);
+      });
+      expect(props.sceneNavigator.viroAppProps.onPlace).toHaveBeenCalledWith([0, -0.2, -1.5]);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

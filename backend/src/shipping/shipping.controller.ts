@@ -39,6 +39,13 @@ export class ShippingController {
     return this.service.deliveryNote(id, heats !== 'false');
   }
 
+  @Get(':id/qc-package')
+  @RequirePermissions('quality-reports.view')
+  @ApiOperation({ summary: 'QC sign-off dossier: delivery header + MTR rollup + inspections + NCRs + filled reports + releasability summary for the shipped scope (web renders to PDF)' })
+  qcPackage(@Param('id') id: string) {
+    return this.service.qcPackage(id);
+  }
+
   @Get(':id')
   @RequirePermissions('shipping.view')
   @ApiOperation({ summary: 'Get shipment by ID' })

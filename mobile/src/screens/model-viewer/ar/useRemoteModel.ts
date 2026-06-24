@@ -1,38 +1,65 @@
-// Replaces glb-viewer's useFilePicker / useBundledModel.
+// Camera-first, progressive model loader for the AR QA inspector.
 //
-// The model comes from the backend (`/api/models/:id/file`). This hook
-// downloads the FULL project GLB to the app cache ONCE (keyed by modelId) and
-// reuses it for every subsequent open — the 3D viewer and AR share that one
-// download. When `meshNames` is supplied it then isolates just those part(s)
-// on-device (extractPartGlb) into a small per-part GLB (also cached), so AR
-// renders only the selected piece without any extra network calls. The
-// wireframe + dimension passes run on whichever GLB we end up showing.
-import { useState, useEffect } from 'react';
+// The whole point of this rewrite: NOTHING here blocks the AR camera. The host
+// screen mounts the live camera immediately; this hook streams the model in
+// over it and reports a phase the HUD shows as a small pill (never a black
+// "preparing" screen).
+//
+// Pipeline (camera live throughout):
+//   1. download  — fetch the project GLB to the app cache (network/disk only,
+//                  with a real % so "Downloading 42%" is true). Cached by
+//                  modelId and shared with the 3D viewer.
+//   2. preparing — ONLY when a sub-part is requested: isolate it from the cached
+//                  full GLB on-device. Skipped entirely for full-model opens.
+//   3. ready     — the renderable file:// uri is set. The scene loads + auto-
+//                  places it. This is the moment the model appears.
+//
+// Everything heavy is OFF the critical path:
+//   • dimensions are extracted in the BACKGROUND after `ready` (overlays light
+//     up a moment later — they never delay the model appearing);
+//   • the wireframe GLB is generated ON DEMAND (only when the inspector picks
+//     wireframe/edges), then cached.
+// The decoded GLB bytes are kept in a ref so those passes never re-read disk.
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { modelCache } from '../../../services/modelCache';
 import { generateWireframeGlb } from './wireframeGenerator';
 import { extractDimensions, ModelDimensions } from './dimensionExtractor';
 import { extractPartGlb } from './partExtractor';
 import { base64ToBytes, bytesToBase64 } from './base64';
+import { ModelPhase, DEFAULT_EDGE_WEIGHT, DEFAULT_EDGE_COLOR } from './types';
 
 const TOKEN_KEY = 'auth_token';
-
-export interface RemoteModel {
-  uri: string; // local file:// uri to the GLB we're showing (full or isolated)
-  fileName: string;
-  wireframeUri: string | null;
-  dimensions: ModelDimensions | null;
-  isolated: boolean; // true when uri is a per-part isolated GLB
-}
-
-export interface RemoteModelState {
-  model: RemoteModel | null;
-  loading: boolean;
-  error: string | null;
-  progress: string | null;
-}
-
 const MODELS_SUBDIR = 'pcs-ar-models';
+
+export interface UseRemoteModelResult {
+  phase: ModelPhase;
+  /** Local file:// uri of the renderable GLB (full or isolated). Null until ready. */
+  uri: string | null;
+  fileName: string;
+  isolated: boolean;
+  /** Extracted in the background after `ready` — null until then. */
+  dimensions: ModelDimensions | null;
+  /** Active edge-view GLB for the current thickness; null until requested + built. */
+  wireframeUri: string | null;
+  wireframeBusy: boolean;
+  error: string | null;
+  /** Human-readable status for the loading pill (e.g. "Downloading 42%"). */
+  progress: string | null;
+  /** 0–100 while downloading, else null. */
+  downloadPct: number | null;
+  /** Re-run the whole pipeline after a failure. */
+  retry: () => void;
+  /**
+   * Build (or switch to a cached) edge-view GLB at the given line-weight scale
+   * (tube-radius multiplier) and colour. Each (weight, colour) is a distinct GLB
+   * (radius + emissive colour baked in), cached separately; `wireframeUri` flips
+   * to the requested one. Safe to call repeatedly — a single drain converges on
+   * the latest request.
+   */
+  requestWireframe: (weight?: number, colorHex?: string) => void;
+}
 
 function safeName(modelId: string): string {
   return modelId.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -40,7 +67,7 @@ function safeName(modelId: string): string {
 
 // Stable short key for a set of mesh names → names the isolated-GLB cache file.
 function hashNames(names: string[]): string {
-  const s = [...names].sort().join('');
+  const s = [...names].sort().join('');
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -54,78 +81,114 @@ async function authHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-/**
- * Download `fileUrl` (cached by `modelId`) and prepare it for the AR scene.
- * When `meshNames` is non-empty the scene shows only those part(s), isolated
- * on-device from the cached full GLB.
- */
+const INITIAL: Omit<UseRemoteModelResult, 'retry' | 'requestWireframe'> = {
+  phase: 'downloading',
+  uri: null,
+  fileName: 'model.glb',
+  isolated: false,
+  dimensions: null,
+  wireframeUri: null,
+  wireframeBusy: false,
+  error: null,
+  progress: 'Starting…',
+  downloadPct: null,
+};
+
 export function useRemoteModel(
   fileUrl: string | null,
   modelId: string | null,
   fileName = 'model.glb',
   meshNames: string[] | null = null,
-): RemoteModelState {
-  // Derived, stable cache/effect key for the requested isolation (empty = full model).
+): UseRemoteModelResult {
   const isolateKey = meshNames && meshNames.length ? hashNames(meshNames) : '';
 
-  const [state, setState] = useState<RemoteModelState>({
-    model: null,
-    loading: !!fileUrl,
-    error: null,
-    progress: null,
+  const [state, setState] = useState<Omit<UseRemoteModelResult, 'retry' | 'requestWireframe'>>({
+    ...INITIAL,
+    fileName,
   });
+  const [attempt, setAttempt] = useState(0);
+
+  // The decoded bytes of the GLB we're showing + its on-disk path. Kept so the
+  // background dimension pass and the on-demand wireframe pass never re-read.
+  const activeBytesRef = useRef<Uint8Array | null>(null);
+  const activeUriRef = useRef<string | null>(null);
+  // Base path for this model's edge-view GLBs; the per-thickness file appends
+  // `_<thickness>.glb` (one cached GLB per Thin/Medium/Thick line weight).
+  const wireframeBaseRef = useRef<string | null>(null);
+  // Edge-view build coordination: the active wireframe path (mirrors state so the
+  // builder can dedup without a stale read), the LATEST requested thickness, and
+  // whether a build drain is running. The drain always converges on the latest
+  // desired thickness, so spamming Thin/Medium/Thick never leaves the rendered
+  // weight out of sync with the selected one.
+  const activeWireframeRef = useRef<string | null>(null);
+  const desiredRef = useRef<{ weight: number; color: string } | null>(null);
+  const wireframeBuildingRef = useRef(false);
+  // Bumped on every (re)run so stale async work from a previous run is ignored.
+  const runRef = useRef(0);
+
+  const retry = useCallback(() => setAttempt((a) => a + 1), []);
 
   useEffect(() => {
+    const run = ++runRef.current;
+    const alive = () => run === runRef.current;
+    const set = (patch: Partial<typeof state>) => {
+      if (alive()) setState((s) => ({ ...s, ...patch }));
+    };
+
+    activeBytesRef.current = null;
+    activeUriRef.current = null;
+    wireframeBaseRef.current = null;
+    activeWireframeRef.current = null;
+    desiredRef.current = null;
+    wireframeBuildingRef.current = false;
+
     if (!fileUrl || !modelId) {
-      setState({ model: null, loading: false, error: null, progress: null });
+      set({ phase: 'error', error: 'No model to load.', progress: null });
       return;
     }
 
-    let cancelled = false;
-    const set = (patch: Partial<RemoteModelState>) =>
-      !cancelled && setState((s) => ({ ...s, ...patch }));
+    const cacheRoot = FileSystem.cacheDirectory;
+    if (!cacheRoot) {
+      set({ phase: 'error', error: 'No cache directory on this platform.', progress: null });
+      return;
+    }
+
+    const dir = `${cacheRoot}${MODELS_SUBDIR}/`;
+    const baseKey = safeName(modelId);
+    let fullUri = ''; // resolved from the shared persistent model cache below
+    // `p2` cache version: older builds cached EMPTY isolated GLBs; bump forces a
+    // fresh extraction with the fixed subtree-keeping logic.
+    const variantKey = isolateKey ? `${baseKey}__p2_${isolateKey}` : baseKey;
+    // `_v3`: wireframe is now solid edge TUBES (triangles, not Viro-unsupported
+    // LINES) built in WORLD space (baked through the normalize/pcs-fit transforms
+    // so it lines up with the solid). Bumping the suffix discards stale caches.
+    // The per-thickness file appends `_<thickness>.glb` to this base.
+    wireframeBaseRef.current = `${dir}${variantKey}_wireframe_v3`;
+
+    setState({ ...INITIAL, fileName, progress: 'Downloading model…' });
 
     (async () => {
-      set({ loading: true, error: null, progress: 'Downloading model…' });
-
-      const cacheRoot = FileSystem.cacheDirectory;
-      if (!cacheRoot) {
-        set({ loading: false, error: 'No cache directory available on this platform.' });
-        return;
-      }
-
-      const dir = `${cacheRoot}${MODELS_SUBDIR}/`;
-      const key = safeName(modelId);
-      const fullUri = `${dir}${key}.glb`;
-      // `p2` bumps the cache version: older builds cached EMPTY isolated GLBs
-      // (the part-extractor dropped a match's geometry-bearing children); this
-      // forces a fresh extraction with the fixed subtree-keeping logic.
-      const variantKey = isolateKey ? `${key}__p2_${isolateKey}` : key;
-      let activeUri = `${dir}${variantKey}.glb`;
-      const wireframeUri = `${dir}${variantKey}_wireframe.glb`;
-
       try {
         await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
 
-        // ── 1. Download the FULL project GLB once (reuse cached copy) ──
-        const existingFull = await FileSystem.getInfoAsync(fullUri);
-        if (!existingFull.exists) {
-          const headers = await authHeaders();
-          const dl = await FileSystem.downloadAsync(fileUrl, fullUri, { headers });
-          if (dl.status >= 400) {
-            throw new Error(`Download failed (HTTP ${dl.status})`);
-          }
-        }
-        if (cancelled) return;
+        // ── 1. Base full GLB from the SHARED persistent cache (downloaded once
+        //       at login / first view; reused across 3D + AR — no re-download) ──
+        fullUri = await modelCache.getLocalUri(modelId, (pct) =>
+          set({ downloadPct: pct, progress: `Downloading model… ${pct}%` }),
+        );
+        if (!alive()) return;
 
-        // ── 2. Isolate the requested part(s) from the cached full GLB (cached) ──
+        // ── 2. Isolate the requested part(s) — only when a sub-part is asked for ──
+        let activeUri = fullUri;
         let isolated = false;
         if (isolateKey) {
-          const variantInfo = await FileSystem.getInfoAsync(activeUri);
+          const variantUri = `${dir}${variantKey}.glb`;
+          const variantInfo = await FileSystem.getInfoAsync(variantUri);
           if (variantInfo.exists) {
+            activeUri = variantUri;
             isolated = true;
           } else {
-            set({ progress: 'Isolating part…' });
+            set({ phase: 'preparing', downloadPct: null, progress: 'Preparing part…' });
             const fullB64 = await FileSystem.readAsStringAsync(fullUri, {
               encoding: FileSystem.EncodingType.Base64,
             });
@@ -133,74 +196,137 @@ export function useRemoteModel(
             try {
               const res = await extractPartGlb(fullBytes, meshNames as string[]);
               if (res.meshCount > 0) {
-                await FileSystem.writeAsStringAsync(activeUri, bytesToBase64(res.data), {
+                await FileSystem.writeAsStringAsync(variantUri, bytesToBase64(res.data), {
                   encoding: FileSystem.EncodingType.Base64,
                 });
+                activeUri = variantUri;
                 isolated = true;
+                activeBytesRef.current = res.data; // reuse for dims/wireframe
               } else {
-                activeUri = fullUri; // nothing matched → fall back to the full model
+                // Nothing matched → fall back to the full model.
+                activeBytesRef.current = fullBytes;
               }
             } catch (isoErr) {
               if (__DEV__) console.warn('Part isolation failed (non-fatal):', isoErr);
-              activeUri = fullUri;
+              activeBytesRef.current = fullBytes;
             }
           }
         }
-        if (cancelled) return;
+        if (!alive()) return;
 
-        // Read the bytes of whichever GLB we're showing, for the two passes below.
-        set({ progress: 'Analyzing geometry…' });
-        const activeB64 = await FileSystem.readAsStringAsync(activeUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const activeBytes = base64ToBytes(activeB64);
-        if (cancelled) return;
-
-        // ── 3. Wireframe (best-effort) ──
-        let wfUri: string | null = null;
-        try {
-          const wfInfo = await FileSystem.getInfoAsync(wireframeUri);
-          if (wfInfo.exists) {
-            wfUri = wireframeUri;
-          } else {
-            set({ progress: 'Generating wireframe…' });
-            const wireframeData = await generateWireframeGlb(activeBytes);
-            await FileSystem.writeAsStringAsync(wireframeUri, bytesToBase64(wireframeData), {
-              encoding: FileSystem.EncodingType.Base64,
-            });
-            wfUri = wireframeUri;
-          }
-        } catch (wireErr) {
-          if (__DEV__) console.warn('Wireframe generation failed (non-fatal):', wireErr);
-        }
-        if (cancelled) return;
-
-        // ── 4. Dimensions (best-effort) ──
-        let dims: ModelDimensions | null = null;
-        try {
-          set({ progress: 'Measuring dimensions…' });
-          dims = await extractDimensions(activeBytes);
-        } catch (dimErr) {
-          if (__DEV__) console.warn('Dimension extraction failed (non-fatal):', dimErr);
-        }
-        if (cancelled) return;
-
+        // ── 3. READY — the model can render NOW. Nothing below blocks this. ──
+        activeUriRef.current = activeUri;
         set({
-          loading: false,
-          progress: null,
+          phase: 'ready',
+          uri: activeUri,
+          isolated,
           error: null,
-          model: { uri: activeUri, fileName, wireframeUri: wfUri, dimensions: dims, isolated },
+          progress: null,
+          downloadPct: null,
         });
+
+        // ── 4. Dimensions in the BACKGROUND (overlays appear a beat later) ──
+        (async () => {
+          try {
+            let bytes = activeBytesRef.current;
+            if (!bytes) {
+              const b64 = await FileSystem.readAsStringAsync(activeUri, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              bytes = base64ToBytes(b64);
+              activeBytesRef.current = bytes;
+            }
+            if (!alive()) return;
+            const dims = await extractDimensions(bytes);
+            set({ dimensions: dims });
+          } catch (dimErr) {
+            if (__DEV__) console.warn('Dimension extraction failed (non-fatal):', dimErr);
+          }
+        })();
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load model';
-        set({ loading: false, progress: null, error: message });
+        set({ phase: 'error', error: message, progress: null, downloadPct: null });
       }
     })();
 
     return () => {
-      cancelled = true;
+      // Invalidate this run; in-flight async resolves are ignored via alive().
+      runRef.current++;
     };
-  }, [fileUrl, modelId, fileName, isolateKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileUrl, modelId, fileName, isolateKey, attempt]);
 
-  return state;
+  // On-demand edge view: builds (or reuses a cached) GLB at the requested line
+  // weight (tube-radius multiplier) AND colour, then flips `wireframeUri` to it.
+  // Each (weight, colour) bakes a distinct GLB, so they're cached separately and
+  // re-selecting a built combo is instant. A distinct per-colour URI is required
+  // because Viro caches a loaded GLB by URI and won't re-apply a changed material
+  // prop — same URI never recolours. Built from the cached source bytes.
+  //
+  // A single drain loop owns all building: each call records the LATEST desired
+  // (weight, colour), and the loop keeps building until the rendered combo matches
+  // it — so spamming presets / dragging the slider / tapping swatches always
+  // converges on the last request instead of dropping it.
+  const requestWireframe = useCallback(
+    (weight: number = DEFAULT_EDGE_WEIGHT, colorHex: string = DEFAULT_EDGE_COLOR) => {
+      const base = wireframeBaseRef.current;
+      const activeUri = activeUriRef.current;
+      if (!base || !activeUri) return;
+      // Quantize the weight so tiny slider jitter doesn't spawn a new GLB per pixel.
+      const w = Math.round(weight * 20) / 20; // 0.05 steps
+      desiredRef.current = { weight: w, color: colorHex };
+      if (wireframeBuildingRef.current) return; // the running drain will pick this up
+      const run = runRef.current;
+      const alive = () => run === runRef.current;
+      wireframeBuildingRef.current = true;
+      (async () => {
+        try {
+          while (alive()) {
+            const want = desiredRef.current;
+            if (!want) break;
+            const colorKey = want.color.replace('#', '');
+            const wfPath = `${base}_w${want.weight.toFixed(2)}_${colorKey}.glb`;
+            if (activeWireframeRef.current === wfPath) {
+              desiredRef.current = null; // already showing the latest request
+              break;
+            }
+            setState((s) => ({ ...s, wireframeBusy: true }));
+            const existing = await FileSystem.getInfoAsync(wfPath);
+            if (!existing.exists) {
+              let bytes = activeBytesRef.current;
+              if (!bytes) {
+                const b64 = await FileSystem.readAsStringAsync(activeUri, {
+                  encoding: FileSystem.EncodingType.Base64,
+                });
+                bytes = base64ToBytes(b64);
+                activeBytesRef.current = bytes;
+              }
+              const wireframeData = await generateWireframeGlb(bytes, want.weight, want.color);
+              await FileSystem.writeAsStringAsync(wfPath, bytesToBase64(wireframeData), {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+            }
+            if (!alive()) break;
+            activeWireframeRef.current = wfPath;
+            setState((s) => ({ ...s, wireframeUri: wfPath }));
+            // If the desired combo changed during this build, loop and build the
+            // newer one; otherwise we've caught up.
+            const d = desiredRef.current;
+            if (d && d.weight === want.weight && d.color === want.color) {
+              desiredRef.current = null;
+              break;
+            }
+          }
+        } catch (wireErr) {
+          if (__DEV__) console.warn('Wireframe generation failed (non-fatal):', wireErr);
+        } finally {
+          wireframeBuildingRef.current = false;
+          if (alive()) setState((s) => ({ ...s, wireframeBusy: false }));
+        }
+      })();
+    },
+    [],
+  );
+
+  return { ...state, retry, requestWireframe };
 }

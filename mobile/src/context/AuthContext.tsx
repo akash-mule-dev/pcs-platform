@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { User } from '../types';
 import { authService } from '../services/auth.service';
 import { socketService } from '../services/socket.service';
+import { modelCache } from '../services/modelCache';
+import { dataCache } from '../services/dataCache';
 import { loadPermissions, clearPermissions } from '../config/permissions';
 
 interface AuthContextValue {
@@ -36,9 +38,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Drive the real-time connection from auth state: connect on login /
       // restored session, tear down on logout.
       if (auth && u) {
+        // Scope the persistent project-data cache to this user so a shared
+        // device never serves another principal's cached tenant data.
+        dataCache.setScope(u.id);
         void socketService.connect(u.id);
+        // Warm the offline 3D-model cache once per session (best-effort, in the
+        // background) so viewers load from disk instead of re-downloading.
+        void modelCache.prefetchProjectModels(u.id);
       } else {
+        dataCache.setScope(null);
         socketService.disconnect();
+        modelCache.resetSession();
       }
     });
 
