@@ -243,6 +243,15 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     this.emitToOrg('quality-alert', data, orgId);
   }
 
+  /**
+   * Work-center (station) create / edit / status / delete — scoped to the owning
+   * tenant. Carries only metadata (id/action/status); the stations console
+   * re-fetches its directory/cockpit through its own permission-scoped endpoint.
+   */
+  emitStationUpdate(data: any, orgId?: string | null) {
+    this.emitToOrg('station-update', data, orgId);
+  }
+
   /** Broadcast a platform-wide alert to all connected clients (shared `system` channel). */
   emitAlert(data: { type: string; title: string; message: string; priority: string }) {
     this.publish('system', 'alert', data);

@@ -48,6 +48,15 @@ export interface ProjectMetrics {
 }
 export type ProjectSummary = Project & { metrics: ProjectMetrics };
 
+/** A soft-deleted project in the Trash, with its countdown to permanent purge. */
+export type DeletedProject = Project & {
+  deletedAt: string;
+  /** ISO timestamp when the project is permanently purged. */
+  purgeAt: string;
+  /** Whole days left before the permanent purge (0 once due). */
+  daysRemaining: number;
+};
+
 export interface CreateProject {
   name: string;
   projectNumber?: string | null;
@@ -436,8 +445,24 @@ export class ProjectsService {
     return this.http.patch<Project>(`${this.base}/${id}`, dto);
   }
 
+  /** Soft-delete: move the project to the Trash (recoverable for 30 days). */
   remove(id: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/${id}`);
+  }
+
+  /** Soft-deleted projects (the Trash), newest first, each with a purge countdown. */
+  listDeleted(): Observable<DeletedProject[]> {
+    return this.http.get<DeletedProject[]>(`${this.base}/deleted`);
+  }
+
+  /** Restore a project from the Trash. */
+  restore(id: string): Observable<Project> {
+    return this.http.post<Project>(`${this.base}/${id}/restore`, {});
+  }
+
+  /** Permanently delete a project now (whole subtree + files) — irreversible. */
+  purge(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/${id}/purge`);
   }
 
   /** Flat list of a project's assembly nodes, ordered for tree rendering. */

@@ -4,8 +4,12 @@ import { Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProjectsService, ProjectSummary } from '../core/services/projects.service';
+import { PermissionsService } from '../core/services/permissions.service';
+import { ToastService } from '../core/services/toast.service';
+import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/confirm-dialog.component';
 import { ProjectWizardComponent } from './project-wizard.component';
 import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 import { ListStateComponent } from '../shared/components/list-state/list-state.component';
@@ -13,7 +17,7 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
 @Component({
   selector: 'app-project-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MatIconModule, MatDialogModule, MatProgressSpinnerModule, TourLauncherComponent, ListStateComponent],
+  imports: [CommonModule, FormsModule, RouterModule, MatIconModule, MatDialogModule, MatMenuModule, MatProgressSpinnerModule, TourLauncherComponent, ListStateComponent],
   template: `
     <div class="portfolio">
       <div class="page-header">
@@ -26,6 +30,11 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
           <a class="monitor-btn" data-tour="proj-monitor" routerLink="/package-monitor" title="Live import pipeline + package history across all projects">
             <mat-icon>monitor_heart</mat-icon>Package Monitor
           </a>
+          @if (perms.can('projects.delete')) {
+            <a class="monitor-btn" routerLink="/projects/trash" title="Restore or permanently delete recently-deleted projects">
+              <mat-icon>delete_sweep</mat-icon>Recently deleted
+            </a>
+          }
           <button class="new-btn" data-tour="proj-new" (click)="openWizard()"><mat-icon>add</mat-icon>New Project</button>
         </div>
       </div>
@@ -96,7 +105,17 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
                     }
                   </div>
 
-                  <mat-icon class="chevron">chevron_right</mat-icon>
+                  <div class="col-actions">
+                    @if (perms.can('projects.delete')) {
+                      <button class="row-kebab" [matMenuTriggerFor]="rowMenu" title="Project actions" (click)="$event.stopPropagation()">
+                        <mat-icon>more_vert</mat-icon>
+                      </button>
+                      <mat-menu #rowMenu="matMenu">
+                        <button mat-menu-item class="danger-item" (click)="deleteProject(p, $event)"><mat-icon>delete</mat-icon><span>Delete project</span></button>
+                      </mat-menu>
+                    }
+                    <mat-icon class="chevron">chevron_right</mat-icon>
+                  </div>
                 </div>
 
                 <!-- Insight meta line: tonnage, age -->
@@ -185,9 +204,14 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
     .proj-row:last-child { border-bottom: none; }
     .proj-row:hover { background: var(--clay-surface-hover); }
     .row-main {
-      display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(120px, 1.1fr) 24px;
+      display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(120px, 1.1fr) auto;
       align-items: center; gap: 18px;
     }
+    .col-actions { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end; }
+    .row-kebab { background: none; border: none; cursor: pointer; color: var(--clay-text-muted); display: flex; padding: 3px; border-radius: var(--clay-radius-xs); }
+    .row-kebab:hover { color: var(--clay-primary); background: var(--info-bg); }
+    .row-kebab mat-icon { font-size: 20px; width: 20px; height: 20px; }
+    ::ng-deep .danger-item, ::ng-deep .danger-item mat-icon { color: var(--danger-text); }
     .col-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
     .p-ico { font-size: 20px; width: 20px; height: 20px; color: var(--clay-primary); flex-shrink: 0; }
     .id-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -227,6 +251,8 @@ export class ProjectListComponent implements OnInit {
   private svc = inject(ProjectsService);
   private dialog = inject(MatDialog);
   private router = inject(Router);
+  private toast = inject(ToastService);
+  perms = inject(PermissionsService);
 
   projects: ProjectSummary[] = [];
   loading = true;
@@ -284,4 +310,25 @@ export class ProjectListComponent implements OnInit {
   }
 
   open(p: ProjectSummary): void { this.router.navigate(['/projects', p.id]); }
+
+  /** Soft-delete: move to Trash (recoverable for 30 days). Removes the row optimistically. */
+  deleteProject(p: ProjectSummary, event?: Event): void {
+    event?.stopPropagation();
+    this.dialog.open(ConfirmDialogComponent, {
+      data: {
+        title: 'Delete project?',
+        message: `"${p.name}" will be moved to the Trash. You can restore it for 30 days from "Recently deleted", after which it (and its assemblies, work orders and shipments) is permanently removed.`,
+        confirmText: 'Delete project',
+      },
+    }).afterClosed().subscribe((ok: boolean) => {
+      if (!ok) return;
+      this.svc.remove(p.id).subscribe({
+        next: () => {
+          this.toast.success('Project moved to Trash — recoverable for 30 days');
+          this.projects = this.projects.filter((x) => x.id !== p.id);
+        },
+        error: (e) => this.toast.error(e?.error?.message || 'Could not delete project'),
+      });
+    });
+  }
 }

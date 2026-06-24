@@ -1,4 +1,4 @@
-import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
+import { Injectable, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import { HttpEventType } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -7,6 +7,7 @@ import {
   ImportFileRow, ImportProgressEvent,
 } from '../core/services/projects.service';
 import { RealtimeService } from '../core/services/realtime.service';
+import { ModelCacheService } from '../core/services/model-cache.service';
 
 /** Stages a live import walks through, in order (drives steppers/labels). */
 export const IMPORT_STAGE_LABELS: Record<string, string> = {
@@ -35,6 +36,50 @@ export const IMPORT_STAGE_LABELS: Record<string, string> = {
 export class ProjectWorkspaceStore implements OnDestroy {
   private svc = inject(ProjectsService);
   private realtime = inject(RealtimeService);
+  private cache = inject(ModelCacheService);
+  /** Guards the auto-cache effect so a project's model is registered once per
+   *  distinct model URL (a re-import → new model id re-registers). */
+  private autoCachedFor: string | null = null;
+
+  constructor() {
+    // Auto-cache the project's 3D model on this device when it becomes available,
+    // and record it in the Cached Projects index. Best-effort and de-duped: the
+    // viewer's read-through cache shares the same blob store, so this never causes
+    // a second download — it just ensures the model is saved offline + listed.
+    //
+    // This same reactive effect also handles INVALIDATION: the stamp includes the
+    // pipeline version (`modelVersion`), so when a project is updated in the import
+    // pipeline — whether that mints a new model id or re-converts the same one —
+    // the effect re-runs and `cacheProject` drops the stale bytes and re-caches
+    // the new model. Works live (an import completing while the project is open
+    // updates imports() → version) and on reopen (imports load fresh → version).
+    effect(() => {
+      // Wait until imports have loaded so the version token is stable; otherwise
+      // the version would jump (none → real) on first load and force a needless
+      // re-download.
+      if (!this.importsLoaded()) return;
+      const url = this.fullModelUrl();
+      const p = this.project();
+      if (!url || !p) return;
+      const version = this.modelVersion();
+      const stamp = `${p.id}|${url}|${version}`;
+      if (this.autoCachedFor === stamp) return;
+      this.autoCachedFor = stamp;
+      const modelId = this.nodes().find((n) => n.modelId)?.modelId ?? null;
+      void this.cache.cacheProject(
+        {
+          projectId: p.id,
+          name: p.name,
+          projectNumber: p.projectNumber ?? null,
+          clientName: p.clientName ?? null,
+          modelId,
+          nodeCount: this.nodes().length,
+          version,
+        },
+        url,
+      );
+    });
+  }
 
   readonly id = signal<string>('');
   readonly project = signal<Project | null>(null);
@@ -68,6 +113,24 @@ export class ProjectWorkspaceStore implements OnDestroy {
     return withModel?.modelId ? `${environment.apiUrl}/models/${withModel.modelId}/file` : null;
   });
   readonly openNcr = computed(() => this.quality()?.totals?.openNcr ?? 0);
+
+  /**
+   * Content version of the project's current 3D model — the latest COMPLETED
+   * import's finish time (changes on every successful pipeline run, including a
+   * re-conversion of the same model id). Drives on-device cache invalidation
+   * (see the constructor effect). Falls back to the model id when there are no
+   * import rows (e.g. a model attached outside the import pipeline).
+   */
+  readonly modelVersion = computed<string>(() => {
+    const completed = this.imports().filter((i) => i.status === 'completed' && i.modelId);
+    if (completed.length) {
+      const latest = [...completed].sort((a, b) =>
+        (b.finishedAt || b.updatedAt || b.createdAt || '').localeCompare(a.finishedAt || a.updatedAt || a.createdAt || ''),
+      )[0];
+      return `${latest.id}:${latest.finishedAt || latest.updatedAt || ''}`;
+    }
+    return this.nodes().find((n) => n.modelId)?.modelId ?? '';
+  });
 
   /** Imports still moving through the pipeline (server side). */
   readonly activeImports = computed(() =>

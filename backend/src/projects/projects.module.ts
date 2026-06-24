@@ -6,6 +6,8 @@ import { ImportFile } from './import-file.entity.js';
 import { ImportFileEvent } from './import-file-event.entity.js';
 import { ProjectsService } from './projects.service.js';
 import { ProjectsController } from './projects.controller.js';
+import { ProjectPurgeService } from './project-purge.service.js';
+import { ProjectCronController } from './project-cron.controller.js';
 import { IfcImportService } from './ifc-import.service.js';
 import { ProjectImportController } from './project-import.controller.js';
 import { ImportMonitorService } from './import-monitor.service.js';
@@ -36,9 +38,9 @@ import { ConversionModule } from '../conversion/conversion.module.js';
     QualityDataModule,
     StorageModule,
   ],
-  controllers: [ProjectsController, ProjectImportController, ImportMonitorController, ProjectInsightsController, ProjectModelController, ProjectQualityController],
+  controllers: [ProjectsController, ProjectCronController, ProjectImportController, ImportMonitorController, ProjectInsightsController, ProjectModelController, ProjectQualityController],
   providers: [
-    ProjectsService, IfcImportService, ImportMonitorService, ProjectProgressService, ProjectModelService, ProjectQualityService,
+    ProjectsService, ProjectPurgeService, IfcImportService, ImportMonitorService, ProjectProgressService, ProjectModelService, ProjectQualityService,
     ProjectInsightsService, ProjectDocumentService, ProjectTraceabilityService,
   ],
   exports: [ProjectsService, IfcImportService, TypeOrmModule],

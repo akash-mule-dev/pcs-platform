@@ -74,12 +74,6 @@ export interface WorkOrderCreateData {
             </mat-select>
           </mat-form-field>
 
-          @if (!form.controls.processId.value) {
-            <button type="button" class="std" [disabled]="busy" (click)="useStandard()">
-              <mat-icon>auto_awesome</mat-icon>Use standard process (Cut → Fit → Weld → QC → Paint)
-            </button>
-          }
-
           @if (error) { <p class="err">{{ error }}</p> }
         </form>
       }
@@ -100,9 +94,6 @@ export interface WorkOrderCreateData {
     .form .row mat-form-field { flex: 1; }
     .form .row .qty { max-width: 130px; }
     .form mat-form-field { width: 100%; }
-    .std { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--clay-primary); border: 1px dashed var(--clay-primary); border-radius: var(--clay-radius-sm, 8px); padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; margin: 2px 0 4px; }
-    .std mat-icon { font-size: 16px; width: 16px; height: 16px; }
-    .std:disabled { opacity: .5; cursor: default; }
     .no-projects { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 0 8px; text-align: center; color: var(--clay-text-muted); }
     .no-projects mat-icon { font-size: 36px; width: 36px; height: 36px; opacity: .5; }
     .no-projects p { margin: 0; font-size: 13px; max-width: 340px; }
@@ -120,7 +111,6 @@ export class WorkOrderCreateDialogComponent implements OnInit {
   processes: { id: string; name: string }[] = [];
   loadingProjects = true;
   creating = false;
-  busy = false;
   error: string | null = null;
 
   form = this.fb.group({
@@ -143,19 +133,6 @@ export class WorkOrderCreateDialogComponent implements OnInit {
       error: (e) => { this.loadingProjects = false; this.error = e?.error?.message || 'Could not load projects.'; },
     });
     this.svc.listProcesses().subscribe({ next: (p) => (this.processes = p), error: () => {} });
-  }
-
-  /** One click: get-or-create the org's Standard Fabrication process and select it. */
-  useStandard(): void {
-    this.busy = true; this.error = null;
-    this.svc.ensureStandardProcess().subscribe({
-      next: (p) => {
-        this.busy = false;
-        if (!this.processes.some((x) => x.id === p.id)) this.processes = [...this.processes, { id: p.id, name: p.name }];
-        this.form.patchValue({ processId: p.id });
-      },
-      error: (e) => { this.busy = false; this.error = e?.error?.message || 'Could not create the standard process.'; },
-    });
   }
 
   async create(): Promise<void> {

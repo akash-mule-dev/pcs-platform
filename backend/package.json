@@ -18,6 +18,7 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:rbac": "node --experimental-strip-types src/rbac/permission-catalog.test.ts",
+    "test:stations": "node --experimental-strip-types src/stations/station-utilization-math.test.ts",
     "test:library": "node --experimental-strip-types src/library/library-content.test.ts",
     "test:rbac:e2e": "node test/rbac-roles.e2e.mjs",
     "test:library:e2e": "node test/library.e2e.mjs",
