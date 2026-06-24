@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -48,13 +48,39 @@ import { SupportModule } from './support/support.module.js';
 import { PlatformInsightsModule } from './platform-insights/platform-insights.module.js';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor.js';
 
+// In-process @Cron timers (ScheduleModule) keep the Node event loop alive. On
+// Vercel Fluid that pins the function instance "always-on" and bills Provisioned
+// Memory 24/7 (the cause of the runaway GB-Hrs). So the in-process scheduler is
+// disabled ONLY on the Vercel PRODUCTION deployment, where Vercel Cron drives the
+// same jobs by hitting the secret-guarded `/api/internal/*` endpoints
+// (alerts-cron.controller + project-cron.controller, scheduled in vercel.json).
+// It stays ENABLED everywhere Vercel Cron does NOT run — local dev (`app.listen`
+// in main.ts) AND non-production Vercel deployments (preview / dev-branch, which
+// Vercel Cron never invokes) — so those keep firing jobs exactly as today.
+// Override the auto-detection explicitly with IN_PROCESS_SCHEDULER=true|false.
+const inProcessScheduler =
+  process.env.IN_PROCESS_SCHEDULER !== undefined
+    ? process.env.IN_PROCESS_SCHEDULER === 'true'
+    : process.env.VERCEL_ENV !== 'production';
+
+// Make a misconfiguration loud rather than silent: when the in-process scheduler
+// is off, the alert sweeps + retention purge are driven SOLELY by Vercel Cron,
+// which fails closed (503) unless CRON_SECRET is set on the Vercel project.
+if (!inProcessScheduler && !process.env.CRON_SECRET) {
+  new Logger('AppModule').warn(
+    'In-process scheduler is OFF but CRON_SECRET is unset — Vercel Cron jobs ' +
+      '(alerts + retention purge) will be rejected with 503 and will NOT run. Set CRON_SECRET.',
+  );
+}
+
 @Module({
   imports: [
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
       serveRoot: '/ar',
     }),
-    ScheduleModule.forRoot(),
+    // Only ever loaded off-serverless — see `inProcessScheduler` above.
+    ...(inProcessScheduler ? [ScheduleModule.forRoot()] : []),
     ThrottlerModule.forRoot([{
       ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),
       limit: parseInt(process.env.THROTTLE_LIMIT || '300', 10),

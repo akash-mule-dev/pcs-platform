@@ -50,11 +50,22 @@ async function bootstrap() {
 
   await app.init();
 
-  try {
-    const seeder = app.get(SeedService);
-    await seeder.seed();
-  } catch (err) {
-    console.warn('Seed skipped:', (err as Error).message);
+  // The demo-data seeder must NOT run on every serverless cold start: on an
+  // established DB it's pure wasted CPU + DB round-trips on every new instance
+  // (and on an empty DB it would create demo accounts with a default password).
+  // It's idempotent (early-returns once users exist), so gating it changes no
+  // behaviour on the already-seeded dev/prod DBs — it just stops the redundant
+  // boot work. Opt in with RUN_SEED_ON_BOOT=true, or seed once via the `--seed`
+  // CLI (main.ts). Essential platform/RBAC/tenant setup is unaffected — the
+  // idempotent onModuleInit bootstrap services (RBAC/library/tenant) still run.
+  if (process.env.RUN_SEED_ON_BOOT === 'true') {
+    try {
+      const seeder = app.get(SeedService);
+      await seeder.seed();
+      console.log('Seed complete');
+    } catch (err) {
+      console.warn('Seed skipped:', (err as Error).message);
+    }
   }
 
   isReady = true;
