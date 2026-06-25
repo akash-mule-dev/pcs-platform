@@ -22,6 +22,7 @@ import { ThemeService, FONT_SIZE_OPTIONS } from '../core/services/theme.service'
 import { BUILD_INFO } from '../../build-info';
 import { PermissionsService } from '../core/services/permissions.service';
 import { TourService } from '../core/services/tour.service';
+import { ModelCacheSyncService } from '../core/services/model-cache-sync.service';
 import type { TourDefinition } from '../core/services/tour-definitions';
 
 interface NavItem {
@@ -625,6 +626,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     private permissions: PermissionsService,
     private dialog: MatDialog,
     public tour: TourService,
+    private cacheSync: ModelCacheSyncService,
   ) {}
 
   /**
@@ -662,6 +664,10 @@ export class LayoutComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    // Listen tenant-wide for pipeline model updates so cached projects are
+    // invalidated even when they're not the one currently open.
+    this.cacheSync.start();
+
     // Auto-expand the group containing the active route so the active item is visible.
     const url = this.router.url;
     for (const g of this.navGroups) {

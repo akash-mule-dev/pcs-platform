@@ -80,6 +80,12 @@ export const routes: Routes = [
         loadComponent: () => import('./work-orders/work-order-shipping.component').then(m => m.WorkOrderShippingComponent)
       },
       {
+        // Per-WORK-ORDER 3D viewer (one assembly isolated): /work-orders/:id/3d?node=<nodeId>.
+        path: 'work-orders/:id/3d',
+        canActivate: [featureGuard('work-orders')],
+        loadComponent: () => import('./work-orders/work-order-viewer.component').then(m => m.WorkOrderViewerComponent)
+      },
+      {
         // Per-order AUDIT dashboard: assemblies left, full stage trail right, bulk edit.
         path: 'work-orders/:id',
         canActivate: [featureGuard('work-orders')],

@@ -275,6 +275,17 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   }
 
   /**
+   * A project's 3D model was (re)built by the import pipeline — fanned to the
+   * owning tenant's `org:<id>` room (so it reaches BOTH transports, unlike the
+   * room-scoped import:progress). Clients use it to evict any on-device cache of
+   * that project's model so the next open re-downloads the new geometry. Carries
+   * only ids (no file names / bytes).
+   */
+  emitProjectModelUpdated(data: { projectId: string; modelId: string | null; importId: string; organizationId: string | null }) {
+    this.emitToOrg('project-model-updated', data, data.organizationId);
+  }
+
+  /**
    * Support ticket change — fan a lightweight `support:changed` signal to the
    * affected tenant's room and the platform desk room. The payload carries only
    * non-sensitive metadata (id/number/status/action); recipients reload their

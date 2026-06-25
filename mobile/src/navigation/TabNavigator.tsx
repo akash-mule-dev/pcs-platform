@@ -30,6 +30,7 @@ import { ProjectViewerScreen } from '../screens/projects/ProjectViewerScreen';
 import { AssemblyDetailScreen } from '../screens/projects/AssemblyDetailScreen';
 import { PartViewerScreen } from '../screens/projects/PartViewerScreen';
 import { OrderBoardScreen } from '../screens/projects/OrderBoardScreen';
+import { ShippingScreen } from '../screens/projects/ShippingScreen';
 import { QcReportScreen } from '../screens/projects/QcReportScreen';
 import { QcReportFillScreen } from '../screens/projects/QcReportFillScreen';
 
@@ -45,6 +46,7 @@ function WorkOrdersStack() {
       <WOStack.Screen name="WorkOrderHub" component={WorkOrderHubScreen} options={{ title: 'Work Orders' }} />
       <WOStack.Screen name="Scan" component={ScanScreen} options={{ title: 'Scan label' }} />
       <WOStack.Screen name="OrderBoard" component={OrderBoardScreen} options={{ title: 'Work Order' }} />
+      <WOStack.Screen name="Shipping" component={ShippingScreen} options={{ title: 'Shipping' }} />
       <WOStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />
       <WOStack.Screen name="PartViewer" component={PartViewerScreen} options={{ title: '3D Viewer' }} />
       <WOStack.Screen name="WorkOrderList" component={WorkOrderListScreen} options={{ title: 'All Work Orders' }} />
@@ -93,6 +95,7 @@ function ProjectsStack() {
       <PStack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: 'Project' }} />
       <PStack.Screen name="ProjectViewer" component={ProjectViewerScreen} options={{ title: '3D Viewer' }} />
       <PStack.Screen name="OrderBoard" component={OrderBoardScreen} options={{ title: 'Work Order' }} />
+      <PStack.Screen name="Shipping" component={ShippingScreen} options={{ title: 'Shipping' }} />
       <PStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />
       <PStack.Screen name="PartViewer" component={PartViewerScreen} options={{ title: '3D Viewer' }} />
       <PStack.Screen name="ModelView" component={ModelViewScreen} options={{ title: '3D Model' }} />

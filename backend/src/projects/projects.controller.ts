@@ -98,7 +98,7 @@ export class ProjectsController {
   }
 
   @Post(':id/restore')
-  @RequirePermissions('projects.delete')
+  @RequirePermissions('projects.restore')
   @ApiOperation({ summary: 'Restore a soft-deleted project from the Trash' })
   restore(@Param('id') id: string) {
     return this.service.restore(id);

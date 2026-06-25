@@ -9,6 +9,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
 import { WO, SHIP_META, STAGE_COLORS, STAGE_LABELS } from '../../theme/wo';
 import { ProjectsStackParamList } from '../../navigation/types';
+import { can } from '../../config/permissions';
 import {
   ordersService, qcReportsService, MOrderAudit, MAuditItem, MTemplate,
   OrderStatusColors, OrderStatusLabels,
@@ -42,6 +43,7 @@ export function OrderBoardScreen() {
   const { orderId, projectId, orderNumber } = route.params;
   const { width } = useWindowDimensions();
   const wide = width >= 700;
+  const canShip = can('shipping.view');
 
   const [audit, setAudit] = useState<MOrderAudit | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,12 +130,22 @@ export function OrderBoardScreen() {
     navigation.setOptions({
       title: orderNumber || 'Work order',
       headerRight: () => (
-        <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+          {canShip && (
+            <TouchableOpacity
+              onPress={() => (navigation as any).navigate('Shipping', { orderId, projectId, orderNumber })}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>Shipping</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={openTemplates} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 14 }}>QC Report</Text>
+          </TouchableOpacity>
+        </View>
       ),
     });
-  }, [navigation, orderNumber, openTemplates]);
+  }, [navigation, orderNumber, openTemplates, canShip, orderId, projectId]);
 
   const items = audit?.items ?? [];
   const stages = audit?.stages ?? [];
