@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -58,6 +58,7 @@ import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/conf
               }
             </div>
           }
+          <div class="usage-cap">Up to {{ limits.maxEntries }} models · {{ fmtBytes(limits.maxBytes) }} — the least-recently-used are evicted past that. Models refresh automatically when a project is re-processed in the pipeline.</div>
         </div>
 
         @if (entries().length === 0) {
@@ -80,15 +81,19 @@ import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/conf
                       @if (e.projectNumber && e.clientName) { <span class="dotsep">·</span> }
                       @if (e.clientName) { <span>{{ e.clientName }}</span> }
                       @if (!e.projectNumber && !e.clientName) { <span class="muted">Project model</span> }
+                      @if (e.modelId) { <span class="dotsep">·</span><span class="mono muted" [title]="'Model ' + e.modelId">model {{ e.modelId.slice(0, 8) }}</span> }
                     </span>
                   </div>
                   <div class="row-meta">
                     <span class="m"><mat-icon>sd_storage</mat-icon>{{ fmtBytes(e.size) }}</span>
                     @if (e.nodeCount) { <span class="m"><mat-icon>account_tree</mat-icon>{{ e.nodeCount }} items</span> }
-                    <span class="m muted"><mat-icon>schedule</mat-icon>Cached {{ e.cachedAt | date:'mediumDate' }}</span>
+                    <span class="m muted"><mat-icon>schedule</mat-icon>Cached {{ e.cachedAt | date:'medium' }}</span>
                   </div>
                 </div>
                 <div class="row-actions">
+                  <button class="act refresh" [disabled]="busy().has(e.projectId)" (click)="refreshOne(e)" [title]="busy().has(e.projectId) ? 'Refreshing…' : 'Re-download this model'">
+                    <mat-icon [class.spin]="busy().has(e.projectId)">refresh</mat-icon>
+                  </button>
                   <button class="act open" (click)="open(e)" title="Open this project"><mat-icon>open_in_new</mat-icon></button>
                   <button class="act remove" (click)="remove(e)" title="Remove from cache"><mat-icon>delete</mat-icon></button>
                 </div>
@@ -135,6 +140,7 @@ import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/conf
       color: var(--clay-text-secondary); cursor: pointer; font-family: inherit;
     }
     .persist-btn:hover { border-color: var(--clay-primary); color: var(--clay-primary); }
+    .usage-cap { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--clay-border); font-size: 11.5px; color: var(--clay-text-muted); }
 
     /* ── List ── */
     .cache-list {
@@ -162,8 +168,12 @@ import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/conf
       align-items: center; justify-content: center; transition: all .15s;
     }
     .act mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .act:disabled { opacity: .55; cursor: default; }
+    .act.refresh:hover:not(:disabled) { border-color: var(--clay-primary); color: var(--clay-primary); background: var(--info-bg); }
     .act.open:hover { border-color: var(--clay-primary); color: var(--clay-primary); background: var(--info-bg); }
     .act.remove:hover { border-color: var(--danger); color: var(--danger-text); background: var(--danger-bg); }
+    .spin { animation: cp-spin 0.8s linear infinite; }
+    @keyframes cp-spin { to { transform: rotate(360deg); } }
 
     /* ── Empty ── */
     .empty-state {
@@ -187,7 +197,7 @@ import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/conf
     }
   `],
 })
-export class CachedProjectsComponent implements OnInit {
+export class CachedProjectsComponent {
   private cache = inject(ModelCacheService);
   private router = inject(Router);
   private dialog = inject(MatDialog);
@@ -197,9 +207,17 @@ export class CachedProjectsComponent implements OnInit {
   readonly usage = signal(0);
   readonly quota = signal(0);
   readonly persisted = signal(false);
+  /** Project ids currently being re-downloaded (drives the spinner). */
+  readonly busy = signal<Set<string>>(new Set());
+  readonly limits = this.cache.limits;
 
-  ngOnInit(): void {
-    void this.refresh();
+  constructor() {
+    // Reload whenever the cache changes — covers initial load plus live updates
+    // from removals, clear-all, and the tenant-wide eager invalidation.
+    effect(() => {
+      this.cache.cachedIds();
+      void this.refresh();
+    });
   }
 
   private async refresh(): Promise<void> {
@@ -208,6 +226,19 @@ export class CachedProjectsComponent implements OnInit {
     this.usage.set(e.usage);
     this.quota.set(e.quota);
     this.persisted.set(e.persisted);
+  }
+
+  async refreshOne(e: CachedProjectEntry): Promise<void> {
+    if (this.busy().has(e.projectId)) return;
+    this.busy.set(new Set(this.busy()).add(e.projectId));
+    try {
+      await this.cache.refreshProject(e.projectId);
+      await this.refresh();
+    } finally {
+      const next = new Set(this.busy());
+      next.delete(e.projectId);
+      this.busy.set(next);
+    }
   }
 
   /** Total size of the cached project models (distinct from total browser usage). */

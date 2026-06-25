@@ -30,7 +30,7 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
           <a class="monitor-btn" data-tour="proj-monitor" routerLink="/package-monitor" title="Live import pipeline + package history across all projects">
             <mat-icon>monitor_heart</mat-icon>Package Monitor
           </a>
-          @if (perms.can('projects.delete')) {
+          @if (perms.can('projects.restore') || perms.can('projects.delete')) {
             <a class="monitor-btn" routerLink="/projects/trash" title="Restore or permanently delete recently-deleted projects">
               <mat-icon>delete_sweep</mat-icon>Recently deleted
             </a>
