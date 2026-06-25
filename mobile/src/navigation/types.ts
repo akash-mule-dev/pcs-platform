@@ -47,6 +47,8 @@ export type WorkOrdersStackParamList = {
   };
   WorkOrderList: undefined;
   WorkOrderDetail: { workOrderId: string };
+  // Shipping: loads (trucks/lifts) for this order + the ready-to-ship board.
+  Shipping: { orderId: string; projectId: string; orderNumber: string };
   // Native QC report fill (offline-capable); falls back to QcReport (WebView) for NCRs/complex schemas.
   QcReportFill: { reportId: string; title?: string };
   // QC report fill page rendered in-app (WebView) instead of the device browser.
@@ -71,6 +73,8 @@ export type ProjectsStackParamList = {
     lengthMm?: number | null;
     weightKg?: number | null;
   };
+  // Shipping: loads (trucks/lifts) for this order + the ready-to-ship board.
+  Shipping: { orderId: string; projectId: string; orderNumber: string };
   // Native QC report fill (offline-capable); falls back to QcReport (WebView) for NCRs/complex schemas.
   QcReportFill: { reportId: string; title?: string };
   // QC report fill page rendered in-app (WebView) instead of the device browser.

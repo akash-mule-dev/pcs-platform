@@ -49,9 +49,11 @@ export function TimerScreen() {
 
   const loadState = useCallback(async () => {
     try {
-      const [activeEntries, history] = await Promise.all([
+      const [activeEntries, history, orders] = await Promise.all([
         timeTrackingService.getActive(),
         timeTrackingService.getHistory().catch(() => [] as TimeEntry[]),
+        // Always load the work-order list so it stays visible alongside a running timer.
+        workOrderService.getAll({ status: 'in_progress' }).catch(() => [] as WorkOrder[]),
       ]);
       const myActive = activeEntries.find((e) => e.userId === user?.id && !e.endTime) || null;
       setActiveEntry(myActive);
@@ -64,27 +66,22 @@ export function TimerScreen() {
       setTodaySeconds(todays.reduce((s, e) => s + (e.durationSeconds || 0), 0));
       setTodayCount(todays.length);
 
-      if (!myActive) {
-        // Stages available to clock into, GROUPED by work order. Details are
-        // fetched in PARALLEL (the list endpoint omits stages) — no serial N+1.
-        const orders = await workOrderService.getAll({ status: 'in_progress' });
-        const list = Array.isArray(orders) ? orders : [];
-        const details = await Promise.all(
-          list.map((o) => workOrderService.getById(o.id).catch(() => null)),
-        );
-        const grouped: OrderGroup[] = [];
-        for (const d of details) {
-          if (!d) continue;
-          const stages = (d.stages || [])
-            .filter((s) => s.status === 'pending' || s.status === 'in_progress')
-            .sort((a, b) => (a.stage?.sequence ?? 0) - (b.stage?.sequence ?? 0));
-          if (stages.length) grouped.push({ order: d, stages });
-        }
-        grouped.sort((a, b) => a.order.orderNumber.localeCompare(b.order.orderNumber));
-        setGroups(grouped);
-      } else {
-        setGroups([]);
+      // Stages grouped by work order. Details are fetched in PARALLEL (the list
+      // endpoint omits stages) — no serial N+1.
+      const list = Array.isArray(orders) ? orders : [];
+      const details = await Promise.all(
+        list.map((o) => workOrderService.getById(o.id).catch(() => null)),
+      );
+      const grouped: OrderGroup[] = [];
+      for (const d of details) {
+        if (!d) continue;
+        const stages = (d.stages || [])
+          .filter((s) => s.status === 'pending' || s.status === 'in_progress')
+          .sort((a, b) => (a.stage?.sequence ?? 0) - (b.stage?.sequence ?? 0));
+        if (stages.length) grouped.push({ order: d, stages });
       }
+      grouped.sort((a, b) => a.order.orderNumber.localeCompare(b.order.orderNumber));
+      setGroups(grouped);
     } catch {
       // keep last good state
     } finally {
@@ -106,47 +103,91 @@ export function TimerScreen() {
     return () => { if (tickRef.current) clearInterval(tickRef.current); };
   }, [activeEntry]);
 
-  const handleClockIn = async (stage: WorkOrderStage, orderNumber: string) => {
-    if (busyStage) return;
+  const doClockIn = async (stage: WorkOrderStage, orderNumber: string) => {
+    if (offlineService.isOnline) {
+      await timeTrackingService.clockIn(stage.id);
+      notifySuccess('Clocked in');
+      await loadState();
+    } else {
+      await offlineService.queueAction('clock-in', { workOrderStageId: stage.id });
+      notifySuccess('Clock-in queued — will sync');
+      // Reflect the running timer locally (offline loadState can't reach the
+      // server) so the worker sees it immediately and can't double clock-in.
+      setActiveEntry({
+        id: `offline-${stage.id}-${Date.now()}`,
+        userId: user?.id ?? '',
+        workOrderStageId: stage.id,
+        workOrderStage: {
+          id: stage.id,
+          status: 'in_progress',
+          workOrder: { id: stage.workOrderId, orderNumber },
+          stage: stage.stage
+            ? { id: stage.stage.id, name: stage.stage.name, targetTimeSeconds: stage.stage.targetTimeSeconds, sequence: stage.stage.sequence }
+            : undefined,
+        },
+        stationId: null,
+        startTime: new Date().toISOString(),
+        endTime: null,
+        durationSeconds: null,
+        breakSeconds: 0,
+        idleSeconds: 0,
+        inputMethod: 'mobile',
+        isRework: false,
+        notes: null,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  };
+
+  // Tapping a stage row. If a timer is already running, offer to switch
+  // (clock out the current one, then clock into the new one) right here.
+  const onStagePress = (stage: WorkOrderStage, orderNumber: string) => {
+    if (busyStage || clockingOut) return;
+    if (activeEntry) {
+      if (stage.id === activeEntry.workOrderStageId) return; // already running
+      const current = activeEntry.workOrderStage?.stage?.name || 'your current stage';
+      if (!offlineService.isOnline) {
+        Alert.alert('Already running', `Clock out of "${current}" before starting another stage.`);
+        return;
+      }
+      Alert.alert(
+        'Switch timer?',
+        `Clock out of "${current}" and start "${stage.stage?.name || 'this stage'}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Switch', onPress: () => switchTo(stage, orderNumber) },
+        ],
+      );
+      return;
+    }
+    clockIn(stage, orderNumber);
+  };
+
+  const clockIn = async (stage: WorkOrderStage, orderNumber: string) => {
     setBusyStage(stage.id);
     try {
-      if (offlineService.isOnline) {
-        await timeTrackingService.clockIn(stage.id);
-        notifySuccess('Clocked in');
-        await loadState();
-      } else {
-        await offlineService.queueAction('clock-in', { workOrderStageId: stage.id });
-        notifySuccess('Clock-in queued — will sync');
-        // Reflect the running timer locally (offline loadState can't reach the
-        // server) so the worker sees it immediately and can't double clock-in.
-        setActiveEntry({
-          id: `offline-${stage.id}-${Date.now()}`,
-          userId: user?.id ?? '',
-          workOrderStageId: stage.id,
-          workOrderStage: {
-            id: stage.id,
-            status: 'in_progress',
-            workOrder: { id: stage.workOrderId, orderNumber },
-            stage: stage.stage
-              ? { id: stage.stage.id, name: stage.stage.name, targetTimeSeconds: stage.stage.targetTimeSeconds, sequence: stage.stage.sequence }
-              : undefined,
-          },
-          stationId: null,
-          startTime: new Date().toISOString(),
-          endTime: null,
-          durationSeconds: null,
-          breakSeconds: 0,
-          idleSeconds: 0,
-          inputMethod: 'mobile',
-          isRework: false,
-          notes: null,
-          createdAt: new Date().toISOString(),
-        });
-        setGroups([]);
-      }
+      await doClockIn(stage, orderNumber);
     } catch (err: any) {
       notifyError();
       Alert.alert('Error', err.message || 'Failed to clock in');
+    } finally {
+      setBusyStage(null);
+    }
+  };
+
+  const switchTo = async (stage: WorkOrderStage, orderNumber: string) => {
+    if (!activeEntry) return;
+    setBusyStage(stage.id);
+    try {
+      await timeTrackingService.clockOut(activeEntry.id, notes || undefined);
+      setNotes('');
+      await timeTrackingService.clockIn(stage.id);
+      notifySuccess('Switched timer');
+      await loadState();
+    } catch (err: any) {
+      notifyError();
+      Alert.alert('Error', err.message || 'Failed to switch');
+      await loadState();
     } finally {
       setBusyStage(null);
     }
@@ -165,7 +206,6 @@ export function TimerScreen() {
       } else {
         await offlineService.queueAction('clock-out', { timeEntryId: activeEntry.id, notes: notes || undefined });
         notifySuccess('Clock-out queued — will sync');
-        // Clear the hero locally; the clock-in list refreshes on the next online load.
         setNotes('');
         setActiveEntry(null);
       }
@@ -179,18 +219,26 @@ export function TimerScreen() {
 
   const onRefresh = async () => { setRefreshing(true); await loadState(); setRefreshing(false); };
 
-  // Search filter (order number / process / stage name).
+  // Float the order that holds the running stage to the top, then apply search.
   const visibleGroups = useMemo(() => {
+    const runningId = activeEntry?.workOrderStageId;
+    const sorted = runningId
+      ? [...groups].sort((a, b) => {
+          const aHas = a.stages.some((s) => s.id === runningId) ? 0 : 1;
+          const bHas = b.stages.some((s) => s.id === runningId) ? 0 : 1;
+          return aHas - bHas || a.order.orderNumber.localeCompare(b.order.orderNumber);
+        })
+      : groups;
     const q = query.trim().toLowerCase();
-    if (!q) return groups;
-    return groups
+    if (!q) return sorted;
+    return sorted
       .map((g) => {
         const orderMatch = g.order.orderNumber.toLowerCase().includes(q) || (g.order.process?.name ?? '').toLowerCase().includes(q);
         const stages = orderMatch ? g.stages : g.stages.filter((s) => (s.stage?.name ?? '').toLowerCase().includes(q));
         return { ...g, stages };
       })
       .filter((g) => g.stages.length > 0);
-  }, [groups, query]);
+  }, [groups, query, activeEntry?.workOrderStageId]);
 
   const stageCount = useMemo(() => groups.reduce((n, g) => n + g.stages.length, 0), [groups]);
   const todayLive = todaySeconds + (activeEntry ? elapsed : 0);
@@ -221,8 +269,8 @@ export function TimerScreen() {
         </TouchableOpacity>
       </View>
 
-      {activeEntry ? (
-        /* ── Active timer (hero) ── */
+      {/* ── Active timer (pinned at top — the work-order list stays below) ── */}
+      {activeEntry && (
         <View style={styles.heroCard}>
           <View style={styles.liveRow}>
             <View style={styles.liveDot} />
@@ -272,15 +320,21 @@ export function TimerScreen() {
             <Text style={styles.clockOutText}>{clockingOut ? 'Stopping…' : 'Clock Out'}</Text>
           </TouchableOpacity>
         </View>
-      ) : loading ? (
+      )}
+
+      {/* ── Work orders list (always visible) ── */}
+      {loading && groups.length === 0 ? (
         <View style={styles.center}><ActivityIndicator color={Colors.primary} /><Text style={styles.muted}>Loading stages…</Text></View>
       ) : (
-        /* ── Clock in: stages grouped by work order ── */
-        <View>
+        <View style={styles.listWrap}>
           <View style={styles.clockInHead}>
-            <Text style={styles.sectionTitle}>Clock in</Text>
+            <Text style={styles.sectionTitle}>{activeEntry ? 'Work orders' : 'Clock in'}</Text>
             {stageCount > 0 && <Text style={styles.sectionMeta}>{stageCount} stages · {groups.length} orders</Text>}
           </View>
+
+          {activeEntry && (
+            <Text style={styles.switchHint}>Tap another stage to switch your timer to it.</Text>
+          )}
 
           {groups.length > 3 && (
             <View style={styles.searchRow}>
@@ -316,26 +370,35 @@ export function TimerScreen() {
                 </View>
                 {g.stages.map((s) => {
                   const busy = busyStage === s.id;
+                  const isRunning = !!activeEntry && s.id === activeEntry.workOrderStageId;
                   const inProg = s.status === 'in_progress';
                   return (
                     <TouchableOpacity
                       key={s.id}
-                      style={styles.stageRow}
-                      onPress={() => handleClockIn(s, g.order.orderNumber)}
-                      disabled={!!busyStage}
+                      style={[styles.stageRow, isRunning && styles.stageRowRunning]}
+                      onPress={() => onStagePress(s, g.order.orderNumber)}
+                      disabled={!!busyStage || clockingOut || isRunning}
                       activeOpacity={0.7}
                     >
                       <View style={styles.stageInfo}>
                         <View style={styles.stageNameRow}>
                           <Text style={styles.stageRowName} numberOfLines={1}>{s.stage?.name || 'Stage'}</Text>
-                          {inProg && <View style={styles.inProgBadge}><Text style={styles.inProgText}>in progress</Text></View>}
+                          {isRunning ? (
+                            <View style={styles.runningPill}><View style={styles.liveDotSm} /><Text style={styles.runningPillText}>running</Text></View>
+                          ) : inProg ? (
+                            <View style={styles.inProgBadge}><Text style={styles.inProgText}>in progress</Text></View>
+                          ) : null}
                         </View>
-                        {!!s.stage?.targetTimeSeconds && (
+                        {isRunning ? (
+                          <Text style={[styles.runningTime, { color: target ? tColor : Colors.success }]}>{formatTimer(elapsed)}</Text>
+                        ) : !!s.stage?.targetTimeSeconds && (
                           <Text style={styles.stageTarget}>Target {formatDuration(s.stage.targetTimeSeconds)}</Text>
                         )}
                       </View>
                       {busy ? (
                         <ActivityIndicator color={Colors.success} />
+                      ) : isRunning ? (
+                        <Ionicons name="ellipse" size={14} color={Colors.success} />
                       ) : (
                         <Ionicons name="play-circle" size={32} color={Colors.success} />
                       )}
@@ -371,7 +434,7 @@ const styles = StyleSheet.create({
   historyBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
 
   // Hero active timer
-  heroCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
+  heroCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, marginBottom: 16 },
   liveRow: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'stretch' },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success },
   liveText: { fontSize: 11, fontWeight: '800', color: Colors.success, letterSpacing: 1 },
@@ -397,9 +460,11 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.6 },
 
   // Clock-in list
+  listWrap: {},
   clockInHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: Colors.text },
   sectionMeta: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
+  switchHint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 10, marginTop: -2 },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 12 },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },
   empty: { alignItems: 'center', justifyContent: 'center', padding: 36, gap: 10 },
@@ -410,10 +475,15 @@ const styles = StyleSheet.create({
   orderHeaderProcess: { fontSize: 12, color: Colors.textSecondary, flex: 1 },
   orderHeaderCount: { fontSize: 12, fontWeight: '800', color: Colors.textSecondary, backgroundColor: Colors.white, borderRadius: 10, minWidth: 22, paddingHorizontal: 6, paddingVertical: 1, textAlign: 'center', overflow: 'hidden' },
   stageRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
+  stageRowRunning: { backgroundColor: '#ecfdf5' },
   stageInfo: { flex: 1 },
   stageNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   stageRowName: { fontSize: 16, fontWeight: '700', color: Colors.text, flexShrink: 1 },
   inProgBadge: { backgroundColor: '#fef3c7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   inProgText: { fontSize: 10, fontWeight: '800', color: '#b45309' },
+  runningPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#d1fae5', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  liveDotSm: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success },
+  runningPillText: { fontSize: 10, fontWeight: '800', color: '#047857' },
+  runningTime: { fontSize: 18, fontWeight: '800', marginTop: 3, fontVariant: ['tabular-nums'] },
   stageTarget: { fontSize: 12, color: Colors.textSecondary, marginTop: 3 },
 });
