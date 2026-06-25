@@ -155,6 +155,7 @@ export class ProjectWorkspaceStore implements OnDestroy {
       return;
     }
     this.leaveProjectRoom();
+    this.cache.setActiveProject(id);
     this.id.set(id);
     this.project.set(null);
     this.nodes.set([]);
@@ -369,5 +370,8 @@ export class ProjectWorkspaceStore implements OnDestroy {
   ngOnDestroy(): void {
     this.leaveProjectRoom();
     this.stopImportsPoll();
+    // Only clear if we're still the active project (a newer workspace may have
+    // taken over during navigation between projects).
+    if (this.cache.activeProjectId() === this.id()) this.cache.setActiveProject(null);
   }
 }

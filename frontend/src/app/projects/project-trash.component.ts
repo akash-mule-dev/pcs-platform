@@ -63,14 +63,18 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
                 </span>
               </div>
 
-              @if (perms.can('projects.delete')) {
+              @if (perms.can('projects.restore') || perms.can('projects.delete')) {
                 <div class="col-actions">
-                  <button class="btn restore" [disabled]="busy.has(p.id)" (click)="restore(p)">
-                    <mat-icon>restore</mat-icon>Restore
-                  </button>
-                  <button class="btn danger" [disabled]="busy.has(p.id)" (click)="purge(p)">
-                    <mat-icon>delete_forever</mat-icon>Delete permanently
-                  </button>
+                  @if (perms.can('projects.restore')) {
+                    <button class="btn restore" [disabled]="busy.has(p.id)" (click)="restore(p)">
+                      <mat-icon>restore</mat-icon>Restore
+                    </button>
+                  }
+                  @if (perms.can('projects.delete')) {
+                    <button class="btn danger" [disabled]="busy.has(p.id)" (click)="purge(p)">
+                      <mat-icon>delete_forever</mat-icon>Delete permanently
+                    </button>
+                  }
                 </div>
               }
             </div>

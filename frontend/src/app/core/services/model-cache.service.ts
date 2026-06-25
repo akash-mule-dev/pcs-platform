@@ -1,5 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { AuthService } from './auth.service';
+import { environment } from '../../../environments/environment';
 
 /**
  * A project whose 3D model bytes are cached on THIS device. Shown on the
@@ -80,8 +81,17 @@ export class ModelCacheService {
   /** Project ids with a cached model on this device — reactive for the UI. */
   readonly cachedIds = signal<Set<string>>(new Set());
 
+  /** The project currently open in the workspace, if any. Eager cross-project
+   *  invalidation skips this one — its own workspace store keeps it fresh
+   *  (version-aware), so dropping it here would needlessly clobber that. */
+  readonly activeProjectId = signal<string | null>(null);
+  setActiveProject(projectId: string | null): void { this.activeProjectId.set(projectId); }
+
   /** True if IndexedDB is unavailable (private mode / old browser) — caching is then a no-op. */
   readonly available = typeof indexedDB !== 'undefined';
+
+  /** The model caps, surfaced to the UI. */
+  readonly limits = { maxEntries: MAX_ENTRIES, maxBytes: MAX_BYTES };
 
   constructor() {
     if (this.available) void this.refreshIndex();
@@ -337,6 +347,32 @@ export class ModelCacheService {
     const next = new Set(this.cachedIds());
     next.delete(projectId);
     this.cachedIds.set(next);
+  }
+
+  /** Reconstruct the absolute model URL from a stored cache key (a pathname like
+   *  `/api/models/<id>/file`). The API origin comes from environment.apiUrl. */
+  private urlForKey(key: string): string {
+    const base = environment.apiUrl.replace(/\/api\/?$/, '');
+    return base + key;
+  }
+
+  /** Force a fresh download of a cached project's current model (e.g. user-initiated
+   *  "refresh" — re-pulls the bytes at the same key). Returns false if nothing changed
+   *  or the fetch failed (the old copy is kept on failure). */
+  async refreshProject(projectId: string): Promise<boolean> {
+    const entry = await this.getEntry(projectId);
+    if (!entry) return false;
+    try {
+      this.inflight.delete(entry.cacheKey);
+      await this.deleteBlob(entry.cacheKey);
+      const blob = await this.getOrFetchBlob(this.urlForKey(entry.cacheKey));
+      entry.size = blob.size;
+      entry.cachedAt = Date.now();
+      await this.run(INDEX_STORE, 'readwrite', (s) => s.put(entry));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Wipe the entire cache (all blobs + the project index). */

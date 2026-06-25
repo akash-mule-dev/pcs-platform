@@ -22,6 +22,7 @@ interface KanbanCardStage {
 interface KanbanCard {
   workOrderId: string; orderNumber: string; woStatus: string; priority: string; quantity: number;
   mark: string | null; nodeName: string | null; profile: string | null;
+  assemblyNodeId: string | null;
   projectId: string | null; projectName: string | null;
   productionOrderId: string | null; productionOrderNumber: string | null; customerName: string | null;
   dueDate: string | null; late: boolean; openNcrs: number; updatedAt: string;
@@ -145,6 +146,9 @@ interface KanbanData {
                       <div class="c-actions" (click)="$event.stopPropagation()">
                         <span class="c-overall" matTooltip="Overall progress across all stages">{{ c.overall.percent }}%</span>
                         <span class="spacer"></span>
+                        @if (c.assemblyNodeId && c.productionOrderId) {
+                          <a class="mini" [routerLink]="['/work-orders', c.productionOrderId, '3d']" [queryParams]="{ node: c.assemblyNodeId }" matTooltip="View this piece in 3D"><mat-icon>view_in_ar</mat-icon></a>
+                        }
                         @if (canStep(c)) {
                           <button class="mini" (click)="step(c)" [disabled]="busy().has(c.workOrderId)" matTooltip="Record one more piece through {{ st.name }}">+1</button>
                         }

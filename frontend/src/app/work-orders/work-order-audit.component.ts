@@ -212,7 +212,14 @@ const PAGE = 200;
                   @if (selItem.openNcrs > 0) { <span class="chip ncr"><mat-icon>report_problem</mat-icon>{{ selItem.openNcrs }} open NCR</span> }
                   <span class="chip ship sh-{{ selItem.shipStatus }}"><mat-icon>{{ shipIcon(selItem.shipStatus) }}</mat-icon>{{ shipLabel(selItem) }}</span>
                 </div>
-                <span class="wonum mono">{{ selItem.workOrderNumber }}</span>
+                <div class="ractions">
+                  @if (selItem.nodeId) {
+                    <a class="view3d" [routerLink]="['/work-orders', orderId, '3d']" [queryParams]="{ node: selItem.nodeId }" matTooltip="View this piece in 3D — orbit, measure and colour by profile/grade">
+                      <mat-icon>view_in_ar</mat-icon>View in 3D
+                    </a>
+                  }
+                  <span class="wonum mono">{{ selItem.workOrderNumber }}</span>
+                </div>
               </div>
 
               <div class="props">
@@ -653,6 +660,10 @@ const PAGE = 200;
     .gate-lock { font-size: 13px; width: 13px; height: 13px; color: var(--warning-text); vertical-align: middle; margin-left: 3px; }
     .st-cell { display: inline-flex; align-items: center; gap: 4px; }
     .wonum { font-size: 12px; color: var(--clay-text-muted); font-weight: 600; }
+    .ractions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .view3d { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--clay-primary); background: var(--clay-surface); color: var(--clay-primary); border-radius: var(--clay-radius-sm); padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .view3d:hover { background: var(--info-bg); }
+    .view3d mat-icon { font-size: 17px; width: 17px; height: 17px; }
     .props { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 14px; }
     .prop { display: inline-flex; flex-direction: column; gap: 1px; background: var(--clay-bg-warm); border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm); padding: 6px 11px; font-size: 12.5px; color: var(--clay-text); font-weight: 600; }
     .prop label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--clay-text-muted); }
