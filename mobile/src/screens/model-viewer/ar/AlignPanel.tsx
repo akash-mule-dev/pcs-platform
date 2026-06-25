@@ -32,6 +32,15 @@ interface AlignPanelProps {
   /** One-shot yaw rotation in degrees (90 / 180 quick-rotate). */
   onQuickRotate: (deg: number) => void;
   onToggleLock: () => void;
+  /** Distance from the bottom edge. Default clears the bottom toolbar (148); the
+   *  LiDAR layout (toolbar on the right) passes a small value so it docks low. */
+  bottomOffset?: number;
+  /** Use a more see-through panel background (so the model stays visible while
+   *  aligning). The buttons themselves are unchanged. */
+  translucent?: boolean;
+  /** LiDAR only: one-tap ICP refinement onto the scanned mesh. Renders an
+   *  "Auto-snap" button only when provided (Viro never passes it). */
+  onAutoSnap?: () => void;
 }
 
 /** A button that fires `onHold` once on press and then repeats while held. */
@@ -101,12 +110,15 @@ export default function AlignPanel({
   onScaleBy,
   onQuickRotate,
   onToggleLock,
+  bottomOffset = 148,
+  translucent = false,
+  onAutoSnap,
 }: AlignPanelProps) {
   const scaleLabel = `${(scale[0] ?? 1).toFixed(2)}×`;
 
   return (
-    <View style={styles.panel} pointerEvents="box-none">
-      <View style={styles.bar}>
+    <View style={[styles.panel, { bottom: bottomOffset }]} pointerEvents="box-none">
+      <View style={[styles.bar, translucent && styles.barTranslucent]}>
         {/* When locked the transform can't change, so the move/rotate/scale
             controls are hidden — only the unlock control remains. */}
         {!locked && (
@@ -154,6 +166,18 @@ export default function AlignPanel({
               </View>
             </Section>
 
+            {onAutoSnap && (
+              <>
+                <View style={styles.divider} />
+                <Section title="LIDAR">
+                  <TouchableOpacity style={styles.autoBtn} onPress={onAutoSnap} activeOpacity={0.8}>
+                    <Text style={styles.autoBtnGlyph}>⊹</Text>
+                    <Text style={styles.autoBtnText}>Auto-snap</Text>
+                  </TouchableOpacity>
+                </Section>
+              </>
+            )}
+
             <View style={styles.divider} />
           </>
         )}
@@ -194,6 +218,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     maxWidth: '98%',
   },
+  barTranslucent: { backgroundColor: 'rgba(13, 17, 23, 0.45)' },
   section: { alignItems: 'center' },
   sectionTitle: {
     color: 'rgba(255,255,255,0.65)',
@@ -243,4 +268,15 @@ const styles = StyleSheet.create({
   lockBtnUnlocked: { backgroundColor: 'rgba(34, 197, 94, 0.92)' },
   lockBtnLocked: { backgroundColor: 'rgba(239, 68, 68, 0.92)' },
   lockBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '800' },
+  autoBtn: {
+    minWidth: 96,
+    height: 64,
+    borderRadius: 14,
+    backgroundColor: 'rgba(14, 165, 233, 0.97)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  autoBtnGlyph: { color: '#fff', fontSize: 22, fontWeight: '800', lineHeight: 26 },
+  autoBtnText: { color: '#fff', fontSize: 12, fontWeight: '800', marginTop: 2 },
 });

@@ -11,6 +11,9 @@ import { View, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-nati
 
 interface ToolBarProps {
   placed: boolean;
+  /** Model is anchored to a surface ("Lock to surface") — also a "ready" state
+   *  even when not free-placed, so the tools (Align in particular) are usable. */
+  anchored?: boolean;
   modelLoaded: boolean;
   precisionMode: boolean;
   edgesPanelOpen: boolean;
@@ -18,6 +21,15 @@ interface ToolBarProps {
   onTogglePrecision: () => void;
   onToggleEdges: () => void;
   onToggleMeasure: () => void;
+  /** Optional 4th tab: point-pair registration ("Align by points"). Only rendered
+   *  when onToggleRegister is provided (LiDAR only — Viro can't do it), so the
+   *  shared Viro toolbar is unchanged. */
+  registerPanelOpen?: boolean;
+  onToggleRegister?: () => void;
+  /** Layout: 'bottom' = the classic horizontal bar (default); 'right' = a vertical
+   *  rail pinned to the right edge, slightly below centre, so the docked panel can
+   *  sit low and the model keeps the whole middle of the screen. */
+  side?: 'bottom' | 'right';
 }
 
 function Tab({
@@ -37,15 +49,16 @@ function Tab({
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <View style={[styles.indicator, active && styles.indicatorActive]} />
       <Text style={[styles.buttonIcon, active && styles.textActive]}>{icon}</Text>
       <Text style={[styles.buttonLabel, active && styles.textActive]}>{label}</Text>
+      <View style={[styles.indicator, active && styles.indicatorActive]} />
     </TouchableOpacity>
   );
 }
 
 export default function ToolBar({
   placed,
+  anchored = false,
   modelLoaded,
   precisionMode,
   edgesPanelOpen,
@@ -53,8 +66,31 @@ export default function ToolBar({
   onTogglePrecision,
   onToggleEdges,
   onToggleMeasure,
+  registerPanelOpen = false,
+  onToggleRegister,
+  side = 'bottom',
 }: ToolBarProps) {
-  if (!(modelLoaded && placed)) return null;
+  if (!(modelLoaded && (placed || anchored))) return null;
+
+  const tabs = (
+    <>
+      <Tab icon="#" label="Align" active={precisionMode} onPress={onTogglePrecision} />
+      <Tab icon="◰" label="Edges" active={edgesPanelOpen} onPress={onToggleEdges} />
+      <Tab icon="M" label="Measure" active={measurePanelOpen} onPress={onToggleMeasure} />
+      {onToggleRegister && (
+        <Tab icon="⊹" label="Points" active={registerPanelOpen} onPress={onToggleRegister} />
+      )}
+    </>
+  );
+
+  // Right-side vertical rail — frees the whole bottom + middle for the model.
+  if (side === 'right') {
+    return (
+      <View style={styles.rightRail} pointerEvents="box-none">
+        <View style={styles.rightRailInner}>{tabs}</View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -64,9 +100,7 @@ export default function ToolBar({
         contentContainerStyle={styles.toolbar}
         keyboardShouldPersistTaps="handled"
       >
-        <Tab icon="#" label="Align" active={precisionMode} onPress={onTogglePrecision} />
-        <Tab icon="◰" label="Edges" active={edgesPanelOpen} onPress={onToggleEdges} />
-        <Tab icon="M" label="Measure" active={measurePanelOpen} onPress={onToggleMeasure} />
+        {tabs}
       </ScrollView>
     </View>
   );
@@ -81,6 +115,17 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     paddingHorizontal: 16,
   },
+  // Vertical right-edge rail (side='right'): centred then nudged a little below.
+  rightRail: {
+    position: 'absolute',
+    right: 6,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    zIndex: 20,
+  },
+  rightRailInner: { gap: 10, marginTop: 40 },
   toolbar: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -112,11 +157,12 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   // Always-present slot so active/inactive heights match; only painted when active.
+  // Sits at the BOTTOM of the button (rendered after the label).
   indicator: {
     width: 26,
     height: 4,
     borderRadius: 2,
-    marginBottom: 6,
+    marginTop: 6,
     backgroundColor: 'transparent',
   },
   indicatorActive: { backgroundColor: '#ffffff' },

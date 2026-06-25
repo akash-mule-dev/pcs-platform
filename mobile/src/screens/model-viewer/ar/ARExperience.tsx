@@ -25,6 +25,7 @@ import { offlineService } from '../../../services/offline.service';
 import { notifySuccess, notifyError } from '../../../utils/feedback';
 import ARModelScene from './ARModelScene';
 import ToolBar from './ToolBar';
+import ToggleChip from './ToggleChip';
 import TrackingModeSwitcher from './TrackingModeSwitcher';
 import MeasurementPanel from './MeasurementPanel';
 import AlignPanel from './AlignPanel';
@@ -44,7 +45,7 @@ import {
   MeasurementState,
   DEFAULT_MEASUREMENTS,
   DEFAULT_EDGE_COLOR,
-  DEFAULT_EDGE_WEIGHT,
+  EDGE_WEIGHT_MIN,
 } from './types';
 import { captureSnapshot } from './arSnapshot';
 import { loadRegistration, saveRegistration } from './arRegistration';
@@ -56,6 +57,10 @@ try {
 } catch {
   // handled by the host screen
 }
+
+// Tool panels dock LOW (the Align/Edges/Measure toolbar lives on the right rail)
+// so the model keeps the bottom + middle of the screen.
+const PANEL_BOTTOM = 28;
 
 interface ARExperienceProps {
   modelId: string;
@@ -74,6 +79,9 @@ interface ARExperienceProps {
   /** Open the (non-AR) Quality records viewer for this model. */
   onViewRecords?: () => void;
   onBack: () => void;
+  /** Notifies the host that a docked tool panel is open, so it can hide the
+   *  bottom engine switcher (which would otherwise sit under the low panel). */
+  onChromeBusy?: (busy: boolean) => void;
 }
 
 export default function ARExperience({
@@ -86,6 +94,7 @@ export default function ARExperience({
   qaContext,
   onViewRecords,
   onBack,
+  onChromeBusy,
 }: ARExperienceProps) {
   // ── Camera-first model load (runs in the background over the live camera) ──
   const model = useRemoteModel(fileUrl, modelId, fileName, meshNames ?? null);
@@ -95,6 +104,7 @@ export default function ARExperience({
     state,
     setUri,
     place,
+    setPosition,
     nudgePosition,
     setScale,
     applyAutoFit,
@@ -116,7 +126,8 @@ export default function ARExperience({
   // (a continuous line-thickness multiplier) re-bakes the tube radius via an
   // on-demand wireframe build.
   const [edgeColor, setEdgeColor] = useState<string>(DEFAULT_EDGE_COLOR);
-  const [edgeWeight, setEdgeWeight] = useState<number>(DEFAULT_EDGE_WEIGHT);
+  // Edges default to the THINNEST line weight (matches the LiDAR experience).
+  const [edgeWeight, setEdgeWeight] = useState<number>(EDGE_WEIGHT_MIN);
   // Bumped by the "Place point" button to drop a real-world point at the reticle.
   const [placeNonce, setPlaceNonce] = useState(0);
   const [trackingStatus, setTrackingStatus] = useState<string>('normal');
@@ -129,6 +140,12 @@ export default function ARExperience({
   const caps = useDeviceCapabilities();
   const [capWarningDismissed, setCapWarningDismissed] = useState(false);
   const [driftSuspected, setDriftSuspected] = useState(false);
+  // ── "Lock to surface" (opt-in plane anchoring) ──
+  // anchorMode = the user asked to lock onto a real surface; anchored = a
+  // ViroARPlane has attached to a detected plane, so the model now rides an
+  // ARKit anchor (drift-free) instead of a free world coordinate.
+  const [anchorMode, setAnchorMode] = useState(false);
+  const [anchored, setAnchored] = useState(false);
 
   // ── QA capture ──
   const { user } = useAuth();
@@ -150,7 +167,6 @@ export default function ARExperience({
 
   const [qaOverlay, setQaOverlay] = useState<'off' | 'heatmap' | 'parts'>('off');
   const [focusMeshName, setFocusMeshName] = useState<string | null>(null);
-  const [occlusionOn, setOcclusionOn] = useState(false);
 
   // The model is "on screen" once it's been auto-placed AND Viro has finished
   // loading it — a large GLB can take a beat to parse after placement, so the
@@ -159,7 +175,9 @@ export default function ARExperience({
   // download failure is handled separately by the error card).
   const modelLoadFinished =
     modelStatus.startsWith('loaded') || modelStatus.startsWith('error');
-  const modelVisible = state.placed && modelLoadFinished;
+  // Anchored ("Lock to surface") counts as visible too — otherwise the loading
+  // pill would never clear while waiting on the plane lock.
+  const modelVisible = (state.placed || anchored) && modelLoadFinished;
 
   const confidenceTag = useCallback((): string => {
     const flags: string[] = [];
@@ -219,6 +237,12 @@ export default function ARExperience({
 
   useEffect(() => {
     setDriftSuspected(false);
+  }, [model.uri]);
+
+  // A new model starts un-anchored (free auto-place); drop any prior lock.
+  useEffect(() => {
+    setAnchorMode(false);
+    setAnchored(false);
   }, [model.uri]);
 
   const updateMeasurements = useCallback((patch: Partial<MeasurementState>) => {
@@ -531,6 +555,27 @@ export default function ARExperience({
     setDriftSuspected(false);
   }, [state.locked, setPlaced]);
 
+  // ── "Lock to surface" toggle (opt-in plane anchoring) ──
+  // Entering: drop the free placement and zero the transform so `position`
+  // becomes a LOCAL offset from the plane centre (the model snaps onto the
+  // detected surface, then is nudged to align). Leaving: free auto-place resumes.
+  // Scale / rotation are preserved across the switch.
+  const handleAnchorFound = useCallback(() => setAnchored(true), []);
+  const toggleAnchorMode = useCallback(() => {
+    if (state.locked) return;
+    setAnchorMode((on) => {
+      const next = !on;
+      setAnchored(false);
+      setPlaced(false);
+      if (next) {
+        setPosition([0, 0, 0]);
+        setDriftSuspected(false);
+        setMeasurements(DEFAULT_MEASUREMENTS);
+      }
+      return next;
+    });
+  }, [state.locked, setPlaced, setPosition]);
+
   // ── Live tracking-mode switch. Drop placement (the scene re-auto-places under
   // the new preset) + reset measurements; keep scale/rotation/render mode. ──
   const handleSelectMode = useCallback(
@@ -552,10 +597,17 @@ export default function ARExperience({
     setMeasurePanelOpen(false);
   }, []);
   const toggleEdgesPanel = useCallback(() => {
-    setEdgesPanelOpen((e) => !e);
+    const opening = !edgesPanelOpen;
+    setEdgesPanelOpen(opening);
     setPrecisionMode(false);
     setMeasurePanelOpen(false);
-  }, []);
+    // Opening the Edges tab turns the edge view ON by default.
+    if (opening && state.renderMode !== 'wireframe') {
+      if (model.wireframeUri) setRenderMode('wireframe');
+      else setPendingWireframe(true);
+      model.requestWireframe(edgeWeight, edgeColor);
+    }
+  }, [edgesPanelOpen, state.renderMode, model, edgeWeight, edgeColor, setRenderMode]);
   const toggleMeasurePanel = useCallback(() => {
     setMeasurePanelOpen((m) => !m);
     setPrecisionMode(false);
@@ -610,6 +662,21 @@ export default function ARExperience({
     [state.renderMode, model, edgeColor],
   );
 
+  // Edges ON by default: once the model is ready, switch into the (thinnest) edge
+  // view automatically — once per model (matches the LiDAR experience).
+  const autoEdgesRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (model.phase === 'ready' && model.uri && autoEdgesRef.current !== model.uri) {
+      autoEdgesRef.current = model.uri;
+      handleSelectView('wireframe');
+    }
+  }, [model.phase, model.uri, handleSelectView]);
+
+  // Tell the host when a docked panel is open so it can hide the engine switcher.
+  useEffect(() => {
+    onChromeBusy?.(precisionMode || edgesPanelOpen || measurePanelOpen);
+  }, [precisionMode, edgesPanelOpen, measurePanelOpen, onChromeBusy]);
+
 
   if (!ViroARSceneNavigator) {
     return (
@@ -619,7 +686,10 @@ export default function ARExperience({
     );
   }
 
-  const loadingActive = model.phase !== 'error' && !modelVisible;
+  // In anchor mode the model is already downloaded (Lock is only reachable after
+  // placement), and the "point at a surface" banner stands in for the pill — so
+  // suppress the placing pill there to avoid a stuck "Placing model…".
+  const loadingActive = model.phase !== 'error' && !modelVisible && !anchorMode;
   const loadingText =
     model.phase === 'ready'
       ? 'Placing model…'
@@ -630,24 +700,24 @@ export default function ARExperience({
       {/* ── Live AR camera. Mounted ONCE, immediately — never re-keyed. ── */}
       <ViroARSceneNavigator
         ref={navigatorRef}
-        worldAlignment={
-          trackingMode === 'world'
-            ? 'Camera'
-            : trackingMode === 'image'
-              ? 'GravityAndHeading'
-              : 'Gravity'
-        }
+        // 'Camera' alignment locks the world frame to the device's pose at
+        // session start, so a STATIONARY model visibly swims as you move — never
+        // use it for placed content. 'Gravity' keeps the world level-locked (the
+        // steady default); image mode adds compass heading on top.
+        worldAlignment={trackingMode === 'image' ? 'GravityAndHeading' : 'Gravity'}
         autofocus={true}
         videoQuality="High"
-        depthEnabled={true}
+        // NOTE: Viro 2.43.3 exposes NO real-world occlusion. `depthEnabled` and
+        // `occlusionMode` are NOT props on this navigator — verified against the
+        // package AND the native binary: ARKit's personSegmentation/sceneDepth
+        // and ARCore's Depth API are never requested by Viro's renderer, which
+        // composites no depth/segmentation matte. They were silently inert and
+        // have been removed. A rendered model always draws over the camera feed,
+        // so a hand between the camera and the model cannot be occluded here.
+        // The renderer flags below ARE real Viro props.
         hdrEnabled={true}
         pbrEnabled={true}
         shadowsEnabled={true}
-        occlusionMode={
-          occlusionOn && caps.hasDepthSensor && state.renderMode === 'solid'
-            ? 'depthBased'
-            : 'disabled'
-        }
         initialScene={{ scene: ARModelScene as any }}
         viroAppProps={{
           modelUri: state.uri ?? '',
@@ -658,6 +728,8 @@ export default function ARExperience({
           placed: state.placed,
           autoFitted: state.autoFitted,
           autoPlace: true,
+          anchorMode,
+          onAnchorFound: handleAnchorFound,
           position: state.position,
           scale: state.scale,
           rotation: state.rotation,
@@ -709,6 +781,20 @@ export default function ARExperience({
           <View style={styles.switcherRow} pointerEvents="box-none">
             <TrackingModeSwitcher value={trackingMode} onChange={handleSelectMode} />
           </View>
+
+          {/* Edges quick-toggle — top-right (Standard has no occlusion toggle) */}
+          {(state.placed || anchored) && (
+            <View style={styles.edgesChipWrap} pointerEvents="box-none">
+              <ToggleChip
+                icon="◰"
+                label="Edges"
+                on={state.renderMode === 'wireframe'}
+                onPress={() =>
+                  handleSelectView(state.renderMode === 'wireframe' ? 'solid' : 'wireframe')
+                }
+              />
+            </View>
+          )}
         </>
       )}
 
@@ -746,8 +832,9 @@ export default function ARExperience({
           {Platform.OS === 'ios' && caps.checked && !caps.hasDepthSensor && !capWarningDismissed && (
             <View style={[styles.banner, styles.bannerWarn]}>
               <Text style={styles.bannerText}>
-                No LiDAR depth sensor on this device. For a stable overlay use Image-Marker mode in
-                good lighting; real-world measurements are approximate.
+                No LiDAR on this device — tracking uses the camera + motion sensors. Keep textured
+                surroundings in view and move slowly for the steadiest overlay; real-world
+                measurements are approximate.
               </Text>
               <TouchableOpacity
                 style={styles.bannerDismiss}
@@ -782,12 +869,31 @@ export default function ARExperience({
                 </TouchableOpacity>
               </View>
             )}
+
+          {anchorMode && !anchored && (
+            <View style={[styles.banner, styles.bannerInfo]}>
+              <Text style={[styles.bannerText, styles.bannerTextOnInfo]}>
+                Point the camera at a flat surface (the floor or table the part sits on). The model
+                locks onto it and stays rock-steady; then nudge with Align to line it up.
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
       {/* ── AR-QA visualization rail ── */}
-      {state.placed && !state.locked && !measurePanelOpen && (
+      {(state.placed || anchorMode) && !state.locked && !measurePanelOpen && (
         <View style={styles.vizRail} pointerEvents="box-none">
+          <TouchableOpacity
+            style={[styles.vizButton, anchorMode && styles.vizButtonActive]}
+            onPress={toggleAnchorMode}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.vizButtonText}>
+              {anchorMode ? (anchored ? '🔒 Locked' : 'Finding…') : '🔒 Lock surface'}
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[styles.vizButton, qaOverlay !== 'off' && styles.vizButtonActive]}
             onPress={() =>
@@ -813,16 +919,6 @@ export default function ARExperience({
           <TouchableOpacity style={styles.vizButton} onPress={handleRecenter} activeOpacity={0.7}>
             <Text style={styles.vizButtonText}>⟲ Re-center</Text>
           </TouchableOpacity>
-
-          {caps.hasDepthSensor && (
-            <TouchableOpacity
-              style={[styles.vizButton, occlusionOn && styles.vizButtonActive]}
-              onPress={() => setOcclusionOn((o) => !o)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.vizButtonText}>{occlusionOn ? 'Occlude On' : 'Occlude'}</Text>
-            </TouchableOpacity>
-          )}
         </View>
       )}
 
@@ -849,7 +945,7 @@ export default function ARExperience({
       )}
 
       {/* ── Align-mode controls (consolidated, non-overlapping) ── */}
-      {precisionMode && state.placed && (
+      {precisionMode && (state.placed || anchored) && (
         <AlignPanel
           scale={state.scale}
           locked={state.locked}
@@ -858,6 +954,8 @@ export default function ARExperience({
           onScaleBy={handleScaleBy}
           onQuickRotate={handleQuickRotate}
           onToggleLock={toggleLock}
+          bottomOffset={PANEL_BOTTOM}
+          translucent
         />
       )}
 
@@ -871,6 +969,8 @@ export default function ARExperience({
           onSelectView={handleSelectView}
           onSelectColor={handleSelectColor}
           onCommitWeight={handleCommitWeight}
+          bottomOffset={PANEL_BOTTOM}
+          translucent
         />
       )}
 
@@ -883,6 +983,8 @@ export default function ARExperience({
           onChange={updateMeasurements}
           onClearRulers={clearRulers}
           onLogDeviation={handleLogDeviation}
+          bottomOffset={PANEL_BOTTOM}
+          translucent
         />
       )}
 
@@ -918,10 +1020,11 @@ export default function ARExperience({
         </TouchableOpacity>
       )}
 
-      {/* ── Toolbar ── */}
+      {/* ── Toolbar — vertical rail on the RIGHT (model keeps the bottom + middle) ── */}
       {!state.locked && (
         <ToolBar
           placed={state.placed}
+          anchored={anchored}
           modelLoaded={!!state.uri}
           precisionMode={precisionMode}
           edgesPanelOpen={edgesPanelOpen}
@@ -929,11 +1032,12 @@ export default function ARExperience({
           onTogglePrecision={togglePrecision}
           onToggleEdges={toggleEdgesPanel}
           onToggleMeasure={toggleMeasurePanel}
+          side="right"
         />
       )}
 
       {/* ── QA panel toggle ── */}
-      {state.placed && (
+      {(state.placed || anchored) && (
         <TouchableOpacity
           style={styles.qaButton}
           onPress={() => setQaPanelOpen((o) => !o)}
@@ -944,7 +1048,7 @@ export default function ARExperience({
       )}
 
       {/* ── QA inspection panel ── */}
-      {state.placed && qaPanelOpen && (
+      {(state.placed || anchored) && qaPanelOpen && (
         <QualityPanel
           entries={qualityEntries}
           loading={qualityLoading}
@@ -990,16 +1094,15 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   backButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '600' },
+  // Assembly name + status, left-aligned just under the Back button.
   modelNameContainer: {
     position: 'absolute',
-    top: 52,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    paddingHorizontal: 90,
+    top: 90,
+    left: 16,
+    right: 160,
     zIndex: 10,
   },
-  modelNameText: { color: '#ffffff', fontSize: 14, fontWeight: '700', maxWidth: '100%' },
+  modelNameText: { color: '#ffffff', fontSize: 15, fontWeight: '800', maxWidth: '100%' },
   modelStatusText: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600', marginTop: 1 },
   recordsButton: {
     position: 'absolute',
@@ -1175,7 +1278,10 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   placeButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
-  vizRail: { position: 'absolute', right: 12, top: 248, gap: 8, zIndex: 18 },
+  // Left edge, below the QA button — keeps the RIGHT edge clear for the toolbar rail.
+  vizRail: { position: 'absolute', left: 12, top: 206, gap: 8, zIndex: 18 },
+  // Edges quick-toggle, top-right under the Records button.
+  edgesChipWrap: { position: 'absolute', top: 92, right: 16, alignItems: 'flex-end', zIndex: 24 },
   vizButton: {
     backgroundColor: 'rgba(13, 17, 23, 0.85)',
     minHeight: 44,

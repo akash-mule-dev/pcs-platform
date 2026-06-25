@@ -1,0 +1,10 @@
+// Collapsed to a single umbrella module for Xcode 26's strict Clang modules.
+// Removed `module * { export * }` (per-header submodules → duplicate interfaces)
+// and the `GLTFKit2.Swift` submodule (its generated header re-imports the
+// umbrella → redefinitions). Swift consumers reach GLTFKit2's Swift API
+// (GLTFRealityKitLoader) via the binary .swiftmodule, not this Clang module, so
+// the ObjC-facing Swift header isn't needed here.
+framework module GLTFKit2 {
+  umbrella header "GLTFKit2.h"
+  export *
+}

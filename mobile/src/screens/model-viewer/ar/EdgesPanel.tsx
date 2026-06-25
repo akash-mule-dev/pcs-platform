@@ -32,6 +32,10 @@ interface EdgesPanelProps {
   onSelectColor: (hex: string) => void;
   /** Commit a weight (preset tap / slider release) — rebuilds the edge view. */
   onCommitWeight: (weight: number) => void;
+  /** Distance from the bottom edge (default clears the bottom toolbar). */
+  bottomOffset?: number;
+  /** Use a more see-through panel background (buttons unchanged). */
+  translucent?: boolean;
 }
 
 const VIEW_OPTIONS: { mode: RenderMode; glyph: string; caption: string }[] = [
@@ -58,12 +62,14 @@ export default function EdgesPanel({
   onSelectView,
   onSelectColor,
   onCommitWeight,
+  bottomOffset = 148,
+  translucent = false,
 }: EdgesPanelProps) {
   const edgesActive = renderMode === 'wireframe';
 
   return (
-    <View style={styles.panel} pointerEvents="box-none">
-      <View style={styles.bar}>
+    <View style={[styles.panel, { bottom: bottomOffset }]} pointerEvents="box-none">
+      <View style={[styles.bar, translucent && styles.barTranslucent]}>
         {/* ── VIEW: Solid / Edges ── */}
         <Section title="VIEW">
           <View style={styles.row}>
@@ -179,6 +185,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     maxWidth: '98%',
   },
+  barTranslucent: { backgroundColor: 'rgba(13, 17, 23, 0.45)' },
   section: { alignItems: 'center' },
   sectionTitle: {
     color: 'rgba(255,255,255,0.65)',
