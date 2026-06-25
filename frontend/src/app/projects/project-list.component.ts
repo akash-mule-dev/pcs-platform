@@ -87,7 +87,12 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
                   <div class="col-id">
                     <mat-icon class="p-ico">foundation</mat-icon>
                     <div class="id-text">
-                      <span class="p-name">{{ p.name }}</span>
+                      <span class="p-name">
+                        {{ p.name }}
+                        @if (p.metrics.revisionPending) {
+                          <span class="rev-badge" matTooltip="A package revision needs review"><mat-icon>difference</mat-icon>Revision</span>
+                        }
+                      </span>
                       <span class="p-sub">
                         @if (p.projectNumber) { <span class="mono">{{ p.projectNumber }}</span> }
                         @if (p.projectNumber && p.clientName) { <span class="dotsep">·</span> }
@@ -215,7 +220,9 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
     .col-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
     .p-ico { font-size: 20px; width: 20px; height: 20px; color: var(--clay-primary); flex-shrink: 0; }
     .id-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .p-name { font-weight: 600; font-size: 14px; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .p-name { font-weight: 600; font-size: 14px; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 8px; }
+    .rev-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warning-bg, #fff7e6); color: var(--warning-text, #9a6700); }
+    .rev-badge mat-icon { font-size: 12px; width: 12px; height: 12px; }
     .p-sub { font-size: 12px; color: var(--clay-text-muted); display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .p-sub .mono { font-family: 'Space Grotesk', monospace; }
     .p-sub .muted { opacity: .7; }
@@ -280,7 +287,7 @@ export class ProjectListComponent implements OnInit {
   }
 
   private emptyMetrics(): ProjectSummary['metrics'] {
-    return { nodeCount: 0, partCount: 0, assemblyCount: 0, tonnage: { totalKg: 0 } };
+    return { nodeCount: 0, partCount: 0, assemblyCount: 0, tonnage: { totalKg: 0 }, revisionPending: false };
   }
 
   filtered(): ProjectSummary[] {

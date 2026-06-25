@@ -231,6 +231,14 @@ interface StepDef { key: string; label: string; icon: string; }
                               } @else {
                                 <span class="chip add">{{ diff.counts.added }} nodes loaded</span>
                               }
+                              <span class="spacer"></span>
+                              @if (!diff.initial) {
+                                @if (rev.reviewedAt) {
+                                  <span class="rev-reviewed"><mat-icon>check_circle</mat-icon>Reviewed</span>
+                                } @else {
+                                  <button class="rev-ack-all" (click)="ackRevision(row.id)">Mark revision reviewed</button>
+                                }
+                              }
                             </div>
 
                             @if (rev.impact && rev.impact.summary.pieces > 0) {
@@ -251,6 +259,9 @@ interface StepDef { key: string; label: string; icon: string; }
                                     @if (r.shippedQty > 0) { <span class="chip del">{{ r.shippedQty }} shipped</span> }
                                     @for (w of r.workOrders.slice(0, 2); track w.orderNumber) {
                                       <span class="chip" [matTooltip]="w.orderNumber + ' · ' + w.status">{{ w.productionOrder || w.orderNumber }} · {{ w.unitsTotal ? ((100 * w.unitsDone / w.unitsTotal) | number:'1.0-0') : 0 }}%</span>
+                                    }
+                                    @if (!rev.reviewedAt && r.nodeId) {
+                                      <button class="imp-ack" (click)="ackRevision(row.id, r.nodeId!)" matTooltip="Acknowledge this piece">Acknowledge</button>
                                     }
                                   </div>
                                 }
@@ -416,6 +427,20 @@ interface StepDef { key: string; label: string; icon: string; }
     .imp-mark { font-weight: 700; color: var(--clay-text); }
     .imp-kind { color: var(--clay-text-secondary); }
     .spacer { flex: 1; }
+    .rev-reviewed { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: var(--success-text); }
+    .rev-reviewed mat-icon { font-size: 16px; width: 16px; height: 16px; color: var(--success-text); }
+    .rev-ack-all {
+      border: 1px solid var(--warning, #f59e0b); background: var(--warning, #f59e0b); color: #fff;
+      border-radius: var(--clay-radius-sm); padding: 4px 11px; font-size: 12px; font-weight: 700;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .rev-ack-all:hover { filter: brightness(1.05); }
+    .imp-ack {
+      border: 1px solid var(--clay-border); background: var(--clay-surface); color: var(--clay-primary);
+      border-radius: var(--clay-radius-sm); padding: 2px 9px; font-size: 11px; font-weight: 700;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .imp-ack:hover { border-color: var(--clay-primary); background: var(--info-bg); }
 
     .dl-error { display: flex; align-items: center; gap: 8px; margin: 12px 18px 0; padding: 8px 12px; font-size: 12.5px;
       background: var(--danger-bg); color: var(--danger-text); border-radius: var(--clay-radius-sm); }
@@ -554,6 +579,18 @@ export class ProjectMonitoringComponent implements OnDestroy {
     });
     this.svc.projectDocuments(this.store.id(), id).subscribe({
       next: (d) => { if (this.expanded() === id) this.pkgDocs.set(d); },
+      error: () => {},
+    });
+  }
+
+  /** Acknowledge a revision (whole import, or one piece via nodeId). Refreshes the row + project badges. */
+  ackRevision(importId: string, nodeId?: string): void {
+    this.svc.acknowledgeRevision(this.store.id(), importId, nodeId ? [nodeId] : undefined).subscribe({
+      next: (status) => {
+        this.store.revisionStatus.set(status);
+        this.store.refreshNodes();
+        if (this.expanded() === importId) this.fetchDetail(importId); // re-pull reviewedAt
+      },
       error: () => {},
     });
   }

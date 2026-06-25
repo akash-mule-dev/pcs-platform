@@ -1,12 +1,13 @@
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ThreeViewerComponent, ViewerReferenceLength, ViewerColorOverlay } from '../shared/components/three-viewer/three-viewer.component';
 import { ProjectWorkspaceStore } from './project-workspace.store';
-import { ProjectsService, AssemblyNode, NodeType, NodeDocument, NodeLotRow, LotOption, RevisionDiffData } from '../core/services/projects.service';
+import { ProjectsService, AssemblyNode, NodeType, NodeDocument, NodeLotRow, LotOption, KanbanData, KanbanCard, RevisionDiffData } from '../core/services/projects.service';
+import { ShippingService } from '../core/services/shipping.service';
 import { ToastService } from '../core/services/toast.service';
 
 /** Dimension-like IFC property keys surfaced in the detail panel. */
@@ -70,6 +71,9 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
                   } @else { <span class="caret-spacer"></span> }
                   <mat-icon class="ntype t-{{ n.nodeType }}">{{ typeIcon(n.nodeType) }}</mat-icon>
                   <span class="nname">{{ displayName(n) }}</span>
+                  @if (n.revisionStatus && !n.revisionAckedAt) {
+                    <span class="rev-dot rev-{{ n.revisionStatus }}" [title]="n.revisionStatus === 'added' ? 'Added in the latest revision' : 'Changed in the latest revision'"></span>
+                  }
                   @if (n.mark) { <span class="mark">{{ n.mark }}</span> }
                   @if (n.quantity > 1) { <span class="qty">×{{ n.quantity }}</span> }
                   @if (defined(n.profile); as p) { <span class="meta">{{ p }}</span> }
@@ -85,13 +89,14 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
         <aside class="viewer-pane">
           @if (modelUrl(); as url) {
             <div class="viewer-tools">
-              <span class="vt-hint">{{ overlayLoading() ? 'Loading…' : (colorMode() !== 'none' ? colorLabel() : (isolate() ? 'Isolated view' : 'Click a part to highlight')) }}</span>
+              <span class="vt-hint">{{ overlayLoading() ? 'Loading status…' : (colorMode() !== 'none' ? colorLabel() : (isolate() ? 'Isolated view' : 'Click a part to highlight')) }}</span>
               <label class="color-by" title="Color the model by property or status">
                 <mat-icon>palette</mat-icon>
                 <select [ngModel]="colorMode()" (ngModelChange)="colorMode.set($event)">
                   <option value="none">No coloring</option>
                   <option value="profile">By profile</option>
                   <option value="grade">By grade</option>
+                  <option value="production">By production status</option>
                   <option value="revision">By latest changes</option>
                 </select>
               </label>
@@ -116,6 +121,26 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
                 @if (n.mark) { <span class="mark">{{ n.mark }}</span> }
                 <span class="d-type">{{ n.nodeType }}</span>
               </div>
+              @if (selectedProduction(); as ps) {
+                <div class="prod-row">
+                  <span class="prod-chip" [style.background]="ps.color">{{ ps.label }}@if (ps.percent) { · {{ ps.percent }}% }</span>
+                  @if (ps.via) { <span class="prod-via">via {{ ps.via }}</span> }
+                  @if (ps.orderId) {
+                    <button class="prod-btn" (click)="openOrderBoard(ps.orderId)" title="Open this piece's production order board">
+                      <mat-icon>open_in_new</mat-icon>Order board
+                    </button>
+                  }
+                </div>
+              }
+              @if (n.revisionStatus && !n.revisionAckedAt) {
+                <div class="rev-note rev-{{ n.revisionStatus }}">
+                  <mat-icon>difference</mat-icon>
+                  <span>{{ n.revisionStatus === 'added' ? 'Added in the latest revision' : 'Changed in the latest revision' }}</span>
+                  <span class="spacer"></span>
+                  <button class="rev-link" (click)="goMonitoring()">What changed</button>
+                  <button class="rev-ack-btn" (click)="acknowledgeNode(n)">Acknowledge</button>
+                </div>
+              }
               @if (selectedFacts().length) {
                 <div class="d-grid">
                   @for (f of selectedFacts(); track f.label) {
@@ -255,6 +280,25 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
     .d-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .d-name { font-size: 14px; font-weight: 600; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .d-type { margin-left: auto; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); background: var(--clay-bg-warm); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
+    /* Production status chip + drill-in (shown once production data is loaded) */
+    .prod-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .prod-chip { color: #fff; font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; letter-spacing: .01em; }
+    .prod-via { font-size: 11.5px; color: var(--clay-text-muted); }
+    .prod-btn { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border: 1px solid var(--clay-primary); background: var(--clay-surface); color: var(--clay-primary); border-radius: var(--clay-radius-sm); padding: 4px 10px; font-size: 11.5px; font-weight: 600; font-family: inherit; cursor: pointer; }
+    .prod-btn:hover { background: var(--info-bg); }
+    .prod-btn mat-icon { font-size: 15px; width: 15px; height: 15px; }
+
+    /* ── Revision markers ── */
+    .rev-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .rev-dot.rev-added { background: #27ae60; }
+    .rev-dot.rev-changed { background: #f59e0b; }
+    .rev-note { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 10px; border-radius: var(--clay-radius-sm); font-size: 12px; font-weight: 600; }
+    .rev-note.rev-added { background: #e7f7ee; color: #1a7f43; }
+    .rev-note.rev-changed { background: #fdf1dc; color: #9a6700; }
+    .rev-note mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .rev-link { border: none; background: none; color: inherit; text-decoration: underline; font-weight: 700; cursor: pointer; font-family: inherit; font-size: 12px; }
+    .rev-ack-btn { border: 1px solid currentColor; background: transparent; color: inherit; border-radius: var(--clay-radius-sm); padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .rev-ack-btn:hover { filter: brightness(1.1); }
     .d-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 12px; }
     .d-fact { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .d-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); }
@@ -297,7 +341,9 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
 export class ProjectAssembliesComponent implements OnInit {
   store = inject(ProjectWorkspaceStore);
   private svc = inject(ProjectsService);
+  private shippingSvc = inject(ShippingService);
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private toast = inject(ToastService);
 
   // Derived tree indexes (reactive to store.nodes()).
@@ -331,21 +377,26 @@ export class ProjectAssembliesComponent implements OnInit {
   );
 
   /** Color-by overlay mode for the 3D model. */
-  colorMode = signal<'none' | 'profile' | 'grade' | 'revision'>('none');
+  colorMode = signal<'none' | 'profile' | 'grade' | 'production' | 'revision'>('none');
   /** Categorical palette (last entry is reserved for the "Other" bucket). */
   private readonly PALETTE = ['#4e79a7', '#f28e2b', '#59a14f', '#e15759', '#76b7b2', '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#86bcb6', '#d37295'];
 
-  // Lazily-fetched data source for the revision overlay.
+  // Lazily-fetched data sources for the status overlays.
+  private kanban = signal<KanbanData | null>(null);
   private revision = signal<RevisionDiffData | null>(null);
+  /** Assembly-node ids that appear on a shipped/delivered load (project-scoped). */
+  private shipped = signal<Set<string>>(new Set());
+  private kanbanLoaded = false;
   private revisionLoaded = false;
   readonly overlayLoading = signal(false);
 
   /** The active viewer color overlay, switched by mode. Property modes use the
-   *  already-loaded tree; the revision mode uses the lazily-fetched import diff. */
+   *  already-loaded tree; status modes use the lazily-fetched kanban / revision. */
   colorOverlay = computed<ViewerColorOverlay | null>(() => {
     switch (this.colorMode()) {
       case 'profile': return this.propertyOverlay('profile');
       case 'grade': return this.propertyOverlay('grade');
+      case 'production': return this.productionOverlay();
       case 'revision': return this.revisionOverlay();
       default: return null;
     }
@@ -377,6 +428,38 @@ export class ProjectAssembliesComponent implements OnInit {
     return { colors, legend };
   }
 
+  /** Production heatmap: color each fabricated node's descendant meshes by the
+   *  furthest milestone it has reached, except active work always shows "in
+   *  production". Precedence: in-progress > shipped > complete; uncolored = not started. */
+  private productionOverlay(): ViewerColorOverlay {
+    const C = { progress: '#f59e0b', shipped: '#3b82f6', complete: '#27ae60', none: '#c8c2b6' };
+    const data = this.kanban();
+    if (!data) return { colors: {}, legend: [{ label: 'Loading production status…', color: C.none }] };
+    const shipped = this.shipped();
+    const state = new Map<string, 'progress' | 'shipped' | 'complete'>();
+    for (const c of data.done) if (c.assemblyNodeId) state.set(c.assemblyNodeId, 'complete');
+    for (const nid of shipped) state.set(nid, 'shipped');                                      // shipped > complete
+    for (const c of data.cards) if (c.assemblyNodeId) state.set(c.assemblyNodeId, 'progress'); // active work wins
+    const byId = this.byId();
+    const colors: Record<string, string> = {};
+    const n = { progress: 0, shipped: 0, complete: 0 };
+    for (const [nodeId, s] of state) {
+      const node = byId.get(nodeId);
+      if (!node) continue;
+      n[s]++;
+      for (const guid of this.descendantGuids(node)) colors[guid] = C[s];
+    }
+    return {
+      colors,
+      legend: [
+        { label: `In production (${n.progress})`, color: C.progress },
+        { label: `Complete (${n.complete})`, color: C.complete },
+        { label: `Shipped (${n.shipped})`, color: C.shipped },
+        { label: 'Not started / no order', color: C.none },
+      ],
+    };
+  }
+
   /** Change overlay vs the latest import: added (green) / changed (amber).
    *  Removed pieces aren't in the current model so they're noted, not drawn. */
   private revisionOverlay(): ViewerColorOverlay {
@@ -404,8 +487,55 @@ export class ProjectAssembliesComponent implements OnInit {
   colorLabel(): string {
     return {
       none: '', profile: 'Colored by profile', grade: 'Colored by grade',
-      revision: 'Colored by latest changes',
+      production: 'Colored by production status', revision: 'Colored by latest changes',
     }[this.colorMode()] ?? '';
+  }
+
+  /** Production status of the selected piece — found by walking up to the nearest
+   *  work-ordered ancestor (work orders sit on assemblies, parts are leaves).
+   *  Drives the detail-panel chip + the click-through to that order's board. */
+  selectedProduction = computed(() => {
+    const node = this.selectedNode();
+    const data = this.kanban();
+    if (!node || !data) return null;
+    const cardByNode = new Map<string, KanbanCard>();
+    for (const c of data.done) if (c.assemblyNodeId) cardByNode.set(c.assemblyNodeId, c);
+    for (const c of data.cards) if (c.assemblyNodeId) cardByNode.set(c.assemblyNodeId, c); // active overrides done
+    const byId = this.byId();
+    let n: AssemblyNode | undefined = node;
+    while (n) {
+      const card = cardByNode.get(n.id);
+      if (card) {
+        const inProgress = !!card.currentStage;
+        const isShipped = this.shipped().has(n.id);
+        return {
+          label: inProgress ? `In production · ${card.currentStage!.name}` : isShipped ? 'Shipped' : 'Complete',
+          color: inProgress ? '#f59e0b' : isShipped ? '#3b82f6' : '#27ae60',
+          percent: card.overall.percent,
+          orderId: card.productionOrderId,
+          orderNumber: card.productionOrderNumber,
+          // Name the bearing assembly when the status comes from an ancestor, not the clicked part.
+          via: n.id === node.id ? null : (n.mark || this.displayName(n)),
+        };
+      }
+      n = n.parentId ? byId.get(n.parentId) : undefined;
+    }
+    return null;
+  });
+
+  /** Drill into the selected piece's production order board. */
+  openOrderBoard(orderId: string | null): void {
+    if (orderId) this.router.navigate(['/projects', this.store.id(), 'orders', orderId, 'board']);
+  }
+
+  goMonitoring(): void {
+    this.router.navigate(['/projects', this.store.id(), 'monitoring']);
+  }
+
+  /** Acknowledge this single revised piece (clears its tree dot + the linked WO flag). */
+  acknowledgeNode(n: AssemblyNode): void {
+    const importId = n.revisedByImportId ?? this.store.revisionStatus()?.latestImportId;
+    if (importId) this.store.acknowledgeRevision(importId, [n.id]);
   }
 
   /** Measurements & identity facts for the detail panel: promoted fab columns
@@ -478,10 +608,31 @@ export class ProjectAssembliesComponent implements OnInit {
         this.svc.availableLots(this.store.id()).subscribe({ next: (o) => this.lotOptions.set(o), error: () => {} });
       }
     }, { allowSignalWrites: true });
-    // Lazily fetch the import diff the revision overlay needs the first time it's picked.
+    // Lazily fetch the data a status overlay needs the first time it's picked.
     effect(() => {
       const mode = this.colorMode();
       const pid = this.store.id();
+      if (mode === 'production' && !this.kanbanLoaded && pid) {
+        this.kanbanLoaded = true;
+        this.overlayLoading.set(true);
+        this.svc.projectKanban(pid).subscribe({
+          next: (d) => { this.kanban.set(d); this.overlayLoading.set(false); },
+          error: () => { this.overlayLoading.set(false); this.kanbanLoaded = false; },
+        });
+        // Shipped assemblies (best-effort, parallel) — what's left the shop.
+        this.shippingSvc.listByProject(pid).subscribe({
+          next: (loads) => {
+            const out = new Set<string>();
+            for (const s of loads) {
+              if (s.status === 'shipped' || s.status === 'delivered') {
+                for (const it of s.items ?? []) if (it.assemblyNodeId) out.add(it.assemblyNodeId);
+              }
+            }
+            this.shipped.set(out);
+          },
+          error: () => {},
+        });
+      }
       if (mode === 'revision' && !this.revisionLoaded && pid) {
         this.revisionLoaded = true;
         this.overlayLoading.set(true);
