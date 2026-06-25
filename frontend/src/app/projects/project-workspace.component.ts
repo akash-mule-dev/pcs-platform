@@ -86,6 +86,34 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
           }
           @if (store.importError()) { <p class="import-err">{{ store.importError() }}</p> }
 
+          <!-- Revision review banner: shown while the latest revision is unreviewed -->
+          @if (store.revisionStatus(); as rev) {
+            @if (rev.hasUnreviewed) {
+              <div class="rev-banner">
+                <mat-icon class="rb-icon">difference</mat-icon>
+                <div class="rb-text">
+                  <strong>New revision uploaded{{ rev.latestImportName ? ' — ' + rev.latestImportName : '' }}</strong>
+                  <span class="rb-sub">
+                    @if (rev.counts.changed) { <span class="rb-chip chg">~{{ rev.counts.changed }} changed</span> }
+                    @if (rev.counts.added) { <span class="rb-chip add">+{{ rev.counts.added }} new</span> }
+                    @if (rev.counts.missing) { <span class="rb-chip del">−{{ rev.counts.missing }} removed</span> }
+                    @if (rev.impact.pieces > 0) {
+                      <span class="rb-impact">
+                        {{ rev.impact.pieces }} piece(s) in production
+                        @if (rev.impact.critical) { <span class="rb-sev crit">{{ rev.impact.critical }} shipped</span> }
+                        @if (rev.impact.high) { <span class="rb-sev high">{{ rev.impact.high }} with work done</span> }
+                      </span>
+                    }
+                  </span>
+                </div>
+                <div class="rb-actions">
+                  <a class="rb-review" [routerLink]="['/projects', store.id(), 'monitoring']">Review changes</a>
+                  <button class="rb-ack" (click)="markRevisionReviewed()" [disabled]="!rev.latestImportId">Mark reviewed</button>
+                </div>
+              </div>
+            }
+          }
+
           <!-- Design stat strip (production tracking lives inside each work order) -->
           <div class="stat-strip" data-tour="ws-stats">
             <div class="stat">
@@ -200,6 +228,35 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
     .pl-link { margin-left: 8px; font-weight: 600; color: var(--clay-primary); text-decoration: underline; cursor: pointer; }
     .import-err { background: var(--clay-surface); border-left: 1px solid var(--clay-border); border-right: 1px solid var(--clay-border); margin: 0; padding: 8px 20px; color: var(--danger-text); font-size: 13px; }
 
+    /* ── Revision review banner ────────────────────────────────────── */
+    .rev-banner {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--warning-bg, #fff7e6); border-left: 3px solid var(--warning, #f59e0b);
+      border-right: 1px solid var(--clay-border);
+      padding: 10px 20px;
+    }
+    .rb-icon { color: var(--warning, #f59e0b); flex-shrink: 0; }
+    .rb-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+    .rb-text strong { font-size: 13px; color: var(--clay-text); }
+    .rb-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--clay-text-muted); }
+    .rb-chip { border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: 11px; }
+    .rb-chip.add { background: #e7f7ee; color: #1a7f43; }
+    .rb-chip.chg { background: #fdf1dc; color: #9a6700; }
+    .rb-chip.del { background: #fdecec; color: #b42318; }
+    .rb-impact { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+    .rb-sev { border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: 11px; }
+    .rb-sev.crit { background: #b42318; color: #fff; }
+    .rb-sev.high { background: #fdecec; color: #b42318; }
+    .rb-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .rb-review { font-size: 13px; font-weight: 600; color: var(--clay-primary); text-decoration: underline; cursor: pointer; }
+    .rb-ack {
+      border: 1px solid var(--warning, #f59e0b); background: var(--warning, #f59e0b); color: #fff;
+      border-radius: var(--clay-radius-sm); padding: 6px 12px; font-size: 12px; font-weight: 700;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .rb-ack:hover { filter: brightness(1.05); }
+    .rb-ack:disabled { opacity: .55; cursor: default; }
+
     /* ── Stat strip ────────────────────────────────────────────────── */
     .stat-strip {
       display: flex; align-items: stretch; gap: 22px; flex-wrap: wrap;
@@ -283,6 +340,12 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
 
   stageLabel(stage: string): string {
     return IMPORT_STAGE_LABELS[stage] ?? stage;
+  }
+
+  /** One-click: mark the whole latest revision reviewed (clears banner + badges). */
+  markRevisionReviewed(): void {
+    const importId = this.store.revisionStatus()?.latestImportId;
+    if (importId) this.store.acknowledgeRevision(importId);
   }
 
   onFile(event: Event): void {

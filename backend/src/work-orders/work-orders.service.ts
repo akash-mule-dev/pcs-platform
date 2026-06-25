@@ -177,7 +177,8 @@ export class WorkOrdersService {
     const wos: any[] = await this.woRepo.query(
       `SELECT w.id, w.order_number, w.status, w.priority, w.due_date, w.quantity, w.updated_at,
               w.production_order_id, w.assembly_node_id,
-              n.mark, n.name AS node_name, n.profile,
+              (w.revision_flagged_import_id IS NOT NULL AND w.revision_acked_at IS NULL) AS revision_flagged,
+              n.mark, n.name AS node_name, n.profile, n.revision_status,
               o.number AS po_number, o.customer_name, o.due_date AS po_due,
               p.id AS project_id, p.name AS project_name
          FROM work_orders w
@@ -290,6 +291,8 @@ export class WorkOrdersService {
         dueDate: due,
         late: !!due && current != null && new Date(due).getTime() < now,
         openNcrs,
+        revisionFlagged: !!w.revision_flagged,
+        revisionStatus: w.revision_status ?? null,
         updatedAt: w.updated_at,
         overall: {
           unitsDone,
@@ -328,6 +331,7 @@ export class WorkOrdersService {
       done: done.length,
       late: cards.filter((c) => c.late).length,
       blocked: cards.filter((c) => c.currentStage?.gateBlocked).length,
+      revised: cards.filter((c) => c.revisionFlagged).length,
     };
     return { stages, cards, done: filters.includeAllDone ? done : done.slice(0, 25), doneTotal: done.length, totals };
   }

@@ -119,6 +119,22 @@ export class AssemblyNode extends TenantOwnedEntity {
   @Column({ name: 'mesh_name', type: 'varchar', length: 255, nullable: true })
   meshName: string | null;
 
+  // ── Revision markers (persisted from the latest import's diff) ───────────
+  /** What the latest revision did to this node: 'added' | 'changed' (null = unchanged/cleared). */
+  @Column({ name: 'revision_status', type: 'varchar', length: 10, nullable: true })
+  revisionStatus: string | null;
+
+  /** The import that last marked this node added/changed. */
+  @Column({ name: 'revised_by_import_id', type: 'uuid', nullable: true })
+  revisedByImportId: string | null;
+
+  /** When a user acknowledged this piece's revision (null = unreviewed). */
+  @Column({ name: 'revision_acked_at', type: 'timestamptz', nullable: true })
+  revisionAckedAt: Date | null;
+
+  @Column({ name: 'revision_acked_by_id', type: 'uuid', nullable: true })
+  revisionAckedById: string | null;
+
   // ── Tree helpers (set by the importer; cheap ordering for rendering) ─────
   @Column({ type: 'integer', default: 0 })
   depth: number;

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Req, Res, UploadedFile, UseInterceptors, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Req, Res, UploadedFile, UseInterceptors, UseGuards, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -45,6 +45,25 @@ export class ProjectImportController {
   @ApiOperation({ summary: 'Revision diff of this import (added/changed/missing vs the prior tree) + production impact per affected piece' })
   getRevision(@Param('id') id: string, @Param('importId') importId: string) {
     return this.importService.getImportRevision(id, importId);
+  }
+
+  @Get(':id/revision-status')
+  @RequirePermissions('projects.view')
+  @ApiOperation({ summary: 'Project revision banner feed: whether the latest revision still needs review, its add/change/missing counts and production-impact summary' })
+  revisionStatus(@Param('id') id: string) {
+    return this.importService.getRevisionStatus(id);
+  }
+
+  @Post(':id/imports/:importId/acknowledge')
+  @RequirePermissions('projects.review-revision')
+  @ApiOperation({ summary: 'Acknowledge a revision: whole import (no body) or specific pieces ({ nodeIds }); clears the matching tree badges + work-order flags' })
+  acknowledgeRevision(
+    @Param('id') id: string,
+    @Param('importId') importId: string,
+    @Body() body: { nodeIds?: string[] } | undefined,
+    @Req() req: any,
+  ) {
+    return this.importService.acknowledgeRevision(id, importId, body?.nodeIds, req?.user?.id ?? null);
   }
 
   @Get(':id/imports/:importId/source')

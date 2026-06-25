@@ -13,6 +13,8 @@ export interface ProjectMetrics {
   partCount: number;
   assemblyCount: number;
   tonnage: { totalKg: number };
+  /** Unacknowledged revised pieces exist → show a "revision pending" badge. */
+  revisionPending: boolean;
 }
 export type ProjectWithMetrics = Project & { metrics: ProjectMetrics };
 
@@ -20,7 +22,7 @@ export type ProjectWithMetrics = Project & { metrics: ProjectMetrics };
 export type DeletedProject = Project & { purgeAt: string; daysRemaining: number };
 
 const EMPTY_METRICS: ProjectMetrics = {
-  nodeCount: 0, partCount: 0, assemblyCount: 0, tonnage: { totalKg: 0 },
+  nodeCount: 0, partCount: 0, assemblyCount: 0, tonnage: { totalKg: 0 }, revisionPending: false,
 };
 
 const RETENTION_MS = PROJECT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -110,9 +112,10 @@ export class ProjectsService extends TenantScopedService<Project> {
       .addSelect(`SUM(CASE WHEN n.node_type = 'part' THEN 1 ELSE 0 END)`, 'partCount')
       .addSelect(`SUM(CASE WHEN n.node_type IN ('assembly','subassembly') THEN 1 ELSE 0 END)`, 'assemblyCount')
       .addSelect(`COALESCE(SUM(CASE WHEN n.node_type = 'part' THEN n.weight_kg * n.quantity ELSE 0 END), 0)`, 'totalKg')
+      .addSelect(`SUM(CASE WHEN n.revision_status IS NOT NULL AND n.revision_acked_at IS NULL THEN 1 ELSE 0 END)`, 'revisedPending')
       .where('n.organization_id = :organizationId', { organizationId })
       .groupBy('n.project_id')
-      .getRawMany<{ projectId: string; nodeCount: string; partCount: string; assemblyCount: string; totalKg: string }>();
+      .getRawMany<{ projectId: string; nodeCount: string; partCount: string; assemblyCount: string; totalKg: string; revisedPending: string }>();
 
     const byProject = new Map<string, ProjectMetrics>();
     for (const r of rows) {
@@ -121,6 +124,7 @@ export class ProjectsService extends TenantScopedService<Project> {
         partCount: Number(r.partCount) || 0,
         assemblyCount: Number(r.assemblyCount) || 0,
         tonnage: { totalKg: Math.round((Number(r.totalKg) || 0) * 10) / 10 },
+        revisionPending: (Number(r.revisedPending) || 0) > 0,
       });
     }
 

@@ -38,6 +38,7 @@ const connectionConfig = databaseUrl
     };
 
 const connectTimeoutMs = parseInt(process.env.DB_CONNECT_TIMEOUT || '8000', 10);
+const queryTimeoutMs = parseInt(process.env.DB_QUERY_TIMEOUT || '60000', 10);
 
 // synchronize auto-mutates the DB schema to match the entities on boot.
 // This app currently ships NO migrations, so synchronize is load-bearing: it
@@ -82,7 +83,13 @@ logger.log(`Database target: ${dbTargetHost} (env=${process.env.VERCEL_ENV || pr
       subscribers: [TenantSubscriber],
       extra: {
         connectionTimeoutMillis: connectTimeoutMs,
-        query_timeout: 10000,
+        // Per-query client-side timeout. Must comfortably exceed the boot-time
+        // schema-introspection queries TypeORM's `synchronize` runs (a large
+        // join over pg_constraint/pg_attribute across every table) — on Neon
+        // those can take many seconds on a cold connection. A 10s cap was
+        // killing them, so DataSource.initialize() failed and the whole API
+        // refused to boot. Env-overridable; default generous enough for Neon.
+        query_timeout: queryTimeoutMs,
       },
       retryAttempts: 2,
       retryDelay: 1000,

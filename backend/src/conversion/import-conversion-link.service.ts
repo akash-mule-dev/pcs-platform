@@ -91,6 +91,16 @@ export class ImportConversionLinkService {
       durationMs: imp.durationMs,
     });
     this.emit(imp, '3D model linked — import complete');
+    // Tenant-wide signal so any client with this project's model cached (even one
+    // not currently viewing it) evicts the stale copy and re-downloads on next open.
+    try {
+      this.ws.emitProjectModelUpdated({
+        projectId: imp.projectId,
+        modelId: job.modelId ?? null,
+        importId: imp.id,
+        organizationId: (imp.organizationId as string | null) ?? null,
+      });
+    } catch { /* best-effort */ }
   }
 
   private async failImport(imp: ImportFile, job: ConversionJob): Promise<void> {

@@ -108,6 +108,13 @@ export class ImportFile extends TenantOwnedEntity {
   @Column({ type: 'jsonb', nullable: true })
   revision: Record<string, unknown> | null;
 
+  /** Whole-revision review state: stamped when a user marks this revision reviewed. */
+  @Column({ name: 'revision_reviewed_at', type: 'timestamptz', nullable: true })
+  revisionReviewedAt: Date | null;
+
+  @Column({ name: 'revision_reviewed_by_id', type: 'uuid', nullable: true })
+  revisionReviewedById: string | null;
+
   /** Links to the existing conversion pipeline job that produced the GLB. */
   @Column({ name: 'conversion_job_id', type: 'uuid', nullable: true })
   conversionJobId: string | null;
