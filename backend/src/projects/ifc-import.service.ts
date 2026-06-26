@@ -12,6 +12,7 @@ import { ImportFile, ImportFileStatus, IMPORT_STAGE_PROGRESS } from './import-fi
 import { ImportFileEvent } from './import-file-event.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { computeRevisionDiff, revisionSummaryMessage, RevisionDiff } from './revision-diff.js';
+import { revisionSeverity, summarizeImpact, bySeverity, RevisionSeverity } from './revision-impact.js';
 import {
   ACCEPTED_UPLOAD_EXTS, MODEL_EXTS, GEOMETRY_EXTS, DOC_CONTENT_TYPES,
   classifyPackageEntries, matchDrawingsToMarks, packageSummaryMessage,
@@ -511,7 +512,69 @@ export class IfcImportService implements OnModuleInit {
       message: `Assembly tree ready: ${nodeCount} nodes (${counts['part'] ?? 0} parts)`,
       detail: { nodeCount, counts },
     });
+
+    // Persist the revision signal onto the tree + work orders (review layer).
+    if (diff) await this.stampRevisionMarkers(imp, organizationId, diff);
     return { nodeCount };
+  }
+
+  /**
+   * Make the revision actionable: mark which nodes the LATEST revision added/
+   * changed and flag the work orders touching changed/removed pieces for human
+   * review. Review-only — never alters production counts or blocks stages.
+   *
+   * Markers reflect ONLY the latest revision, so prior markers + acks are reset
+   * first. Skipped on the initial import (nothing to review on first load).
+   */
+  private async stampRevisionMarkers(imp: ImportFile, organizationId: string, diff: RevisionDiff): Promise<void> {
+    if (diff.initial) return;
+    try {
+      // 1. Reset prior markers + per-piece acks for the whole project.
+      await this.nodeRepo.query(
+        `UPDATE assembly_nodes
+            SET revision_status = NULL, revised_by_import_id = NULL,
+                revision_acked_at = NULL, revision_acked_by_id = NULL
+          WHERE organization_id = $1 AND project_id = $2 AND revision_status IS NOT NULL`,
+        [organizationId, imp.projectId],
+      );
+
+      // 2. Stamp added/changed nodes by ifc_guid (entry lists are capped at 500).
+      const addedGuids = (diff.added ?? []).map((e) => e.guid).filter(Boolean);
+      const changedGuids = (diff.changed ?? []).map((e) => e.guid).filter(Boolean);
+      const stamp = async (guids: string[], status: 'added' | 'changed') => {
+        if (!guids.length) return;
+        await this.nodeRepo.query(
+          `UPDATE assembly_nodes SET revision_status = $3, revised_by_import_id = $4
+            WHERE organization_id = $1 AND project_id = $2 AND ifc_guid = ANY($5::varchar[])`,
+          [organizationId, imp.projectId, status, imp.id, guids],
+        );
+      };
+      await stamp(addedGuids, 'added');
+      await stamp(changedGuids, 'changed');
+
+      // 3. Flag work orders touching changed/removed pieces (ancestor rollup).
+      const impact = await this.computeRevisionImpact(organizationId, imp.projectId, diff);
+      const woIds = Array.from(new Set(impact.rows.flatMap((r) => r.workOrders.map((w) => w.id))));
+      if (woIds.length) {
+        await this.nodeRepo.query(
+          `UPDATE work_orders
+              SET revision_flagged_import_id = $2, revision_flagged_at = now(),
+                  revision_acked_at = NULL, revision_acked_by_id = NULL
+            WHERE organization_id = $1 AND id = ANY($3::uuid[])`,
+          [organizationId, imp.id, woIds],
+        );
+      }
+
+      await this.record(imp, {
+        stage: imp.stage,
+        status: imp.status,
+        progress: imp.progress,
+        message: `Revision review: ${addedGuids.length} added, ${changedGuids.length} changed marked; ${woIds.length} work order(s) flagged${impact.summary.critical ? `, ${impact.summary.critical} shipped` : ''}`,
+        detail: { added: addedGuids.length, changed: changedGuids.length, flaggedWorkOrders: woIds.length, impact: impact.summary },
+      });
+    } catch (e) {
+      this.logger.warn(`Revision marker stamping failed for ${imp.id} (import continues): ${this.errMsg(e)}`);
+    }
   }
 
   /** Queue the GLB conversion + handle dedupe/instant outcomes uniformly. */
@@ -700,13 +763,40 @@ export class IfcImportService implements OnModuleInit {
     if (!imp) throw new NotFoundException('Import not found');
     const diff = (imp.revision ?? null) as unknown as RevisionDiff | null;
     if (!diff) return { diff: null, impact: null };
+    const impact = await this.computeRevisionImpact(organizationId, projectId, diff);
+    return {
+      diff,
+      impact,
+      reviewedAt: imp.revisionReviewedAt ?? null,
+      reviewedById: imp.revisionReviewedById ?? null,
+    };
+  }
 
+  /**
+   * Production impact of a diff: for every CHANGED or MISSING piece, roll up
+   * through its ancestors to find the work orders touching it and any shipped
+   * quantity, then classify severity (revision-impact.ts). Used both by the
+   * read endpoint and by the import-time work-order flagging, so each row also
+   * carries the resolved `nodeId` and the affected `workOrders[].id`.
+   */
+  private async computeRevisionImpact(
+    organizationId: string,
+    projectId: string,
+    diff: RevisionDiff,
+  ): Promise<{
+    summary: { pieces: number; critical: number; high: number; medium: number; none: number };
+    rows: {
+      kind: 'changed' | 'missing'; guid: string; mark: string | null; name: string;
+      deltas: unknown[] | null; severity: RevisionSeverity; shippedQty: number; nodeId: string | null;
+      workOrders: { id: string; orderNumber: string; productionOrder: string | null; status: string; unitsDone: number; unitsTotal: number }[];
+    }[];
+  }> {
     const affected = [
       ...(diff.changed ?? []).map((e) => ({ ...e, kind: 'changed' as const })),
       ...(diff.missing ?? []).map((e) => ({ ...e, kind: 'missing' as const })),
     ];
-    const empty = { summary: { pieces: 0, critical: 0, high: 0, medium: 0, none: 0 }, rows: [] as any[] };
-    if (!affected.length) return { diff, impact: empty };
+    const empty = { summary: { pieces: 0, critical: 0, high: 0, medium: 0, none: 0 }, rows: [] };
+    if (!affected.length) return empty;
 
     // Minimal whole-tree map for ancestor rollup (id, parent, guid).
     const tree: { id: string; parent_id: string | null; ifc_guid: string | null }[] = await this.nodeRepo.query(
@@ -748,7 +838,8 @@ export class IfcImportService implements OnModuleInit {
       // Walk self → ancestors, collecting any production touching this piece.
       const wos: any[] = [];
       let shippedQty = 0;
-      let nodeId = idByGuid.get(e.guid) ?? null;
+      const rootId = idByGuid.get(e.guid) ?? null;
+      let nodeId = rootId;
       const hops = new Set<string>();
       while (nodeId && !hops.has(nodeId)) {
         hops.add(nodeId);
@@ -757,16 +848,17 @@ export class IfcImportService implements OnModuleInit {
         nodeId = parentOf.get(nodeId) ?? null;
       }
       const unitsDone = wos.reduce((a, w) => a + Number(w.units_done), 0);
-      const severity = shippedQty > 0 ? 'critical' : unitsDone > 0 ? 'high' : wos.length > 0 ? 'medium' : 'none';
       return {
         kind: e.kind,
         guid: e.guid,
         mark: e.mark,
         name: e.name,
         deltas: (e as any).deltas ?? null,
-        severity,
+        severity: revisionSeverity(shippedQty, unitsDone, wos.length),
         shippedQty,
+        nodeId: rootId,
         workOrders: wos.map((w) => ({
+          id: w.id,
           orderNumber: w.order_number,
           productionOrder: w.po_number,
           status: w.status,
@@ -775,16 +867,143 @@ export class IfcImportService implements OnModuleInit {
         })),
       };
     });
-    rows.sort((a, b) => ['critical', 'high', 'medium', 'none'].indexOf(a.severity) - ['critical', 'high', 'medium', 'none'].indexOf(b.severity));
+    rows.sort(bySeverity);
+    return { summary: summarizeImpact(rows), rows };
+  }
 
-    const summary = {
-      pieces: rows.length,
-      critical: rows.filter((r) => r.severity === 'critical').length,
-      high: rows.filter((r) => r.severity === 'high').length,
-      medium: rows.filter((r) => r.severity === 'medium').length,
-      none: rows.filter((r) => r.severity === 'none').length,
+  /**
+   * Acknowledge a revision (the review action). With no nodeIds → mark the WHOLE
+   * revision reviewed: ack every node this import touched + clear all its work-
+   * order flags + stamp the import reviewed. With nodeIds → ack just those pieces,
+   * then reconcile work-order flags (a WO clears once no unacked revised piece
+   * remains in its subtree); if nothing unacked is left, the import is marked
+   * reviewed too. Returns the fresh revision status for the project.
+   */
+  async acknowledgeRevision(
+    projectId: string,
+    importFileId: string,
+    nodeIds: string[] | undefined,
+    userId: string | null,
+  ) {
+    const organizationId = TenantContext.requireOrganizationId();
+    const imp = await this.importRepo.findOne({ where: { id: importFileId, projectId, organizationId } });
+    if (!imp) throw new NotFoundException('Import not found');
+
+    if (nodeIds && nodeIds.length) {
+      // Per-piece: ack the named revised nodes, then reconcile WO flags.
+      await this.nodeRepo.query(
+        `UPDATE assembly_nodes SET revision_acked_at = now(), revision_acked_by_id = $3
+          WHERE organization_id = $1 AND project_id = $2 AND id = ANY($4::uuid[])
+            AND revision_status IS NOT NULL`,
+        [organizationId, projectId, userId, nodeIds],
+      );
+      // Clear a WO's flag once its subtree has no unacked revised node left.
+      await this.nodeRepo.query(
+        `WITH RECURSIVE flagged AS (
+            SELECT w.id AS wo_id, w.assembly_node_id AS node_id
+              FROM work_orders w
+             WHERE w.organization_id = $1 AND w.revision_flagged_import_id = $2
+               AND w.revision_acked_at IS NULL AND w.assembly_node_id IS NOT NULL
+          ),
+          sub AS (
+            SELECT f.wo_id, f.node_id FROM flagged f
+            UNION ALL
+            SELECT s.wo_id, c.id FROM sub s
+              JOIN assembly_nodes c ON c.parent_id = s.node_id AND c.organization_id = $1
+          )
+          UPDATE work_orders w SET revision_acked_at = now(), revision_acked_by_id = $3
+           WHERE w.id IN (
+             SELECT wo_id FROM flagged
+             EXCEPT
+             SELECT DISTINCT s.wo_id FROM sub s
+               JOIN assembly_nodes n ON n.id = s.node_id
+              WHERE n.revision_status IS NOT NULL AND n.revision_acked_at IS NULL
+           )`,
+        [organizationId, importFileId, userId],
+      );
+    } else {
+      // Whole revision: ack everything this import touched.
+      await this.nodeRepo.query(
+        `UPDATE assembly_nodes SET revision_acked_at = now(), revision_acked_by_id = $3
+          WHERE organization_id = $1 AND project_id = $2 AND revised_by_import_id = $4
+            AND revision_status IS NOT NULL AND revision_acked_at IS NULL`,
+        [organizationId, projectId, userId, importFileId],
+      );
+      await this.nodeRepo.query(
+        `UPDATE work_orders SET revision_acked_at = now(), revision_acked_by_id = $2
+          WHERE organization_id = $1 AND revision_flagged_import_id = $3 AND revision_acked_at IS NULL`,
+        [organizationId, userId, importFileId],
+      );
+    }
+
+    // Stamp the import reviewed once nothing unacked is left for it.
+    const [{ remaining }] = await this.nodeRepo.query(
+      `SELECT (
+         (SELECT COUNT(*) FROM assembly_nodes
+           WHERE organization_id = $1 AND project_id = $2 AND revised_by_import_id = $3
+             AND revision_status IS NOT NULL AND revision_acked_at IS NULL)
+       + (SELECT COUNT(*) FROM work_orders
+           WHERE organization_id = $1 AND revision_flagged_import_id = $3 AND revision_acked_at IS NULL)
+       )::int AS remaining`,
+      [organizationId, projectId, importFileId],
+    );
+    if (Number(remaining) === 0 && !imp.revisionReviewedAt) {
+      imp.revisionReviewedAt = new Date();
+      imp.revisionReviewedById = userId;
+      await this.importRepo.save(imp);
+    }
+    return this.getRevisionStatus(projectId);
+  }
+
+  /**
+   * Lightweight banner feed: does the project's latest revision still need
+   * review, and how big is it. Reads the most recent non-initial import + a few
+   * COUNTs; impact summary reuses the same rollup as the change-order report.
+   */
+  async getRevisionStatus(projectId: string) {
+    const organizationId = TenantContext.requireOrganizationId();
+    const imp = await this.importRepo.findOne({
+      where: { organizationId, projectId },
+      order: { createdAt: 'DESC' },
+    });
+    const none = {
+      latestImportId: null as string | null,
+      latestImportName: null as string | null,
+      importedAt: null as Date | null,
+      hasUnreviewed: false,
+      reviewedAt: null as Date | null,
+      counts: { added: 0, changed: 0, missing: 0 },
+      impact: { pieces: 0, critical: 0, high: 0, medium: 0, none: 0 },
+      unackedPieces: 0,
+      unackedWorkOrders: 0,
     };
-    return { diff, impact: { summary, rows } };
+    if (!imp) return none;
+    const diff = (imp.revision ?? null) as unknown as RevisionDiff | null;
+    if (!diff || diff.initial) return { ...none, latestImportId: imp.id, latestImportName: imp.originalName, importedAt: imp.createdAt };
+
+    const [{ unacked_pieces, unacked_wos }] = await this.nodeRepo.query(
+      `SELECT
+         (SELECT COUNT(*) FROM assembly_nodes
+           WHERE organization_id = $1 AND project_id = $2
+             AND revision_status IS NOT NULL AND revision_acked_at IS NULL)::int AS unacked_pieces,
+         (SELECT COUNT(*) FROM work_orders
+           WHERE organization_id = $1 AND revision_flagged_import_id = $3 AND revision_acked_at IS NULL)::int AS unacked_wos`,
+      [organizationId, projectId, imp.id],
+    );
+    const impact = await this.computeRevisionImpact(organizationId, projectId, diff);
+    const unackedPieces = Number(unacked_pieces);
+    const unackedWorkOrders = Number(unacked_wos);
+    return {
+      latestImportId: imp.id,
+      latestImportName: imp.originalName,
+      importedAt: imp.createdAt,
+      hasUnreviewed: !imp.revisionReviewedAt && (unackedPieces > 0 || unackedWorkOrders > 0),
+      reviewedAt: imp.revisionReviewedAt ?? null,
+      counts: { added: diff.counts.added, changed: diff.counts.changed, missing: diff.counts.missing },
+      impact: impact.summary,
+      unackedPieces,
+      unackedWorkOrders,
+    };
   }
 
   /**

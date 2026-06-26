@@ -89,6 +89,7 @@ export const PERMISSION_CATALOG: PermissionFeatureDef[] = [
       { action: 'delete', label: 'Delete', description: 'Delete projects', defaultRoles: NONE },
       { action: 'restore', label: 'Restore', description: 'Restore deleted projects from the Trash', defaultRoles: M },
       { action: 'import', label: 'Import IFC', description: 'Import IFC/CAD files into a project', defaultRoles: M },
+      { action: 'review-revision', label: 'Review revisions', description: 'Acknowledge package revisions (clear revised-piece + work-order review flags)', defaultRoles: MSO },
     ],
   },
   {

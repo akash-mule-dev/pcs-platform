@@ -7,9 +7,10 @@ const TRACKING_NORMAL = 3;
 const TRACKING_LIMITED = 2;
 const TRACKING_UNAVAILABLE = 1;
 
-// Capture the props ViroARScene receives so tests can drive onClick /
-// onTrackingUpdated as the native layer would.
+// Capture the props ViroARScene / ViroARPlane receive so tests can drive
+// onClick / onTrackingUpdated / onAnchorFound as the native layer would.
 let sceneProps: any = null;
+let planeProps: any = null;
 
 // @gltf-transform is pulled in (transitively, via the measurement overlays'
 // dimension formatter). The scene never parses GLBs, so a stub is plenty.
@@ -34,6 +35,10 @@ jest.mock('@reactvision/react-viro', () => {
     ViroSpotLight: () => null,
     Viro3DObject: () => React.createElement(View, { testID: 'viro-3d-object' }, null),
     ViroNode: (props: any) => React.createElement(View, { testID: 'viro-node' }, props.children),
+    ViroARPlane: (props: any) => {
+      planeProps = props;
+      return React.createElement(View, { testID: 'viro-ar-plane' }, props.children);
+    },
     ViroText: () => null,
     ViroSphere: () => null,
     ViroBox: () => null,
@@ -103,6 +108,7 @@ describe('ARModelScene (camera-first AR scene)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     sceneProps = null;
+    planeProps = null;
   });
 
   it('always renders the AR scene (camera open before the model)', () => {
@@ -147,6 +153,39 @@ describe('ARModelScene (camera-first AR scene)', () => {
 
     // No camera exposed in the test, so placement falls back to the tap position.
     expect(props.sceneNavigator.viroAppProps.onPlace).toHaveBeenCalledWith([0.1, -0.2, -1]);
+  });
+
+  it('anchors the model under a ViroARPlane in anchor mode (no free placement needed)', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ARModelScene {...makeProps({ anchorMode: true, placed: false })} />,
+    );
+    // The model rides an ARKit plane anchor instead of a free world coordinate,
+    // and it renders even though it was never free-placed.
+    expect(getByTestId('viro-ar-plane')).toBeTruthy();
+    expect(queryByTestId('viro-3d-object')).toBeTruthy();
+  });
+
+  it('does not run free auto-place in anchor mode', async () => {
+    jest.useFakeTimers();
+    try {
+      const props = makeProps({ anchorMode: true, autoPlace: true, placed: false });
+      render(<ARModelScene {...props} />);
+      await act(async () => {
+        jest.advanceTimersByTime(6000);
+      });
+      // Placement is owned by the plane anchor — the camera-forward-ray fallback
+      // must never fire (it would create a second, drifting free node).
+      expect(props.sceneNavigator.viroAppProps.onPlace).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('reports the surface lock via onAnchorFound when the plane attaches', () => {
+    const onAnchorFound = jest.fn();
+    render(<ARModelScene {...makeProps({ anchorMode: true, onAnchorFound })} />);
+    act(() => planeProps.onAnchorFound({}));
+    expect(onAnchorFound).toHaveBeenCalled();
   });
 
   it('auto-places the model in front of the camera once ready (no tap)', async () => {

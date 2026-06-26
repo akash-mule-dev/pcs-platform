@@ -94,22 +94,23 @@ export const TRACKING_MODE_INFO: Record<
   TrackingMode,
   { title: string; subtitle: string; accuracy: string }
 > = {
-  // The model auto-places in front of the camera the moment it loads; the modes
-  // differ only in how ARKit stabilizes the world afterward.
+  // The model auto-places in front of the camera the moment it loads. All modes
+  // now use gravity-locked tracking with plane detection on; they differ only in
+  // the world-alignment reference ARKit uses.
   world: {
     title: 'World Position',
-    subtitle: 'Auto-placed in front. Free tracking — drifts most as you move.',
-    accuracy: 'Baseline',
+    subtitle: 'Auto-placed in front. Gravity-locked tracking.',
+    accuracy: 'Standard',
   },
   plane: {
     title: 'Plane Anchor',
-    subtitle: 'Auto-placed in front. Plane detection holds it steadier.',
-    accuracy: 'High',
+    subtitle: 'Auto-placed in front. Gravity-locked, plane detection on.',
+    accuracy: 'Standard',
   },
   image: {
     title: 'Image Marker',
-    subtitle: 'Auto-placed in front. Gravity + heading lock for the steadiest hold.',
-    accuracy: 'Highest',
+    subtitle: 'Auto-placed in front. Gravity + compass-heading reference.',
+    accuracy: 'Heading-locked',
   },
 };
 
@@ -147,3 +148,51 @@ export type ModelAction =
   | { type: 'RESET' }
   | { type: 'SET_WIREFRAME_URI'; wireframeUri: string }
   | { type: 'SET_RENDER_MODE'; renderMode: RenderMode };
+
+// ── AR engine selection (additive — does NOT touch TrackingMode above) ──
+// Two rendering engines back the AR view:
+//   • 'viro'       — @reactvision/react-viro; the 3 TrackingModes; all devices.
+//   • 'realitykit' — native RealityKit ARView (modules/pcs-lidar-ar); the LiDAR
+//                    modes below; iPad + LiDAR only. Viro physically cannot use
+//                    the depth sensor, so these modes live in a separate engine.
+export type Engine = 'viro' | 'realitykit';
+
+// The native LiDAR mixed-reality control reduces to a SINGLE thing inspection
+// actually needs — occlusion:
+//   • occlusion ON  — real objects + the inspector's hand correctly hide the
+//     model (the depth/LiDAR showcase).
+//   • occlusion OFF — the COMPLETE model is always visible, drawing over the real
+//     world, so it can never disappear behind a wall.
+// The mesh-scan overlay, physics, and plane-anchor were demo/debug aids and are
+// intentionally NOT exposed: they clutter or destabilise an inspection. The model
+// already rides a stable world anchor.
+export interface LidarToggles {
+  occlusion: boolean;
+}
+
+// The native-view boolean props the toggle maps to. Scene reconstruction (the
+// LiDAR mesh feed) is enabled once natively at session start when supported.
+export interface RealityKitModeFlags {
+  occlusion: boolean;
+  personSegmentation: boolean;
+  physics: boolean;
+  planeAnchor: boolean;
+  showMesh: boolean;
+}
+
+// Single source of truth for the toggle → native-prop mapping (so Swift only ever
+// reads plain booleans and never duplicates this table). Hand occlusion
+// (personSegmentation) travels WITH occlusion; mesh/physics/plane-anchor stay off.
+export function togglesToFlags(t: LidarToggles): RealityKitModeFlags {
+  return {
+    occlusion: t.occlusion,
+    personSegmentation: t.occlusion,
+    physics: false,
+    planeAnchor: false,
+    showMesh: false,
+  };
+}
+
+// Occlusion defaults OFF — inspectors want the COMPLETE model visible by default
+// (it never hides behind a wall); occlusion is opt-in for the hand/depth check.
+export const DEFAULT_LIDAR_TOGGLES: LidarToggles = { occlusion: false };

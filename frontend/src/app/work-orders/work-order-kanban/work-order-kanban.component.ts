@@ -28,13 +28,14 @@ interface KanbanCard {
   dueDate: string | null; late: boolean; openNcrs: number; updatedAt: string;
   overall: { unitsDone: number; unitsTotal: number; percent: number };
   currentStage: KanbanCardStage | null;
+  revisionFlagged?: boolean; revisionStatus?: 'added' | 'changed' | null;
 }
 interface KanbanData {
   stages: KanbanStageCol[];
   cards: KanbanCard[];
   done: KanbanCard[];
   doneTotal: number;
-  totals: { active: number; done: number; late: number; blocked: number };
+  totals: { active: number; done: number; late: number; blocked: number; revised?: number };
 }
 
 /**
@@ -83,6 +84,7 @@ interface KanbanData {
           <span class="tot"><strong>{{ d.totals.active }}</strong> in production</span>
           @if (d.totals.late > 0) { <span class="tot bad"><mat-icon>schedule</mat-icon><strong>{{ d.totals.late }}</strong> late</span> }
           @if (d.totals.blocked > 0) { <span class="tot bad"><mat-icon>report_problem</mat-icon><strong>{{ d.totals.blocked }}</strong> on hold</span> }
+          @if ((d.totals.revised ?? 0) > 0) { <span class="tot warn"><mat-icon>difference</mat-icon><strong>{{ d.totals.revised }}</strong> revised</span> }
           <span class="tot ok"><strong>{{ d.doneTotal }}</strong> done</span>
         }
       </div>
@@ -111,12 +113,13 @@ interface KanbanData {
               </div>
               <div class="col-body">
                 @for (c of colCards(col.name); track c.workOrderId) {
-                  <div class="card" [class.late]="c.late" [class.blocked]="c.currentStage?.gateBlocked" (click)="open(c)">
+                  <div class="card" [class.late]="c.late" [class.blocked]="c.currentStage?.gateBlocked" [class.revised]="c.revisionFlagged" (click)="open(c)">
                     <div class="c-top">
                       <span class="c-mark">{{ c.mark || c.orderNumber }}</span>
                       <span class="prio prio-{{ c.priority }}" [matTooltip]="'Priority: ' + c.priority"></span>
                       @if (c.late) { <span class="chip late"><mat-icon>schedule</mat-icon>late</span> }
                       @if (c.openNcrs > 0) { <span class="chip ncr" [matTooltip]="c.openNcrs + ' open NCR(s) — quality stage is gated'">{{ c.openNcrs }} NCR</span> }
+                      @if (c.revisionFlagged) { <span class="chip revised" matTooltip="This piece was changed/removed in a newer package revision — review it (Monitoring tab)"><mat-icon>difference</mat-icon>revised</span> }
                     </div>
                     @if (c.nodeName || c.profile) { <div class="c-sub">{{ c.nodeName || '' }}{{ c.profile ? ' · ' + c.profile : '' }}</div> }
                     <div class="c-ctx">
@@ -220,6 +223,8 @@ interface KanbanData {
     .tot.bad strong { color: var(--danger-text); }
     .tot.ok { background: var(--success-bg); color: var(--success-text); }
     .tot.ok strong { color: var(--success-text); }
+    .tot.warn { background: var(--warning-bg); color: var(--warning-text); }
+    .tot.warn strong { color: var(--warning-text); }
 
     .toast { display: flex; align-items: center; gap: 8px; background: var(--danger-bg); color: var(--danger-text); border-radius: var(--clay-radius-sm); padding: 10px 14px; font-size: 13px; margin-bottom: 12px; }
     .toast button { margin-left: auto; border: none; background: none; color: inherit; cursor: pointer; display: flex; }
@@ -255,6 +260,8 @@ interface KanbanData {
     .chip mat-icon { font-size: 12px; width: 12px; height: 12px; }
     .chip.late { background: var(--warning-bg); color: var(--warning-text); }
     .chip.ncr { background: var(--danger-bg); color: var(--danger-text); }
+    .chip.revised { background: var(--warning-bg, #fff7e6); color: var(--warning-text, #9a6700); }
+    .card.revised { border-left: 3px solid var(--warning, #f59e0b); }
     .c-sub { font-size: 12px; color: var(--clay-text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .c-ctx { display: flex; gap: 8px; font-size: 11.5px; color: var(--clay-text-muted); margin-top: 3px; flex-wrap: wrap; }
     .c-ctx .mono { font-family: 'Space Grotesk', monospace; }

@@ -5,7 +5,7 @@
 // inside ARExperience via useRemoteModel). There is no pre-camera "Preparing
 // model…" screen anymore; download / prepare / error are all shown as light
 // overlays on top of the running camera.
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -13,7 +13,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { ViewerScreenParams } from '../../navigation/types';
 import ARExperience from './ar/ARExperience';
+import EngineSwitcher from './ar/EngineSwitcher';
+import { useDeviceCapabilities } from './ar/useDeviceCapabilities';
+import { Engine } from './ar/types';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
+
+// Master switch for the native RealityKit (LiDAR) engine. Flip to false to hide
+// it everywhere and fall back to Viro-only with zero other changes.
+const REALITYKIT_ENGINE_ENABLED = true;
 
 type Route = RouteProp<ViewerScreenParams, 'ARView'>;
 type Nav = NativeStackNavigationProp<ViewerScreenParams, 'ARView'>;
@@ -31,6 +38,17 @@ export function ARViewScreen() {
   const navigation = useNavigation<Nav>();
   const { modelId, fileUrl, meshNames, partLabel, assemblyNodeId, projectId, stageId, workOrderStageId } = route.params;
   const modelName = partLabel || 'Model';
+
+  // The native LiDAR engine is iPad + LiDAR only (real customers use iPad). On
+  // every other device this stays false → the Viro path renders exactly as
+  // before and the engine switch never appears (no dead UI).
+  const caps = useDeviceCapabilities();
+  const supportsRealityKit =
+    REALITYKIT_ENGINE_ENABLED && caps.checked && caps.isPad && caps.hasDepthSensor;
+  const [engine, setEngine] = useState<Engine>('viro');
+  // Both experiences dock their tool panels low; hide the engine switcher while a
+  // panel is open so it never sits under one. Set by whichever experience is mounted.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const openQualityData = useCallback(() => {
     navigation.navigate('QualityView', { modelId, modelName, fileUrl });
@@ -64,6 +82,23 @@ export function ARViewScreen() {
   // A nested boundary keeps a JS error in the AR/Viro tree from unwinding to the
   // root boundary (which would blank the whole app). Native (SIGSEGV) crashes
   // aren't JS-catchable.
+  //
+  // Engine selection (iPad + LiDAR only): the default is always the Viro engine
+  // (preserving current behavior + the 'plane' default), and an EngineSwitcher
+  // lets the user flip to the native RealityKit/LiDAR engine to compare. The
+  // RealityKit experience is lazy-required so it (and the native module it pulls
+  // in) never loads on non-LiDAR builds, Expo Go, or in tests.
+  const useRealityKit = engine === 'realitykit' && supportsRealityKit;
+  let RkExperience: React.ComponentType<any> | null = null;
+  if (useRealityKit) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      RkExperience = require('./ar/ARExperienceRK').default;
+    } catch {
+      RkExperience = null; // module not in this build → fall back to Viro below
+    }
+  }
+
   return (
     <ErrorBoundary
       title="AR session error"
@@ -71,22 +106,49 @@ export function ARViewScreen() {
       resetLabel="Go back"
       onReset={() => navigation.goBack()}
     >
-      <ARExperience
-        modelId={modelId}
-        fileUrl={fileUrl}
-        fileName={`${modelName}.glb`}
-        meshNames={meshNames && meshNames.length ? meshNames : null}
-        partLabel={partLabel}
-        initialTrackingMode="plane"
-        qaContext={{ assemblyNodeId, projectId, stageId, workOrderStageId }}
-        onViewRecords={openQualityData}
-        onBack={() => navigation.goBack()}
-      />
+      <View style={styles.fill}>
+        {useRealityKit && RkExperience ? (
+          <RkExperience
+            modelId={modelId}
+            fileUrl={fileUrl}
+            fileName={`${modelName}.glb`}
+            meshNames={meshNames && meshNames.length ? meshNames : null}
+            partLabel={partLabel}
+            qaContext={{ assemblyNodeId, projectId, stageId, workOrderStageId }}
+            onViewRecords={openQualityData}
+            onBack={() => navigation.goBack()}
+            onChromeBusy={setPanelOpen}
+          />
+        ) : (
+          <ARExperience
+            modelId={modelId}
+            fileUrl={fileUrl}
+            fileName={`${modelName}.glb`}
+            meshNames={meshNames && meshNames.length ? meshNames : null}
+            partLabel={partLabel}
+            initialTrackingMode="plane"
+            qaContext={{ assemblyNodeId, projectId, stageId, workOrderStageId }}
+            onViewRecords={openQualityData}
+            onBack={() => navigation.goBack()}
+            onChromeBusy={setPanelOpen}
+          />
+        )}
+
+        {supportsRealityKit && !panelOpen && (
+          <EngineSwitcher value={engine} onChange={setEngine} style={styles.engineSwitchLow} />
+        )}
+      </View>
     </ErrorBoundary>
   );
 }
 
 const styles = StyleSheet.create({
+  fill: { flex: 1 },
+  // Engine toggle pinned low-center, above the Viro toolbar; only shown on
+  // iPad + LiDAR. Tweak `bottom` on-device if it overlaps an open tool panel.
+  // Engine switcher at the bottom edge; the host hides it while a tool panel is
+  // open (both experiences dock panels low), so there's never an overlap.
+  engineSwitchLow: { position: 'absolute', bottom: 30, left: 0, right: 0, zIndex: 50 },
   container: {
     flex: 1,
     backgroundColor: Colors.background,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
 import { TabParamList, WorkOrdersStackParamList, TimeTrackingStackParamList, MoreStackParamList, ProjectsStackParamList } from './types';
@@ -52,7 +53,7 @@ function WorkOrdersStack() {
       <WOStack.Screen name="WorkOrderList" component={WorkOrderListScreen} options={{ title: 'All Work Orders' }} />
       <WOStack.Screen name="WorkOrderDetail" component={WorkOrderDetailScreen} options={{ title: 'Work Order' }} />
       <WOStack.Screen name="ModelView" component={ModelViewScreen} options={{ title: '3D Model' }} />
-      <WOStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
+      <WOStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View', headerShown: false }} />
       <WOStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <WOStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
       <WOStack.Screen name="QcReportFill" component={QcReportFillScreen} options={{ title: 'QC Report' }} />
@@ -128,16 +129,23 @@ export function TabNavigator() {
 
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.medium,
-        tabBarStyle: { paddingBottom: 4, height: 60 },
-        tabBarIcon: ({ color, size }) => {
-          const tab = TAB_CONFIG.find(t => t.name === route.name);
-          return <Ionicons name={tab?.icon || 'home'} size={size} color={color} />;
-        },
-      })}
+      screenOptions={({ route }) => {
+        // Hide the bottom tab bar on the immersive full-screen viewers (AR/VR) so
+        // the live camera + model get the entire screen. `getFocusedRouteNameFromRoute`
+        // reads the nested stack's active screen for this tab.
+        const focused = getFocusedRouteNameFromRoute(route);
+        const immersive = focused === 'ARView' || focused === 'VRView';
+        return {
+          headerShown: false,
+          tabBarActiveTintColor: Colors.primary,
+          tabBarInactiveTintColor: Colors.medium,
+          tabBarStyle: immersive ? { display: 'none' } : { paddingBottom: 4, height: 60 },
+          tabBarIcon: ({ color, size }) => {
+            const tab = TAB_CONFIG.find(t => t.name === route.name);
+            return <Ionicons name={tab?.icon || 'home'} size={size} color={color} />;
+          },
+        };
+      }}
     >
       {TAB_CONFIG.filter(tab => canViewTab(tab.name, userRole)).map(tab => (
         <Tab.Screen

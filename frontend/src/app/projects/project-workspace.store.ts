@@ -4,7 +4,7 @@ import { Subscription } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   ProjectsService, Project, AssemblyNode, ProjectProgress, ProjectQualitySummary,
-  ImportFileRow, ImportProgressEvent,
+  ImportFileRow, ImportProgressEvent, RevisionStatus,
 } from '../core/services/projects.service';
 import { RealtimeService } from '../core/services/realtime.service';
 import { ModelCacheService } from '../core/services/model-cache.service';
@@ -100,6 +100,8 @@ export class ProjectWorkspaceStore implements OnDestroy {
   readonly importsLoaded = signal<boolean>(false);
   /** Last live pipeline message (e.g. "Optimizing 3D model for web & AR"). */
   readonly pipelineMessage = signal<string | null>(null);
+  /** Latest revision review state — drives the banner + tree/board badges. */
+  readonly revisionStatus = signal<RevisionStatus | null>(null);
 
   private wsSub?: Subscription;
   private importsPollTimer: any = null;
@@ -113,6 +115,8 @@ export class ProjectWorkspaceStore implements OnDestroy {
     return withModel?.modelId ? `${environment.apiUrl}/models/${withModel.modelId}/file` : null;
   });
   readonly openNcr = computed(() => this.quality()?.totals?.openNcr ?? 0);
+  /** True when the latest revision still needs review (drives the banner). */
+  readonly hasUnreviewedRevision = computed(() => this.revisionStatus()?.hasUnreviewed ?? false);
 
   /**
    * Content version of the project's current 3D model — the latest COMPLETED
@@ -162,6 +166,7 @@ export class ProjectWorkspaceStore implements OnDestroy {
     this.imports.set([]);
     this.importsLoaded.set(false);
     this.pipelineMessage.set(null);
+    this.revisionStatus.set(null);
     this.stopImportsPoll();
     this.joinProjectRoom(id);
     this.reload();
@@ -192,6 +197,22 @@ export class ProjectWorkspaceStore implements OnDestroy {
     this.refreshQuality();
     this.refreshOrders();
     this.refreshImports();
+    this.refreshRevisionStatus();
+  }
+
+  /** Latest-revision review state for the banner + badges. */
+  refreshRevisionStatus(): void {
+    const id = this.id();
+    if (!id) return;
+    this.svc.revisionStatus(id).subscribe({ next: (s) => this.revisionStatus.set(s), error: () => {} });
+  }
+
+  /** Acknowledge a revision (whole import or specific pieces); refreshes badges. */
+  acknowledgeRevision(importId: string, nodeIds?: string[]): void {
+    this.svc.acknowledgeRevision(this.id(), importId, nodeIds).subscribe({
+      next: (s) => { this.revisionStatus.set(s); this.refreshNodes(); },
+      error: () => {},
+    });
   }
 
   refreshProgress(): void {
@@ -312,6 +333,7 @@ export class ProjectWorkspaceStore implements OnDestroy {
     if (justFinished) {
       this.refreshNodes(); // modelId now stamped on the tree (or final failure)
       this.refreshProgress();
+      this.refreshRevisionStatus(); // markers stamped → banner/badges appear
       if (this.activeImports().length === 0) this.stopImportsPoll();
     }
   }
@@ -328,6 +350,7 @@ export class ProjectWorkspaceStore implements OnDestroy {
             this.stopImportsPoll();
             this.refreshNodes();
             this.refreshProgress();
+            this.refreshRevisionStatus();
           } else if (!hadModel && rows?.some((r) => r.modelId)) {
             this.refreshNodes();
           }

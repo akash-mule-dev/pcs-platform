@@ -38,6 +38,10 @@ export interface AssemblyNode {
   depth: number;
   sortIndex: number;
   properties: Record<string, unknown> | null;
+  /** Revision marker from the latest import: which pieces it added/changed + per-piece ack. */
+  revisionStatus?: 'added' | 'changed' | null;
+  revisedByImportId?: string | null;
+  revisionAckedAt?: string | null;
 }
 
 export interface ProjectMetrics {
@@ -45,6 +49,7 @@ export interface ProjectMetrics {
   partCount: number;
   assemblyCount: number;
   tonnage: { totalKg: number };
+  revisionPending?: boolean;
 }
 export type ProjectSummary = Project & { metrics: ProjectMetrics };
 
@@ -158,11 +163,29 @@ export interface RevisionImpactRow {
   deltas: RevisionDelta[] | null;
   severity: 'critical' | 'high' | 'medium' | 'none';
   shippedQty: number;
-  workOrders: { orderNumber: string; productionOrder: string | null; status: string; unitsDone: number; unitsTotal: number }[];
+  /** Resolved assembly node (null if the piece was removed and no longer in the tree). */
+  nodeId: string | null;
+  workOrders: { id: string; orderNumber: string; productionOrder: string | null; status: string; unitsDone: number; unitsTotal: number }[];
 }
+export interface RevisionImpactSummary { pieces: number; critical: number; high: number; medium: number; none: number; }
 export interface ImportRevision {
   diff: RevisionDiffData | null;
-  impact: { summary: { pieces: number; critical: number; high: number; medium: number; none: number }; rows: RevisionImpactRow[] } | null;
+  impact: { summary: RevisionImpactSummary; rows: RevisionImpactRow[] } | null;
+  reviewedAt?: string | null;
+  reviewedById?: string | null;
+}
+
+/** Project-level revision banner feed (latest revision review state). */
+export interface RevisionStatus {
+  latestImportId: string | null;
+  latestImportName: string | null;
+  importedAt: string | null;
+  hasUnreviewed: boolean;
+  reviewedAt: string | null;
+  counts: { added: number; changed: number; missing: number };
+  impact: RevisionImpactSummary;
+  unackedPieces: number;
+  unackedWorkOrders: number;
 }
 
 // ── Stage kanban (production status) ──
@@ -179,13 +202,16 @@ export interface KanbanCard {
   productionOrderNumber: string | null;
   overall: { unitsDone: number; unitsTotal: number; percent: number };
   currentStage: KanbanCardStage | null;
+  /** A re-import changed/removed this piece and it hasn't been reviewed yet. */
+  revisionFlagged?: boolean;
+  revisionStatus?: 'added' | 'changed' | null;
 }
 export interface KanbanData {
   stages: { name: string; sequence: number }[];
   cards: KanbanCard[];   // active (at their first incomplete stage)
   done: KanbanCard[];    // production-complete (uncapped when includeAllDone)
   doneTotal: number;
-  totals: { active: number; done: number; late: number; blocked: number };
+  totals: { active: number; done: number; late: number; blocked: number; revised?: number };
 }
 
 // ── Earned value ──
@@ -508,6 +534,16 @@ export class ProjectsService {
   /** Revision diff of an import (added/changed/missing) + production impact per piece. */
   importRevision(projectId: string, importId: string): Observable<ImportRevision> {
     return this.http.get<ImportRevision>(`${this.base}/${projectId}/imports/${importId}/revision`);
+  }
+
+  /** Project revision banner feed: does the latest revision still need review + its size/impact. */
+  revisionStatus(projectId: string): Observable<RevisionStatus> {
+    return this.http.get<RevisionStatus>(`${this.base}/${projectId}/revision-status`);
+  }
+
+  /** Acknowledge a revision: whole import (omit nodeIds) or specific pieces. Returns fresh status. */
+  acknowledgeRevision(projectId: string, importId: string, nodeIds?: string[]): Observable<RevisionStatus> {
+    return this.http.post<RevisionStatus>(`${this.base}/${projectId}/imports/${importId}/acknowledge`, nodeIds ? { nodeIds } : {});
   }
 
   /** Count-based stage kanban scoped to a project — the production-status source

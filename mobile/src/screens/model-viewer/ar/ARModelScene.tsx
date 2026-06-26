@@ -25,6 +25,7 @@ let ViroAmbientLight: any = null;
 let ViroDirectionalLight: any = null;
 let Viro3DObject: any = null;
 let ViroNode: any = null;
+let ViroARPlane: any = null;
 let ViroTrackingStateConstants: any = null;
 let ViroMaterials: any = null;
 
@@ -35,6 +36,10 @@ try {
   ViroDirectionalLight = viro.ViroDirectionalLight;
   Viro3DObject = viro.Viro3DObject;
   ViroNode = viro.ViroNode;
+  // ViroARPlane: a container whose world transform is driven by an ARKit plane
+  // anchor that ARKit continuously refines — the stable-anchoring primitive used
+  // by the opt-in "Lock to surface" path below.
+  ViroARPlane = viro.ViroARPlane;
   ViroTrackingStateConstants = viro.ViroTrackingStateConstants;
   ViroMaterials = viro.ViroMaterials;
 } catch {
@@ -90,6 +95,12 @@ interface SceneProps {
       qualityEntries?: ARQualityEntry[];
       /** Auto-place the model in front of the camera once it's ready. */
       autoPlace?: boolean;
+      /** Opt-in "Lock to surface": render the model under a ViroARPlane anchor
+       *  (ARKit-driven, drift-free) instead of a free world-coordinate node. */
+      anchorMode?: boolean;
+      /** Fired when the ViroARPlane attaches to a real ARKit plane (model is now
+       *  anchored + stable). */
+      onAnchorFound?: () => void;
       onPlace: (position: Vec3) => void;
       /** Report the one-shot fit scale derived from the loaded bounding box. */
       onAutoFit?: (scale: Vec3) => void;
@@ -122,7 +133,6 @@ function ARModelScene(props: SceneProps) {
     wireframeUri,
     renderMode,
     edgeColor = DEFAULT_EDGE_COLOR,
-    trackingMode,
     placed,
     autoFitted,
     position,
@@ -133,6 +143,8 @@ function ARModelScene(props: SceneProps) {
     measurements,
     qualityEntries,
     autoPlace = true,
+    anchorMode = false,
+    onAnchorFound,
     onPlace,
     onAutoFit,
     onPinch,
@@ -243,7 +255,9 @@ function ARModelScene(props: SceneProps) {
   // Re-runs if placement is dropped (e.g. a tracking-mode switch sets placed=false).
   const inFlightRef = useRef(false);
   useEffect(() => {
-    if (!modelUri || !autoPlace || placed) {
+    // Anchor mode owns placement (the model rides a ViroARPlane), so the
+    // free-coordinate auto-place must not run alongside it.
+    if (!modelUri || !autoPlace || placed || anchorMode) {
       inFlightRef.current = false;
       return;
     }
@@ -291,7 +305,7 @@ function ARModelScene(props: SceneProps) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [modelUri, autoPlace, placed, onPlace]);
+  }, [modelUri, autoPlace, placed, anchorMode, onPlace]);
 
   // Manual tap-to-place fallback (if auto-place is slow) + measurement taps.
   const placeInFrontOfCamera = (fallback: number[]) => {
@@ -580,6 +594,26 @@ function ARModelScene(props: SceneProps) {
     </ViroNode>
   );
 
+  // Opt-in "Lock to surface": the SAME model node, parented under a ViroARPlane
+  // so ARKit owns and continuously refines its world transform — which removes
+  // the free-coordinate drift/jitter. The plane auto-attaches to a detected
+  // horizontal surface; once it does, onAnchorFound fires (the lock is engaged)
+  // and the model becomes visible riding the anchor. Here `position` is a LOCAL
+  // offset from the plane centre (reset to origin when the lock is engaged, then
+  // nudged via the Align panel to line up with the real part). Falls back to
+  // nothing if ViroARPlane is unavailable (e.g. the Jest mock) — the host shows
+  // a hint to point at a surface, and Unlock returns to free placement.
+  const anchoredModelNode = ViroARPlane ? (
+    <ViroARPlane
+      alignment="Horizontal"
+      minWidth={0.3}
+      minHeight={0.3}
+      onAnchorFound={() => onAnchorFound?.()}
+    >
+      {modelNode}
+    </ViroARPlane>
+  ) : null;
+
   // Ruler markers live at scene root in world space.
   const rulerOverlays = (
     <>
@@ -616,13 +650,13 @@ function ARModelScene(props: SceneProps) {
     </>
   );
 
-  // All three modes share ONE scene and ONE placement flow. The mode is a live
-  // tracking PRESET on this never-swapped scene (no ViroARPlaneSelector /
-  // ViroARImageMarker structural swap, which is what made the old per-mode flows
-  // diverge and made switching unreliable). World = no plane detection;
-  // plane/image enable detection for steadier tracking.
-  const anchorDetectionTypes =
-    trackingMode === 'world' ? ['None'] : ['PlanesHorizontal', 'PlanesVertical'];
+  // Plane detection is ALWAYS on, in every mode. It gives ARKit far more
+  // environmental structure to lock onto, which steadies the placed model even
+  // though it isn't (yet) explicitly anchored to a plane — and on LiDAR devices
+  // ARKit uses the depth sensor to find planes, so this is what actually puts
+  // the LiDAR to work. (Previously 'world' mode set ['None'] — the least-stable
+  // configuration, and the reason world mode drifted the most.)
+  const anchorDetectionTypes = ['PlanesHorizontal', 'PlanesVertical'];
 
   return (
     <ViroARScene
@@ -636,7 +670,7 @@ function ARModelScene(props: SceneProps) {
       onCameraTransformUpdate={rulerActive ? handleCameraTransformUpdate : undefined}
     >
       {lights}
-      {placed && modelNode}
+      {anchorMode ? anchoredModelNode : placed && modelNode}
       {rulerOverlays}
     </ViroARScene>
   );

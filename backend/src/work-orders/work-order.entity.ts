@@ -77,6 +77,21 @@ export class WorkOrder extends TenantOwnedEntity {
   @Column({ name: 'completed_at', type: 'timestamp', nullable: true })
   completedAt: Date | null;
 
+  // Revision staleness: flagged (review-only, never blocks production) when a
+  // re-import changed/removed the assembly this WO targets. "Needs review" when
+  // revision_flagged_import_id IS NOT NULL AND revision_acked_at IS NULL.
+  @Column({ name: 'revision_flagged_import_id', type: 'uuid', nullable: true })
+  revisionFlaggedImportId: string | null;
+
+  @Column({ name: 'revision_flagged_at', type: 'timestamptz', nullable: true })
+  revisionFlaggedAt: Date | null;
+
+  @Column({ name: 'revision_acked_at', type: 'timestamptz', nullable: true })
+  revisionAckedAt: Date | null;
+
+  @Column({ name: 'revision_acked_by_id', type: 'uuid', nullable: true })
+  revisionAckedById: string | null;
+
   // Phase 7: Dependencies
   @Column({ name: 'depends_on_id', type: 'uuid', nullable: true })
   dependsOnId: string | null;
