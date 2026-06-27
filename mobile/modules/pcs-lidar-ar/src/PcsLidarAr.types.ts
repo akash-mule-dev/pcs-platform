@@ -69,6 +69,9 @@ export type PcsLidarArViewProps = {
   /** Per-entity colour overlay for the SOLID model (Color-by Profile/Grade):
    *  entity-name (== ifc_guid) → hex. Empty/omitted = uniform grey. */
   colorOverlay?: Record<string, string>;
+  /** True 1:1 scale: metres-per-GLB-unit (calibrated from part lengths). >0 renders
+   *  at the real assembly's size; 0/omitted keeps the fixed fit-scale. */
+  realScale?: number;
   /** Real-world (LiDAR mesh) occlusion of the virtual model. */
   occlusion?: boolean;
   /** People/hand occlusion (ARKit personSegmentationWithDepth). */

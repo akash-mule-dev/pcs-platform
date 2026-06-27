@@ -30,6 +30,9 @@ public class PcsLidarArModule: Module {
       // Per-entity colour overlay for the SOLID model (Color-by Profile/Grade):
       // entity-name (== ifc_guid) → hex. Empty restores the uniform grey.
       Prop("colorOverlay") { (view: PcsLidarArView, map: [String: String]) in view.setColorOverlay(map) }
+      // True 1:1 scale (metres-per-GLB-unit), calibrated from part lengths JS-side.
+      // >0 renders the model at the real assembly's size; 0 keeps the fit fallback.
+      Prop("realScale") { (view: PcsLidarArView, s: Double) in view.setRealScale(Float(s)) }
 
       // Mode flags — produced by modeToFlags() on the JS side so the mode→flags
       // map lives in one place (types.ts), not duplicated in Swift.

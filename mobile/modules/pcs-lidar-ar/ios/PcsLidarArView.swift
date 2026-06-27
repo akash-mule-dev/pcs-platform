@@ -100,6 +100,13 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   private var colorOverlay: [String: UIColor] = [:]
   private let ghostColor = UIColor(red: 0.55, green: 0.60, blue: 0.66, alpha: 1.0)
 
+  // TRUE 1:1 scale: metres-per-GLB-unit, calibrated JS-side from each part's real
+  // length (length_mm) vs its GLB bounding box. When >0 it REPLACES the loader's
+  // fixed 0.6 m auto-fit so the model renders at the real assembly's size (the AR
+  // overlay point). 0 = unknown → keep the fit fallback. The Align scale (userScale)
+  // multiplies this, so the operator can still nudge it.
+  private var realScale: Float = 0
+
   // ── User transform (Align) ──
   private var userScale: Float = 1
   private var userYaw: Float = 0              // radians
@@ -228,6 +235,28 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   func setModelOpacity(_ a: Float) {
     modelOpacity = max(0.05, min(1, a))
     repaintSolid()
+  }
+
+  // True 1:1 scale (metres-per-GLB-unit). Replaces the fit-scale; re-applies live to
+  // an already-placed model (the prop usually arrives after the model is on screen,
+  // once the JS calibration completes).
+  func setRealScale(_ s: Float) {
+    let v = max(0, s)
+    if abs(v - realScale) < 1e-9 { return }
+    realScale = v
+    guard v > 0 else { return }
+    if let e = modelEntity { applyRealScale(e) }
+    if let e = edgeEntity { applyRealScale(e) }
+  }
+
+  // Set the entity's uniform scale to realScale and re-seat its base, keeping it
+  // under the same pivot (so placement + the user transform survive).
+  private func applyRealScale(_ entity: Entity) {
+    guard realScale > 0 else { return }
+    let pivot = entity.parent
+    entity.scale = SIMD3<Float>(repeating: realScale)
+    recenterEntityToBase(entity)        // detaches + re-bases at the new scale
+    if let p = pivot { p.addChild(entity) }
   }
 
   // A flat UnlitMaterial in `color` (no lighting gradient). The SOLID carries the
@@ -394,6 +423,9 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
     let place: (Entity) -> Void = { [weak self] entity in
       guard let self, self.loadToken == token else { return }
+      // TRUE 1:1 scale (if calibrated) REPLACES the loader's fit-scale — set before
+      // recentring/placement so the base sits correctly at the real size.
+      if self.realScale > 0 { entity.scale = SIMD3<Float>(repeating: self.realScale) }
       // Collision shapes power on-model ruler hit-tests + part picking (and physics)
       // — the SOLID owns them; the edge overlay stays collision-free so taps fall
       // through to the part underneath. Generate once, recursively, before placement.
@@ -459,6 +491,8 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     let attach: (Entity) -> Void = { [weak self] entity in
       guard let self, self.edgeLoadToken == token, let pivot = self.modelPivot else { return }
       self.edgeEntity?.removeFromParent()
+      // Match the solid's true scale (if calibrated) so the outlines overlay 1:1.
+      if self.realScale > 0 { entity.scale = SIMD3<Float>(repeating: self.realScale) }
       self.recenterEntityToBase(entity)
       self.paintUniform(entity, self.wireframeTint, opaque: true)
       // NO generateCollisionShapes → taps/measure/part-pick reach the solid beneath.

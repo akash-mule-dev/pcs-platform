@@ -45,6 +45,7 @@ import ColorByPanel from './ColorByPanel';
 import LogInspectionForm, { InspectionFormResult } from './LogInspectionForm';
 import { projectsService, MNode } from '../../../services/projects.service';
 import { buildColorBy, ColorBy } from '../../projects/partviewer/viewerTools';
+import { realScaleMetersPerUnit } from './realScale';
 import { solveRigid, PointPair, RigidFit } from './rigid-registration';
 import { captureNativeSnapshot } from './arSnapshotNative';
 import { useAuth } from '../../../context/AuthContext';
@@ -236,6 +237,20 @@ export default function ARExperienceRK({
     }
     return out;
   }, [colorBy, colorResult]);
+
+  // TRUE 1:1 scale: metres-per-GLB-unit, calibrated from part lengths vs the GLB
+  // bounding boxes (once dimensions are extracted + nodes loaded). 0 = couldn't
+  // calibrate → the native view keeps its fit-scale. The model then renders at the
+  // real assembly's size instead of a fixed 0.6 m.
+  const realScale = useMemo(() => {
+    if (!dimensions) return 0;
+    const longest = Math.max(
+      dimensions.overall.size[0],
+      dimensions.overall.size[1],
+      dimensions.overall.size[2],
+    );
+    return realScaleMetersPerUnit(longest, dimensions.parts, nodes) ?? 0;
+  }, [dimensions, nodes]);
 
   // The active measurement tool, sent to the native view as a prop. 'off' when
   // the Measure panel is closed (so taps don't capture stray points).
@@ -759,6 +774,7 @@ export default function ARExperienceRK({
         showEdges={renderMode === 'wireframe'}
         edgeColor={edgeColor}
         colorOverlay={colorOverlay}
+        realScale={realScale}
         directManipulation={directManip}
         registerMode={registerMode}
         occlusion={flags.occlusion}
@@ -791,6 +807,7 @@ export default function ARExperienceRK({
         </Text>
         <Text style={styles.subText} numberOfLines={1}>
           {lidar === false ? 'LiDAR unavailable' : `tracking: ${tracking}`}
+          {realScale > 0 ? '  ·  1:1 scale' : ''}
         </Text>
       </View>
 
