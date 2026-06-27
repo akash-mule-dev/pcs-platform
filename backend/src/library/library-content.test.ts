@@ -21,7 +21,11 @@ ok('default content is well-formed', () => {
   assert.ok(DEFAULT_LIBRARY_PROCESSES.length >= 1);
   const std = DEFAULT_LIBRARY_PROCESSES.find((p) => p.name === 'Standard Fabrication')!;
   assert.equal(std.stages.length, 5);
-  assert.ok(std.stages.some((s) => s.requiresInspection), 'a QC stage is a hold point');
+  const finalQc = std.stages.find((s) => s.isFinalQc);
+  assert.ok(finalQc, 'a terminal final-QC release stage exists');
+  // The default final-QC stage is a release gate (blocks on open NCRs / unsigned
+  // failures) but NOT a hold point — it must not force a positive inspection.
+  assert.ok(!finalQc!.requiresInspection && finalQc!.inspectionType !== 'hold', 'the default final-QC stage is not a hold point');
   assert.ok(DEFAULT_LIBRARY_TEMPLATES.some((t) => t.type === 'ncr'));
   assert.ok(DEFAULT_LIBRARY_TEMPLATES.some((t) => t.type === 'inspection'));
   for (const t of DEFAULT_LIBRARY_TEMPLATES) assert.ok(Array.isArray(t.schema.fields) && t.schema.fields.length);
