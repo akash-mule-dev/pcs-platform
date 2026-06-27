@@ -10,15 +10,20 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
 import { RealtimeService } from '../../core/services/realtime.service';
+import { PermissionsService } from '../../core/services/permissions.service';
+import { ToastService } from '../../core/services/toast.service';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { ListStateComponent } from '../../shared/components/list-state/list-state.component';
 import { merge, Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-work-order-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MatTableModule, MatPaginatorModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatIconModule, MatChipsModule, MatTooltipModule, ListStateComponent],
+  imports: [CommonModule, FormsModule, RouterModule, MatTableModule, MatPaginatorModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatIconModule, MatChipsModule, MatTooltipModule, MatMenuModule, MatDialogModule, ListStateComponent],
   template: `
     <div class="page-shell">
       <!-- Page Header -->
@@ -111,6 +116,20 @@ import { merge, Subscription } from 'rxjs';
                 </span>
               </td>
             </ng-container>
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef aria-label="Actions"></th>
+              <td mat-cell *matCellDef="let wo" [attr.data-label]="'Actions'" (click)="$event.stopPropagation()">
+                <button mat-icon-button [matMenuTriggerFor]="rowMenu" aria-label="Work order actions"
+                        matTooltip="Work order actions">
+                  <mat-icon>more_vert</mat-icon>
+                </button>
+                <mat-menu #rowMenu="matMenu">
+                  <button mat-menu-item class="danger-item" (click)="deleteWorkOrder(wo)">
+                    <mat-icon>delete</mat-icon><span>Delete work order</span>
+                  </button>
+                </mat-menu>
+              </td>
+            </ng-container>
             <tr mat-header-row *matHeaderRowDef="columns"></tr>
             <tr mat-row *matRowDef="let row; columns: columns;" (click)="goToDetail(row)"
                 (keydown.enter)="goToDetail(row)" tabindex="0" role="button"
@@ -131,6 +150,7 @@ import { merge, Subscription } from 'rxjs';
     /* This page bottom-aligns its filter toolbar (vs. the global centered default). */
     .toolbar { align-items: flex-end; }
     .mono-val.overdue { color: var(--danger); }
+    ::ng-deep .danger-item, ::ng-deep .danger-item mat-icon { color: var(--danger-text); }
 
     @media (max-width: 768px) {
       .toolbar { flex-direction: column; align-items: stretch; }
@@ -154,9 +174,18 @@ export class WorkOrderListComponent implements OnInit, OnDestroy {
 
   private realtimeSub?: Subscription;
 
-  constructor(private api: ApiService, private router: Router, private realtime: RealtimeService) {}
+  constructor(
+    private api: ApiService,
+    private router: Router,
+    private realtime: RealtimeService,
+    private dialog: MatDialog,
+    private toast: ToastService,
+    public perms: PermissionsService,
+  ) {}
 
   ngOnInit(): void {
+    // Only privileged users (admin-only by default) get the delete action column.
+    if (this.perms.can('work-orders.delete')) this.columns = [...this.columns, 'actions'];
     this.load();
     // Live-update the list when work orders or their stages change on any client.
     this.realtimeSub = merge(
@@ -192,5 +221,25 @@ export class WorkOrderListComponent implements OnInit, OnDestroy {
   goToDetail(wo: any): void {
     // Legacy detail page — /work-orders/:id is the per-order audit dashboard.
     this.router.navigate(['/work-orders/legacy', wo.id]);
+  }
+
+  /** Permanently delete a work order (admin-only). Hard delete — there is no Trash for work orders. */
+  deleteWorkOrder(wo: any): void {
+    this.dialog.open(ConfirmDialogComponent, {
+      data: {
+        title: 'Delete work order?',
+        message: `"${wo.orderNumber}" and all of its stages, time logs and stage history will be permanently deleted. This cannot be undone.`,
+        confirmText: 'Delete work order',
+      },
+    }).afterClosed().subscribe((ok: boolean) => {
+      if (!ok) return;
+      this.api.delete(`/work-orders/${wo.id}`).subscribe({
+        next: () => {
+          this.toast.success(`Work order ${wo.orderNumber} deleted`);
+          this.dataSource.data = this.dataSource.data.filter((x) => x.id !== wo.id);
+        },
+        error: (e) => this.toast.error(e?.error?.message || 'Could not delete work order'),
+      });
+    });
   }
 }

@@ -1,8 +1,9 @@
 export const Colors = {
-  primary: '#1565c0',
-  primaryDark: '#0d47a1',
-  secondary: '#0d47a1',
-  tertiary: '#7c4dff',
+  // FabriXR Holo — hologram-blue primary + electric-teal secondary
+  primary: '#3d5aff',
+  primaryDark: '#2538c2',
+  secondary: '#14c6b8',
+  tertiary: '#6c8cff',
   success: '#2e7d32',
   warning: '#f9a825',
   danger: '#c62828',

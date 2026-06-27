@@ -18,8 +18,8 @@ name: "Login Flow"
           timeout: 5000
 
 # Verify login screen is visible
-- assertVisible: "PCS"
-- assertVisible: "Production Control System"
+- assertVisible: "FabriXR"
+- assertVisible: "Production control for fabrication"
 - assertVisible: "Sign In"
 
 # Test empty submission shows error

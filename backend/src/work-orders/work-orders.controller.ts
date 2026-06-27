@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { WorkOrdersService } from './work-orders.service.js';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto.js';
@@ -109,5 +109,12 @@ export class WorkOrdersController {
   @ApiOperation({ summary: 'Assign operators to stages' })
   assign(@Param('id') id: string, @Body() dto: AssignWorkOrderDto) {
     return this.service.assign(id, dto);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('work-orders.delete')
+  @ApiOperation({ summary: 'Permanently delete a work order (and its stages, time logs and history)' })
+  remove(@Param('id') id: string) {
+    return this.service.remove(id);
   }
 }

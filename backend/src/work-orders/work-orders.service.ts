@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, IsNull } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { DataSource, Repository, In, IsNull } from 'typeorm';
 import { WorkOrder, WorkOrderStatus } from './work-order.entity.js';
 import { WorkOrderStage, WorkOrderStageStatus } from './work-order-stage.entity.js';
 import { Stage } from '../stages/stage.entity.js';
@@ -30,6 +30,7 @@ export class WorkOrdersService {
     @InjectRepository(Stage) private readonly stageRepo: Repository<Stage>,
     @InjectRepository(QualityReport) private readonly reportRepo: Repository<QualityReport>,
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
   ) {}
@@ -398,6 +399,60 @@ export class WorkOrdersService {
     const updated = await this.findOne(id);
     this.eventsGateway.emitWorkOrderUpdate(updated);
     return updated;
+  }
+
+  /**
+   * Permanently delete one work order and everything it owns, child-first in a
+   * single transaction — the single-WO analogue of `ProjectPurgeService` (which
+   * does this for a whole project). Most cross-module links are bare uuid columns
+   * (no FK); the two that DO constrain are handled explicitly: `time_entries`
+   * (FK → `work_order_stages`, NO ACTION) is deleted before the stages, and the
+   * `work_orders.depends_on_id` self-FK is nulled on any WO that depends on this
+   * one. The costing ledger and quality reports keep their history but drop the
+   * now-dangling link. Hard delete by design (no Trash for work orders) — gated
+   * by the admin-only `work-orders.delete` permission at the controller.
+   */
+  async remove(id: string): Promise<{ deleted: true; id: string; orderNumber: string }> {
+    // Org-scoped existence check — throws 404 if it isn't in the caller's tenant.
+    const wo = await this.findOne(id);
+
+    await this.dataSource.transaction(async (m) => {
+      const p = [id];
+      // Another work order may depend on this one (self-FK, NO ACTION) — unlink first.
+      await m.query(`UPDATE work_orders SET depends_on_id = NULL WHERE depends_on_id = $1`, p);
+      // Traceability: serial units and their genealogy links.
+      await m.query(`DELETE FROM genealogy_links WHERE serial_id IN (SELECT id FROM serial_units WHERE work_order_id = $1)`, p);
+      await m.query(`DELETE FROM serial_units WHERE work_order_id = $1`, p);
+      // Labor: time entries hang off the stages (FK NO ACTION → delete before stages).
+      await m.query(`DELETE FROM time_entries WHERE work_order_stage_id IN (SELECT id FROM work_order_stages WHERE work_order_id = $1)`, p);
+      // Stage audit trail (denormalized, no FK).
+      await m.query(`DELETE FROM work_order_stage_events WHERE work_order_id = $1`, p);
+      // Costing ledger: keep the movements (org / order history) but unlink the gone WO.
+      await m.query(`UPDATE stock_movements SET work_order_id = NULL WHERE work_order_id = $1`, p);
+      // Quality reports stay attached to their assembly but drop the deleted stage instance.
+      await m.query(`UPDATE quality_reports SET work_order_stage_id = NULL WHERE work_order_stage_id IN (SELECT id FROM work_order_stages WHERE work_order_id = $1)`, p);
+      // Stages, then the work order itself.
+      await m.query(`DELETE FROM work_order_stages WHERE work_order_id = $1`, p);
+      await m.query(`DELETE FROM work_orders WHERE id = $1`, p);
+    });
+
+    await this.auditService.log({
+      action: 'delete',
+      entityType: 'work_order',
+      entityId: id,
+      oldValues: {
+        orderNumber: wo.orderNumber,
+        status: wo.status,
+        productionOrderId: wo.productionOrderId,
+        assemblyNodeId: wo.assemblyNodeId,
+      },
+      newValues: {},
+    });
+
+    const org = TenantContext.getOrganizationId();
+    this.eventsGateway.emitWorkOrderUpdate({ id, deleted: true }, org);
+    this.eventsGateway.emitDashboardRefresh(org);
+    return { deleted: true, id, orderNumber: wo.orderNumber };
   }
 
   async updateStatus(id: string, newStatus: WorkOrderStatus): Promise<WorkOrder> {

@@ -5,17 +5,18 @@
 // ============================================
 // ANGULAR MATERIAL — Light Theme (default)
 // ============================================
+// FabriXR — Holo: hologram-blue primary (saturated, white text) + electric-teal accent.
 $sb-primary-map: (
-  50: #e3f2fd, 100: #bbdefb, 200: #90caf9, 300: #64b5f6, 400: #42a5f5,
-  500: #2563eb, 600: #1e56d0, 700: #1848b5, 800: #123a9a, 900: #0d2b7a,
-  contrast: (50: rgba(0,0,0,.87), 100: rgba(0,0,0,.87), 200: rgba(0,0,0,.87),
-    300: white, 400: white, 500: white, 600: white, 700: white, 800: white, 900: white)
-);
-$sb-accent-map: (
-  50: #fff3e0, 100: #ffe0b2, 200: #ffcc80, 300: #ffb74d, 400: #ffa726,
-  500: #f97316, 600: #e8650e, 700: #d45a0a, 800: #c04f06, 900: #a33e02,
+  50: #eaefff, 100: #cdd8ff, 200: #aebfff, 300: #8a9fff, 400: #6c84ff,
+  500: #3d5aff, 600: #3349e6, 700: #2538c2, 800: #1b2a9e, 900: #121d77,
   contrast: (50: rgba(0,0,0,.87), 100: rgba(0,0,0,.87), 200: rgba(0,0,0,.87),
     300: rgba(0,0,0,.87), 400: white, 500: white, 600: white, 700: white, 800: white, 900: white)
+);
+$sb-accent-map: (
+  50: #defcf8, 100: #aef6ee, 200: #7eefe3, 300: #4fe8d8, 400: #2fdfce,
+  500: #22e3d3, 600: #13c6b9, 700: #0fa99e, 800: #0c8a82, 900: #086d66,
+  contrast: (50: rgba(0,0,0,.87), 100: rgba(0,0,0,.87), 200: rgba(0,0,0,.87),
+    300: rgba(0,0,0,.87), 400: rgba(0,0,0,.87), 500: #06231f, 600: #06231f, 700: white, 800: white, 900: white)
 );
 
 $pcs-primary: mat.define-palette($sb-primary-map, 500);
@@ -44,19 +45,19 @@ $pcs-theme: mat.define-light-theme((
   --clay-surface-hover: #f8fafc;
   --clay-white: #ffffff;
 
-  // Sidebar — dark navy (FabriXR signature)
-  --clay-sidebar: #0f172a;
-  --clay-sidebar-active: #1e293b;
+  // Sidebar — night navy (FabriXR signature)
+  --clay-sidebar: #0e1424;
+  --clay-sidebar-active: #1a2440;
   --clay-sidebar-text: #94a3b8;
   --clay-sidebar-text-hover: #e2e8f0;
   --clay-sidebar-text-active: #ffffff;
-  --clay-sidebar-accent: #60a5fa;
+  --clay-sidebar-accent: #22e3d3;
 
-  // Brand
-  --clay-primary: #2563eb;
-  --clay-primary-light: #3b82f6;
-  --clay-accent: #f97316;
-  --clay-accent-light: #fb923c;
+  // Brand — FabriXR Holo: hologram-blue primary + electric-teal accent
+  --clay-primary: #3d5aff;
+  --clay-primary-light: #6c8cff;
+  --clay-accent: #14c6b8;
+  --clay-accent-light: #22e3d3;
 
   // Text
   --clay-text: #0f172a;
@@ -111,7 +112,7 @@ $pcs-theme: mat.define-light-theme((
   --scrollbar-thumb-hover: #94a3b8;
 
   // Selection
-  --selection-bg: #2563eb;
+  --selection-bg: #3d5aff;
   --selection-color: #ffffff;
 
   // Error
@@ -159,18 +160,18 @@ $pcs-theme: mat.define-light-theme((
   --clay-white: #434d5c;
 
   // Sidebar — sits a touch below the content surfaces for separation
-  --clay-sidebar: #1a1f28;
-  --clay-sidebar-active: #2d3540;
+  --clay-sidebar: #0e1424;
+  --clay-sidebar-active: #1a2440;
   --clay-sidebar-text: #c2c8d8;
   --clay-sidebar-text-hover: #eef0f6;
-  --clay-sidebar-text-active: #adc6ff;
-  --clay-sidebar-accent: #4b8eff;
+  --clay-sidebar-text-active: #6efaec;
+  --clay-sidebar-accent: #22e3d3;
 
-  // Brand — light-emitting accents
-  --clay-primary: #adc6ff;
-  --clay-primary-light: #4b8eff;
-  --clay-accent: #ffb595;
-  --clay-accent-light: #ef6719;
+  // Brand — FabriXR Holo: light-emitting hologram-blue + electric-teal
+  --clay-primary: #a6bbff;
+  --clay-primary-light: #6c8cff;
+  --clay-accent: #6efaec;
+  --clay-accent-light: #22e3d3;
 
   // Text
   --clay-text: #dfe2eb;
@@ -225,7 +226,7 @@ $pcs-theme: mat.define-light-theme((
   --scrollbar-thumb-hover: #8b90a0;
 
   // Selection
-  --selection-bg: #4b8eff;
+  --selection-bg: #6c8cff;
   --selection-color: #ffffff;
 
   // Error
@@ -489,14 +490,14 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
   .mat-mdc-raised-button.mat-primary,
   .mat-mdc-unelevated-button.mat-primary,
   .mat-mdc-flat-button.mat-primary {
-    background-color: #4b8eff !important;
-    color: #001a41 !important;
+    background-color: #6c8cff !important;
+    color: #00103a !important;
   }
   .mat-mdc-raised-button.mat-accent,
   .mat-mdc-unelevated-button.mat-accent,
   .mat-mdc-flat-button.mat-accent {
-    background-color: #ef6719 !important;
-    color: #351000 !important;
+    background-color: #22e3d3 !important;
+    color: #06231f !important;
   }
 }
 
@@ -521,8 +522,8 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
 
 [data-theme="dark"] .mat-mdc-fab.mat-primary,
 [data-theme="dark"] .mat-mdc-mini-fab.mat-primary {
-  background-color: #4b8eff !important;
-  color: #001a41 !important;
+  background-color: #6c8cff !important;
+  color: #00103a !important;
 }
 
 // Form fields
@@ -749,8 +750,8 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
   .mat-step-header .mat-step-icon-selected,
   .mat-step-header .mat-step-icon-state-done,
   .mat-step-header .mat-step-icon-state-edit {
-    background-color: #4b8eff !important;
-    color: #001a41 !important;
+    background-color: #6c8cff !important;
+    color: #00103a !important;
   }
 
   // Connector line between steps
@@ -1081,7 +1082,7 @@ label, .mat-mdc-floating-label, .mat-mdc-form-field-hint {
   --mat-snack-bar-button-color: #ffffff;
 }
 .mat-mdc-snack-bar-container.info-snackbar {
-  --mdc-snackbar-container-color: #2563eb;
+  --mdc-snackbar-container-color: #3d5aff;
   --mdc-snackbar-supporting-text-color: #ffffff;
   --mat-snack-bar-button-color: #ffffff;
 }

@@ -21,14 +21,19 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
       <!-- Left Panel -->
       <div class="terminal-left">
         <div class="terminal-content">
+          <div class="terminal-logo">
+            <img src="assets/brand/fabrixr-icon.svg" alt="FabriXR" width="46" height="46" />
+            <span class="terminal-logo-word">Fabri<span class="lx">XR</span></span>
+          </div>
+
           <div class="terminal-badge">
             <span class="badge-dot"></span>
-            FABRIXR PCS &mdash; SECURE GATEWAY
+            FABRIXR &mdash; SECURE GATEWAY
           </div>
 
           <div class="terminal-header">
             <h1>TERMINAL<br/>INITIALIZATION</h1>
-            <p class="terminal-sub">AUTHENTICATE OPERATOR CREDENTIALS TO ACCESS<br/>PRODUCTION CONTROL SYSTEM v4.2.1</p>
+            <p class="terminal-sub">AUTHENTICATE OPERATOR CREDENTIALS TO ACCESS<br/>FABRIXR PRODUCTION PLATFORM v4.2.1</p>
           </div>
 
           @if (error) {
@@ -73,7 +78,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
             </div>
             <div class="meta-row">
               <mat-icon>dns</mat-icon>
-              <span>NODE: PCS-GATEWAY-01</span>
+              <span>NODE: FXR-GATEWAY-01</span>
             </div>
           </div>
 
@@ -143,6 +148,25 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
       justify-content: center;
       padding: 48px 40px;
       gap: 28px;
+    }
+    .terminal-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .terminal-logo img {
+      width: 46px; height: 46px; display: block;
+      border-radius: 11px;
+    }
+    .terminal-logo-word {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--clay-text);
+    }
+    .terminal-logo-word .lx {
+      color: var(--clay-accent-light);
     }
     .terminal-badge {
       display: inline-flex;
@@ -568,7 +592,7 @@ export class LoginComponent implements AfterViewInit, OnDestroy {
     const geometry = new THREE.TorusKnotGeometry(1.05, 0.35, 128, 32);
     const wireframe = new THREE.WireframeGeometry(geometry);
     const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({
-      color: 0x4b8eff,
+      color: 0x22e3d3,
       transparent: true,
       opacity: 0.6,
     }));

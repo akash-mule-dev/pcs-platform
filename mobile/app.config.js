@@ -2,8 +2,8 @@ const xrMode = process.env.XR_MODE || "AR";
 
 module.exports = {
   expo: {
-    name: "PCS",
-    slug: "pcs-mobile",
+    name: "FabriXR",
+    slug: "fabrixr-mobile",
     version: "1.0.0",
     orientation: xrMode === "VR" ? "landscape" : "portrait",
     icon: "./assets/icon.png",
@@ -11,33 +11,44 @@ module.exports = {
     splash: {
       image: "./assets/splash.png",
       resizeMode: "contain",
-      backgroundColor: "#1565c0",
+      backgroundColor: "#0a0e1a",
     },
     assetBundlePatterns: ["**/*"],
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.fabrixr.pcs",
+      buildNumber: "1",
       infoPlist: {
-        NSCameraUsageDescription: "PCS needs camera access for AR features",
+        // App uses only standard HTTPS (exempt encryption). Declaring this here
+        // (vs the gitignored ios/ prebuild) avoids the manual export-compliance
+        // prompt on every App Store / TestFlight build.
+        ITSAppUsesNonExemptEncryption: false,
+        NSCameraUsageDescription: "FabriXR needs camera access for AR features",
         NSPhotoLibraryUsageDescription:
           "Allow $(PRODUCT_NAME) to access your photos",
         NSPhotoLibraryAddUsageDescription:
           "Allow $(PRODUCT_NAME) to save photos",
-        NSMicrophoneUsageDescription:
-          "Allow $(PRODUCT_NAME) to use your microphone",
+        // Microphone intentionally NOT declared — the app records no audio. The
+        // expo-camera plugin below is configured (microphonePermission:false,
+        // recordAudioAndroid:false) so prebuild does not re-add NSMicrophone /
+        // RECORD_AUDIO. Avoids an unused-permission flag (App Store 5.1.1).
+        // Device motion is used by the AR alignment flow (expo-sensors). This
+        // string lived only in the gitignored ios/ prebuild; a fresh
+        // `expo prebuild --clean` (which EAS runs) would otherwise drop it.
+        NSMotionUsageDescription:
+          "Allow $(PRODUCT_NAME) to access device motion for AR alignment",
       },
     },
     android: {
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#1565c0",
+        backgroundColor: "#0a0e1a",
       },
       package: "com.fabrixr.pcs",
       permissions: [
         "INTERNET",
         "CAMERA",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
       ],
     },
     plugins: [
@@ -63,7 +74,11 @@ module.exports = {
       [
         "expo-camera",
         {
-          cameraPermission: "PCS needs camera access for AR features",
+          cameraPermission: "FabriXR needs camera access for AR features",
+          // App records no audio — stop expo-camera from injecting the mic
+          // usage string (iOS) and RECORD_AUDIO (Android) during prebuild.
+          microphonePermission: false,
+          recordAudioAndroid: false,
         },
       ],
       [

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -41,8 +42,9 @@ export function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
-          <Text style={styles.title}>PCS</Text>
-          <Text style={styles.subtitle}>Production Control System</Text>
+          <Image source={require('../../../assets/icon.png')} style={styles.logo} />
+          <Text style={styles.title}>Fabri<Text style={styles.titleAccent}>XR</Text></Text>
+          <Text style={styles.subtitle}>Production control for fabrication</Text>
 
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Email</Text>
@@ -107,12 +109,22 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  logo: {
+    width: 72,
+    height: 72,
+    borderRadius: 16,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: Colors.primary,
+    color: Colors.text,
     textAlign: 'center',
     marginBottom: 4,
+  },
+  titleAccent: {
+    color: Colors.secondary,
   },
   subtitle: {
     fontSize: 14,

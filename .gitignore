@@ -62,6 +62,9 @@ mobile/test-screenshots/
 mobile/*.png
 mobile/.bundle/
 mobile/.metro-health-check*
+# App Store Connect API key + any other build secrets (referenced by eas.json submit)
+mobile/private/
+*.p8
 
 # TypeScript build info
 *.tsbuildinfo

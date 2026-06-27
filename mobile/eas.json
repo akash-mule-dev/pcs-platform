@@ -20,6 +20,15 @@
       }
     },
     "production": {
+      "autoIncrement": true,
+      "distribution": "store",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.fabrixr.com/api",
+        "EXPO_PUBLIC_WEB_URL": "https://pcs.fabrixr.com"
+      },
+      "ios": {
+        "image": "latest"
+      },
       "android": {
         "buildType": "apk"
       }
@@ -31,6 +40,17 @@
       },
       "android": {
         "buildType": "apk"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleTeamId": "79F9K3CUSR",
+        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
+        "ascApiKeyPath": "./private/asc-api-key.p8",
+        "ascApiKeyId": "REPLACE_WITH_ASC_API_KEY_ID",
+        "ascApiKeyIssuerId": "REPLACE_WITH_ASC_ISSUER_ID"
       }
     }
   }
