@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -10,18 +10,21 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { NgChartsModule } from 'ng2-charts';
 import { ChartConfiguration } from 'chart.js';
 import { ApiService } from '../../core/services/api.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { PermissionsService } from '../../core/services/permissions.service';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { DurationPipe } from '../../shared/pipes/duration.pipe';
 
 @Component({
   selector: 'app-work-order-detail',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, RouterModule, MatCardModule, MatButtonModule,
-    MatChipsModule, MatSelectModule, MatFormFieldModule,
+    CommonModule, FormsModule, RouterModule, MatCardModule, MatButtonModule, MatIconModule,
+    MatChipsModule, MatSelectModule, MatFormFieldModule, MatDialogModule,
     MatProgressBarModule, NgChartsModule, DurationPipe,
   ],
   template: `
@@ -38,6 +41,11 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
         <div class="header-actions">
           <span class="status-chip" [class]="'status-' + wo.status">{{ wo.status | uppercase }}</span>
           <span class="priority-chip" [class]="'priority-' + wo.priority">{{ wo.priority | uppercase }}</span>
+          @if (perms.can('work-orders.delete')) {
+            <button mat-stroked-button color="warn" class="delete-btn" (click)="deleteWorkOrder()">
+              <mat-icon>delete</mat-icon> Delete
+            </button>
+          }
         </div>
       </div>
 
@@ -113,6 +121,8 @@ import { DurationPipe } from '../../shared/pipes/duration.pipe';
     h2 { margin: 0; color: var(--clay-text); }
     .subtitle { margin: 4px 0 0; color: var(--clay-text-muted); }
     .header-actions { display: flex; gap: 8px; align-items: center; }
+    .delete-btn { display: inline-flex; align-items: center; gap: 4px; }
+    .delete-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
     .status-chip, .priority-chip { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; }
     .status-draft { background: var(--badge-draft-bg); color: var(--badge-draft-text); box-shadow: var(--clay-shadow-soft); } .status-pending { background: var(--badge-pending-bg); color: var(--badge-pending-text); box-shadow: var(--clay-shadow-soft); }
     .status-in_progress { background: var(--badge-progress-bg); color: var(--badge-progress-text); box-shadow: var(--clay-shadow-soft); } .status-completed { background: var(--badge-completed-bg); color: var(--badge-completed-text); box-shadow: var(--clay-shadow-soft); }
@@ -157,9 +167,12 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
 
   constructor(
     private route: ActivatedRoute,
+    private router: Router,
     private api: ApiService,
     private snackBar: MatSnackBar,
+    private dialog: MatDialog,
     private notificationService: NotificationService,
+    public perms: PermissionsService,
   ) {}
 
   ngOnInit(): void {
@@ -204,6 +217,26 @@ export class WorkOrderDetailComponent implements OnInit, OnDestroy {
         this.snackBar.open(`Status changed to ${status}`, 'Close', { duration: 3000 });
         this.load();
       }
+    });
+  }
+
+  /** Permanently delete this work order (admin-only), then return to the list. */
+  deleteWorkOrder(): void {
+    this.dialog.open(ConfirmDialogComponent, {
+      data: {
+        title: 'Delete work order?',
+        message: `"${this.wo.orderNumber}" and all of its stages, time logs and stage history will be permanently deleted. This cannot be undone.`,
+        confirmText: 'Delete work order',
+      },
+    }).afterClosed().subscribe((ok: boolean) => {
+      if (!ok) return;
+      this.api.delete(`/work-orders/${this.wo.id}`).subscribe({
+        next: () => {
+          this.snackBar.open(`Work order ${this.wo.orderNumber} deleted`, 'Close', { duration: 3000 });
+          this.router.navigate(['/work-orders/legacy']);
+        },
+        error: (e) => this.snackBar.open(e?.error?.message || 'Could not delete work order', 'Close', { duration: 5000 }),
+      });
     });
   }
 
