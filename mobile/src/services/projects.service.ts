@@ -58,6 +58,21 @@ export interface MNodeLot {
   material_name: string | null;
 }
 
+/** A project import (upload pipeline row) — carries the converted model id even
+ *  for geometry-only imports (STEP/IGES/GLB) that produce NO assembly nodes. */
+export interface MImport {
+  id: string;
+  originalName: string;
+  status: string; // uploaded | queued | extracting | converting | completed | failed
+  stage: string;
+  progress: number;
+  format?: string | null;
+  nodeCount?: number;
+  modelId?: string | null;
+  finishedAt?: string | null;
+  createdAt?: string;
+}
+
 export interface MStage { id: string; name: string; sequence: number; targetTimeSeconds: number }
 
 export interface MQualityEntry {
@@ -94,6 +109,10 @@ export const projectsService = {
   list: (force = false) => dataCache.cached('projects:list', () => api.getList<MProject>('/projects'), force),
   getNodes: (projectId: string, force = false) =>
     dataCache.cached(`projects:nodes:${projectId}`, () => api.getList<MNode>(`/projects/${projectId}/nodes`), force),
+  /** Import history (newest first). Fetched fresh (not cached) so model-readiness
+   *  reflects a just-finished conversion. Used to resolve the project's 3D model
+   *  for geometry-only imports, which leave no assembly node to carry the modelId. */
+  getImports: (projectId: string) => api.getList<MImport>(`/projects/${projectId}/imports`),
   getNode: (projectId: string, nodeId: string) => api.get<MNode>(`/projects/${projectId}/nodes/${nodeId}`),
   getNodeMeshes: (projectId: string, nodeId: string) => api.get<string[]>(`/projects/${projectId}/nodes/${nodeId}/meshes`),
   getNodeQuality: (projectId: string, nodeId: string) =>
