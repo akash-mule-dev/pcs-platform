@@ -54,10 +54,10 @@ interface NavGroup {
       <div class="sidenav-overlay" [class.visible]="mobileMenuOpen" (click)="closeMobileMenu()"></div>
       <aside class="sidenav" [class.collapsed]="sidenavCollapsed" [class.mobile-open]="mobileMenuOpen">
         <div class="sidenav-header">
-          <div class="logo-mark">SB</div>
+          <div class="logo-mark"><img src="assets/brand/fabrixr-mark.svg" alt="FabriXR" width="34" height="34" /></div>
           @if (!sidenavCollapsed) {
             <div class="logo-block">
-              <span class="logo-text">FabriXR</span>
+              <span class="logo-text">Fabri<span class="logo-xr">XR</span></span>
               <span class="logo-sub">Production Control</span>
             </div>
           }
@@ -282,12 +282,11 @@ interface NavGroup {
 
     .logo-mark {
       width: 36px; height: 36px;
-      background: linear-gradient(135deg, var(--clay-sidebar-accent), var(--clay-accent));
-      border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700; color: #fff;
-      letter-spacing: 0.02em;
       flex-shrink: 0;
+    }
+    .logo-mark img {
+      width: 34px; height: 34px; display: block;
     }
     .logo-block {
       display: flex;
@@ -298,6 +297,9 @@ interface NavGroup {
       font-size: 16px; font-weight: 700;
       color: #ffffff;
       letter-spacing: -0.01em;
+    }
+    .logo-xr {
+      color: var(--clay-sidebar-accent);
     }
     .logo-sub {
       font-size: 11px;
@@ -538,7 +540,6 @@ export class LayoutComponent implements OnInit, OnDestroy {
     { label: 'Production', icon: 'precision_manufacturing', expanded: true, items: [
       { label: 'Projects', icon: 'foundation', route: '/projects', feature: 'projects' },
       { label: 'Package Monitor', icon: 'monitor_heart', route: '/package-monitor', feature: 'projects' },
-      { label: 'Cached Projects', icon: 'cloud_done', route: '/cached-projects', feature: 'projects' },
       { label: 'Work Orders', icon: 'assignment', route: '/work-orders', feature: 'work-orders' },
       { label: 'Kanban', icon: 'view_kanban', route: '/work-orders/kanban', feature: 'kanban' },
       { label: 'Processes', icon: 'account_tree', route: '/processes', feature: 'processes' },

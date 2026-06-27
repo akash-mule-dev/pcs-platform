@@ -46,7 +46,7 @@ export function ScanScreen() {
   const onScanned = useCallback(async ({ data }: { data: string }) => {
     if (lockRef.current || busy) return;
     const ref = parse(data);
-    if (!ref) { setError('Not a PCS assembly label.'); return; }
+    if (!ref) { setError('Not a FabriXR assembly label.'); return; }
     lockRef.current = true;
     setBusy(true);
     setError(null);

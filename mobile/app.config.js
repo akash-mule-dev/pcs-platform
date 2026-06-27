@@ -2,8 +2,8 @@ const xrMode = process.env.XR_MODE || "AR";
 
 module.exports = {
   expo: {
-    name: "PCS",
-    slug: "pcs-mobile",
+    name: "FabriXR",
+    slug: "fabrixr-mobile",
     version: "1.0.0",
     orientation: xrMode === "VR" ? "landscape" : "portrait",
     icon: "./assets/icon.png",
@@ -11,14 +11,14 @@ module.exports = {
     splash: {
       image: "./assets/splash.png",
       resizeMode: "contain",
-      backgroundColor: "#1565c0",
+      backgroundColor: "#0a0e1a",
     },
     assetBundlePatterns: ["**/*"],
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.fabrixr.pcs",
       infoPlist: {
-        NSCameraUsageDescription: "PCS needs camera access for AR features",
+        NSCameraUsageDescription: "FabriXR needs camera access for AR features",
         NSPhotoLibraryUsageDescription:
           "Allow $(PRODUCT_NAME) to access your photos",
         NSPhotoLibraryAddUsageDescription:
@@ -30,7 +30,7 @@ module.exports = {
     android: {
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#1565c0",
+        backgroundColor: "#0a0e1a",
       },
       package: "com.fabrixr.pcs",
       permissions: [
@@ -63,7 +63,7 @@ module.exports = {
       [
         "expo-camera",
         {
-          cameraPermission: "PCS needs camera access for AR features",
+          cameraPermission: "FabriXR needs camera access for AR features",
         },
       ],
       [
