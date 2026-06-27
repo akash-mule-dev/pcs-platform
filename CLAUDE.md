@@ -290,8 +290,12 @@ standalone `quality-ncr` module + `ncrs`/`capas`/`ncr_events` tables were retire
     assembly has ANY open NCR (raised at any stage), any failed inspection not signed off, or (if a
     hold point) no acceptable inspection — all evaluated assembly-wide (the **rollup**). Completing
     it releases the piece; shipping also blocks on any open NCR. `ProcessesService.create` +
-    `ensureStandard` + the library seed **auto-append** a `Final QC` stage (`is_final_qc`+`hold`);
-    opt out with `appendFinalQc:false` or by flagging your own stage `isFinalQc`.
+    `ensureStandard` + the library seed **auto-append** a `Final QC` stage that is `is_final_qc`
+    only — a release gate, **NOT a hold point** (it blocks on open NCRs / unsigned failures but does
+    NOT force a positive inspection; `RelaxFinalQcHold` migration backfilled existing gates off the
+    old `+hold` default). Make a process's final QC a mandatory-inspection hold by flagging the stage
+    `inspection_type='hold'`. Opt out of the auto-append with `appendFinalQc:false` or by flagging
+    your own stage `isFinalQc`.
   - **HOLD point** (`stages.inspection_type='hold'`, opt-in per stage) — an in-process gate that
     blocks ITS OWN stage only, scoped by `stage_id`. Witness/review + plain stages never block.
   - `is_final_qc` is **tri-state**: `true`=explicit gate, `false`=explicitly not, `null`=legacy →

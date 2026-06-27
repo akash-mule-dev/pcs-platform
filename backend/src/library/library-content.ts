@@ -20,18 +20,23 @@ export interface LibraryStageSeed {
 }
 
 /**
- * The default terminal FINAL QC / release stage appended to a routing: a hold
- * point that consolidates every prior stage's QC and releases the piece for
- * shipping. Shared by the library seed and `ProcessesService` so the
- * auto-append and the seeded routing stay identical.
+ * The default terminal FINAL QC / release stage appended to a routing: the
+ * release gate that consolidates every prior stage's QC and releases the piece
+ * for shipping. It BLOCKS completion while the assembly has any open NCR or any
+ * unsigned failed inspection — but it is NOT a hold point, so it does NOT
+ * require a positive inspection to be recorded first (a clean piece with no
+ * NCRs/failures releases without a mandatory check). Flag the stage
+ * `inspectionType: 'hold'` (or set `requiresInspection`) if a process needs an
+ * ITP-style mandatory inspection there. Shared by the library seed and
+ * `ProcessesService` so the auto-append and the seeded routing stay identical.
  */
 export const FINAL_QC_STAGE: LibraryStageSeed = {
   name: 'Final QC',
   targetTimeSeconds: 1800,
   description:
-    'Final dimensional + coating + marking check; consolidates every stage’s QC and releases the piece for shipping — blocked while any NCR is open.',
-  inspectionType: 'hold',
-  requiresInspection: true,
+    'Final dimensional + coating + marking check; consolidates every stage’s QC and releases the piece for shipping — blocked while any NCR or unsigned failed inspection is open.',
+  inspectionType: null,
+  requiresInspection: false,
   isFinalQc: true,
 };
 
