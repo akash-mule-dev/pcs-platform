@@ -150,8 +150,10 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
       fileUrl: `${environment.apiUrl}/models/${modelId}/file`,
       meshNames: meshes.length ? meshes : undefined,
       partLabel: selectedNode ? displayName(selectedNode) : undefined,
+      // Carries the project so AR can colour-by Profile / Grade (needs node data).
+      projectId,
     });
-  }, [modelId, selectedNode, descendantGuids, navigation]);
+  }, [modelId, selectedNode, descendantGuids, navigation, projectId]);
 
   const renderRow = useCallback(({ item }: { item: Row }) => {
     const n = item.node;

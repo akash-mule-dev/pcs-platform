@@ -66,6 +66,9 @@ export type PcsLidarArViewProps = {
   showEdges?: boolean;
   /** Edge-view colour (hex, e.g. "#00e5ff") — painted as one uniform flat fill. */
   edgeColor?: string;
+  /** Per-entity colour overlay for the SOLID model (Color-by Profile/Grade):
+   *  entity-name (== ifc_guid) → hex. Empty/omitted = uniform grey. */
+  colorOverlay?: Record<string, string>;
   /** Real-world (LiDAR mesh) occlusion of the virtual model. */
   occlusion?: boolean;
   /** People/hand occlusion (ARKit personSegmentationWithDepth). */

@@ -41,7 +41,10 @@ import EdgesPanel from './EdgesPanel';
 import MeasurementPanel from './MeasurementPanel';
 import RegisterPanel from './RegisterPanel';
 import QualityPanel from './QualityPanel';
+import ColorByPanel from './ColorByPanel';
 import LogInspectionForm, { InspectionFormResult } from './LogInspectionForm';
+import { projectsService, MNode } from '../../../services/projects.service';
+import { buildColorBy, ColorBy } from '../../projects/partviewer/viewerTools';
 import { solveRigid, PointPair, RigidFit } from './rigid-registration';
 import { captureNativeSnapshot } from './arSnapshotNative';
 import { useAuth } from '../../../context/AuthContext';
@@ -57,7 +60,7 @@ import {
   RenderMode,
   Vec3,
   DEFAULT_EDGE_COLOR,
-  EDGE_WEIGHT_MIN,
+  DEFAULT_EDGE_WEIGHT,
 } from './types';
 import { PcsLidarArView } from '../../../../modules/pcs-lidar-ar';
 
@@ -151,9 +154,14 @@ export default function ARExperienceRK({
   // ── Edges ──
   const [renderMode, setRenderMode] = useState<RenderMode>('solid');
   const [edgeColor, setEdgeColor] = useState(DEFAULT_EDGE_COLOR);
-  // Edges default to the THINNEST line weight.
-  const [edgeWeight, setEdgeWeight] = useState(EDGE_WEIGHT_MIN);
+  // Edges default to a thin crisp line; finer (down to 0.10×) via the Edges panel.
+  const [edgeWeight, setEdgeWeight] = useState(DEFAULT_EDGE_WEIGHT);
   const [pendingWireframe, setPendingWireframe] = useState(false);
+
+  // ── Colour-by (Profile / Grade) — the SAME overlay as the web + 3D viewer ──
+  const [nodes, setNodes] = useState<MNode[]>([]);
+  const [colorBy, setColorBy] = useState<ColorBy>('none');
+  const [colorPanelOpen, setColorPanelOpen] = useState(false);
 
   // ── Measure ──
   const [measurements, setMeasurements] = useState<MeasurementState>(DEFAULT_MEASUREMENTS);
@@ -170,8 +178,10 @@ export default function ARExperienceRK({
   const [registerMiss, setRegisterMiss] = useState(false);
   const [lastRegRms, setLastRegRms] = useState<number | null>(null);
 
-  // ── See-through overlay (Phase 3) ──
-  const [seeThrough, setSeeThrough] = useState(false);
+  // ── See-through overlay (Phase 3) — continuous opacity (1 = solid). Lower it to
+  // see through the assembly surface for inspection. Driven from the Color panel's
+  // opacity slider + the quick top-right "See-through" chip (a 1 ↔ 0.45 shortcut). ──
+  const [opacity, setOpacity] = useState(1);
 
   // Brief "drag to move / twist to turn" hint shown right after placement.
   const [showDragHint, setShowDragHint] = useState(false);
@@ -194,6 +204,38 @@ export default function ARExperienceRK({
 
   const flags = togglesToFlags(toggles);
   const dimensions = model.dimensions;
+
+  // Colour-by is only meaningful with the project's node attributes — fetch them
+  // (cache-first) when AR is opened in a project context. No projectId → no Color
+  // tab (the overlay needs profile/grade per mesh).
+  const projectId = qaContext?.projectId;
+  useEffect(() => {
+    if (!projectId) { setNodes([]); return; }
+    let cancelled = false;
+    projectsService.getNodes(projectId)
+      .then((ns) => { if (!cancelled) setNodes(Array.isArray(ns) ? ns : []); })
+      .catch(() => { /* keep empty — Color tab just won't show */ });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  // name(ifc_guid)→hex map + legend, scoped to the meshes actually shown (the
+  // isolated set, or the whole model). Reuses buildColorBy verbatim, so AR matches
+  // the web/3D-viewer colours exactly. The native overlay wants hex STRINGS.
+  const colorResult = useMemo(
+    () => buildColorBy(nodes, colorBy, meshNames ?? null),
+    [nodes, colorBy, meshNames],
+  );
+  const colorByAvailable = nodes.length > 0;
+  // The solid model is ALWAYS rendered (edges are a composite overlay on top), so
+  // the colour overlay applies in BOTH view modes; only an empty map when off.
+  const colorOverlay = useMemo(() => {
+    if (colorBy === 'none') return {} as Record<string, string>;
+    const out: Record<string, string> = {};
+    for (const [name, intColor] of Object.entries(colorResult.colors)) {
+      out[name] = `#${(intColor >>> 0).toString(16).padStart(6, '0').slice(-6)}`;
+    }
+    return out;
+  }, [colorBy, colorResult]);
 
   // The active measurement tool, sent to the native view as a prop. 'off' when
   // the Measure panel is closed (so taps don't capture stray points).
@@ -284,7 +326,9 @@ export default function ARExperienceRK({
     setRegisterPairs([]);
     setPendingModelPoint(null);
     setRegisterMiss(false);
-    setSeeThrough(false);
+    setColorBy('none');
+    setColorPanelOpen(false);
+    setOpacity(1);
     // Tear down stale native markers from the previous model too (both sides reset).
     arRef.current?.clearRegistration?.();
     arRef.current?.clearMeasurement?.();
@@ -300,8 +344,8 @@ export default function ARExperienceRK({
 
   // Tell the host when a docked panel is open so it can hide the engine switcher.
   useEffect(() => {
-    onChromeBusy?.(precisionMode || edgesPanelOpen || measurePanelOpen || registerPanelOpen);
-  }, [precisionMode, edgesPanelOpen, measurePanelOpen, registerPanelOpen, onChromeBusy]);
+    onChromeBusy?.(precisionMode || edgesPanelOpen || measurePanelOpen || registerPanelOpen || colorPanelOpen);
+  }, [precisionMode, edgesPanelOpen, measurePanelOpen, registerPanelOpen, colorPanelOpen, onChromeBusy]);
 
   // Surface the drag/twist hint for a few seconds whenever the model (re)places.
   useEffect(() => {
@@ -536,10 +580,10 @@ export default function ARExperienceRK({
     [],
   );
 
-  // Apply the see-through overlay opacity whenever the toggle flips.
+  // Apply the see-through overlay opacity whenever it changes.
   useEffect(() => {
-    arRef.current?.setModelOpacity?.(seeThrough ? 0.45 : 1);
-  }, [seeThrough]);
+    arRef.current?.setModelOpacity?.(opacity);
+  }, [opacity]);
 
   const handleLogDeviation = useCallback(async () => {
     const a = measurements.deviationModelPoint;
@@ -650,6 +694,7 @@ export default function ARExperienceRK({
     setPrecisionMode((p) => !p);
     setEdgesPanelOpen(false);
     setMeasurePanelOpen(false);
+    setColorPanelOpen(false);
     closeRegister();
   }, [closeRegister]);
   const toggleEdges = useCallback(() => {
@@ -657,6 +702,7 @@ export default function ARExperienceRK({
     setEdgesPanelOpen(opening);
     setPrecisionMode(false);
     setMeasurePanelOpen(false);
+    setColorPanelOpen(false);
     closeRegister();
     // Opening the Edges tab turns the edge view ON by default.
     if (opening && renderMode !== 'wireframe') handleSelectView('wireframe');
@@ -665,6 +711,7 @@ export default function ARExperienceRK({
     setMeasurePanelOpen((m) => !m);
     setPrecisionMode(false);
     setEdgesPanelOpen(false);
+    setColorPanelOpen(false);
     closeRegister();
   }, [closeRegister]);
   const toggleRegister = useCallback(() => {
@@ -679,7 +726,20 @@ export default function ARExperienceRK({
     setPrecisionMode(false);
     setEdgesPanelOpen(false);
     setMeasurePanelOpen(false);
+    setColorPanelOpen(false);
     setPartTapMode(false); // register taps must not also fire part-pick
+  }, []);
+  const toggleColor = useCallback(() => {
+    setColorPanelOpen((c) => !c);
+    setPrecisionMode(false);
+    setEdgesPanelOpen(false);
+    setMeasurePanelOpen(false);
+    closeRegister();
+  }, [closeRegister]);
+  // Colour-by paints the solid, which is shown in BOTH view modes (in edges view
+  // the outlines sit on top of the coloured solid), so no view switch is needed.
+  const handleColorBy = useCallback((by: ColorBy) => {
+    setColorBy(by);
   }, []);
 
   const downloading = model.phase !== 'ready' && model.phase !== 'error';
@@ -698,6 +758,7 @@ export default function ARExperienceRK({
         wireframeUri={model.wireframeUri ?? undefined}
         showEdges={renderMode === 'wireframe'}
         edgeColor={edgeColor}
+        colorOverlay={colorOverlay}
         directManipulation={directManip}
         registerMode={registerMode}
         occlusion={flags.occlusion}
@@ -759,8 +820,8 @@ export default function ARExperienceRK({
           <ToggleChip
             icon="◐"
             label="See-through"
-            on={seeThrough}
-            onPress={() => setSeeThrough((s) => !s)}
+            on={opacity < 0.999}
+            onPress={() => setOpacity((o) => (o < 0.999 ? 1 : 0.45))}
           />
         )}
       </View>
@@ -884,6 +945,22 @@ export default function ARExperienceRK({
         />
       )}
 
+      {/* Colour-by panel (Profile / Grade) — paints the solid model */}
+      {colorPanelOpen && placed && (
+        <ColorByPanel
+          colorBy={colorBy}
+          legend={colorResult.legend}
+          onColorBy={handleColorBy}
+          opacity={opacity}
+          onOpacity={setOpacity}
+          renderMode={renderMode}
+          onSelectView={handleSelectView}
+          edgesBusy={model.wireframeBusy}
+          bottomOffset={PANEL_BOTTOM}
+          translucent
+        />
+      )}
+
       {/* Measurement panel */}
       {measurePanelOpen && placed && (
         <MeasurementPanel
@@ -952,6 +1029,8 @@ export default function ARExperienceRK({
         onToggleMeasure={toggleMeasure}
         registerPanelOpen={registerPanelOpen}
         onToggleRegister={toggleRegister}
+        colorPanelOpen={colorPanelOpen}
+        onToggleColor={colorByAvailable ? toggleColor : undefined}
         side="right"
       />
 

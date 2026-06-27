@@ -93,8 +93,10 @@ export function OrderAssemblies3D({
       fileUrl: `${environment.apiUrl}/models/${modelId}/file`,
       meshNames: meshes.length ? meshes : undefined,
       partLabel: selectedNode ? displayName(selectedNode) : audit.order.number,
+      // Carries the project so AR can colour-by Profile / Grade (needs node data).
+      projectId,
     });
-  }, [modelId, selectedNode, idx, isolate, navigation, audit.order.number]);
+  }, [modelId, selectedNode, idx, isolate, navigation, audit.order.number, projectId]);
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>;

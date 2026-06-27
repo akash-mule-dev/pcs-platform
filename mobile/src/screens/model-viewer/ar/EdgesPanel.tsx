@@ -43,7 +43,10 @@ const VIEW_OPTIONS: { mode: RenderMode; glyph: string; caption: string }[] = [
   { mode: 'wireframe', glyph: '◰', caption: 'Edges' },
 ];
 
-const WEIGHT_W = 3 * 68 + 2 * 8; // matches a 3-button row, so presets + slider align
+const WEIGHT_W = 3 * 68 + 2 * 8; // matches the other 3-button rows, so the slider aligns
+// The weight presets are a 4-button row (Fine/Thin/Medium/Thick); size each so
+// the row's total width equals WEIGHT_W (and thus the slider underneath).
+const WEIGHT_BTN_W = Math.floor((WEIGHT_W - 3 * 8) / 4);
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -121,7 +124,7 @@ export default function EdgesPanel({
 
         <View style={styles.divider} />
 
-        {/* ── WEIGHT: Thin/Medium/Thick presets + free slider (rebakes radius) ── */}
+        {/* ── WEIGHT: Fine/Thin/Medium/Thick presets + free slider (rebakes radius) ── */}
         <Section title="WEIGHT">
           <View style={styles.weightBody}>
             <View style={[styles.row, !edgesActive && styles.disabled]}>
@@ -130,7 +133,7 @@ export default function EdgesPanel({
                 return (
                   <TouchableOpacity
                     key={p.label}
-                    style={[styles.btn, active && styles.btnActive]}
+                    style={[styles.btn, styles.weightBtn, active && styles.btnActive]}
                     onPress={() => edgesActive && onCommitWeight(p.scale)}
                     disabled={!edgesActive}
                     activeOpacity={0.7}
@@ -206,6 +209,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Weight presets are a 4-button row — narrower than the 68px VIEW buttons so
+  // the four of them line up with the slider (WEIGHT_W) underneath.
+  weightBtn: { width: WEIGHT_BTN_W },
   btnActive: { backgroundColor: 'rgba(14, 165, 233, 0.95)' },
   btnGlyph: { color: '#0f172a', fontSize: 24, fontWeight: '800', lineHeight: 28 },
   btnGlyphActive: { color: '#ffffff' },

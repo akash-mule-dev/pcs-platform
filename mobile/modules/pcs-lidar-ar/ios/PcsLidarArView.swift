@@ -64,19 +64,24 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // rotation / translate) — so Align edits never disturb the centring, and yaw
   // spins the model in place on the surface. modelPivot is the child of the
   // surface-anchored modelAnchor.
-  private var modelEntity: Entity?
+  private var modelEntity: Entity?            // the SOLID model — always present once loaded
   private var modelPivot: Entity?
   private var modelAnchor: AnchorEntity?
   private var pendingPlacement = false
   private var placeAttempts = 0
   private var loadToken = UUID()
-  // Variant selection (solid ↔ edges) is driven by an EXPLICIT flag, not by a
-  // prop transitioning to nil (Expo's nil-diffing for cleared props is fragile).
+  // Edges are a COMPOSITE overlay, not a variant swap: the solid model is ALWAYS
+  // shown (so Colour-by + see-through opacity apply in BOTH view modes), and in
+  // "edges" view the wireframe tubes are added ON TOP as a separate, collision-free
+  // child of the pivot. Driven by the explicit (wantEdges, uris) state — not a prop
+  // going nil (fragile under Expo).
   private var solidUri: URL?                  // the solid model
-  private var wireframeUri: URL?              // the edge-view variant (if any)
-  private var wantEdges = false               // show the wireframe variant?
-  private var loadedUri: URL?                 // what's actually on screen now
-  private var currentUnlit = true             // true while showing the SOLID model
+  private var wireframeUri: URL?              // the edge-tube overlay (if any)
+  private var wantEdges = false               // overlay the edges on top of the solid?
+  private var loadedSolidUri: URL?            // solid currently loaded
+  private var edgeEntity: Entity?             // the edge-tube overlay entity (if shown)
+  private var loadedEdgeUri: URL?             // wireframe currently overlaid
+  private var edgeLoadToken = UUID()          // guards async edge loads (weight-slider spam)
 
   // Flat unlit fill colours (no lighting → one uniform colour across the whole
   // assembly, no gradient). Solid = steel grey; the wireframe is painted with the
@@ -87,6 +92,13 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // semi-transparent so the real assembly shows through to verify alignment.
   // Persisted across variant swaps / recolours so the overlay doesn't flicker back.
   private var modelOpacity: Float = 1
+
+  // Per-entity colour overlay (Color-by Profile/Grade), keyed by entity name
+  // (== ifc_guid) → UIColor. Applies ONLY to the SOLID model; empty = the uniform
+  // steel grey. Unmapped meshes get a neutral "ghost" grey so coloured members pop
+  // (mirrors the web/3D-viewer colorOverlay, which ghosts non-mapped meshes).
+  private var colorOverlay: [String: UIColor] = [:]
+  private let ghostColor = UIColor(red: 0.55, green: 0.60, blue: 0.66, alpha: 1.0)
 
   // ── User transform (Align) ──
   private var userScale: Float = 1
@@ -188,26 +200,65 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
   // MARK: - Props (called from the Module's Prop closures)
 
-  func setModelUri(_ uri: URL?) { solidUri = uri; reconcileVariant() }
-  func setWireframeUri(_ uri: URL?) { wireframeUri = uri; reconcileVariant() }
-  func setShowEdges(_ v: Bool) { wantEdges = v; reconcileVariant() }
+  func setModelUri(_ uri: URL?) { solidUri = uri; reconcileSolid() }
+  func setWireframeUri(_ uri: URL?) { wireframeUri = uri; reconcileEdges() }
+  func setShowEdges(_ v: Bool) { wantEdges = v; reconcileEdges() }
 
-  // The edge-view colour. Re-tints the wireframe IN PLACE (order-independent of
-  // the wireframeUri prop) so it's always one uniform colour. No reload needed.
+  // The edge-overlay colour. Re-tints the (opaque) edge tubes in place. No reload.
   func setEdgeColor(_ hex: String) {
     guard let c = Self.colorFromHex(hex) else { return }
     wireframeTint = c
-    // Repaint the wireframe in the new colour, honouring any see-through opacity.
-    if !currentUnlit, modelEntity != nil { applyOpacity() }
+    if let e = edgeEntity { paintUniform(e, wireframeTint, opaque: true) }
   }
 
-  // Paint every mesh of `entity` with one flat UnlitMaterial (uniform colour, no
-  // lighting gradient). Used to re-colour the edge view live.
-  private func retint(_ entity: Entity, _ color: UIColor) {
-    let flat = UnlitMaterial(color: color)
+  // Per-entity colour overlay for the SOLID model (Color-by Profile/Grade). `map`
+  // is entity-name (== ifc_guid) → hex; empty restores the uniform grey. The solid
+  // is always shown, so this applies in BOTH view modes (solid, and solid+edges).
+  func setColorOverlay(_ map: [String: String]) {
+    var parsed: [String: UIColor] = [:]
+    parsed.reserveCapacity(map.count)
+    for (k, v) in map { if let c = Self.colorFromHex(v) { parsed[k] = c } }
+    colorOverlay = parsed
+    repaintSolid()
+  }
+
+  // See-through overlay: repaint the SOLID at `modelOpacity` (1 = opaque; <1 = a
+  // transparent fill so the real assembly shows through). The edge overlay stays
+  // opaque, so the outlines stay crisp as the fill fades — the inspection view.
+  func setModelOpacity(_ a: Float) {
+    modelOpacity = max(0.05, min(1, a))
+    repaintSolid()
+  }
+
+  // A flat UnlitMaterial in `color` (no lighting gradient). The SOLID carries the
+  // current see-through opacity via the documented blending MULTIPLIER (UnlitMaterial
+  // may ignore tint alpha); `opaque` forces full opacity for the edge overlay.
+  private func unlitMaterial(_ color: UIColor, opaque: Bool = false) -> UnlitMaterial {
+    var mat = UnlitMaterial(color: color)
+    if !opaque && modelOpacity < 0.999 {
+      mat.blending = .transparent(opacity: .init(floatLiteral: modelOpacity))
+    }
+    return mat
+  }
+
+  // Repaint the SOLID model: per-entity colour overlay if set (Colour-by), else the
+  // uniform steel grey — both carrying the see-through opacity. The edge overlay is
+  // painted separately (always opaque, in the edge colour).
+  private func repaintSolid() {
+    guard let entity = modelEntity else { return }
+    if colorOverlay.isEmpty {
+      paintUniform(entity, solidColor)
+    } else {
+      paintByOverlay(entity)
+    }
+  }
+
+  // Paint every mesh with one flat colour (uniform — no lighting gradient).
+  private func paintUniform(_ entity: Entity, _ color: UIColor, opaque: Bool = false) {
+    let mat = unlitMaterial(color, opaque: opaque)
     func walk(_ e: Entity) {
       if var m = e.components[ModelComponent.self] {
-        m.materials = Array(repeating: flat, count: max(m.materials.count, 1))
+        m.materials = Array(repeating: mat, count: max(m.materials.count, 1))
         e.components.set(m)
       }
       for child in e.children { walk(child) }
@@ -215,23 +266,21 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     walk(entity)
   }
 
-  // See-through overlay: repaint the model at `modelOpacity` (1 = opaque, reusing
-  // retint; <1 = a transparent flat fill so the real assembly shows through).
-  func setModelOpacity(_ a: Float) {
-    modelOpacity = max(0.05, min(1, a))
-    applyOpacity()
-  }
-
-  private func applyOpacity() {
-    guard let entity = modelEntity else { return }
-    let base = currentUnlit ? solidColor : wireframeTint
-    if modelOpacity >= 0.999 { retint(entity, base); return }
-    // Drive transparency through the documented opacity MULTIPLIER (not tint alpha,
-    // which UnlitMaterial may ignore) with an opaque tint.
-    var mat = UnlitMaterial(color: base)
-    mat.blending = .transparent(opacity: .init(floatLiteral: modelOpacity))
+  // Tint each mesh by its nearest NAMED ancestor's overlay colour (GLTFKit2 names
+  // entities by glTF node name == ifc_guid; a ModelComponent may sit on a child of
+  // the named node, so we walk up). Unmapped meshes get the neutral ghost grey.
+  private func paintByOverlay(_ entity: Entity) {
+    func resolve(_ e: Entity) -> UIColor {
+      var cur: Entity? = e
+      while let c = cur {
+        if !c.name.isEmpty, let col = colorOverlay[c.name] { return col }
+        cur = c.parent
+      }
+      return ghostColor
+    }
     func walk(_ e: Entity) {
       if var m = e.components[ModelComponent.self] {
+        let mat = unlitMaterial(resolve(e))
         m.materials = Array(repeating: mat, count: max(m.materials.count, 1))
         e.components.set(m)
       }
@@ -252,20 +301,30 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     )
   }
 
-  // Decide what should be on screen from the explicit (wantEdges, uris) state and
-  // load it only if it differs from what's already shown — so repeated prop
-  // applications never thrash the loader, and toggling edges off reliably
-  // restores the solid model (no dependence on a prop going nil).
-  private func reconcileVariant() {
-    let targetUri: URL?
-    let unlit: Bool
-    if wantEdges, let w = wireframeUri {
-      targetUri = w; unlit = false
-    } else {
-      targetUri = solidUri; unlit = true
+  // Ensure the SOLID model matches solidUri (load/swap only when it changed, so
+  // repeated prop applications never thrash the loader).
+  private func reconcileSolid() {
+    if loadedSolidUri == solidUri && modelEntity != nil { return }
+    loadSolid(solidUri)
+  }
+
+  // Add / refresh / remove the edge-tube OVERLAY to match (wantEdges, wireframeUri).
+  // It's a collision-free child of the pivot, painted opaque in the edge colour,
+  // sitting on top of the (always-present) solid. No-op until the solid is placed;
+  // the post-placement hook calls this again so a pre-placement toggle still applies.
+  private func reconcileEdges() {
+    guard wantEdges, let w = wireframeUri, modelPivot != nil else {
+      removeEdgeOverlay()
+      return
     }
-    if loadedUri == targetUri && currentUnlit == unlit && modelEntity != nil { return }
-    loadModel(targetUri, applyUnlit: unlit)
+    if loadedEdgeUri == w && edgeEntity != nil { return } // already correct
+    loadEdgeOverlay(w)
+  }
+
+  private func removeEdgeOverlay() {
+    edgeEntity?.removeFromParent()
+    edgeEntity = nil
+    loadedEdgeUri = nil
   }
   func setOcclusion(_ v: Bool) { wantOcclusion = v; applyFlags() }
   func setPersonSegmentation(_ v: Bool) { wantPeople = v; applyFlags() }
@@ -328,22 +387,19 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
   // MARK: - Model loading
 
-  private func loadModel(_ uri: URL?, applyUnlit: Bool) {
+  private func loadSolid(_ uri: URL?) {
     let token = UUID()
     loadToken = token
-    currentUnlit = applyUnlit
-    loadedUri = uri
-    // Flat fill colour for this variant (captured now; the loader paints every
-    // mesh with it so the whole assembly is one uniform colour).
-    let unlitColor = applyUnlit ? solidColor : wireframeTint
+    loadedSolidUri = uri
 
     let place: (Entity) -> Void = { [weak self] entity in
       guard let self, self.loadToken == token else { return }
-      // Collision shapes power on-model ruler hit-tests + part picking (and
-      // physics). Generate once here, recursively, before placement.
+      // Collision shapes power on-model ruler hit-tests + part picking (and physics)
+      // — the SOLID owns them; the edge overlay stays collision-free so taps fall
+      // through to the part underneath. Generate once, recursively, before placement.
       entity.generateCollisionShapes(recursive: true)
       if self.modelPivot != nil {
-        // In-place swap (solid ↔ edges): keep placement + user transform.
+        // In-place swap (solid reload): keep placement + user transform + overlay.
         self.swapModelEntity(entity)
       } else {
         self.modelEntity = entity
@@ -352,8 +408,8 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
         self.placeAttempts = 0
         self.tryPlaceModel()
       }
-      // Keep the see-through overlay across reloads / variant swaps.
-      if self.modelOpacity < 0.999 { self.applyOpacity() }
+      self.repaintSolid()    // colour overlay / grey + see-through
+      self.reconcileEdges()  // (re)attach the edge overlay if wanted
       self.onLoad(["uri": uri?.absoluteString ?? "placeholder"])
     }
 
@@ -361,7 +417,8 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     if let uri = uri {
       Task { [weak self] in
         do {
-          let entity = try await GltfModelLoader.load(from: uri, unlitColor: unlitColor)
+          let color = self?.solidColor ?? UIColor.gray
+          let entity = try await GltfModelLoader.load(from: uri, unlitColor: color)
           await MainActor.run { place(entity) }
         } catch {
           await MainActor.run {
@@ -378,19 +435,49 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     if modelPivot == nil { place(makePlaceholder()) }
   }
 
-  // Replace the rendered entity under the existing pivot WITHOUT re-placing —
-  // used to switch between the solid model and the edge/wireframe variant.
+  // Replace the SOLID entity under the existing pivot WITHOUT re-placing — used on a
+  // solid reload (rare). The edge overlay is a separate child of the pivot and is
+  // left untouched.
   private func swapModelEntity(_ entity: Entity) {
     guard let pivot = modelPivot else { return }
     if let old = modelEntity { pivot.removeChild(old) }
-    // Keep each variant's OWN normalize scale (set by the loader) — the pivot
-    // carries userScale on top. Recenter then re-parent under the same pivot, so
-    // placement + the user transform survive the solid↔edges switch.
     recenterEntityToBase(entity)
     pivot.addChild(entity)
     modelEntity = entity
     updateModelPhysics()
     rebuildDimensionBoxes()
+  }
+
+  // Load the wireframe GLB as a COLLISION-FREE overlay child of the pivot, aligned
+  // to the solid (same base-recenter + matching normalize scale), painted OPAQUE in
+  // the edge colour. Guarded by edgeLoadToken so rapid wireframeUri changes (the
+  // weight slider) don't race a stale load onto the scene.
+  private func loadEdgeOverlay(_ uri: URL) {
+    let token = UUID()
+    edgeLoadToken = token
+
+    let attach: (Entity) -> Void = { [weak self] entity in
+      guard let self, self.edgeLoadToken == token, let pivot = self.modelPivot else { return }
+      self.edgeEntity?.removeFromParent()
+      self.recenterEntityToBase(entity)
+      self.paintUniform(entity, self.wireframeTint, opaque: true)
+      // NO generateCollisionShapes → taps/measure/part-pick reach the solid beneath.
+      pivot.addChild(entity)
+      self.edgeEntity = entity
+      self.loadedEdgeUri = uri
+    }
+
+    #if canImport(GLTFKit2)
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        let entity = try await GltfModelLoader.load(from: uri, unlitColor: self.wireframeTint)
+        await MainActor.run { attach(entity) }
+      } catch {
+        await MainActor.run { self.onError(["message": "Edge overlay load failed: \(error.localizedDescription)"]) }
+      }
+    }
+    #endif
   }
 
   // Steel-grey box (~beam-ish) used until GLTFKit2 + a real model are wired in.
@@ -431,6 +518,13 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
     let pivot = Entity()
     pivot.addChild(entity)
+    // Re-attach the edge overlay (orphaned when the old pivot was torn down) to the
+    // new pivot, so it survives re-placement (recenter / reset) without a reload.
+    if let edge = edgeEntity {
+      edge.removeFromParent()
+      recenterEntityToBase(edge)
+      pivot.addChild(edge)
+    }
     let anchor = AnchorEntity(world: worldTransform)
     anchor.addChild(pivot)
     arView.scene.addAnchor(anchor)

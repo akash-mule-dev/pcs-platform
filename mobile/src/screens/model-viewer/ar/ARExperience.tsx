@@ -45,7 +45,7 @@ import {
   MeasurementState,
   DEFAULT_MEASUREMENTS,
   DEFAULT_EDGE_COLOR,
-  EDGE_WEIGHT_MIN,
+  DEFAULT_EDGE_WEIGHT,
 } from './types';
 import { captureSnapshot } from './arSnapshot';
 import { loadRegistration, saveRegistration } from './arRegistration';
@@ -126,8 +126,9 @@ export default function ARExperience({
   // (a continuous line-thickness multiplier) re-bakes the tube radius via an
   // on-demand wireframe build.
   const [edgeColor, setEdgeColor] = useState<string>(DEFAULT_EDGE_COLOR);
-  // Edges default to the THINNEST line weight (matches the LiDAR experience).
-  const [edgeWeight, setEdgeWeight] = useState<number>(EDGE_WEIGHT_MIN);
+  // Edges default to a thin crisp line (matches the LiDAR experience); finer
+  // (down to 0.10×) via the Edges panel.
+  const [edgeWeight, setEdgeWeight] = useState<number>(DEFAULT_EDGE_WEIGHT);
   // Bumped by the "Place point" button to drop a real-world point at the reticle.
   const [placeNonce, setPlaceNonce] = useState(0);
   const [trackingStatus, setTrackingStatus] = useState<string>('normal');

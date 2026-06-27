@@ -6,7 +6,7 @@
 // model…" screen anymore; download / prepare / error are all shown as light
 // overlays on top of the running camera.
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,7 +45,11 @@ export function ARViewScreen() {
   const caps = useDeviceCapabilities();
   const supportsRealityKit =
     REALITYKIT_ENGINE_ENABLED && caps.checked && caps.isPad && caps.hasDepthSensor;
-  const [engine, setEngine] = useState<Engine>('viro');
+  // LiDAR (RealityKit) is the DEFAULT engine. On an iPad with a depth sensor it
+  // mounts first; on every other device `supportsRealityKit` is false so the
+  // Viro path renders instead (unchanged behavior). The EngineSwitcher still lets
+  // the operator flip to Viro to compare.
+  const [engine, setEngine] = useState<Engine>('realitykit');
   // Both experiences dock their tool panels low; hide the engine switcher while a
   // panel is open so it never sits under one. Set by whichever experience is mounted.
   const [panelOpen, setPanelOpen] = useState(false);
@@ -78,16 +82,31 @@ export function ARViewScreen() {
     );
   }
 
+  // ── Wait for the one-tick capability probe before mounting an engine. ──
+  // The default engine is RealityKit, so without this gate the first render
+  // (caps not yet checked → supportsRealityKit false) would briefly mount the
+  // Viro ARKit session, then tear it down to start RealityKit's — two ARKit
+  // sessions contending. The probe resolves synchronously on the first effect,
+  // so this is a single frame.
+  if (!caps.checked) {
+    return (
+      <View style={[styles.fill, styles.starting]}>
+        <ActivityIndicator color={Colors.white} />
+        <Text style={styles.startingText}>Starting AR…</Text>
+      </View>
+    );
+  }
+
   // ── Open the live AR session immediately; the model loads over the camera. ──
   // A nested boundary keeps a JS error in the AR/Viro tree from unwinding to the
   // root boundary (which would blank the whole app). Native (SIGSEGV) crashes
   // aren't JS-catchable.
   //
-  // Engine selection (iPad + LiDAR only): the default is always the Viro engine
-  // (preserving current behavior + the 'plane' default), and an EngineSwitcher
-  // lets the user flip to the native RealityKit/LiDAR engine to compare. The
+  // Engine selection (iPad + LiDAR only): the default is the native RealityKit/
+  // LiDAR engine; an EngineSwitcher lets the user flip to Viro to compare. The
   // RealityKit experience is lazy-required so it (and the native module it pulls
-  // in) never loads on non-LiDAR builds, Expo Go, or in tests.
+  // in) never loads on non-LiDAR builds, Expo Go, or in tests. If that module is
+  // missing from the build, RkExperience stays null and the Viro path renders.
   const useRealityKit = engine === 'realitykit' && supportsRealityKit;
   let RkExperience: React.ComponentType<any> | null = null;
   if (useRealityKit) {
@@ -144,6 +163,8 @@ export function ARViewScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  starting: { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', gap: 12 },
+  startingText: { color: Colors.white, fontSize: 15, fontWeight: '600' },
   // Engine toggle pinned low-center, above the Viro toolbar; only shown on
   // iPad + LiDAR. Tweak `bottom` on-device if it overlaps an open tool panel.
   // Engine switcher at the bottom edge; the host hides it while a tool panel is

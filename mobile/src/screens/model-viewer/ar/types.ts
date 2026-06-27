@@ -22,6 +22,8 @@ export interface EdgeColorOption {
 export const EDGE_COLORS: EdgeColorOption[] = [
   { key: 'cyan', label: 'Cyan', hex: '#00e5ff', material: 'edge_cyan' },
   { key: 'green', label: 'Green', hex: '#39ff14', material: 'edge_green' },
+  { key: 'red', label: 'Red', hex: '#ff3b30', material: 'edge_red' },
+  { key: 'blue', label: 'Blue', hex: '#0a84ff', material: 'edge_blue' },
   { key: 'yellow', label: 'Yellow', hex: '#ffe600', material: 'edge_yellow' },
   { key: 'orange', label: 'Orange', hex: '#ff7a00', material: 'edge_orange' },
   { key: 'magenta', label: 'Pink', hex: '#ff2bd6', material: 'edge_magenta' },
@@ -40,13 +42,17 @@ export interface EdgeWeightPreset {
 }
 
 export const EDGE_WEIGHT_PRESETS: EdgeWeightPreset[] = [
+  { label: 'Fine', scale: 0.1 },
   { label: 'Thin', scale: 0.55 },
   { label: 'Medium', scale: 1 },
   { label: 'Thick', scale: 2.2 },
 ];
 
-export const DEFAULT_EDGE_WEIGHT = 1;
-export const EDGE_WEIGHT_MIN = 0.3;
+// Default edge weight — a thin crisp line (the experiences seed `edgeWeight`
+// from this). EDGE_WEIGHT_MIN reaches the very-fine 0.10× line via the slider /
+// the Fine preset.
+export const DEFAULT_EDGE_WEIGHT = 0.2;
+export const EDGE_WEIGHT_MIN = 0.1;
 export const EDGE_WEIGHT_MAX = 4;
 
 // Lifecycle of the on-device model load. The camera is live the whole time —

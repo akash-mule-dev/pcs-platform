@@ -27,6 +27,9 @@ public class PcsLidarArModule: Module {
       Prop("showEdges") { (view: PcsLidarArView, v: Bool) in view.setShowEdges(v) }
       // Edge-view colour (hex). Painted as a flat unlit fill → one uniform colour.
       Prop("edgeColor") { (view: PcsLidarArView, hex: String) in view.setEdgeColor(hex) }
+      // Per-entity colour overlay for the SOLID model (Color-by Profile/Grade):
+      // entity-name (== ifc_guid) → hex. Empty restores the uniform grey.
+      Prop("colorOverlay") { (view: PcsLidarArView, map: [String: String]) in view.setColorOverlay(map) }
 
       // Mode flags — produced by modeToFlags() on the JS side so the mode→flags
       // map lives in one place (types.ts), not duplicated in Swift.

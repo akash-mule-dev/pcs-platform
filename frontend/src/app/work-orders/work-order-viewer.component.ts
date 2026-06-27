@@ -174,7 +174,9 @@ export class WorkOrderViewerComponent implements OnInit {
   /** The selected node + all its descendants (what the isolated GLB contains). */
   private subtree = signal<AssemblyNode[]>([]);
 
-  readonly colorMode = signal<'none' | 'profile' | 'grade'>('none');
+  // Default to PROFILE so members read by section on open (recolours once the
+  // subtree loads); switch to Grade / None in the picker.
+  readonly colorMode = signal<'none' | 'profile' | 'grade'>('profile');
   readonly xray = signal(false);
   readonly selectedPart = signal<AssemblyNode | null>(null);
 

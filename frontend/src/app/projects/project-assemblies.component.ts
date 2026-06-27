@@ -376,8 +376,10 @@ export class ProjectAssembliesComponent implements OnInit {
       .map((n) => ({ meshName: n.ifcGuid as string, lengthMm: n.lengthMm as number })),
   );
 
-  /** Color-by overlay mode for the 3D model. */
-  colorMode = signal<'none' | 'profile' | 'grade' | 'production' | 'revision'>('none');
+  /** Color-by overlay mode for the 3D model. Defaults to PROFILE so members read
+   *  by section on open (recolours once the tree loads; profile uses the already-
+   *  loaded nodes — no lazy fetch like production/revision). */
+  colorMode = signal<'none' | 'profile' | 'grade' | 'production' | 'revision'>('profile');
   /** Categorical palette (last entry is reserved for the "Other" bucket). */
   private readonly PALETTE = ['#4e79a7', '#f28e2b', '#59a14f', '#e15759', '#76b7b2', '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#86bcb6', '#d37295'];
 

@@ -26,6 +26,10 @@ interface ToolBarProps {
    *  shared Viro toolbar is unchanged. */
   registerPanelOpen?: boolean;
   onToggleRegister?: () => void;
+  /** Optional "Color" tab: paint the solid model by Profile / Grade. Only rendered
+   *  when onToggleColor is provided (LiDAR + node data available). */
+  colorPanelOpen?: boolean;
+  onToggleColor?: () => void;
   /** Layout: 'bottom' = the classic horizontal bar (default); 'right' = a vertical
    *  rail pinned to the right edge, slightly below centre, so the docked panel can
    *  sit low and the model keeps the whole middle of the screen. */
@@ -68,6 +72,8 @@ export default function ToolBar({
   onToggleMeasure,
   registerPanelOpen = false,
   onToggleRegister,
+  colorPanelOpen = false,
+  onToggleColor,
   side = 'bottom',
 }: ToolBarProps) {
   if (!(modelLoaded && (placed || anchored))) return null;
@@ -76,6 +82,9 @@ export default function ToolBar({
     <>
       <Tab icon="#" label="Align" active={precisionMode} onPress={onTogglePrecision} />
       <Tab icon="◰" label="Edges" active={edgesPanelOpen} onPress={onToggleEdges} />
+      {onToggleColor && (
+        <Tab icon="◑" label="Color" active={colorPanelOpen} onPress={onToggleColor} />
+      )}
       <Tab icon="M" label="Measure" active={measurePanelOpen} onPress={onToggleMeasure} />
       {onToggleRegister && (
         <Tab icon="⊹" label="Points" active={registerPanelOpen} onPress={onToggleRegister} />
