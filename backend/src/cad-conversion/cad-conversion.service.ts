@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as crypto from 'crypto';
+import { resolveDistScript } from '../common/script-path.js';
 
 export interface ConversionResult {
   outputPath: string;
@@ -17,7 +18,7 @@ export interface ConversionResult {
 export class CadConversionService {
   private readonly logger = new Logger(CadConversionService.name);
   private readonly tempDir = path.join(os.tmpdir(), 'pcs-cad-conversion');
-  private readonly scriptPath = path.join(__dirname, 'scripts', 'convert-cad.mjs');
+  private readonly scriptPath = resolveDistScript(__dirname, 'cad-conversion/scripts/convert-cad.mjs');
 
   constructor() {
     if (!fs.existsSync(this.tempDir)) {
@@ -90,25 +91,31 @@ export class CadConversionService {
 
   private runConversion(inputPath: string, outputPath: string, format: string): Promise<void> {
     return new Promise((resolve, reject) => {
+      // NB: no `--experimental-wasm-threads` — that flag was removed in Node 22+
+      // (wasm threads are on by default) and passing it aborts with "bad option".
       const child = spawn('node', [
-        '--experimental-wasm-threads',
         this.scriptPath,
         inputPath,
         outputPath,
         format,
       ], {
-        timeout: 120_000, // 2-minute timeout for large models
+        timeout: 300_000, // 5-minute timeout (loading the OCCT bundles + large models)
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
+      // Drain BOTH streams: OCCT prints verbose banners to stdout, and an
+      // unread piped stream can fill its buffer and deadlock the child.
       let stderr = '';
+      let stdout = '';
+      child.stdout.on('data', (data) => { stdout += data.toString(); });
       child.stderr.on('data', (data) => { stderr += data.toString(); });
 
       child.on('close', (code) => {
         if (code === 0) {
+          if (stdout.trim()) this.logger.log(`CAD conversion: ${stdout.trim().split('\n').pop()}`);
           resolve();
         } else {
-          reject(new Error(`Conversion process exited with code ${code}: ${stderr}`));
+          reject(new Error(`Conversion process exited with code ${code}: ${stderr || stdout}`));
         }
       });
 
@@ -118,7 +125,7 @@ export class CadConversionService {
     });
   }
 
-  private readonly ifcScriptPath = path.join(__dirname, 'scripts', 'convert-ifc.mjs');
+  private readonly ifcScriptPath = resolveDistScript(__dirname, 'cad-conversion/scripts/convert-ifc.mjs');
 
   private runIfcConversion(inputPath: string, outputPath: string): Promise<void> {
     return new Promise((resolve, reject) => {

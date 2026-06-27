@@ -11,11 +11,12 @@ import { AssemblyNode, AssemblyNodeType } from './assembly-node.entity.js';
 import { ImportFile, ImportFileStatus, IMPORT_STAGE_PROGRESS } from './import-file.entity.js';
 import { ImportFileEvent } from './import-file-event.entity.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import { resolveDistScript } from '../common/script-path.js';
 import { computeRevisionDiff, revisionSummaryMessage, RevisionDiff } from './revision-diff.js';
 import { revisionSeverity, summarizeImpact, bySeverity, RevisionSeverity } from './revision-impact.js';
 import {
-  ACCEPTED_UPLOAD_EXTS, MODEL_EXTS, GEOMETRY_EXTS, DOC_CONTENT_TYPES,
-  classifyPackageEntries, matchDrawingsToMarks, packageSummaryMessage,
+  ACCEPTED_UPLOAD_EXTS, MODEL_EXTS, GEOMETRY_EXTS, STRUCTURED_CAD_EXTS, DOC_CONTENT_TYPES,
+  classifyPackageEntries, matchDrawingsToMarks, packageSummaryMessage, extOf,
   ClassifiedPackage,
 } from './package-import-math.js';
 import { AssemblyDocument } from './assembly-document.entity.js';
@@ -83,8 +84,11 @@ export interface ImportStarted {
 @Injectable()
 export class IfcImportService implements OnModuleInit {
   private readonly logger = new Logger(IfcImportService.name);
-  // dist/projects -> dist/cad-conversion/scripts/extract-ifc-structure.mjs
-  private readonly scriptPath = path.join(__dirname, '..', 'cad-conversion', 'scripts', 'extract-ifc-structure.mjs');
+  // Resolved against the dist root so it works both unbundled (`dist/projects`)
+  // and in the Vercel webpack bundle (`__dirname` === `dist`).
+  private readonly scriptPath = resolveDistScript(__dirname, 'cad-conversion/scripts/extract-ifc-structure.mjs');
+  // STEP → assembly-tree JSON + node-named GLB, in one XDE pass (OpenCASCADE).
+  private readonly stepScriptPath = resolveDistScript(__dirname, 'cad-conversion/scripts/convert-step.mjs');
   private readonly tmpDir = path.join(os.tmpdir(), 'pcs-ifc-import');
 
   /**
@@ -273,6 +277,8 @@ export class IfcImportService implements OnModuleInit {
       } else if (MODEL_EXTS.has(fmt)) {
         const r = await this.extractAndPersistModels(imp, organizationId, [{ path: inPath, name: imp.originalName }], cleanup);
         await this.queueGlb(imp, inPath, imp.originalName, projectName, r.nodeCount);
+      } else if (STRUCTURED_CAD_EXTS.has(fmt)) {
+        await this.runStepPipeline(imp, organizationId, projectName, inPath, imp.originalName, cleanup);
       } else if (GEOMETRY_EXTS.has(fmt)) {
         await this.record(imp, {
           stage: 'extracting',
@@ -365,8 +371,14 @@ export class IfcImportService implements OnModuleInit {
       await this.queueGlb(imp, models[0].path, models[0].name, projectName, nodeCount);
     } else if (cls.geometry.length) {
       const g = cls.geometry[0];
-      const gPath = await extractEntry(g.path, g.path.split('.').pop()!.toLowerCase());
-      await this.queueGlb(imp, gPath, path.basename(g.path), projectName, nodeCount);
+      const gExt = extOf(g.path);
+      const gPath = await extractEntry(g.path, gExt);
+      if (STRUCTURED_CAD_EXTS.has(gExt)) {
+        // A STEP with no accompanying IFC: recover its assembly tree directly.
+        await this.runStepPipeline(imp, organizationId, projectName, gPath, path.basename(g.path), cleanup);
+      } else {
+        await this.queueGlb(imp, gPath, path.basename(g.path), projectName, nodeCount);
+      }
     } else {
       await this.complete(imp, `Package processed: ${attached.count} document(s) attached (no 3D model in the package)`);
     }
@@ -446,6 +458,60 @@ export class IfcImportService implements OnModuleInit {
       results.push(JSON.parse(fs.readFileSync(outPath, 'utf8')) as ExtractResult);
     }
 
+    return this.persistExtractResults(imp, organizationId, results);
+  }
+
+  /**
+   * STEP pipeline: a STEP file carries its own product/assembly structure, so
+   * convert-step.mjs recovers the assembly tree AND emits a node-named GLB in
+   * one OpenCASCADE (XDE) pass — the GLB node names equal the tree's `meshName`
+   * keys so the viewer can highlight/colour each part exactly like the IFC path.
+   * The prebuilt GLB is handed to the conversion queue as a passthrough (it only
+   * optimizes + stores it), tagged mm/Z so AR scaling matches the CAD path.
+   */
+  private async runStepPipeline(
+    imp: ImportFile,
+    organizationId: string,
+    projectName: string,
+    stepPath: string,
+    sourceName: string,
+    cleanup: string[],
+  ): Promise<void> {
+    await this.record(imp, {
+      stage: 'extracting',
+      status: ImportFileStatus.EXTRACTING,
+      progress: IMPORT_STAGE_PROGRESS.extracting,
+      message: `Reading STEP assembly structure from ${sourceName}`,
+      detail: { step: true, sourceName },
+    });
+
+    const glbPath = path.join(this.tmpDir, `${imp.id}-${crypto.randomUUID()}.glb`);
+    const jsonPath = path.join(this.tmpDir, `${imp.id}-${crypto.randomUUID()}-step.json`);
+    cleanup.push(glbPath, jsonPath);
+    await this.runStepConverter(stepPath, glbPath, jsonPath);
+    const result = JSON.parse(fs.readFileSync(jsonPath, 'utf8')) as ExtractResult;
+
+    const { nodeCount } = await this.persistExtractResults(imp, organizationId, [result]);
+
+    const hasGlb = fs.existsSync(glbPath) && fs.statSync(glbPath).size > 0;
+    if (hasGlb) {
+      const glbName = `${path.basename(sourceName, path.extname(sourceName))}.glb`;
+      await this.queueGlb(imp, glbPath, glbName, projectName, nodeCount, { sourceUnit: 'mm', upAxis: 'Z' });
+    } else {
+      await this.complete(imp, `STEP assembly imported: ${nodeCount} node(s) — no 3D geometry to convert`);
+    }
+  }
+
+  /**
+   * Shared persistence for any extracted tree (IFC or STEP): revision diff vs
+   * the pre-import tree, level-ordered idempotent upsert with progress ticks,
+   * then the revision review markers.
+   */
+  private async persistExtractResults(
+    imp: ImportFile,
+    organizationId: string,
+    results: ExtractResult[],
+  ): Promise<{ nodeCount: number }> {
     // Union of all extracted nodes (dedupe by GUID across files).
     const seen = new Set<string>();
     const union: ExtractedNode[] = [];
@@ -495,7 +561,7 @@ export class IfcImportService implements OnModuleInit {
     const total = union.length;
     for (const r of results) {
       nodeCount += await this.persistTree(
-        organizationId, imp.projectId, imp.id, 'ifc', r.nodes,
+        organizationId, imp.projectId, imp.id, r.format || 'ifc', r.nodes,
         async (levelDone) => {
           const pct = IMPORT_STAGE_PROGRESS.persisting +
             Math.round((Math.min(done + levelDone, total) / Math.max(total, 1)) * (IMPORT_STAGE_PROGRESS.converting - IMPORT_STAGE_PROGRESS.persisting));
@@ -584,8 +650,9 @@ export class IfcImportService implements OnModuleInit {
     sourceName: string,
     projectName: string,
     nodeCount: number,
+    convertOptions?: { sourceUnit?: string; upAxis?: 'Y' | 'Z' },
   ): Promise<void> {
-    const job = await this.queueConversion(imp, srcPath, projectName, sourceName);
+    const job = await this.queueConversion(imp, srcPath, projectName, sourceName, convertOptions);
     if (job) {
       imp.conversionJobId = job.id;
       if (job.status === 'completed' && job.modelId) {
@@ -609,7 +676,13 @@ export class IfcImportService implements OnModuleInit {
   }
 
   /** Hand the source to the conversion queue (its own staging copy). */
-  private async queueConversion(imp: ImportFile, srcPath: string, projectName: string, sourceName?: string): Promise<ConversionJob | null> {
+  private async queueConversion(
+    imp: ImportFile,
+    srcPath: string,
+    projectName: string,
+    sourceName?: string,
+    convertOptions?: { sourceUnit?: string; upAxis?: 'Y' | 'Z' },
+  ): Promise<ConversionJob | null> {
     const name = sourceName || imp.originalName;
     const bgPath = path.join(this.tmpDir, `${imp.id}-conv${path.extname(name) || '.ifc'}`);
     fs.copyFileSync(srcPath, bgPath);
@@ -618,7 +691,7 @@ export class IfcImportService implements OnModuleInit {
       const stats = fs.statSync(bgPath);
       const file = this.asMulterFile(bgPath, name, stats.size, 'application/octet-stream');
       const job = await this.conversionService.createJob(
-        { name: projectName || base, description: `Imported from ${imp.originalName}`, modelType: 'assembly' },
+        { name: projectName || base, description: `Imported from ${imp.originalName}`, modelType: 'assembly', ...convertOptions },
         file,
         imp.createdById ?? undefined,
         imp.organizationId, // background pipeline: pass the tenant explicitly (no request ctx)
@@ -1239,6 +1312,25 @@ export class IfcImportService implements OnModuleInit {
         code === 0 ? resolve() : reject(new Error(`IFC extractor exited with code ${code}: ${stderr}`));
       });
       child.on('error', (err) => reject(new Error(`Failed to spawn IFC extractor: ${err.message}`)));
+    });
+  }
+
+  /** Run convert-step.mjs: STEP → assembly-tree JSON (jsonPath) + GLB (glbPath). */
+  private runStepConverter(inputPath: string, glbPath: string, jsonPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('node', ['--max-old-space-size=4096', this.stepScriptPath, inputPath, glbPath, jsonPath], {
+        timeout: 300_000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stderr = '';
+      let stdout = '';
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+      child.on('close', (code) => {
+        if (stdout) this.logger.log(`STEP converter: ${stdout.trim().split('\n').pop()}`);
+        code === 0 ? resolve() : reject(new Error(`STEP converter exited with code ${code}: ${stderr}`));
+      });
+      child.on('error', (err) => reject(new Error(`Failed to spawn STEP converter: ${err.message}`)));
     });
   }
 

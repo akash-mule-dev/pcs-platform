@@ -24,6 +24,20 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
   template: `
     @if (store.loading() && !store.hasNodes()) {
       <div class="center"><mat-spinner diameter="36"></mat-spinner></div>
+    } @else if (store.geometryOnly()) {
+      <!-- Geometry-only import (STEP/IGES/mesh): a 3D model, but no assembly tree -->
+      <div class="geo-only">
+        <div class="geo-banner">
+          <mat-icon>view_in_ar</mat-icon>
+          <div class="geo-text">
+            <strong>Geometry-only model</strong>
+            <span>This file was imported as 3D geometry with no assembly structure — there's no parts tree, piece marks or BOM. Import an IFC for the full breakdown.</span>
+          </div>
+          <input #geoInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
+          <button class="geo-import" (click)="geoInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>Import another</button>
+        </div>
+        <div class="geo-viewer"><app-three-viewer [modelUrl]="store.fullModelUrl()!" [autoFocus]="true" [showTools]="true"></app-three-viewer></div>
+      </div>
     } @else if (!store.hasNodes()) {
       <div class="empty-state">
         @if (store.pipelineActive()) {
@@ -213,6 +227,19 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
     .cta { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: var(--clay-primary); color: #fff; padding: 10px 18px; border-radius: var(--clay-radius-sm); font-size: 13px; font-weight: 600; border: none; cursor: pointer; }
     .cta mat-icon { font-size: 18px; width: 18px; height: 18px; }
     .cta:disabled { opacity: .6; cursor: default; }
+
+    /* ── Geometry-only import (3D model, no assembly tree) ── */
+    .geo-only { display: flex; flex-direction: column; gap: 12px; height: calc(100vh - 332px); min-height: 480px; }
+    .geo-banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); box-shadow: var(--clay-shadow-soft); flex-shrink: 0; }
+    .geo-banner > mat-icon { font-size: 26px; width: 26px; height: 26px; color: var(--clay-primary); flex-shrink: 0; }
+    .geo-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .geo-text strong { font-size: 13px; color: var(--clay-text); }
+    .geo-text span { font-size: 12px; color: var(--clay-text-muted); }
+    .geo-import { display: inline-flex; align-items: center; gap: 6px; background: var(--clay-primary); color: #fff; padding: 8px 14px; border-radius: var(--clay-radius-sm); font-size: 13px; font-weight: 600; border: none; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+    .geo-import mat-icon { font-size: 17px; width: 17px; height: 17px; }
+    .geo-import:disabled { opacity: .6; cursor: default; }
+    .geo-viewer { flex: 1; min-height: 0; background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); overflow: hidden; }
+    .geo-viewer app-three-viewer { display: block; height: 100%; }
 
     /* Two-pane layout sized to the viewport so the tree scrolls internally
        (search bar + viewer always stay on screen). */

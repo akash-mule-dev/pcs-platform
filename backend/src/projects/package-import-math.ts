@@ -9,6 +9,13 @@
 
 /** Model formats that produce an assembly tree (structure extraction). */
 export const MODEL_EXTS = new Set(['ifc']);
+/**
+ * STEP carries a product/assembly structure (PRODUCT + NEXT_ASSEMBLY_USAGE_
+ * OCCURRENCE) that the XDE reader can recover, so it gets an assembly tree +
+ * a node-named GLB (convert-step.mjs) rather than a flattened geometry-only GLB.
+ * IGES has no such structure, so it stays geometry-only.
+ */
+export const STRUCTURED_CAD_EXTS = new Set(['step', 'stp']);
 /** Geometry-only formats the conversion pipeline can turn into a GLB. */
 export const GEOMETRY_EXTS = new Set(['step', 'stp', 'iges', 'igs', 'glb', 'gltf', 'obj', 'stl', 'dae', 'fbx', '3ds', 'ply']);
 /** Document formats worth keeping from a package (drawings, certs, NC data). */
