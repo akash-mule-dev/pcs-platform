@@ -32,14 +32,23 @@ export function ProjectDetailScreen() {
     navigation.setOptions({
       title: name || 'Project',
       headerRight: () => (
-        <TouchableOpacity
-          style={styles.headBtn}
-          onPress={() => navigation.navigate('ProjectViewer', { projectId, name })}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="cube-outline" size={18} color={Colors.primary} />
-          <Text style={styles.headBtnTxt}>3D</Text>
-        </TouchableOpacity>
+        <View style={styles.headActions}>
+          <TouchableOpacity
+            style={styles.headBtn}
+            onPress={() => navigation.navigate('ProjectMonitoring', { projectId, name })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="pulse-outline" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headBtn}
+            onPress={() => navigation.navigate('ProjectViewer', { projectId, name })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="cube-outline" size={18} color={Colors.primary} />
+            <Text style={styles.headBtnTxt}>3D</Text>
+          </TouchableOpacity>
+        </View>
       ),
     });
   }, [navigation, name, projectId]);
@@ -156,6 +165,7 @@ export function ProjectDetailScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
+  headActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   headBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   headBtnTxt: { color: Colors.primary, fontWeight: '700', fontSize: 14 },
   segWrap: { flexDirection: 'row', gap: 8, padding: 12, paddingBottom: 6, backgroundColor: Colors.background },

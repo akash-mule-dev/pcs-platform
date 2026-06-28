@@ -1,7 +1,7 @@
 // Consolidated AR measurement panel — the "Measure" tab.
 //
-// Mirrors AlignPanel / EdgesPanel exactly (same docked dark bar, section titles,
-// big touch targets) so all three tabs feel identical. Three sections:
+// Mirrors AlignPanel / AppearancePanel exactly (same docked dark bar, section
+// titles, big touch targets) so all the tabs feel identical. Three sections:
 //   • DIMENSIONS — show/hide the passive size overlays (Overall W×H×D box,
 //                  per-part longest-edge labels). Independent toggles.
 //   • MEASURE    — the tap-to-measure tools, ONE active at a time: a ruler on the

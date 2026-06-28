@@ -12,7 +12,7 @@ public class PcsLidarArModule: Module {
     Name("PcsLidarAr")
 
     View(PcsLidarArView.self) {
-      Events("onLoad", "onError", "onTracking", "onAnchor", "onMeasure", "onPartTap", "onRegisterPoint", "onAutoAlign")
+      Events("onLoad", "onError", "onTracking", "onAnchor", "onMeasure", "onPartTap", "onRegisterPoint", "onAutoAlign", "onScanState", "onMarkerUpdate", "onLockStatus")
 
       // The model to render. file:// (from useRemoteModel) is the normal case.
       Prop("modelUri") { (view: PcsLidarArView, uri: URL?) in
@@ -42,6 +42,17 @@ public class PcsLidarArModule: Module {
       Prop("planeAnchor") { (view: PcsLidarArView, v: Bool) in view.setPlaneAnchor(v) }
       Prop("showMesh") { (view: PcsLidarArView, v: Bool) in view.setShowMesh(v) }
 
+      // Scan-before-place: when true, a freshly loaded model is held until the user
+      // has mapped the area and taps Place (via placeNow) — placing into a well-built
+      // world map reduces drift. False = auto-place on load (legacy / Viro parity).
+      Prop("manualPlacement") { (view: PcsLidarArView, v: Bool) in view.setManualPlacement(v) }
+
+      // Image-marker lock (FabStation-style anti-drift): arm continuous locking of the
+      // model to printed markers on the steel. `markerWidthMeters` is the printed
+      // marker's physical edge length (so detected anchors are metrically correct).
+      Prop("markerLock") { (view: PcsLidarArView, v: Bool) in view.setMarkerLockEnabled(v) }
+      Prop("markerWidthMeters") { (view: PcsLidarArView, m: Double) in view.setMarkerWidth(Float(m)) }
+
       // Direct manipulation (Phase 1): arms one-finger drag-to-move + two-finger
       // twist-for-yaw. Off during measure / part-pick / lock so they never clash.
       Prop("directManipulation") { (view: PcsLidarArView, v: Bool) in view.setDirectManipulation(v) }
@@ -62,6 +73,11 @@ public class PcsLidarArModule: Module {
       }
       AsyncFunction("recenter") { (view: PcsLidarArView) in
         view.recenter()
+      }
+      // Scan-first placement: anchor the model at the reticle once the user has
+      // scanned the area (see manualPlacement / onScanState).
+      AsyncFunction("placeNow") { (view: PcsLidarArView) in
+        view.placeNow()
       }
       AsyncFunction("capture") { (view: PcsLidarArView, promise: Promise) in
         view.captureSnapshotBase64 { base64 in promise.resolve(base64) }
@@ -114,6 +130,25 @@ public class PcsLidarArModule: Module {
       }
       AsyncFunction("setModelOpacity") { (view: PcsLidarArView, opacity: Double) in
         view.setModelOpacity(Float(opacity))
+      }
+
+      // ── Image-marker stabilization ──
+      // Bind every currently-tracked marker to the model's current (aligned) pose.
+      AsyncFunction("bindVisibleMarkers") { (view: PcsLidarArView) in
+        view.bindVisibleMarkers()
+      }
+      // Drop all marker bindings (e.g. before re-aligning to a different reference).
+      AsyncFunction("clearMarkerBindings") { (view: PcsLidarArView) in
+        view.clearMarkerBindings()
+      }
+      // Continuous ICP world-lock: ease the model onto the LiDAR mesh (JS schedules it
+      // via drift-monitor; native applies a small capped, revert-if-worse correction).
+      AsyncFunction("refineLock") { (view: PcsLidarArView) in
+        view.refineLock()
+      }
+      // A printable PNG (base64) contact sheet of the markers for the shop to print.
+      AsyncFunction("exportMarkerSheet") { (view: PcsLidarArView, promise: Promise) in
+        view.exportMarkerSheet { base64 in promise.resolve(base64) }
       }
     }
   }

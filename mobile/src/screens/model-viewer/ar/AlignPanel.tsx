@@ -15,10 +15,15 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Vec3 } from './types';
 
-const POS_STEP = 0.004; // metres per tick
-const ROT_STEP = 1; // degrees per tick
-const SCALE_STEP = 1.03; // multiplier per tick
-const TICK_MS = 40;
+// Per-tick step sizes. A tap = one step; press-and-hold repeats every TICK_MS for
+// a steady, predictable rate. Rotate + scale use fine steps so each change is
+// gradual and smooth (no coarse jumps) — large turns use the 90°/180° buttons.
+// Fine, precise nudges (~1 mm/tick → ~25 mm/s on hold): the MOVE buttons are for
+// fine alignment — coarse repositioning is done by dragging the model directly.
+const POS_STEP = 0.001; // metres per tick (~1 mm) — gentle + predictable
+const ROT_STEP = 0.5; // degrees per tick — fine, gradual (was 1°)
+const SCALE_STEP = 1.01; // +1% per tick — smooth, predictable (was 1.03 / +3% jumps)
+const TICK_MS = 40; // ~25 steps/sec on hold → gentle, even motion
 
 interface AlignPanelProps {
   scale: Vec3;
@@ -137,14 +142,15 @@ export default function AlignPanel({
 
             <View style={styles.divider} />
 
-            {/* ── ROTATE: pitch (X), yaw (Y), roll (Z) + quick-rotate ── */}
+            {/* ── ROTATE: all three axes — Tilt (pitch / X), Turn (yaw / Y),
+                Roll (roll / Z), each ±, plus the 90°/180° quick yaw. ── */}
             <Section title="ROTATE">
               <View style={styles.grid}>
-                <HoldButton glyph="⤢" caption="Pitch+" locked={locked} onHold={() => onNudgeRotation([ROT_STEP, 0, 0])} />
-                <HoldButton glyph="↺" caption="Yaw+" locked={locked} onHold={() => onNudgeRotation([0, ROT_STEP, 0])} />
+                <HoldButton glyph="⤢" caption="Tilt+" locked={locked} onHold={() => onNudgeRotation([ROT_STEP, 0, 0])} />
+                <HoldButton glyph="↺" caption="Turn+" locked={locked} onHold={() => onNudgeRotation([0, ROT_STEP, 0])} />
                 <HoldButton glyph="⟲" caption="Roll+" locked={locked} onHold={() => onNudgeRotation([0, 0, ROT_STEP])} />
-                <HoldButton glyph="⤡" caption="Pitch−" locked={locked} onHold={() => onNudgeRotation([-ROT_STEP, 0, 0])} />
-                <HoldButton glyph="↻" caption="Yaw−" locked={locked} onHold={() => onNudgeRotation([0, -ROT_STEP, 0])} />
+                <HoldButton glyph="⤡" caption="Tilt−" locked={locked} onHold={() => onNudgeRotation([-ROT_STEP, 0, 0])} />
+                <HoldButton glyph="↻" caption="Turn−" locked={locked} onHold={() => onNudgeRotation([0, -ROT_STEP, 0])} />
                 <HoldButton glyph="⟳" caption="Roll−" locked={locked} onHold={() => onNudgeRotation([0, 0, -ROT_STEP])} />
               </View>
               <View style={styles.quickRow}>

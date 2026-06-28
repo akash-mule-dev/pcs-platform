@@ -30,30 +30,22 @@ export const EDGE_COLORS: EdgeColorOption[] = [
   { key: 'white', label: 'White', hex: '#ffffff', material: 'edge_white' },
 ];
 
-export const DEFAULT_EDGE_COLOR = EDGE_COLORS[0].hex; // cyan
+// Default edge/border colour — RED. The model loads with a high-visibility red
+// outline over the real part (the AR inspection overlay look), not plain cyan.
+export const DEFAULT_EDGE_COLOR =
+  EDGE_COLORS.find((c) => c.key === 'red')?.hex ?? EDGE_COLORS[0].hex; // #ff3b30
 
-// Edge weight (line thickness) is BAKED into the tube geometry (radius), so
-// changing it regenerates + re-caches the wireframe GLB at this radius
-// multiplier. The Edges panel exposes both quick presets and a free slider over
-// [EDGE_WEIGHT_MIN, EDGE_WEIGHT_MAX]; 1 = the default medium line.
-export interface EdgeWeightPreset {
-  label: string;
-  scale: number;
-}
+// Edge weight (line thickness) is BAKED into the tube geometry (radius), adjusted
+// via a thickness SLIDER (no discrete presets). Default is Fine; the slider spans
+// [EDGE_WEIGHT_MIN … EDGE_WEIGHT_MAX] = Fine … Thin (Medium/Thick removed).
+export const DEFAULT_EDGE_WEIGHT = 0.1;  // Fine — the default render weight
+export const EDGE_WEIGHT_MIN = 0.1;      // Fine — nothing thinner
+export const EDGE_WEIGHT_MAX = 0.55;     // Thin — nothing thicker (no Medium/Thick)
 
-export const EDGE_WEIGHT_PRESETS: EdgeWeightPreset[] = [
-  { label: 'Fine', scale: 0.1 },
-  { label: 'Thin', scale: 0.55 },
-  { label: 'Medium', scale: 1 },
-  { label: 'Thick', scale: 2.2 },
-];
-
-// Default edge weight — a thin crisp line (the experiences seed `edgeWeight`
-// from this). EDGE_WEIGHT_MIN reaches the very-fine 0.10× line via the slider /
-// the Fine preset.
-export const DEFAULT_EDGE_WEIGHT = 0.2;
-export const EDGE_WEIGHT_MIN = 0.1;
-export const EDGE_WEIGHT_MAX = 4;
+// Initial model opacity for the AR overlay (1 = solid). The model loads at 25%
+// (heavily see-through) so the real part stays clearly visible through it for QA
+// overlay — the "see-through" inspection look. Only the LiDAR engine renders opacity.
+export const DEFAULT_MODEL_OPACITY = 0.25;
 
 // Lifecycle of the on-device model load. The camera is live the whole time —
 // these phases only describe the model streaming in over the live camera.

@@ -24,7 +24,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { modelCache } from '../../../services/modelCache';
-import { generateWireframeGlb } from './wireframeGenerator';
+import { generateWireframeGlb, WIREFRAME_TOO_LARGE } from './wireframeGenerator';
 import { extractDimensions, ModelDimensions } from './dimensionExtractor';
 import { extractPartGlb } from './partExtractor';
 import { base64ToBytes, bytesToBase64 } from './base64';
@@ -44,6 +44,9 @@ export interface UseRemoteModelResult {
   /** Active edge-view GLB for the current thickness; null until requested + built. */
   wireframeUri: string | null;
   wireframeBusy: boolean;
+  /** True once edge-view generation was refused because the model is too large
+   *  (would build a multi-MB wireframe that crashes the AR view). Caller stays solid. */
+  wireframeUnavailable: boolean;
   error: string | null;
   /** Human-readable status for the loading pill (e.g. "Downloading 42%"). */
   progress: string | null;
@@ -89,6 +92,7 @@ const INITIAL: Omit<UseRemoteModelResult, 'retry' | 'requestWireframe'> = {
   dimensions: null,
   wireframeUri: null,
   wireframeBusy: false,
+  wireframeUnavailable: false,
   error: null,
   progress: 'Starting…',
   downloadPct: null,
@@ -319,6 +323,12 @@ export function useRemoteModel(
           }
         } catch (wireErr) {
           if (__DEV__) console.warn('Wireframe generation failed (non-fatal):', wireErr);
+          // Too-large models: stop trying + tell the UI so it stays solid and can
+          // explain why (rather than spinning "Generating edges…" forever).
+          if (wireErr instanceof Error && wireErr.message.startsWith(WIREFRAME_TOO_LARGE)) {
+            desiredRef.current = null;
+            if (alive()) setState((s) => ({ ...s, wireframeUnavailable: true }));
+          }
         } finally {
           wireframeBuildingRef.current = false;
           if (alive()) setState((s) => ({ ...s, wireframeBusy: false }));

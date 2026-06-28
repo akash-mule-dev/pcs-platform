@@ -59,6 +59,13 @@ export type WorkOrdersStackParamList = {
 export type ProjectsStackParamList = {
   ProjectList: undefined;
   Scan: undefined;
+  // Create a project (+ optional model upload) — mirrors the web wizard.
+  ProjectCreate: undefined;
+  // Per-project import-pipeline monitor (live stepper + history + timelines).
+  // `notice` seeds a one-off banner (e.g. an upload that failed after create).
+  ProjectMonitoring: { projectId: string; name: string; notice?: string };
+  // Tenant-wide "Package Monitor": every project's pipeline + upload history.
+  PackageMonitor: undefined;
   ProjectDetail: { projectId: string; name: string };
   ProjectViewer: { projectId: string; name: string };
   OrderBoard: { orderId: string; projectId: string; orderNumber: string };
