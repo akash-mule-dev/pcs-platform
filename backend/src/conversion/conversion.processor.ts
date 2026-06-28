@@ -11,6 +11,7 @@ import { MeshConverter } from './converters/mesh-converter.js';
 import { GlbOptimizer } from './optimize/glb-optimizer.js';
 import { CadConversionService } from '../cad-conversion/cad-conversion.service.js';
 import { ModelsService } from '../models/models.service.js';
+import { defaultMetersPerUnit } from './meters-per-unit.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
 import { EventsGateway } from '../websocket/events.gateway.js';
@@ -134,6 +135,11 @@ export class ConversionProcessor {
       buffer: Buffer.alloc(0),
       stream: fs.createReadStream(glbPath),
     };
+    // metres-per-GLB-unit for 1:1 AR: the IFC/STEP import pipeline stamps the real
+    // unit into job.options.metersPerUnit; otherwise fall back to the source file's
+    // extension default (glTF metres, OCCT mm, …). The converted output is always a
+    // .glb, so this MUST key off job.originalName (the source), not the .glb file.
+    const metersPerUnit = job.options?.metersPerUnit ?? defaultMetersPerUnit(job.originalName);
     return this.modelsService.create(
       {
         name: job.name || job.originalName,
@@ -142,6 +148,7 @@ export class ConversionProcessor {
       },
       file,
       job.organizationId, // background context: org comes from the job, not the request
+      metersPerUnit,
     );
   }
 

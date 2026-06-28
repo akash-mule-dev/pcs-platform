@@ -173,6 +173,12 @@ export class ConversionService implements OnModuleInit {
     // it instead of re-running the (expensive) pipeline. Scoped to the SAME org
     // so one client never reuses (or points at) another client's GLB.
     const dedupeKey = await this.computeDedupeKey(srcPath, options);
+    // Stamp the 1:1 scale AFTER the dedupe key so it stays pure metadata and never
+    // changes the dedupe identity (identical bytes always share a unit). The
+    // processor reads job.options.metersPerUnit onto the resulting Model3D.
+    if (typeof dto.metersPerUnit === 'number' && Number.isFinite(dto.metersPerUnit) && dto.metersPerUnit > 0) {
+      (options as typeof options & { metersPerUnit?: number }).metersPerUnit = dto.metersPerUnit;
+    }
     const prior = await this.repo.findOne({
       where: { sourceHash: dedupeKey, status: 'completed', organizationId: org ?? IsNull() },
       order: { createdAt: 'DESC' },

@@ -29,4 +29,8 @@ export class CreateConversionDto {
 
   /** Source up-axis: 'Z' (CAD/IFC) or 'Y' (glTF). Output is converted to Y-up. */
   upAxis?: 'Y' | 'Z';
+
+  /** metres-per-GLB-unit for 1:1 AR, resolved from the source file's real unit by
+   *  the IFC/STEP import pipeline. Stored on the job options + the resulting model. */
+  metersPerUnit?: number;
 }

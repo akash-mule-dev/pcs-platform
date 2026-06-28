@@ -327,7 +327,12 @@ export async function generateWireframeGlb(
     if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
   }
   const diag = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) || 1;
-  const radius = Math.max(diag * 0.004 * radiusScale, 1e-5);
+  // Tube radius is a FRACTION of the model diagonal so the line reads thin at any
+  // scale and the weight slider stays effective. The floor MUST be relative to diag
+  // too — an absolute floor (the old 1e-5) underflowed for models whose GLB-unit
+  // diagonal is tiny (IFC GLBs are baked ~1000× small), pinning every line to a
+  // fixed huge size that ignored the weight. 2e-4·diag ≈ 0.02% keeps it non-degenerate.
+  const radius = Math.max(diag * 0.004 * radiusScale, diag * 2e-4);
 
   const { positions: tubePositions, indices: tubeIndices } = buildEdgeTubes(
     finalPositions,
