@@ -1,0 +1,28 @@
+# Railway config for the PCS processing WORKER service.
+#
+# In the hybrid architecture the API stays on Vercel (producer) and ONLY the
+# long-running pipeline worker runs on Railway. Point a Railway service at this
+# repo with Root Directory = `backend`; Railway reads this file and builds the
+# existing Dockerfile, then starts the BullMQ worker (not the HTTP API).
+#
+# The worker drains the durable `pcs-import` + `pcs-conversion` queues. It binds
+# no port (queue consumer only), so it has no public domain — that's expected.
+# If a native/WASM dep ever fails on the alpine base, switch the Dockerfile base
+# image to `node:20-slim` (debian) and redeploy.
+#
+# Required env (set in Railway → Variables; values come from backend/.env):
+#   DATABASE_URL, DB_SSL=true, STORAGE_TYPE=vercel-blob,
+#   PCS_DEV_BLOB_READ_WRITE_TOKEN (+ PCS_DEV_BLOB_STORE_ID),
+#   REDIS_URL (Upstash rediss://…), CONVERSION_DRIVER=bullmq,
+#   JWT_SECRET (match the Vercel API), NODE_ENV=production
+#   — do NOT set VERCEL_ENV.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "node dist/conversion/worker.js"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+numReplicas = 1
