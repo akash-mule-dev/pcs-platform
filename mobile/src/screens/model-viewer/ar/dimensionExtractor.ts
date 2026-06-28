@@ -171,9 +171,7 @@ export async function extractDimensions(
   };
 }
 
-export function formatMeters(v: number): string {
-  const abs = Math.abs(v);
-  if (abs >= 1) return `${v.toFixed(2)} m`;
-  if (abs >= 0.01) return `${(v * 100).toFixed(1)} cm`;
-  return `${(v * 1000).toFixed(0)} mm`;
-}
+// Length formatting lives in a dependency-free module (unit-testable without the GLB
+// parser this file pulls in); re-exported here so existing import sites are unchanged.
+export { formatLength, formatMeters } from './format-length';
+export type { UnitSystem } from './format-length';

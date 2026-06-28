@@ -15,7 +15,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MeasurementState, Vec3, LABEL_SIZE_MIN, LABEL_SIZE_MAX } from './types';
-import { ModelDimensions, formatMeters } from './dimensionExtractor';
+import { ModelDimensions, formatLength, UnitSystem } from './dimensionExtractor';
 import PanelSlider from './PanelSlider';
 
 interface MeasurementPanelProps {
@@ -31,6 +31,10 @@ interface MeasurementPanelProps {
   bottomOffset?: number;
   /** Use a more see-through panel background (buttons unchanged). */
   translucent?: boolean;
+  /** Display unit system for all readouts (metric mm/cm/m or imperial ft-in). */
+  unitSystem?: UnitSystem;
+  /** Flip the display unit system (metric ↔ imperial). */
+  onToggleUnitSystem?: () => void;
 }
 
 function dist(a: Vec3, b: Vec3): number {
@@ -80,6 +84,8 @@ export default function MeasurementPanel({
   onLogDeviation,
   bottomOffset = 148,
   translucent = false,
+  unitSystem = 'metric',
+  onToggleUnitSystem,
 }: MeasurementPanelProps) {
   const {
     showOverall,
@@ -141,7 +147,7 @@ export default function MeasurementPanel({
       // distance by the model scale to read its true size (real ruler is already
       // world-true).
       const raw = dist(pts[0], pts[1]);
-      readoutValue = formatMeters(activeTool === 'model' ? raw / (modelScale || 1) : raw);
+      readoutValue = formatLength(activeTool === 'model' ? raw / (modelScale || 1) : raw, unitSystem);
     } else {
       readoutValue = `${pts.length}/2 pts`;
       hint =
@@ -152,7 +158,7 @@ export default function MeasurementPanel({
   } else if (activeTool === 'deviation') {
     readoutLabel = 'Deviation';
     if (deviationMeters != null) {
-      readoutValue = `Δ ${formatMeters(deviationMeters)}`;
+      readoutValue = `Δ ${formatLength(deviationMeters, unitSystem)}`;
     } else if (deviationModelPoint) {
       readoutValue = '1/2 pts';
       hint = 'Aim the reticle at the real part, tap Place';
@@ -163,7 +169,7 @@ export default function MeasurementPanel({
   } else if (dimensions) {
     const [w, h, d] = dimensions.overall.size;
     readoutLabel = 'Overall size';
-    sizeLines = [`W  ${formatMeters(w)}`, `H  ${formatMeters(h)}`, `D  ${formatMeters(d)}`];
+    sizeLines = [`W  ${formatLength(w, unitSystem)}`, `H  ${formatLength(h, unitSystem)}`, `D  ${formatLength(d, unitSystem)}`];
   } else {
     readoutValue = 'Analyzing…';
   }
@@ -198,6 +204,27 @@ export default function MeasurementPanel({
               onComplete={(v) => onChange({ labelSize: v })}
               formatValue={(v) => `${v.toFixed(1)}×`}
             />
+            {onToggleUnitSystem && (
+              <>
+                <Text style={styles.subLabel}>Units</Text>
+                <View style={styles.unitToggle}>
+                  <TouchableOpacity
+                    style={[styles.unitOpt, unitSystem === 'metric' && styles.unitOptActive]}
+                    onPress={() => { if (unitSystem !== 'metric') onToggleUnitSystem(); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.unitOptText, unitSystem === 'metric' && styles.unitOptTextActive]}>Metric</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.unitOpt, unitSystem === 'imperial' && styles.unitOptActive]}
+                    onPress={() => { if (unitSystem !== 'imperial') onToggleUnitSystem(); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.unitOptText, unitSystem === 'imperial' && styles.unitOptTextActive]}>Imperial</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </Section>
 
@@ -304,6 +331,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
+  unitToggle: { flexDirection: 'row', gap: 6, marginTop: 4 },
+  unitOpt: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+  },
+  unitOptActive: { backgroundColor: 'rgba(56,189,248,0.9)', borderColor: 'rgba(56,189,248,0.9)' },
+  unitOptText: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '700' },
+  unitOptTextActive: { color: '#0b1220' },
   divider: { width: 1, alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.14)' },
   btn: {
     width: 68,

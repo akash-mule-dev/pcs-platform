@@ -90,7 +90,7 @@ export function magnitudeMetersPerUnit(overallLongestUnits: number): number | nu
   return null; // ambiguous (both plausible) or neither → caller refines / falls back
 }
 
-export type RealScaleSource = 'calibrated' | 'estimated' | 'none';
+export type RealScaleSource = 'authoritative' | 'calibrated' | 'estimated' | 'none';
 export interface RealScaleResult {
   /** metres-per-GLB-unit for a 1:1 render, or 0 when undeterminable (→ fit-scale). */
   mpu: number;
