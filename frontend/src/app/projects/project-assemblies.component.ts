@@ -106,7 +106,7 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
               <span class="vt-hint">{{ overlayLoading() ? 'Loading status…' : (colorMode() !== 'none' ? colorLabel() : (isolate() ? 'Isolated view' : 'Click a part to highlight')) }}</span>
               <label class="color-by" title="Color the model by property or status">
                 <mat-icon>palette</mat-icon>
-                <select [ngModel]="colorMode()" (ngModelChange)="colorMode.set($event)">
+                <select [ngModel]="colorMode()" (ngModelChange)="setColorMode($event)">
                   <option value="none">No coloring</option>
                   <option value="profile">By profile</option>
                   <option value="grade">By grade</option>
@@ -117,7 +117,7 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
                 <mat-icon>{{ isolate() ? 'fullscreen' : 'filter_center_focus' }}</mat-icon>{{ isolate() ? 'Show full model' : 'Isolate selected' }}
               </button>
             </div>
-            <div class="viewer-box"><app-three-viewer [modelUrl]="url" [highlightNames]="colorMode() !== 'none' ? [] : (isolate() ? [] : highlightGuids())" [autoFocus]="true" [showTools]="true" [referenceLengths]="referenceLengths()" [colorOverlay]="colorOverlay()" (meshClicked)="onMeshClicked($event)"></app-three-viewer></div>
+            <div class="viewer-box"><app-three-viewer [modelUrl]="url" [highlightNames]="isolate() ? [] : highlightGuids()" [autoFocus]="true" [showTools]="true" [referenceLengths]="referenceLengths()" [colorOverlay]="colorOverlay()" (meshClicked)="onMeshClicked($event)"></app-three-viewer></div>
           } @else {
             <div class="noviewer">
               <mat-icon>view_in_ar</mat-icon>
@@ -670,6 +670,15 @@ export class ProjectAssembliesComponent implements OnInit {
     this.selectedNodeId.set(n.id);
     this.highlightGuids.set(this.descendantGuids(n));
     this.isolate.set(false);
+  }
+
+  /** Switch the color-by overlay. The viewer keeps a selection spotlight on top of
+   *  any overlay until the highlight clears, so dropping the current selection
+   *  here lets the freshly-chosen coloring actually show (the detail panel stays). */
+  setColorMode(m: 'none' | 'profile' | 'grade' | 'revision'): void {
+    this.colorMode.set(m);
+    this.highlightGuids.set([]);
+    this.selectedGuid.set(null);
   }
   onMeshClicked(name: string): void {
     this.selectedGuid.set(name);

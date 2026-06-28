@@ -7,9 +7,17 @@ export interface MModel {
   modelType: string; // 'assembly' (project/fabrication) | 'quality'
   fileSize: number;
   updatedAt?: string;
+  /** metres-per-GLB-unit for a TRUE 1:1 AR render, set at conversion from the
+   *  source file's real unit. null/absent when unknown (AR then estimates). */
+  metersPerUnit?: number | null;
 }
 
 export const modelsService = {
+  /** One model by id (carries metersPerUnit for the AR 1:1 scale). */
+  get(id: string): Promise<MModel> {
+    return api.get<MModel>(`/models/${id}`);
+  },
+
   /**
    * Every model across all pages. The list endpoint is paginated (limit ≤ 100),
    * so walk pages until a short one. Used to warm the offline model cache.

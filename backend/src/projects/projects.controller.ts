@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service.js';
 import { ProjectProgressService } from './project-progress.service.js';
@@ -79,15 +79,27 @@ export class ProjectsController {
   @Post()
   @RequirePermissions('projects.create')
   @ApiOperation({ summary: 'Create project' })
-  create(@Body() dto: CreateProjectDto) {
-    return this.service.create(dto as any);
+  create(@Body() dto: CreateProjectDto, @Req() req: any) {
+    // Stamp the creator from the JWT (same created_by_* pair the import row carries),
+    // and seed the modifier to the creator so "modified by" reads sensibly pre-edit.
+    const user = req?.user;
+    const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || null;
+    return this.service.create({
+      ...dto,
+      createdById: user?.id ?? null, createdByName: name,
+      updatedById: user?.id ?? null, updatedByName: name,
+    } as any);
   }
 
   @Patch(':id')
   @RequirePermissions('projects.update')
   @ApiOperation({ summary: 'Update project' })
-  update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
-    return this.service.update(id, dto as any);
+  update(@Param('id') id: string, @Body() dto: UpdateProjectDto, @Req() req: any) {
+    // Stamp the last modifier from the JWT (the auto updated_at records the time).
+    const user = req?.user;
+    const updatedByName =
+      [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || null;
+    return this.service.update(id, { ...dto, updatedById: user?.id ?? null, updatedByName } as any);
   }
 
   @Delete(':id')

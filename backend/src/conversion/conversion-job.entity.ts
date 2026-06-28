@@ -95,6 +95,9 @@ export class ConversionJob {
     maxTexture?: number;
     sourceUnit?: string;
     upAxis?: string;
+    // metres-per-GLB-unit for 1:1 AR, stamped by the IFC/STEP import pipeline from
+    // the source's real unit; read by the processor to set Model3D.metersPerUnit.
+    metersPerUnit?: number;
   } | null;
 
   /** Real-world bounding-box size of the produced GLB, in metres. */

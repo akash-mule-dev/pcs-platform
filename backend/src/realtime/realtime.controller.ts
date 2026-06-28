@@ -5,15 +5,22 @@ import { AblyService } from './ably.service.js';
 /**
  * Real-time transport endpoints.
  *
- * - GET  /realtime/config — public; tells the client which transport this
+ * - GET  /api/realtime/config — public; tells the client which transport this
  *   server is running ('ably' | 'socketio') so it connects the right way with
  *   no per-environment frontend build.
- * - POST /realtime/token  — JWT-guarded; the web/mobile Ably SDK calls this as
- *   its auth callback. Returns a server-signed token request scoped to the
+ * - POST /api/realtime/token  — JWT-guarded; the web/mobile Ably SDK calls this
+ *   as its auth callback. Returns a server-signed token request scoped to the
  *   caller's own channels (see AblyService.createTokenRequest). The Ably API
  *   key never leaves the server.
+ *
+ * NOTE: the route prefix is `api/` because this app sets NO global prefix — every
+ * controller hardcodes `api/...` in its @Controller() path. The web + mobile
+ * clients call `${apiUrl}/realtime/config` where apiUrl already ends in `/api`,
+ * so the controller MUST be `api/realtime` to match. (It was `realtime` once,
+ * which 404'd at `/api/realtime/config` and silently forced clients onto the
+ * Socket.IO fallback — fatal on serverless, which can't hold a WebSocket.)
  */
-@Controller('realtime')
+@Controller('api/realtime')
 export class RealtimeController {
   constructor(private readonly ably: AblyService) {}
 

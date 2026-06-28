@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { numericTransformer } from '../common/transformers/numeric.transformer.js';
 
 @Entity('models')
 export class Model3D {
@@ -37,6 +38,13 @@ export class Model3D {
 
   @Column({ name: 'model_type', type: 'varchar', length: 50, default: 'assembly' })
   modelType: string; // 'assembly' | 'quality'
+
+  // metres-per-GLB-unit for a TRUE 1:1 AR render — carried from the source file's
+  // declared unit at conversion (IFC IfcUnitAssignment / glTF metres / OCCT mm),
+  // never guessed. null = unknown → the AR client falls back to its geometry/length
+  // estimate. See conversion/meters-per-unit.ts.
+  @Column({ name: 'meters_per_unit', type: 'numeric', precision: 12, scale: 6, nullable: true, transformer: numericTransformer })
+  metersPerUnit: number | null;
 
   // Phase 9: Thumbnail for quick preview
   @Column({ name: 'thumbnail_path', type: 'varchar', length: 500, nullable: true })
