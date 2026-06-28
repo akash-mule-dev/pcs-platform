@@ -9,6 +9,7 @@ import type { StorageProvider } from '../storage/storage.interface.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
 import { StorageKeys, orgOfKey } from '../storage/storage-keys.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
+import { defaultMetersPerUnit } from '../conversion/meters-per-unit.js';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -40,7 +41,16 @@ export class ModelsService {
     return item;
   }
 
-  async create(dto: CreateModelDto, file: Express.Multer.File, organizationId?: string | null): Promise<Model3D> {
+  async create(
+    dto: CreateModelDto,
+    file: Express.Multer.File,
+    organizationId?: string | null,
+    // metres-per-GLB-unit for 1:1 AR. The conversion processor PROVIDES this
+    // (resolved from the SOURCE file's unit — the converted .glb extension can't
+    // reveal it). undefined = a direct upload whose source IS this file, so derive
+    // from its extension. null = explicitly unknown.
+    metersPerUnit?: number | null,
+  ): Promise<Model3D> {
     // Tenant-partitioned key under <org>/models/. In a background conversion the
     // org is passed in (the job carries it); in a request it falls back to the
     // tenant context. The model row stores the full key, so reads need no org.
@@ -49,6 +59,7 @@ export class ModelsService {
 
     await this.storage.upload(file.path, storageKey, file.mimetype);
 
+    const mpu = metersPerUnit !== undefined ? metersPerUnit : defaultMetersPerUnit(file.originalname);
     const model = this.repo.create({
       name: dto.name,
       description: dto.description,
@@ -59,6 +70,7 @@ export class ModelsService {
       fileSize: file.size,
       mimeType: file.mimetype,
       fileFormat: path.extname(file.originalname).replace('.', '').toLowerCase(),
+      metersPerUnit: mpu ?? null,
     });
     return this.repo.save(model);
   }
