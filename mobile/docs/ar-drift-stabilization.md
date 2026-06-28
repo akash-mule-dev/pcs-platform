@@ -25,6 +25,13 @@ FabStation (Unity) defeats drift with:
 
 This refactor brings both ideas to ARKit/RealityKit.
 
+## Highlight + benchmark (see `ar-marker-tracking.md`)
+
+Detected markers are now **highlighted in-view** (a colour-keyed frame on each physical
+marker + an id/state HUD), and a **stability benchmark** records markers-OFF vs markers-ON
+and prints the mm drift reduction (with an exportable log). Those are layered on top of the
+stack below; this doc covers the anti-drift core itself.
+
 ## The stabilization stack (authority order, highest first)
 
 1. **Image-marker lock + multi-marker fusion** — printed markers registered as
