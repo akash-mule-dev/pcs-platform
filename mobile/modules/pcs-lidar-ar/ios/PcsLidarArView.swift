@@ -182,23 +182,45 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // comments flagged. The per-frame drive is native (here); the active-marker POLICY
   // is the unit-tested marker-lock.ts mirrored in selectActiveMarkerNative().
   private var markerLockEnabled = false
-  private var markerWidthMeters: Float = 0.15           // printed marker edge length (m)
+  // Printed marker edge length (m). Bigger markers track at much longer range and give
+  // a tighter pose (FabStation's steel packs are 650 mm); 300 mm is a good shop default
+  // and prints on a single A4/Letter sheet. Set from JS (MARKER_WIDTH_M) / the marker-
+  // size confirmation UI; exportMarkerSheet stamps this size on the printout.
+  private var markerWidthMeters: Float = 0.30
   private var referenceImages: Set<ARReferenceImage> = []
   private var detectionConfigured = false
   private var markerEntities: [String: AnchorEntity] = [:]   // name → RealityKit anchor (ARKit auto-tracks it)
   private var markerTracked: [String: Bool] = [:]            // name → tracked THIS frame?
+  private var markerSettleFrames: [String: Int] = [:]        // name → consecutive frames tracked (re-acquire settle gate)
   private var markerBindings: [String: simd_float4x4] = [:]  // name → offset (markerWorld⁻¹ · correctionWorld) at bind
+  // Global-solve (SpacePins / World-Locking-Tools analog) references captured at bind:
+  // each bound marker's WORLD pose at bind, plus the single model correction-world pose
+  // they were all bound against. With ≥3 of these visible, driveMarkerLock fits ONE
+  // world transform to all of them at once (marker-lock.ts solveGlobalMarkerAlignment)
+  // instead of driving off the nearest — cancelling drift along the whole piece.
+  private var markerWorldAtBind: [String: simd_float4x4] = [:]
+  private var boundCorrectionWorld: simd_float4x4?
   private var activeMarkerName: String?                      // the marker currently driving the pose
   private var lastMarkerEmit = Date(timeIntervalSince1970: 0)
   // Item 1+2 — fusion / quality-gating tuning.
-  private let markerMaxRangeM: Float = 3.0      // beyond this a marker is dropped (weight 0)
-  private let markerNearFavorM: Float = 0.5     // distance falloff scale (closer = higher weight)
+  private let markerMaxRangeM: Float = 6.0      // beyond this a marker is dropped (weight 0); raised for bigger markers
+  private let markerNearFavorM: Float = 0.6     // distance falloff scale (closer = higher weight)
   private let markerRejectStepM: Float = 0.30   // reject a fused target this far from current (outlier)
   private var markerOutlierStreak = 0           // consecutive rejects (accept after a few → no permanent stuck)
+  // Re-acquisition settle gate: a freshly (re)detected marker's first frames are noisy,
+  // so require this many consecutive tracked frames before it may BIND or DRIVE — stops
+  // a half-solved pose snapping the model on return.
+  private let markerSettleMin = 3
+  private let markerBindMinWeight: Float = 0.2  // bind only markers at least this trustworthy (near + square)
+  private let markerStrongWeight: Float = 0.45  // a marker this strong drives even on 'limited' world tracking
+  // After a HOLD (no marker in view), the correct pose may be far from the held one;
+  // catch up fast for a few frames so re-lock feels instant, then resume gentle easing.
+  private var wasHolding = false
+  private var catchUpFrames = 0
   // How many markers the runtime generator makes (== the printable sheet). A curated
   // bundled "PcsMarkers" AR Resources group, if present, overrides this for tracking
   // quality (see buildReferenceImages).
-  private static let generatedMarkerCount = 12
+  private static let generatedMarkerCount = 16
 
   // ── Measurement ──
   private var measureMode = "off"             // off | model | real | deviation
@@ -1435,7 +1457,8 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     registerAnchor = nil
     // A full reset wipes the world map + every ARImageAnchor → drop all marker state.
     for e in markerEntities.values { e.removeFromParent() }
-    markerEntities.removeAll(); markerTracked.removeAll(); markerBindings.removeAll(); activeMarkerName = nil
+    markerEntities.removeAll(); markerTracked.removeAll(); markerSettleFrames.removeAll()
+    markerBindings.removeAll(); markerWorldAtBind.removeAll(); boundCorrectionWorld = nil; activeMarkerName = nil
     if modelEntity != nil {
       teardownModelAnchor()
       modelPivot = nil
@@ -1550,6 +1573,10 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
         markerEntities[name] = e
       }
       markerTracked[name] = img.isTracked
+      // Re-acquisition settle counter: count up while continuously tracked, reset to 0
+      // the moment ARKit reports it untracked (so a marker that left + re-entered the
+      // frame must re-settle before it's trusted to bind/drive).
+      markerSettleFrames[name] = img.isTracked ? (markerSettleFrames[name] ?? 0) + 1 : 0
       changed = true
     }
     if changed { emitMarkerUpdates() }
@@ -1598,41 +1625,154 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   private func driveMarkerLock() {
     guard markerLockEnabled, modelPivot != nil,
           let anchor = modelAnchor, let correction = modelCorrection else { return }
-    // Item 2 — freeze on degraded world tracking: HOLD the last pose rather than let a
-    // bad frame slide the model.
-    if lastTrackingState == "limited" || lastTrackingState == "unavailable" { return }
 
     let cam = arView.cameraTransform.translation
     let anchorInv = anchor.transformMatrix(relativeTo: nil).inverse
-    var items: [(simd_float4x4, Float)] = []
+    var items: [(simd_float4x4, Float)] = []                 // per-marker candidate corrections (1–2-marker fallback)
+    var corr: [(bound: simd_float4x4, live: simd_float4x4)] = []  // global-solve correspondences
     var bestW: Float = 0
     var bestName: String?
+    var strongVisible = false
     for (name, e) in markerEntities {
-      guard (markerTracked[name] ?? false), let offset = markerBindings[name] else { continue }
+      // Require a bound, tracked, SETTLED marker — a half-acquired marker's first frames
+      // are noisy and must not snap the model.
+      guard (markerTracked[name] ?? false), (markerSettleFrames[name] ?? 0) >= markerSettleMin,
+            let offset = markerBindings[name] else { continue }
       let markerWorld = e.transformMatrix(relativeTo: nil)
       let mp = markerWorld.columns.3
       let d = simd_distance(SIMD3<Float>(mp.x, mp.y, mp.z), cam)
       let w = markerQualityWeight(distance: d)
       if w <= 0 { continue }                          // Item 2 — gate out far / untracked
-      items.append((anchorInv * markerWorld * offset, w))  // candidate correction
+      if w >= markerStrongWeight { strongVisible = true }
+      items.append((anchorInv * markerWorld * offset, w))  // candidate correction (per-marker)
+      if let mb = markerWorldAtBind[name] { corr.append((mb, markerWorld)) }
       if w > bestW { bestW = w; bestName = name }
     }
 
-    // Item 2 — no acceptable marker in view: HOLD (don't drift-drive, don't reset).
-    guard let target = fuseCorrections(items) else { activeMarkerName = nil; return }
+    // Freeze on degraded world tracking — HOLD rather than let a bad frame slide the
+    // model — UNLESS a strong, settled marker is in view: its image is re-solved against
+    // the PHYSICAL marker, so it stays reliable even when global VIO is "limited".
+    if lastTrackingState == "unavailable" || (lastTrackingState == "limited" && !strongVisible) {
+      wasHolding = true
+      return
+    }
 
-    // Item 2 — reject a single wild target (a misdetection) for a few frames, but accept
+    // Target correction: with ≥3 well-spread markers, fit ONE world transform to ALL of
+    // them at once (the SpacePins / World-Locking analog) so the whole length stays
+    // locked and a single marker's weak yaw can't swing the far end; otherwise fall back
+    // to the per-marker fuse (1–2 markers).
+    var target: simd_float4x4?
+    if corr.count >= 3, let bcw = boundCorrectionWorld,
+       let world = solveGlobalAlignmentNative(corr) {
+      target = anchorInv * world * bcw
+    } else {
+      target = fuseCorrections(items)
+    }
+
+    // No acceptable marker in view: HOLD (don't drift-drive, don't reset).
+    guard let tgt = target else { activeMarkerName = nil; wasHolding = true; return }
+
+    // Reject a single wild target (a misdetection) for a few frames, but accept
     // eventually so a genuine relocalization isn't stuck out.
     let cur = correction.transform.matrix
     let curT = SIMD3<Float>(cur.columns.3.x, cur.columns.3.y, cur.columns.3.z)
-    let tgtT = SIMD3<Float>(target.columns.3.x, target.columns.3.y, target.columns.3.z)
+    let tgtT = SIMD3<Float>(tgt.columns.3.x, tgt.columns.3.y, tgt.columns.3.z)
     if simd_distance(curT, tgtT) > markerRejectStepM && markerOutlierStreak < 8 {
       markerOutlierStreak += 1
       return
     }
     markerOutlierStreak = 0
     activeMarkerName = bestName
-    correction.transform = blendedTransform(from: cur, to: target, t: 0.35)
+
+    // After a HOLD, snap toward the recovered pose faster for a few frames so re-lock on
+    // return feels instant; then resume gentle easing so steady-state jitter stays smooth.
+    if wasHolding { catchUpFrames = 6; wasHolding = false }
+    let t: Float = catchUpFrames > 0 ? 0.7 : 0.35
+    if catchUpFrames > 0 { catchUpFrames -= 1 }
+    correction.transform = blendedTransform(from: cur, to: tgt, t: t)
+  }
+
+  // Global multi-marker world alignment (SpacePins / World-Locking-Tools analog) —
+  // native mirror of marker-lock.ts solveGlobalMarkerAlignment. Solves ONE rigid world
+  // transform W with `W · markerBound ≈ markerLive` over the markers' CENTRES (a Horn
+  // closed-form fit; orientation of any single marker is ignored — the rotation comes
+  // from the spread). Returns nil for <3 markers (caller falls back to per-marker fuse).
+  // Verified by jest on the JS twin; this Swift port needs an on-device build check.
+  private func solveGlobalAlignmentNative(_ corr: [(bound: simd_float4x4, live: simd_float4x4)]) -> simd_float4x4? {
+    let n = corr.count
+    guard n >= 3 else { return nil }
+    var boundPts: [SIMD3<Float>] = []
+    var livePts: [SIMD3<Float>] = []
+    boundPts.reserveCapacity(n); livePts.reserveCapacity(n)
+    for c in corr {
+      boundPts.append(SIMD3<Float>(c.bound.columns.3.x, c.bound.columns.3.y, c.bound.columns.3.z))
+      livePts.append(SIMD3<Float>(c.live.columns.3.x, c.live.columns.3.y, c.live.columns.3.z))
+    }
+    // Centroids.
+    var bc = SIMD3<Float>(repeating: 0), lc = SIMD3<Float>(repeating: 0)
+    for i in 0..<n { bc += boundPts[i]; lc += livePts[i] }
+    bc /= Float(n); lc /= Float(n)
+    // Cross-covariance H[a][b] = Σ boundC[a] · liveC[b] (degenerate guard on spread).
+    var H = [[Float]](repeating: [0, 0, 0], count: 3)
+    var spread: Float = 0
+    for i in 0..<n {
+      let bp = boundPts[i] - bc
+      let lp = livePts[i] - lc
+      spread += simd_length_squared(bp)
+      for a in 0..<3 { for b in 0..<3 { H[a][b] += bp[a] * lp[b] } }
+    }
+    if spread < 1e-9 { return nil }  // coincident bound points → no rotation defined
+    guard let R = hornRotationNative(H) else { return nil }
+    let t = lc - matMulVec3(R, bc)
+    var out = matrix_identity_float4x4
+    out.columns.0 = SIMD4<Float>(R.0, 0)
+    out.columns.1 = SIMD4<Float>(R.1, 0)
+    out.columns.2 = SIMD4<Float>(R.2, 0)
+    out.columns.3 = SIMD4<Float>(t, 1)
+    return out
+  }
+
+  private func matMulVec3(_ R: (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>), _ v: SIMD3<Float>) -> SIMD3<Float> {
+    // R columns are the basis vectors → R·v = c0*v.x + c1*v.y + c2*v.z.
+    return R.0 * v.x + R.1 * v.y + R.2 * v.z
+  }
+
+  // Optimal rotation (Horn's quaternion method) from the 3×3 cross-covariance: build the
+  // symmetric 4×4 N matrix and take the eigenvector of its largest eigenvalue via power
+  // iteration (deflation-free; N's top eigenvalue is well-separated for real data).
+  // Returns the rotation as a column tuple. Mirrors rigid-registration.ts hornRotation.
+  private func hornRotationNative(_ H: [[Float]]) -> (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)? {
+    let Sxx = H[0][0], Sxy = H[0][1], Sxz = H[0][2]
+    let Syx = H[1][0], Syy = H[1][1], Syz = H[1][2]
+    let Szx = H[2][0], Szy = H[2][1], Szz = H[2][2]
+    let N: [[Float]] = [
+      [Sxx + Syy + Szz, Syz - Szy,        Szx - Sxz,        Sxy - Syx],
+      [Syz - Szy,       Sxx - Syy - Szz,  Sxy + Syx,        Szx + Sxz],
+      [Szx - Sxz,       Sxy + Syx,       -Sxx + Syy - Szz,  Syz + Szy],
+      [Sxy - Syx,       Szx + Sxz,        Syz + Szy,       -Sxx - Syy + Szz],
+    ]
+    // Power iteration converges to the eigenvector of the LARGEST-MAGNITUDE eigenvalue;
+    // Horn wants the largest (most positive) one. Add a spectral shift ≥ ρ(N) so every
+    // eigenvalue of N+shift·I is ≥ 0 (eigenvectors unchanged) and the dominant magnitude
+    // is then exactly Horn's. A Gershgorin-safe bound: 1 + Σ|entries of N| (entries are
+    // sums/diffs of the H terms, so bound via Σ|H|).
+    var sumAbsH: Float = 0
+    for a in 0..<3 { for b in 0..<3 { sumAbsH += abs(H[a][b]) } }
+    let shift: Float = 1 + 4 * sumAbsH
+    var v = SIMD4<Float>(1, 0, 0, 0)  // bias toward identity quaternion [w,x,y,z]
+    for _ in 0..<64 {
+      var nv = SIMD4<Float>(repeating: 0)
+      for r in 0..<4 {
+        nv[r] = N[r][0] * v.x + N[r][1] * v.y + N[r][2] * v.z + N[r][3] * v.w + shift * v[r]
+      }
+      let len = simd_length(nv)
+      if len < 1e-12 { return nil }
+      v = nv / len
+    }
+    // v = [w, x, y, z] → rotation matrix columns.
+    let q = simd_quatf(ix: v.y, iy: v.z, iz: v.w, r: v.x)
+    let m = simd_float3x3(simd_normalize(q))
+    return (m.columns.0, m.columns.1, m.columns.2)
   }
 
   // Smooth distance falloff in [0,1]; 0 past the max range. A far-but-present marker
@@ -1708,21 +1848,60 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     guard let anchor = modelAnchor, let correction = modelCorrection else {
       onLockStatus(["bound": 0, "totalBindings": markerBindings.count, "reason": "not-placed"]); return
     }
+    let cam = arView.cameraTransform.translation
     let correctionWorld = anchor.transformMatrix(relativeTo: nil) * correction.transform.matrix
     var bound = 0
+    var visibleButPoor = 0
     for (name, e) in markerEntities where (markerTracked[name] ?? false) {
       let markerWorld = e.transformMatrix(relativeTo: nil)
-      markerBindings[name] = markerWorld.inverse * correctionWorld
+      let mp = markerWorld.columns.3
+      let d = simd_distance(SIMD3<Float>(mp.x, mp.y, mp.z), cam)
+      let w = markerQualityWeight(distance: d)
+      let settled = (markerSettleFrames[name] ?? 0) >= markerSettleMin
+      // Bind-quality gate: only bind a near, square, SETTLED marker — a far/grazing/half-
+      // acquired marker bakes a bad offset that later reproduces the error (the whole
+      // point of gating). Marginal markers are skipped, not silently bound.
+      if w < markerBindMinWeight || !settled { visibleButPoor += 1; continue }
+      markerBindings[name] = markerWorld.inverse * correctionWorld  // marker-relative offset (persistable)
+      markerWorldAtBind[name] = markerWorld                         // bind-time world pose (global solve)
       bound += 1
     }
-    onLockStatus(["bound": bound, "totalBindings": markerBindings.count,
-                  "reason": bound == 0 ? "no-markers-visible" : "ok"])
+    if bound > 0 { boundCorrectionWorld = correctionWorld }
+    let reason = bound > 0 ? "ok" : (visibleButPoor > 0 ? "low-quality" : "no-markers-visible")
+    onLockStatus(["bound": bound, "totalBindings": markerBindings.count, "reason": reason])
   }
 
   func clearMarkerBindings() {
     markerBindings.removeAll()
+    markerWorldAtBind.removeAll()
+    boundCorrectionWorld = nil
     activeMarkerName = nil
     onLockStatus(["bound": 0, "totalBindings": 0, "reason": "cleared"])
+  }
+
+  // ── Binding persistence (FabStation's frozenWorldState / AlignUsingCachedMarkerPosition
+  // analog) ── The per-marker OFFSET (markerWorld⁻¹ · correctionWorld) is marker-relative
+  // and therefore frame-independent: on a later session, when any bound marker is
+  // re-detected with a fresh live pose, `markerWorld · offset` reproduces the locked pose
+  // regardless of the new world origin. So the offsets are safe to persist (unlike a world
+  // position). JS stores them per modelId (arRegistration) and restores on reopen, making
+  // re-lock automatic the instant a known marker is seen — no re-alignment. (The global
+  // solve's bind-time WORLD poses are session-specific, so they are NOT persisted; the
+  // global solve re-engages after the next Bind.)
+  func exportMarkerBindings() -> [String: [Double]] {
+    var out: [String: [Double]] = [:]
+    for (k, m) in markerBindings { out[k] = matrixToArray(m).map { Double($0) } }
+    return out
+  }
+
+  func restoreMarkerBindings(_ map: [String: [Double]]) {
+    var restored = 0
+    for (k, arr) in map {
+      guard let m = matrixFromArray(arr) else { continue }
+      markerBindings[k] = m
+      restored += 1
+    }
+    onLockStatus(["bound": restored, "totalBindings": markerBindings.count, "reason": "restored"])
   }
 
   // A printable contact sheet (PNG, base64) of the generated markers, labelled with
@@ -1872,6 +2051,20 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       m.columns.2.x, m.columns.2.y, m.columns.2.z, m.columns.2.w,
       m.columns.3.x, m.columns.3.y, m.columns.3.z, m.columns.3.w,
     ]
+  }
+
+  // Inverse of matrixToArray: a column-major 16-element array → simd_float4x4. Returns
+  // nil for a malformed (wrong-length / non-finite) array so a bad persisted binding can
+  // never inject a NaN pose. Used by restoreMarkerBindings.
+  private func matrixFromArray(_ a: [Double]) -> simd_float4x4? {
+    guard a.count == 16, a.allSatisfy({ $0.isFinite }) else { return nil }
+    let f = a.map { Float($0) }
+    return simd_float4x4(
+      SIMD4<Float>(f[0], f[1], f[2], f[3]),
+      SIMD4<Float>(f[4], f[5], f[6], f[7]),
+      SIMD4<Float>(f[8], f[9], f[10], f[11]),
+      SIMD4<Float>(f[12], f[13], f[14], f[15])
+    )
   }
 
   // MARK: - ARSessionDelegate

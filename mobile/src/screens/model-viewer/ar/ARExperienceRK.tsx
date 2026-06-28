@@ -51,6 +51,12 @@ import { resolveRealScale } from './realScale';
 import { solveRigid, PointPair, RigidFit } from './rigid-registration';
 import { useStabilizer } from './useStabilizer';
 import { lockStateLabel } from './drift-monitor';
+import {
+  loadMarkerBindings,
+  saveMarkerBindings,
+  loadMarkerWidthM,
+  saveMarkerWidthM,
+} from './arRegistration';
 import { captureNativeSnapshot } from './arSnapshotNative';
 import { useAuth } from '../../../context/AuthContext';
 import { can } from '../../../config/permissions';
@@ -76,8 +82,10 @@ import { PcsLidarArView } from '../../../../modules/pcs-lidar-ar';
 const DEFAULT_COLOR_BY: ColorBy = 'profile';
 
 // Physical edge length of the printed AR markers (m) — must match the printed sheet
-// (exportMarkerSheet stamps this size). 150 mm tracks well at shop arm's-length.
-const MARKER_WIDTH_M = 0.15;
+// (exportMarkerSheet stamps this size). 300 mm prints on a single A4/Letter page and
+// tracks at much longer range than the old 150 mm (FabStation's steel packs are 650 mm),
+// so a fresh drift-free fix is almost always in view as the inspector walks the piece.
+const MARKER_WIDTH_M = 0.3;
 
 // LiDAR layout: the Align/Edges/Measure toolbar is a right-side rail, so the
 // docked panels sit LOW (just above the bottom edge) to free the model's space.
@@ -162,6 +170,9 @@ export default function ARExperienceRK({
   const [markerLockOn, setMarkerLockOn] = useState(false);
   const [continuousLockOn, setContinuousLockOn] = useState(false);
   const [lockPanelOpen, setLockPanelOpen] = useState(false);
+  // Confirmed printed-marker edge length (m) — ARKit's metric scale reference. Loaded
+  // from the device-global setting; the Stability panel lets the inspector confirm it.
+  const [markerWidthM, setMarkerWidthM] = useState(MARKER_WIDTH_M);
 
   // ── Tool panels (mutually exclusive, like the Viro toolbar) ──
   // displayPanelOpen drives the single merged "Display" tab (surface colour-by +
@@ -321,6 +332,52 @@ export default function ARExperienceRK({
     markerLockOn,
     continuousLockOn,
   });
+
+  // Restore persisted marker bindings once the model is placed: a previously-aligned
+  // assembly then re-locks the instant a known printed marker is re-detected, with no
+  // re-alignment (FabStation's cached-marker-pose behaviour). Marker-relative offsets are
+  // frame-independent, so this survives walk-away / backgrounding / app restart.
+  const bindingsRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!placed || bindingsRestoredRef.current) return;
+    bindingsRestoredRef.current = true;
+    (async () => {
+      const saved = await loadMarkerBindings(modelId);
+      if (saved) await arRef.current?.restoreMarkerBindings?.(saved);
+    })();
+  }, [placed, modelId]);
+
+  // Bind to the visible markers, then read the (gated) bindings back and persist them.
+  // If nothing met the bind-quality gate, coach the inspector to get a clean fix instead
+  // of silently binding a poor marker (which would bake the error back in).
+  const handleBind = useCallback(async () => {
+    await arRef.current?.bindVisibleMarkers?.();
+    try {
+      const m = (await arRef.current?.getMarkerBindings?.()) ?? {};
+      if (Object.keys(m).length === 0) {
+        Alert.alert('Bind to marker', 'Move closer and square up to a printed marker, then Bind.');
+        return;
+      }
+      await saveMarkerBindings(modelId, m);
+    } catch {
+      // best-effort persistence
+    }
+  }, [modelId]);
+
+  const handleClearBindings = useCallback(async () => {
+    stabilizer.clearBindings();
+    await saveMarkerBindings(modelId, {});
+  }, [stabilizer, modelId]);
+
+  // Load the confirmed marker size once on mount; persist on change. A wrong size biases
+  // every detected marker pose by the scale ratio, so this must match the printed sheet.
+  useEffect(() => {
+    (async () => setMarkerWidthM(await loadMarkerWidthM(MARKER_WIDTH_M)))();
+  }, []);
+  const handleSetMarkerWidth = useCallback((m: number) => {
+    setMarkerWidthM(m);
+    saveMarkerWidthM(m);
+  }, []);
 
   // Live rigid-fit over the completed pairs (cheap for the handful of corners QA uses).
   const registerFit: RigidFit | null = useMemo(
@@ -888,7 +945,7 @@ export default function ARExperienceRK({
         realScale={realScale}
         manualPlacement
         markerLock={markerLockOn}
-        markerWidthMeters={MARKER_WIDTH_M}
+        markerWidthMeters={markerWidthM}
         directManipulation={directManip}
         registerMode={registerMode}
         occlusion={flags.occlusion}
@@ -939,6 +996,14 @@ export default function ARExperienceRK({
         <TouchableOpacity style={styles.recordsButton} onPress={onViewRecords}>
           <Text style={styles.recordsButtonText}>Records</Text>
         </TouchableOpacity>
+      )}
+
+      {/* Re-aim prompt — the model has been uncorrected past the failure threshold with
+          marker lock armed; aiming at a printed marker re-locks it (drift-free). */}
+      {placed && markerLockOn && stabilizer.needsReaim && (
+        <View style={styles.reaimBanner} pointerEvents="none">
+          <Text style={styles.reaimBannerText}>Aim at a printed marker to re-lock the model</Text>
+        </View>
       )}
 
       {/* Quick toggles — top-right, off-centre: Occlusion, then See-through.
@@ -1165,10 +1230,12 @@ export default function ARExperienceRK({
           markerVisible={stabilizer.markerVisible}
           holding={stabilizer.holding}
           lastResidualMm={stabilizer.lastResidualMm}
+          markerWidthM={markerWidthM}
+          onSetMarkerWidth={handleSetMarkerWidth}
           onToggleMarkerLock={() => setMarkerLockOn((v) => !v)}
           onToggleContinuousLock={() => setContinuousLockOn((v) => !v)}
-          onBind={stabilizer.bindMarkers}
-          onClearBindings={stabilizer.clearBindings}
+          onBind={handleBind}
+          onClearBindings={handleClearBindings}
           onPrintMarkers={handlePrintMarkers}
         />
       )}
@@ -1366,6 +1433,20 @@ const styles = StyleSheet.create({
     maxWidth: '80%',
   },
   missHintText: { color: '#1f2937', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  // Re-aim prompt banner — top-centre, amber, when the lock is holding past the failure
+  // threshold (mirrors the missHint look so the AR HUD stays visually consistent).
+  reaimBanner: {
+    position: 'absolute',
+    top: '12%',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(234, 179, 8, 0.95)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    maxWidth: '80%',
+    zIndex: 32,
+  },
+  reaimBannerText: { color: '#1f2937', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   reticleRing: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.05)' },
   reticleRingReady: { borderColor: 'rgba(34, 197, 94, 0.95)', backgroundColor: 'rgba(34, 197, 94, 0.12)' },
   reticleDot: { position: 'absolute', width: 6, height: 6, borderRadius: 3, backgroundColor: '#0ea5e9' },

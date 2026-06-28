@@ -24,6 +24,7 @@ import {
   quatFromMat4,
   mat4FromQuatTranslation,
 } from './mat4';
+import { solveRigid, PointPair } from './rigid-registration';
 
 export interface MarkerObservation {
   /** Stable marker id == the ARReferenceImage name (the printed marker's id). */
@@ -186,4 +187,122 @@ export function fuseMarkerPoses(items: WeightedPose[]): Mat4 | null {
   if (qlen < 1e-9) return null;
   const qn: Quat = [qsum[0] / qlen, qsum[1] / qlen, qsum[2] / qlen, qsum[3] / qlen];
   return mat4FromQuatTranslation(qn, [t[0] / wsum, t[1] / wsum, t[2] / wsum]);
+}
+
+/** Average several bind-time offset samples into one stable offset (reuse the pose
+ *  fuser). Binding over a short window instead of a single frame cancels the
+ *  per-frame jitter of the marker's solved pose so a clean offset is stored. */
+export const fuseBindOffsets = fuseMarkerPoses;
+
+/**
+ * Is a marker good enough to BIND to? (Item: bind-quality gating.) Binding a far,
+ * grazing, untracked or half-acquired marker bakes a bad offset that later reproduces
+ * the error when that marker becomes the active driver. Reuse the same distance quality
+ * weight the drive uses and require it to clear `minWeight`. Keep the gate at bind time
+ * STRICTER than the drive's gate (the drive tolerates marginal markers to stay alive;
+ * a binding must be trustworthy).
+ */
+export interface BindQualityParams extends QualityParams {
+  /** Min quality weight to accept a bind (default 0.2 — i.e. within ~1 m square-on). */
+  minWeight?: number;
+}
+export function isBindQualityOk(
+  o: MarkerObservation,
+  cameraPos: V3,
+  p: BindQualityParams = {},
+): boolean {
+  if (!o.tracked) return false;
+  const w = markerWeight(o, cameraPos, { maxRangeM: p.maxRangeM, nearFavorM: p.nearFavorM });
+  return w >= (p.minWeight ?? 0.2);
+}
+
+// ── Global multi-marker alignment — the SpacePins / World-Locking-Tools analog ──
+//
+// FabStation's load-bearing stability layer (Microsoft World Locking Tools + Frozen
+// World) does NOT drive the model from the single nearest marker; it drops a SpacePin
+// at each marker's known pose and continuously warps space so EVERY pin lines up at
+// once. The whole length of the twin is pulled into agreement with the whole length of
+// the steel, cancelling inside-out drift GLOBALLY rather than only near the most recent
+// marker — and a flat marker's weak in-plane yaw is replaced by the rotation implied by
+// the SPREAD between markers (a 2 m baseline pins yaw far harder than one marker can).
+//
+// This is the rigid analog: given each visible bound marker's pose at BIND time (known)
+// and its LIVE pose this frame, solve ONE rigid world transform W with
+// `W · markerBound ≈ markerLive` for all markers (a Horn fit of the bound marker
+// CENTRES → live centres — orientation of any single marker is deliberately ignored,
+// which is the whole point). The model's live world pose is then `W · modelBound`.
+// Reuses the proven, RANSAC-hardened solveRigid (rigid-registration.ts).
+
+export interface MarkerCorrespondence {
+  /** Marker world pose captured at BIND time (the known reference). */
+  bound: Mat4;
+  /** Marker LIVE world pose this frame. */
+  live: Mat4;
+  /** Confidence weight in (0,1]; ≤ minWeight is ignored. */
+  weight: number;
+}
+
+export interface GlobalAlignment {
+  /** World transform W (column-major) s.t. W · markerBound ≈ markerLive for all markers. */
+  world: Mat4;
+  /** Markers used in the final fit (RANSAC may drop a mistaken one). */
+  used: number;
+  /** RMS residual of the fit, in metres. */
+  rmsM: number;
+  /** True when ≥3 well-spread markers pinned a full 6-DoF rotation (vs a 1–2-marker
+   *  translation/edge fallback) — the caller can prefer this over the per-marker fuse. */
+  wellConstrained: boolean;
+}
+
+/**
+ * Solve the global world alignment from per-marker (bound→live) correspondences.
+ * Returns null when no marker clears `minWeight`. With ≥3 non-collinear markers the
+ * result is `wellConstrained` (full rotation); 1–2 markers degrade gracefully to the
+ * translation/edge fit solveRigid provides. Apply as `modelWorldLive = world · modelBound`.
+ */
+export function solveGlobalMarkerAlignment(
+  corr: MarkerCorrespondence[],
+  minWeight = 0.05,
+): GlobalAlignment | null {
+  const used = corr.filter((c) => c.weight > minWeight);
+  if (used.length === 0) return null;
+  const pairs: PointPair[] = used.map((c) => ({
+    model: translation4(c.bound),
+    real: translation4(c.live),
+  }));
+  const fit = solveRigid(pairs);
+  return {
+    world: fit.matrix,
+    used: fit.inlierCount,
+    rmsM: fit.rmsMm / 1000,
+    wellConstrained: fit.ok && fit.inlierCount >= 3,
+  };
+}
+
+/**
+ * View-angle quality factor in [0,1] for a marker, multiplied onto the distance weight
+ * once the marker's surface-normal axis is confirmed on-device. A flat image is most
+ * accurately solved square-on; at a grazing angle its pose (especially range + in-plane
+ * yaw) degrades, so a grazing marker should contribute less. `normalAxis` selects which
+ * local axis of the marker transform is its outward normal ('z' for an ARImageAnchor's
+ * +Z by default — VERIFY on device before enabling). Returns 1 when head-on, →0 at 90°.
+ * Kept as a separate pure helper (with its own test) so markerWeight's existing,
+ * distance-only behaviour and tests are untouched until the axis is wired in natively.
+ */
+export function viewAngleFactor(
+  markerWorld: Mat4,
+  cameraPos: V3,
+  normalAxis: 'x' | 'y' | 'z' = 'z',
+  power = 1,
+): number {
+  const col = normalAxis === 'x' ? 0 : normalAxis === 'y' ? 4 : 8;
+  let nx = markerWorld[col], ny = markerWorld[col + 1], nz = markerWorld[col + 2];
+  const nlen = Math.hypot(nx, ny, nz) || 1;
+  nx /= nlen; ny /= nlen; nz /= nlen;
+  const mp = translation4(markerWorld);
+  let dx = cameraPos[0] - mp[0], dy = cameraPos[1] - mp[1], dz = cameraPos[2] - mp[2];
+  const dlen = Math.hypot(dx, dy, dz) || 1;
+  dx /= dlen; dy /= dlen; dz /= dlen;
+  const cos = Math.abs(nx * dx + ny * dy + nz * dz); // |cos| — normal may point either way
+  return Math.pow(Math.max(0, cos), power);
 }

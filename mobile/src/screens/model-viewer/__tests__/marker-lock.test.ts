@@ -4,6 +4,11 @@ import {
   selectActiveMarker,
   markerWeight,
   fuseMarkerPoses,
+  isBindQualityOk,
+  fuseBindOffsets,
+  solveGlobalMarkerAlignment,
+  viewAngleFactor,
+  MarkerCorrespondence,
   MarkerObservation,
 } from '../ar/marker-lock';
 import {
@@ -204,5 +209,116 @@ describe('fuseMarkerPoses (multi-marker fusion, Item 1)', () => {
     // Column 0 of the rotation should stay unit-length (no scale crept in).
     const c0 = Math.hypot(f[0], f[1], f[2]);
     expect(c0).toBeCloseTo(1, 5);
+  });
+});
+
+describe('isBindQualityOk (bind-quality gate)', () => {
+  const at = (pos: V3, tracked = true): MarkerObservation => ({
+    name: 'm',
+    transform: rotYTrans(0, pos),
+    tracked,
+    lastSeen: 0,
+  });
+
+  it('rejects an untracked marker', () => {
+    expect(isBindQualityOk(at([0.4, 0, 0], false), [0, 0, 0])).toBe(false);
+  });
+
+  it('rejects a far / grazing marker (low weight)', () => {
+    // 2.6 m away ⇒ weight ≈ 1/(1+(2.6/0.5)²) ≈ 0.036 < 0.2 default min.
+    expect(isBindQualityOk(at([2.6, 0, 0]), [0, 0, 0])).toBe(false);
+  });
+
+  it('accepts a near, square-on, tracked marker', () => {
+    // 0.4 m away ⇒ weight ≈ 1/(1+(0.4/0.5)²) ≈ 0.61 ≥ 0.2.
+    expect(isBindQualityOk(at([0.4, 0, 0]), [0, 0, 0])).toBe(true);
+  });
+
+  it('honours a custom minWeight', () => {
+    expect(isBindQualityOk(at([0.4, 0, 0]), [0, 0, 0], { minWeight: 0.9 })).toBe(false);
+  });
+});
+
+describe('fuseBindOffsets (multi-frame bind averaging)', () => {
+  it('averages noisy offset samples closer to truth than a single sample', () => {
+    const truth = rotYTrans(0, [1, 0, 0]);
+    // Two noisy reads straddling the truth in opposite directions.
+    const a = rotYTrans(0, [1.02, 0, 0]);
+    const b = rotYTrans(0, [0.98, 0, 0]);
+    const fused = fuseBindOffsets([
+      { transform: a, weight: 1 },
+      { transform: b, weight: 1 },
+    ])!;
+    expect(fused[12]).toBeCloseTo(truth[12], 5);
+  });
+});
+
+describe('viewAngleFactor (grazing-angle quality)', () => {
+  // A marker lying in the X-Y plane with +Z normal, at the origin.
+  const marker = rotYTrans(0, [0, 0, 0]);
+  it('is ~1 looking square-on along the normal', () => {
+    expect(viewAngleFactor(marker, [0, 0, 2], 'z')).toBeCloseTo(1, 3);
+  });
+  it('falls toward 0 at a grazing angle (camera in the marker plane)', () => {
+    expect(viewAngleFactor(marker, [2, 0, 0], 'z')).toBeLessThan(0.05);
+  });
+  it('is monotonic: square-on > oblique', () => {
+    const square = viewAngleFactor(marker, [0, 0, 2], 'z');
+    const oblique = viewAngleFactor(marker, [2, 0, 2], 'z');
+    expect(square).toBeGreaterThan(oblique);
+  });
+});
+
+describe('solveGlobalMarkerAlignment (SpacePins / WLT analog)', () => {
+  // Four bound markers spread over a ~2 m plane (well-conditioned for rotation).
+  const bound: MarkerCorrespondence['bound'][] = [
+    rotYTrans(0, [0, 0, 0]),
+    rotYTrans(0, [2, 0, 0]),
+    rotYTrans(0, [0, 0, 2]),
+    rotYTrans(0, [2, 0, 2]),
+  ];
+
+  it('recovers a pure-translation world drift', () => {
+    const D = rotYTrans(0, [0.1, -0.05, 0.2]);
+    const corr: MarkerCorrespondence[] = bound.map((b) => ({
+      bound: b,
+      live: multiply4(D, b),
+      weight: 1,
+    }));
+    const sol = solveGlobalMarkerAlignment(corr)!;
+    expect(sol.wellConstrained).toBe(true);
+    expect(maxAbsDiff4(sol.world, D)).toBeLessThan(1e-3);
+  });
+
+  it('recovers a yaw+translation world drift from the marker SPREAD', () => {
+    const D = rotYTrans(8, [0.08, 0, -0.03]);
+    const corr: MarkerCorrespondence[] = bound.map((b) => ({
+      bound: b,
+      live: multiply4(D, b),
+      weight: 1,
+    }));
+    const sol = solveGlobalMarkerAlignment(corr)!;
+    expect(sol.wellConstrained).toBe(true);
+    // The recovered transform reproduces the drifted model pose end-to-end.
+    const modelBound = rotYTrans(30, [1, 0.2, 1]);
+    const modelLive = multiply4(sol.world, modelBound);
+    const expected = multiply4(D, modelBound);
+    expect(maxAbsDiff4(modelLive, expected)).toBeLessThan(2e-3);
+  });
+
+  it('returns null when no marker clears the weight gate', () => {
+    const corr: MarkerCorrespondence[] = bound.map((b) => ({ bound: b, live: b, weight: 0 }));
+    expect(solveGlobalMarkerAlignment(corr)).toBeNull();
+  });
+
+  it('is NOT well-constrained with only 2 markers (no rotation pin)', () => {
+    const D = rotYTrans(5, [0.1, 0, 0]);
+    const corr: MarkerCorrespondence[] = bound.slice(0, 2).map((b) => ({
+      bound: b,
+      live: multiply4(D, b),
+      weight: 1,
+    }));
+    const sol = solveGlobalMarkerAlignment(corr)!;
+    expect(sol.wellConstrained).toBe(false);
   });
 });

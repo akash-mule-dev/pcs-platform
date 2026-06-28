@@ -20,12 +20,23 @@ interface Props {
   markerVisible: boolean;
   holding: boolean;
   lastResidualMm: number | null;
+  /** Confirmed printed-marker edge length (m) — ARKit's metric scale reference. */
+  markerWidthM: number;
+  onSetMarkerWidth: (m: number) => void;
   onToggleMarkerLock: () => void;
   onToggleContinuousLock: () => void;
   onBind: () => void;
   onClearBindings: () => void;
   onPrintMarkers: () => void;
 }
+
+// Printed-marker size presets (m → mm label). 300 mm is the default (single A4/Letter).
+const MARKER_SIZE_PRESETS: { m: number; label: string }[] = [
+  { m: 0.1, label: '100' },
+  { m: 0.15, label: '150' },
+  { m: 0.3, label: '300' },
+  { m: 0.4, label: '400' },
+];
 
 const STATE_COLOR: Record<LockState, string> = {
   locked: '#10b981',
@@ -60,6 +71,8 @@ export default function LockPanel({
   markerVisible,
   holding,
   lastResidualMm,
+  markerWidthM,
+  onSetMarkerWidth,
   onToggleMarkerLock,
   onToggleContinuousLock,
   onBind,
@@ -120,6 +133,26 @@ export default function LockPanel({
           </TouchableOpacity>
         </View>
 
+        {/* Printed marker size — must match the sheet (ARKit's only metric scale ref). */}
+        <View style={styles.sizeRow}>
+          <Text style={styles.sizeLabel}>Printed marker</Text>
+          <View style={styles.sizeChips}>
+            {MARKER_SIZE_PRESETS.map((p) => {
+              const on = Math.abs(p.m - markerWidthM) < 1e-4;
+              return (
+                <TouchableOpacity
+                  key={p.label}
+                  style={[styles.sizeChip, on && styles.sizeChipOn]}
+                  onPress={() => onSetMarkerWidth(p.m)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.sizeChipText, on && styles.sizeChipTextOn]}>{p.label}mm</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         <TouchableOpacity style={[styles.btn, styles.btnGhost, styles.printBtn]} onPress={onPrintMarkers} activeOpacity={0.85}>
           <Text style={styles.btnTextGhost}>⎙  Print marker sheet</Text>
         </TouchableOpacity>
@@ -174,6 +207,21 @@ const styles = StyleSheet.create({
   btnGhost: { backgroundColor: 'rgba(51, 65, 85, 0.85)' },
   btnDisabled: { opacity: 0.4 },
   printBtn: { marginTop: 8, flex: 0 },
+  sizeRow: { marginTop: 10 },
+  sizeLabel: { color: '#94a3b8', fontSize: 11, fontWeight: '700', marginBottom: 6 },
+  sizeChips: { flexDirection: 'row', gap: 6 },
+  sizeChip: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 9,
+    alignItems: 'center',
+    backgroundColor: 'rgba(51, 65, 85, 0.85)',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  sizeChipOn: { backgroundColor: 'rgba(14, 165, 233, 0.18)', borderColor: '#0ea5e9' },
+  sizeChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
+  sizeChipTextOn: { color: '#ffffff' },
   btnText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
   btnTextGhost: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
   hint: { color: '#cbd5e1', fontSize: 11, marginTop: 10, textAlign: 'center' },

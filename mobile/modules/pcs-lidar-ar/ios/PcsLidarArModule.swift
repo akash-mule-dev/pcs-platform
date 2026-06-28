@@ -141,6 +141,16 @@ public class PcsLidarArModule: Module {
       AsyncFunction("clearMarkerBindings") { (view: PcsLidarArView) in
         view.clearMarkerBindings()
       }
+      // Persist/restore the per-marker offsets (marker-relative ⇒ frame-independent) so a
+      // previously-aligned assembly re-locks automatically when a known marker is seen,
+      // across walk-away / backgrounding / app restart. JS keys these by modelId
+      // (arRegistration). Map is markerName → 16 column-major floats.
+      AsyncFunction("getMarkerBindings") { (view: PcsLidarArView, promise: Promise) in
+        promise.resolve(view.exportMarkerBindings())
+      }
+      AsyncFunction("restoreMarkerBindings") { (view: PcsLidarArView, map: [String: [Double]]) in
+        view.restoreMarkerBindings(map)
+      }
       // Continuous ICP world-lock: ease the model onto the LiDAR mesh (JS schedules it
       // via drift-monitor; native applies a small capped, revert-if-worse correction).
       AsyncFunction("refineLock") { (view: PcsLidarArView) in

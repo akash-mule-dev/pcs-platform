@@ -16,6 +16,8 @@ import {
   DriftSample,
   DEFAULT_DRIFT_PARAMS,
   LockState,
+  shouldTriggerRealign,
+  DEFAULT_FAILURE_PARAMS,
 } from './drift-monitor';
 
 interface NativeMarker {
@@ -61,6 +63,8 @@ export interface StabilizerState {
   markerVisible: boolean;
   /** Lock armed + bound but nothing acceptable in view → frozen on last pose. */
   holding: boolean;
+  /** Holding/uncorrected past the failure threshold → prompt the inspector to re-aim. */
+  needsReaim: boolean;
   lastResidualMm: number | null;
   onMarkerUpdate: (e: { nativeEvent: MarkerUpdate }) => void;
   onLockStatus: (e: { nativeEvent: { totalBindings?: number; reason?: string } }) => void;
@@ -84,6 +88,8 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
   const residualRef = useRef<number | null>(null);
   const lastRefineAtRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
+  // ms the model first went uncorrected (no active marker) this run; null while locked.
+  const driftingSinceRef = useRef<number | null>(null);
 
   const [lockState, setLockState] = useState<LockState>('searching');
   const [activeMarker, setActiveMarker] = useState<string | null>(null);
@@ -91,6 +97,7 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
   const [boundCount, setBoundCount] = useState(0);
   const [markerVisible, setMarkerVisible] = useState(false);
   const [holding, setHolding] = useState(false);
+  const [needsReaim, setNeedsReaim] = useState(false);
   const [lastResidualMm, setLastResidualMm] = useState<number | null>(null);
 
   const onMarkerUpdate = useCallback(
@@ -161,6 +168,22 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
         inFlightRef.current = false;
       }
       const hasActiveMarker = markerLockOn && activeRef.current != null;
+
+      // Alignment failure watcher (FabStation's AlignmentFailureWatcher analog): track
+      // how long the model has been uncorrected and, past the threshold, ask the
+      // inspector to re-aim at a marker. A live marker clears it immediately.
+      if (hasActiveMarker || !placed || !markerLockOn) {
+        driftingSinceRef.current = null;
+      } else if (driftingSinceRef.current == null) {
+        driftingSinceRef.current = now;
+      }
+      setNeedsReaim(
+        shouldTriggerRealign(
+          { now, hasActiveMarker, driftingSince: driftingSinceRef.current },
+          DEFAULT_FAILURE_PARAMS,
+        ),
+      );
+
       const sample: DriftSample = {
         now,
         placed,
@@ -199,6 +222,8 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
       setActiveMarker(null);
       setLastResidualMm(null);
       setHolding(false);
+      setNeedsReaim(false);
+      driftingSinceRef.current = null;
     }
   }, [placed]);
 
@@ -209,6 +234,7 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
     boundCount,
     markerVisible,
     holding,
+    needsReaim,
     lastResidualMm,
     onMarkerUpdate,
     onLockStatus,

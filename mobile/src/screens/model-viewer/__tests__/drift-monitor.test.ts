@@ -3,6 +3,8 @@ import {
   DriftSample,
   DEFAULT_DRIFT_PARAMS,
   lockStateLabel,
+  shouldTriggerRealign,
+  DEFAULT_FAILURE_PARAMS,
 } from '../ar/drift-monitor';
 
 const base: DriftSample = {
@@ -107,5 +109,28 @@ describe('lockStateLabel', () => {
     for (const s of ['searching', 'locked', 'drifting', 'refining', 'lost'] as const) {
       expect(lockStateLabel(s).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('shouldTriggerRealign (alignment failure watcher)', () => {
+  const t0 = 100000;
+  it('never fires while a marker is actively driving the model', () => {
+    expect(
+      shouldTriggerRealign({ now: t0 + 999999, hasActiveMarker: true, driftingSince: t0 }),
+    ).toBe(false);
+  });
+
+  it('does not fire when not currently drifting', () => {
+    expect(shouldTriggerRealign({ now: t0, hasActiveMarker: false, driftingSince: null })).toBe(false);
+  });
+
+  it('does not fire before the threshold elapses', () => {
+    const now = t0 + DEFAULT_FAILURE_PARAMS.failureThresholdMs - 1;
+    expect(shouldTriggerRealign({ now, hasActiveMarker: false, driftingSince: t0 })).toBe(false);
+  });
+
+  it('fires once uncorrected drift exceeds the threshold', () => {
+    const now = t0 + DEFAULT_FAILURE_PARAMS.failureThresholdMs + 1;
+    expect(shouldTriggerRealign({ now, hasActiveMarker: false, driftingSince: t0 })).toBe(true);
   });
 });

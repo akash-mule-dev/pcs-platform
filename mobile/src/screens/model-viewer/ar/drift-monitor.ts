@@ -104,6 +104,44 @@ export function evaluateDrift(
   };
 }
 
+// ── Alignment failure watcher (FabStation's AlignmentFailureWatcher analog) ──
+//
+// FabStation arms an AlignmentFailureWatcher with timeout thresholds
+// (ALIGNMENT_FAILURE_THRESHOLD_IN_SECONDS) that fires a re-localisation (AlignAgain)
+// once the overlay has been off the steel past tolerance for too long. Our analog:
+// when NO marker is correcting the model and it has been continuously drifting for
+// longer than the threshold, prompt the inspector to re-aim at a marker (the cheap,
+// authoritative fix) / trigger a re-localize. Pure so the timeout is jest-testable.
+export interface FailureWatchSample {
+  now: number;
+  /** A marker is actively driving the model (drift-free) — never a failure then. */
+  hasActiveMarker: boolean;
+  /** ms when the model first entered an uncorrected/drifting state this run; null when
+   *  it is NOT currently drifting (reset to null the moment a marker re-locks). */
+  driftingSince: number | null;
+}
+
+export interface FailureWatchParams {
+  /** Sustained uncorrected drift beyond this triggers the re-aim prompt (ms). */
+  failureThresholdMs: number;
+}
+
+export const DEFAULT_FAILURE_PARAMS: FailureWatchParams = { failureThresholdMs: 6000 };
+
+/**
+ * Has the overlay been uncorrected (no marker driving it) for longer than the failure
+ * threshold? When true the UI should surface a "re-aim at a marker" prompt / kick a
+ * re-localize. A live marker (hasActiveMarker) always clears it.
+ */
+export function shouldTriggerRealign(
+  s: FailureWatchSample,
+  p: FailureWatchParams = DEFAULT_FAILURE_PARAMS,
+): boolean {
+  if (s.hasActiveMarker) return false;
+  if (s.driftingSince == null) return false;
+  return s.now - s.driftingSince >= p.failureThresholdMs;
+}
+
 /** Human-readable, QA-friendly label for a lock state (HUD chip text). */
 export function lockStateLabel(state: LockState): string {
   switch (state) {
