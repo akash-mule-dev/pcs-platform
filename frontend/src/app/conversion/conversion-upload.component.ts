@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { fileAccept } from '../shared/upload-accept';
 import { HttpEventType } from '@angular/common/http';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -68,7 +69,7 @@ interface ActiveJob {
             } @else if (selectedFiles.length > 1) {
               <span class="file-name">{{ selectedFiles.length }} files selected</span>
             }
-            <input #fileInput type="file" [accept]="acceptExts + ',.zip'" multiple hidden (change)="onFileSelected($event)">
+            <input #fileInput type="file" [attr.accept]="acceptAttr" multiple hidden (change)="onFileSelected($event)">
           </div>
 
           <mat-form-field appearance="outline" class="full-width">
@@ -300,6 +301,8 @@ interface ActiveJob {
 })
 export class ConversionUploadComponent implements OnInit, OnDestroy {
   acceptExts = '.ifc,.step,.stp,.iges,.igs,.obj,.fbx,.dae,.stl,.ply,.3ds,.gltf,.glb';
+  /** Desktop accept filter (live, since acceptExts is loaded from the backend); dropped on iOS so WebKit doesn't grey out CAD files. */
+  get acceptAttr(): string | null { return fileAccept(this.acceptExts + ',.zip'); }
   formats: SupportedFormat[] = [];
 
   selectedFiles: File[] = [];

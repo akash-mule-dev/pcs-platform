@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { ThreeViewerComponent } from '../../shared/components/three-viewer/three-viewer.component';
+import { fileAccept } from '../../shared/upload-accept';
 
 /**
  * Engineering › Model Viewer.
@@ -41,7 +42,7 @@ import { ThreeViewerComponent } from '../../shared/components/three-viewer/three
           <input
             #fileInput
             type="file"
-            accept=".glb,.gltf,model/gltf-binary"
+            [attr.accept]="acceptModel"
             hidden
             (change)="onPick($event)"
           />
@@ -113,6 +114,8 @@ import { ThreeViewerComponent } from '../../shared/components/three-viewer/three
   `]
 })
 export class GlbViewerComponent implements OnDestroy {
+  /** Desktop accept filter; dropped on iOS so WebKit doesn't grey out .glb/.gltf files. */
+  readonly acceptModel = fileAccept('.glb,.gltf,model/gltf-binary');
   @ViewChild(ThreeViewerComponent) private viewer?: ThreeViewerComponent;
 
   modelUrl: string | null = null;

@@ -23,6 +23,7 @@ import { PermissionsService } from '../core/services/permissions.service';
 import { QualityService, QualityDataEntry, QualitySummary } from './quality.service';
 import { ModelMediaService } from '../core/services/model-media.service';
 import { environment } from '../../environments/environment';
+import { fileAccept } from '../shared/upload-accept';
 
 interface Model3D {
   id: string;
@@ -66,9 +67,9 @@ interface Model3D {
               {{ backfilling ? 'Generating…' : 'Generate thumbnails' }}
             </button>
           }
-          <input #fileInput type="file" hidden accept=".glb,.gltf,.obj,.fbx,.stl"
+          <input #fileInput type="file" hidden [attr.accept]="acceptMesh"
                  (change)="onFileSelected($event)">
-          <input #cadFileInput type="file" hidden accept=".step,.stp,.iges,.igs"
+          <input #cadFileInput type="file" hidden [attr.accept]="acceptCad"
                  (change)="onCadFileSelected($event)">
         </div>
       </div>
@@ -707,6 +708,9 @@ interface Model3D {
   `]
 })
 export class QualityAnalysisComponent implements OnInit, OnDestroy {
+  /** Desktop accept filters; dropped on iOS so WebKit doesn't grey out mesh/CAD files. */
+  readonly acceptMesh = fileAccept('.glb,.gltf,.obj,.fbx,.stl');
+  readonly acceptCad = fileAccept('.step,.stp,.iges,.igs');
   @ViewChild('viewer') viewer!: ThreeViewerComponent;
 
   models: Model3D[] = [];

@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MODEL_UPLOAD_ACCEPT, fileAccept } from '../shared/upload-accept';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -53,7 +54,7 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
           <mat-icon>account_tree</mat-icon>
           <h3>No assemblies yet</h3>
           <p>Upload an IFC / STEP model or a ZIP package (Tekla, SDS2, Advance Steel exports: model + PDF drawings). Structure, 3D and drawings are extracted automatically.</p>
-          <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
+          <input #fileInput type="file" hidden [attr.accept]="acceptModel" (change)="onFile($event)">
           <button class="cta" (click)="fileInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>Import package / model</button>
         }
       </div>
@@ -346,6 +347,8 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
   `],
 })
 export class ProjectAssembliesComponent implements OnInit {
+  /** Desktop accept filter; dropped on iOS so WebKit doesn't grey out .ifc/.step files. */
+  readonly acceptModel = fileAccept(MODEL_UPLOAD_ACCEPT);
   store = inject(ProjectWorkspaceStore);
   private svc = inject(ProjectsService);
   private route = inject(ActivatedRoute);

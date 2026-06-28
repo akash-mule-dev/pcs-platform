@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { ConversionJob } from './conversion-job.entity.js';
 import { ImportFile, ImportFileStatus } from '../projects/import-file.entity.js';
 import { ImportFileEvent } from '../projects/import-file-event.entity.js';
@@ -79,10 +79,21 @@ export class ImportConversionLinkService {
     imp.durationMs = imp.startedAt ? imp.finishedAt.getTime() - new Date(imp.startedAt).getTime() : null;
     await this.importRepo.save(imp);
     // Stamp the GLB onto the tree so the 3D viewer lights up without a reload-poll.
-    await this.nodeRepo.update(
+    const stamped = await this.nodeRepo.update(
       { organizationId: imp.organizationId as string, projectId: imp.projectId, importFileId: imp.id },
       { modelId: job.modelId! },
     );
+    // Geometry-only imports (STEP/IGES/mesh) extract no structure, so no node
+    // carries this import's id. The produced GLB *is* the whole design, so
+    // attach it to the project's root node — that's what the workspace viewer
+    // reads (it renders the first node that has a modelId). Without this the
+    // model converts fine but never appears ("assembly not visible").
+    if (!stamped.affected) {
+      await this.nodeRepo.update(
+        { organizationId: imp.organizationId as string, projectId: imp.projectId, parentId: IsNull() },
+        { modelId: job.modelId! },
+      );
+    }
     await this.appendEvent(imp, '3D model linked — import complete', {
       conversionJobId: job.id,
       modelId: job.modelId,

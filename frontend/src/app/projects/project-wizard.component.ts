@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { MODEL_UPLOAD_ACCEPT, fileAccept } from '../shared/upload-accept';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpEventType } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -55,7 +56,7 @@ import { ProjectsService, Project, CreateProject } from '../core/services/projec
         <mat-step>
           <ng-template matStepLabel>Upload model</ng-template>
           <div class="upload">
-            <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
+            <input #fileInput type="file" hidden [attr.accept]="acceptModel" (change)="onFile($event)">
             @if (!selectedFile) {
               <button mat-stroked-button color="primary" (click)="fileInput.click()">
                 <mat-icon>upload_file</mat-icon>&nbsp;Choose model or package
@@ -113,6 +114,8 @@ export class ProjectWizardComponent {
     description: [''],
   });
 
+  /** Desktop accept filter; dropped on iOS so WebKit doesn't grey out .ifc/.step files. */
+  readonly acceptModel = fileAccept(MODEL_UPLOAD_ACCEPT);
   selectedFile: File | null = null;
   importing = false;
   uploadProgress = 0;
