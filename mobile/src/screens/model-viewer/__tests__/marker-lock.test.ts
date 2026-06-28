@@ -321,4 +321,30 @@ describe('solveGlobalMarkerAlignment (SpacePins / WLT analog)', () => {
     const sol = solveGlobalMarkerAlignment(corr)!;
     expect(sol.wellConstrained).toBe(false);
   });
+
+  it('leans toward the high-weight (nearby) markers — piecewise/local accuracy', () => {
+    // Three "near" markers drift by +0.1 in x; one "far" marker drifts by -0.2 in x.
+    // A single rigid fit must compromise; weighting the near markers heavily pulls the
+    // solved translation toward their local drift (the World-Locking "fragment" stand-in).
+    const near = [bound[0], bound[1], bound[2]];
+    const far = bound[3];
+    const Dnear = rotYTrans(0, [0.1, 0, 0]);
+    const Dfar = rotYTrans(0, [-0.2, 0, 0]);
+    const mk = (b: MarkerCorrespondence['bound'], D: typeof Dnear, weight: number): MarkerCorrespondence => ({
+      bound: b,
+      live: multiply4(D, b),
+      weight,
+    });
+
+    const weighted = solveGlobalMarkerAlignment([
+      mk(near[0], Dnear, 1), mk(near[1], Dnear, 1), mk(near[2], Dnear, 1), mk(far, Dfar, 0.05),
+    ])!;
+    const equal = solveGlobalMarkerAlignment([
+      mk(near[0], Dnear, 1), mk(near[1], Dnear, 1), mk(near[2], Dnear, 1), mk(far, Dfar, 1),
+    ])!;
+
+    // Weighted solve sits much closer to the near drift (+0.1) than the equal-weight one.
+    expect(weighted.world[12]).toBeGreaterThan(equal.world[12]);
+    expect(weighted.world[12]).toBeCloseTo(0.1, 1);
+  });
 });

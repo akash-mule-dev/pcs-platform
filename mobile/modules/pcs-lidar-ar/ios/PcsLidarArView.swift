@@ -193,12 +193,13 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   private var markerTracked: [String: Bool] = [:]            // name → tracked THIS frame?
   private var markerSettleFrames: [String: Int] = [:]        // name → consecutive frames tracked (re-acquire settle gate)
   private var markerBindings: [String: simd_float4x4] = [:]  // name → offset (markerWorld⁻¹ · correctionWorld) at bind
-  // Global-solve (SpacePins / World-Locking-Tools analog) references captured at bind:
-  // each bound marker's WORLD pose at bind, plus the single model correction-world pose
-  // they were all bound against. With ≥3 of these visible, driveMarkerLock fits ONE
-  // world transform to all of them at once (marker-lock.ts solveGlobalMarkerAlignment)
-  // instead of driving off the nearest — cancelling drift along the whole piece.
-  private var markerWorldAtBind: [String: simd_float4x4] = [:]
+  // Global-solve (SpacePins / World-Locking-Tools analog) reference: the single model
+  // correction-world pose that every marker was bound against. With ≥3 markers visible,
+  // driveMarkerLock fits ONE world transform to all of them at once (marker-lock.ts
+  // solveGlobalMarkerAlignment) instead of driving off the nearest — cancelling drift
+  // along the whole piece. Each marker's bind-time world pose is DERIVED on the fly as
+  // `boundCorrectionWorld · offset⁻¹` (exact by construction), so it is not stored
+  // separately and survives a world-origin re-center once this reference is re-derived.
   private var boundCorrectionWorld: simd_float4x4?
   private var activeMarkerName: String?                      // the marker currently driving the pose
   private var lastMarkerEmit = Date(timeIntervalSince1970: 0)
@@ -217,6 +218,9 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // catch up fast for a few frames so re-lock feels instant, then resume gentle easing.
   private var wasHolding = false
   private var catchUpFrames = 0
+  // Distance (m) of the model anchor from the AR world origin — float precision degrades
+  // far out, so this drives the Layer-4 far-from-origin warning / re-center offer.
+  private var lastOriginDistanceM: Float = 0
   // How many markers the runtime generator makes (== the printable sheet). A curated
   // bundled "PcsMarkers" AR Resources group, if present, overrides this for tracking
   // quality (see buildReferenceImages).
@@ -1458,7 +1462,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     // A full reset wipes the world map + every ARImageAnchor → drop all marker state.
     for e in markerEntities.values { e.removeFromParent() }
     markerEntities.removeAll(); markerTracked.removeAll(); markerSettleFrames.removeAll()
-    markerBindings.removeAll(); markerWorldAtBind.removeAll(); boundCorrectionWorld = nil; activeMarkerName = nil
+    markerBindings.removeAll(); boundCorrectionWorld = nil; activeMarkerName = nil
     if modelEntity != nil {
       teardownModelAnchor()
       modelPivot = nil
@@ -1614,6 +1618,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       "lockEnabled": markerLockEnabled,
       "acceptedCount": accepted,
       "holding": holding,
+      "originDistanceM": lastOriginDistanceM,  // Layer 4 — float-precision far-origin guard
     ])
   }
 
@@ -1626,10 +1631,15 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     guard markerLockEnabled, modelPivot != nil,
           let anchor = modelAnchor, let correction = modelCorrection else { return }
 
+    // Establish the global-solve reference frame if it's missing (after a binding restore
+    // or a world-origin re-center) from a CONSENSUS of the live markers, so the global
+    // solve re-engages without forcing a re-bind.
+    establishReferenceIfNeeded()
+
     let cam = arView.cameraTransform.translation
     let anchorInv = anchor.transformMatrix(relativeTo: nil).inverse
     var items: [(simd_float4x4, Float)] = []                 // per-marker candidate corrections (1–2-marker fallback)
-    var corr: [(bound: simd_float4x4, live: simd_float4x4)] = []  // global-solve correspondences
+    var corr: [(bound: simd_float4x4, live: simd_float4x4, w: Float)] = []  // global-solve correspondences
     var bestW: Float = 0
     var bestName: String?
     var strongVisible = false
@@ -1645,7 +1655,12 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       if w <= 0 { continue }                          // Item 2 — gate out far / untracked
       if w >= markerStrongWeight { strongVisible = true }
       items.append((anchorInv * markerWorld * offset, w))  // candidate correction (per-marker)
-      if let mb = markerWorldAtBind[name] { corr.append((mb, markerWorld)) }
+      // Global-solve correspondence: this marker's bind-time world pose (derived exactly
+      // as boundCorrectionWorld · offset⁻¹) ↔ its live world pose, weighted by quality so
+      // the fit leans toward the markers near the inspector (the piecewise/local analog).
+      if let bcw = boundCorrectionWorld {
+        corr.append((bcw * offset.inverse, markerWorld, w))
+      }
       if w > bestW { bestW = w; bestName = name }
     }
 
@@ -1668,6 +1683,10 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     } else {
       target = fuseCorrections(items)
     }
+
+    // Far-from-origin precision telemetry (Layer 4): how far the model anchor sits from
+    // the AR world origin — surfaced so the UI can offer a world-origin re-center.
+    lastOriginDistanceM = simd_length(simd_make_float3(anchor.transformMatrix(relativeTo: nil).columns.3))
 
     // No acceptable marker in view: HOLD (don't drift-drive, don't reset).
     guard let tgt = target else { activeMarkerName = nil; wasHolding = true; return }
@@ -1692,34 +1711,79 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     correction.transform = blendedTransform(from: cur, to: tgt, t: t)
   }
 
+  // Establish the global-solve reference (boundCorrectionWorld) from the CURRENT live
+  // markers when it's missing — after restoring persisted bindings or a world-origin
+  // re-center — so the global solve re-engages without a re-bind. Uses only a CONSENSUS
+  // moment: with ≥2 markers visible their independent correctionWorld estimates must
+  // agree (≤5 cm), so a drifted instant is never baked into the reference.
+  private func establishReferenceIfNeeded() {
+    guard boundCorrectionWorld == nil, modelAnchor != nil else { return }
+    let cam = arView.cameraTransform.translation
+    var estimates: [(simd_float4x4, Float)] = []
+    for (name, e) in markerEntities {
+      guard (markerTracked[name] ?? false), (markerSettleFrames[name] ?? 0) >= markerSettleMin,
+            let offset = markerBindings[name] else { continue }
+      let mw = e.transformMatrix(relativeTo: nil)
+      let d = simd_distance(simd_make_float3(mw.columns.3), cam)
+      let w = markerQualityWeight(distance: d)
+      if w <= 0 { continue }
+      estimates.append((mw * offset, w))   // this marker's drift-free correctionWorld estimate
+    }
+    guard !estimates.isEmpty, let fused = fuseCorrections(estimates) else { return }
+    let ft = simd_make_float3(fused.columns.3)
+    for (m, _) in estimates {
+      if simd_distance(simd_make_float3(m.columns.3), ft) > 0.05 { return }  // disagreement → wait
+    }
+    boundCorrectionWorld = fused
+  }
+
+  // Layer 4 — re-base the AR world origin at the model so coordinates stay small (float
+  // precision) on a large assembly far from the session start. ARKit re-expresses every
+  // existing anchor automatically; our marker offsets are marker-relative (frame-
+  // independent) so they survive, but the world-frame reference is now stale → drop it
+  // and let establishReferenceIfNeeded() re-derive it from the next consensus sighting.
+  func recenterWorldOrigin() {
+    guard let anchor = modelAnchor else { return }
+    arView.session.setWorldOrigin(relativeTransform: anchor.transformMatrix(relativeTo: nil))
+    boundCorrectionWorld = nil
+    lastOriginDistanceM = 0
+    onTracking(["state": lastTrackingState, "recentered": true])
+  }
+
   // Global multi-marker world alignment (SpacePins / World-Locking-Tools analog) —
   // native mirror of marker-lock.ts solveGlobalMarkerAlignment. Solves ONE rigid world
   // transform W with `W · markerBound ≈ markerLive` over the markers' CENTRES (a Horn
   // closed-form fit; orientation of any single marker is ignored — the rotation comes
   // from the spread). Returns nil for <3 markers (caller falls back to per-marker fuse).
   // Verified by jest on the JS twin; this Swift port needs an on-device build check.
-  private func solveGlobalAlignmentNative(_ corr: [(bound: simd_float4x4, live: simd_float4x4)]) -> simd_float4x4? {
+  private func solveGlobalAlignmentNative(_ corr: [(bound: simd_float4x4, live: simd_float4x4, w: Float)]) -> simd_float4x4? {
     let n = corr.count
     guard n >= 3 else { return nil }
     var boundPts: [SIMD3<Float>] = []
     var livePts: [SIMD3<Float>] = []
-    boundPts.reserveCapacity(n); livePts.reserveCapacity(n)
+    var ws: [Float] = []
+    boundPts.reserveCapacity(n); livePts.reserveCapacity(n); ws.reserveCapacity(n)
     for c in corr {
-      boundPts.append(SIMD3<Float>(c.bound.columns.3.x, c.bound.columns.3.y, c.bound.columns.3.z))
-      livePts.append(SIMD3<Float>(c.live.columns.3.x, c.live.columns.3.y, c.live.columns.3.z))
+      boundPts.append(simd_make_float3(c.bound.columns.3))
+      livePts.append(simd_make_float3(c.live.columns.3))
+      ws.append(max(0, c.w))
     }
-    // Centroids.
+    var wsum: Float = 0
+    for w in ws { wsum += w }
+    if wsum < 1e-6 { return nil }
+    // WEIGHTED centroids — the fit leans toward the high-weight (nearer) markers, the
+    // rigid analog of World-Locking "fragments" (locally accurate where the inspector is).
     var bc = SIMD3<Float>(repeating: 0), lc = SIMD3<Float>(repeating: 0)
-    for i in 0..<n { bc += boundPts[i]; lc += livePts[i] }
-    bc /= Float(n); lc /= Float(n)
-    // Cross-covariance H[a][b] = Σ boundC[a] · liveC[b] (degenerate guard on spread).
+    for i in 0..<n { bc += ws[i] * boundPts[i]; lc += ws[i] * livePts[i] }
+    bc /= wsum; lc /= wsum
+    // Weighted cross-covariance H[a][b] = Σ w · boundC[a] · liveC[b] (degenerate guard).
     var H = [[Float]](repeating: [0, 0, 0], count: 3)
     var spread: Float = 0
     for i in 0..<n {
       let bp = boundPts[i] - bc
       let lp = livePts[i] - lc
-      spread += simd_length_squared(bp)
-      for a in 0..<3 { for b in 0..<3 { H[a][b] += bp[a] * lp[b] } }
+      spread += ws[i] * simd_length_squared(bp)
+      for a in 0..<3 { for b in 0..<3 { H[a][b] += ws[i] * bp[a] * lp[b] } }
     }
     if spread < 1e-9 { return nil }  // coincident bound points → no rotation defined
     guard let R = hornRotationNative(H) else { return nil }
@@ -1863,7 +1927,6 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       // point of gating). Marginal markers are skipped, not silently bound.
       if w < markerBindMinWeight || !settled { visibleButPoor += 1; continue }
       markerBindings[name] = markerWorld.inverse * correctionWorld  // marker-relative offset (persistable)
-      markerWorldAtBind[name] = markerWorld                         // bind-time world pose (global solve)
       bound += 1
     }
     if bound > 0 { boundCorrectionWorld = correctionWorld }
@@ -1873,7 +1936,6 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
   func clearMarkerBindings() {
     markerBindings.removeAll()
-    markerWorldAtBind.removeAll()
     boundCorrectionWorld = nil
     activeMarkerName = nil
     onLockStatus(["bound": 0, "totalBindings": 0, "reason": "cleared"])

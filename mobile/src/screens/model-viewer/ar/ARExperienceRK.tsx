@@ -1006,6 +1006,18 @@ export default function ARExperienceRK({
         </View>
       )}
 
+      {/* Far-from-origin precision guard — tapping re-bases the AR world origin at the
+          part so coordinates stay small/precise on a large assembly (marker lock survives). */}
+      {placed && stabilizer.farFromOrigin && (
+        <TouchableOpacity
+          style={styles.farOriginBanner}
+          onPress={() => arRef.current?.recenterWorldOrigin?.()}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.reaimBannerText}>Far from start point — tap to re-center for precision</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Quick toggles — top-right, off-centre: Occlusion, then See-through.
           (The Edges quick toggle was removed — edges live in the Display tab.) */}
       <View style={styles.occlusionWrap} pointerEvents="box-none">
@@ -1447,6 +1459,18 @@ const styles = StyleSheet.create({
     zIndex: 32,
   },
   reaimBannerText: { color: '#1f2937', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  // Far-from-origin precision warning — sits below the re-aim banner, tappable to re-center.
+  farOriginBanner: {
+    position: 'absolute',
+    top: '18%',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(234, 179, 8, 0.95)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    maxWidth: '80%',
+    zIndex: 32,
+  },
   reticleRing: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.05)' },
   reticleRingReady: { borderColor: 'rgba(34, 197, 94, 0.95)', backgroundColor: 'rgba(34, 197, 94, 0.12)' },
   reticleDot: { position: 'absolute', width: 6, height: 6, borderRadius: 3, backgroundColor: '#0ea5e9' },

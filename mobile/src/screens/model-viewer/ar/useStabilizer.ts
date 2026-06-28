@@ -18,6 +18,7 @@ import {
   LockState,
   shouldTriggerRealign,
   DEFAULT_FAILURE_PARAMS,
+  isFarFromOrigin,
 } from './drift-monitor';
 
 interface NativeMarker {
@@ -34,6 +35,8 @@ interface MarkerUpdate {
   lockEnabled: boolean;
   acceptedCount?: number;
   holding?: boolean;
+  /** Distance (m) of the model anchor from the AR world origin (Layer-4 precision guard). */
+  originDistanceM?: number;
 }
 interface AutoAlignResult {
   ok: boolean;
@@ -65,6 +68,8 @@ export interface StabilizerState {
   holding: boolean;
   /** Holding/uncorrected past the failure threshold → prompt the inspector to re-aim. */
   needsReaim: boolean;
+  /** Model anchored far from the AR world origin → float precision degrades; offer re-center. */
+  farFromOrigin: boolean;
   lastResidualMm: number | null;
   onMarkerUpdate: (e: { nativeEvent: MarkerUpdate }) => void;
   onLockStatus: (e: { nativeEvent: { totalBindings?: number; reason?: string } }) => void;
@@ -98,6 +103,7 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
   const [markerVisible, setMarkerVisible] = useState(false);
   const [holding, setHolding] = useState(false);
   const [needsReaim, setNeedsReaim] = useState(false);
+  const [farFromOrigin, setFarFromOrigin] = useState(false);
   const [lastResidualMm, setLastResidualMm] = useState<number | null>(null);
 
   const onMarkerUpdate = useCallback(
@@ -118,6 +124,9 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
       setTrackedCount(visibleTracked);
       setMarkerVisible(visibleTracked > 0);
       setHolding(!!e.nativeEvent.holding);
+      if (typeof e.nativeEvent.originDistanceM === 'number') {
+        setFarFromOrigin(isFarFromOrigin(e.nativeEvent.originDistanceM));
+      }
 
       // Derive the active marker with the unit-tested policy (mirrors the native pick).
       const sel = selectActiveMarker(obs, boundNamesRef.current, {
@@ -223,6 +232,7 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
       setLastResidualMm(null);
       setHolding(false);
       setNeedsReaim(false);
+      setFarFromOrigin(false);
       driftingSinceRef.current = null;
     }
   }, [placed]);
@@ -235,6 +245,7 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
     markerVisible,
     holding,
     needsReaim,
+    farFromOrigin,
     lastResidualMm,
     onMarkerUpdate,
     onLockStatus,

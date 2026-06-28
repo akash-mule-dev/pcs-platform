@@ -157,6 +157,13 @@ function hornRotation(modelC: V3[], realC: V3[]): Mat3 {
   for (let i = 0; i < modelC.length; i++) {
     for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) H[a][b] += modelC[i][a] * realC[i][b];
   }
+  return hornRotationFromCovariance(H);
+}
+
+// Horn's optimal rotation from a 3×3 cross-covariance matrix H (the part reusable by a
+// weighted fit, which builds a weighted H). Builds the symmetric 4×4 N and takes the
+// eigenvector of its largest eigenvalue (Jacobi).
+function hornRotationFromCovariance(H: number[][]): Mat3 {
   const Sxx = H[0][0], Sxy = H[0][1], Sxz = H[0][2];
   const Syx = H[1][0], Syy = H[1][1], Syz = H[1][2];
   const Szx = H[2][0], Szy = H[2][1], Szz = H[2][2];
@@ -279,5 +286,58 @@ export function solveRigid(pairs: PointPair[]): RigidFit {
     scaleSanity,
     inlierCount: chosen.length,
     ok,
+  };
+}
+
+/**
+ * WEIGHTED best-fit rigid transform: like solveRigid but each pair carries a confidence
+ * weight, so the fit leans toward the high-weight (e.g. nearer / squarer) correspondences
+ * while still using the full spread for rotation. This is the rigid analog of a piecewise
+ * / non-rigid world warp — weighting by proximity to where the inspector is standing makes
+ * the single transform locally accurate there, the practical stand-in for World-Locking
+ * "fragments". Weighted centroids + weighted cross-covariance, Horn rotation. No RANSAC
+ * (the soft weights down-rank a bad pair instead of hard-rejecting it). Falls back to the
+ * unweighted solveRigid for <3 pairs or all-zero weights.
+ */
+export function solveWeightedRigid(pairs: PointPair[], weights: number[]): RigidFit {
+  const n = pairs.length;
+  if (n < 3) return solveRigid(pairs);
+  const w = pairs.map((_, i) => Math.max(0, weights[i] ?? 0));
+  let wsum = 0;
+  for (let i = 0; i < n; i++) wsum += w[i];
+  if (wsum < 1e-9) return solveRigid(pairs); // no usable weights → unweighted
+
+  // Weighted centroids.
+  const mc: V3 = [0, 0, 0], rc: V3 = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    mc[0] += w[i] * pairs[i].model[0]; mc[1] += w[i] * pairs[i].model[1]; mc[2] += w[i] * pairs[i].model[2];
+    rc[0] += w[i] * pairs[i].real[0]; rc[1] += w[i] * pairs[i].real[1]; rc[2] += w[i] * pairs[i].real[2];
+  }
+  mc[0] /= wsum; mc[1] /= wsum; mc[2] /= wsum;
+  rc[0] /= wsum; rc[1] /= wsum; rc[2] /= wsum;
+
+  // Weighted cross-covariance + weighted variances (for scale sanity / degeneracy).
+  const H = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  let varM = 0, varR = 0;
+  for (let i = 0; i < n; i++) {
+    const m = sub(pairs[i].model, mc);
+    const r = sub(pairs[i].real, rc);
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) H[a][b] += w[i] * m[a] * r[b];
+    varM += w[i] * dot(m, m);
+    varR += w[i] * dot(r, r);
+  }
+  if (varM < 1e-9) {
+    return { matrix: toMatrix(IDENTITY3, sub(rc, mc)), rmsMm: 0, maxErrMm: 0, scaleSanity: 1, inlierCount: n, ok: false };
+  }
+  const R = hornRotationFromCovariance(H);
+  const t = sub(rc, applyR(R, mc));
+  const { rms, max } = residualsM(pairs, R, t);
+  return {
+    matrix: toMatrix(R, t),
+    rmsMm: rms * 1000,
+    maxErrMm: max * 1000,
+    scaleSanity: Math.sqrt(varR / varM),
+    inlierCount: n,
+    ok: true,
   };
 }

@@ -151,6 +151,12 @@ public class PcsLidarArModule: Module {
       AsyncFunction("restoreMarkerBindings") { (view: PcsLidarArView, map: [String: [Double]]) in
         view.restoreMarkerBindings(map)
       }
+      // Layer 4 — re-base the AR world origin at the model so a large assembly far from the
+      // session start keeps small, precise coordinates. Offered when the far-origin warning
+      // fires; marker bindings (marker-relative) survive, the global ref re-derives.
+      AsyncFunction("recenterWorldOrigin") { (view: PcsLidarArView) in
+        view.recenterWorldOrigin()
+      }
       // Continuous ICP world-lock: ease the model onto the LiDAR mesh (JS schedules it
       // via drift-monitor; native applies a small capped, revert-if-worse correction).
       AsyncFunction("refineLock") { (view: PcsLidarArView) in

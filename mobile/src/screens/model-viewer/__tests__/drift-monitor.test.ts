@@ -5,6 +5,8 @@ import {
   lockStateLabel,
   shouldTriggerRealign,
   DEFAULT_FAILURE_PARAMS,
+  isFarFromOrigin,
+  DEFAULT_FAR_ORIGIN_M,
 } from '../ar/drift-monitor';
 
 const base: DriftSample = {
@@ -132,5 +134,19 @@ describe('shouldTriggerRealign (alignment failure watcher)', () => {
   it('fires once uncorrected drift exceeds the threshold', () => {
     const now = t0 + DEFAULT_FAILURE_PARAMS.failureThresholdMs + 1;
     expect(shouldTriggerRealign({ now, hasActiveMarker: false, driftingSince: t0 })).toBe(true);
+  });
+});
+
+describe('isFarFromOrigin (float-precision guard)', () => {
+  it('is false near the world origin', () => {
+    expect(isFarFromOrigin(5)).toBe(false);
+    expect(isFarFromOrigin(DEFAULT_FAR_ORIGIN_M)).toBe(false);
+  });
+  it('is true well beyond the threshold', () => {
+    expect(isFarFromOrigin(DEFAULT_FAR_ORIGIN_M + 1)).toBe(true);
+  });
+  it('honours a custom threshold and ignores non-finite input', () => {
+    expect(isFarFromOrigin(15, 10)).toBe(true);
+    expect(isFarFromOrigin(NaN)).toBe(false);
   });
 });

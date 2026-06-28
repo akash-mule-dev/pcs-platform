@@ -142,6 +142,17 @@ export function shouldTriggerRealign(
   return s.now - s.driftingSince >= p.failureThresholdMs;
 }
 
+// ── Far-from-origin precision guard (FabStation's "too far from Global 0,0,0" / WLT
+// re-centring analog) ── Single-precision float degrades far from the AR world origin
+// (the session start point), so a model anchored tens of metres away jitters and tracks
+// less accurately. Past this distance the UI warns and offers to re-center the world
+// origin near the part (ARKit setWorldOrigin) so coordinates stay small and precise.
+export const DEFAULT_FAR_ORIGIN_M = 25;
+
+export function isFarFromOrigin(distanceM: number, thresholdM = DEFAULT_FAR_ORIGIN_M): boolean {
+  return Number.isFinite(distanceM) && distanceM > thresholdM;
+}
+
 /** Human-readable, QA-friendly label for a lock state (HUD chip text). */
 export function lockStateLabel(state: LockState): string {
   switch (state) {

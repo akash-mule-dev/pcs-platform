@@ -24,7 +24,7 @@ import {
   quatFromMat4,
   mat4FromQuatTranslation,
 } from './mat4';
-import { solveRigid, PointPair } from './rigid-registration';
+import { solveRigid, solveWeightedRigid, PointPair } from './rigid-registration';
 
 export interface MarkerObservation {
   /** Stable marker id == the ARReferenceImage name (the printed marker's id). */
@@ -270,7 +270,12 @@ export function solveGlobalMarkerAlignment(
     model: translation4(c.bound),
     real: translation4(c.live),
   }));
-  const fit = solveRigid(pairs);
+  // Weighted fit (Layer 3, piecewise analog): the per-marker weights — distance falloff
+  // from the camera — let the single rigid transform lean toward the markers near where
+  // the inspector is standing, so it's locally accurate there while the full spread still
+  // pins rotation. The rigid stand-in for World-Locking "fragments".
+  const weights = used.map((c) => c.weight);
+  const fit = solveWeightedRigid(pairs, weights);
   return {
     world: fit.matrix,
     used: fit.inlierCount,
