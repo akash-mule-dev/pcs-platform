@@ -52,6 +52,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // Image-marker stabilization telemetry (FabStation-style anti-drift).
   let onMarkerUpdate = EventDispatcher()  // the live marker set + native's active pick
   let onLockStatus = EventDispatcher()    // bind/clear/lock-toggle acknowledgements
+  let onPoseSample = EventDispatcher()    // model world pose + nearest marker (stability benchmark)
 
   private let arView = ARView(frame: .zero)
   private let config = ARWorldTrackingConfiguration()
@@ -190,6 +191,15 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   private var markerBindings: [String: simd_float4x4] = [:]  // name → offset (markerWorld⁻¹ · correctionWorld) at bind
   private var activeMarkerName: String?                      // the marker currently driving the pose
   private var lastMarkerEmit = Date(timeIntervalSince1970: 0)
+  // In-view highlight: a colour-keyed frame drawn ON each detected physical marker so
+  // the inspector SEES which markers the engine recognises (and their state). Mirrors
+  // the marker-format.ts state->colour mapping; ids are listed in the JS HUD overlay.
+  private var markerHighlightEnabled = true
+  private var markerHighlights: [String: Entity] = [:]    // name -> highlight frame (child of the marker anchor)
+  // Pose sampling: stream the model's world pose + nearest marker to JS ONLY during a
+  // stability benchmark recording (useStabilityBenchmark), so there's no steady cost.
+  private var poseSamplingEnabled = false
+  private var lastPoseSampleEmit = Date(timeIntervalSince1970: 0)
   // Item 1+2 — fusion / quality-gating tuning.
   private let markerMaxRangeM: Float = 3.0      // beyond this a marker is dropped (weight 0)
   private let markerNearFavorM: Float = 0.5     // distance falloff scale (closer = higher weight)
@@ -198,7 +208,10 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // How many markers the runtime generator makes (== the printable sheet). A curated
   // bundled "PcsMarkers" AR Resources group, if present, overrides this for tracking
   // quality (see buildReferenceImages).
-  private static let generatedMarkerCount = 12
+  // 24 distinct printed markers (was 12) so a large piece can be blanketed and one is
+  // always in view -- FabStation's MarkerPackA/B ship ~60 `steelNN` targets; this is the
+  // runtime-generated analog. A curated bundled "PcsMarkers" group still overrides it.
+  private static let generatedMarkerCount = 24
 
   // ── Measurement ──
   private var measureMode = "off"             // off | model | real | deviation
@@ -1474,7 +1487,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     }
     guard !referenceImages.isEmpty else { return }
     config.detectionImages = referenceImages
-    config.maximumNumberOfTrackedImages = 4  // track several at once → seamless hand-off
+    config.maximumNumberOfTrackedImages = 6  // track several at once → seamless hand-off
     detectionConfigured = true
   }
 
@@ -1548,6 +1561,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
         let e = AnchorEntity(anchor: img)
         arView.scene.addAnchor(e)
         markerEntities[name] = e
+        ensureMarkerHighlight(name: name, on: e, physicalWidth: Float(img.referenceImage.physicalSize.width))
       }
       markerTracked[name] = img.isTracked
       changed = true
@@ -1569,6 +1583,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       let bound = markerBindings[name] != nil
       let tracked = markerTracked[name] ?? false
       if bound, tracked, markerQualityWeight(distance: d) > 0 { accepted += 1 }
+      updateMarkerHighlight(name: name, tracked: tracked, bound: bound, active: name == activeMarkerName)
       list.append([
         "name": name,
         "transform": matrixToArray(w),
@@ -1723,6 +1738,89 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     markerBindings.removeAll()
     activeMarkerName = nil
     onLockStatus(["bound": 0, "totalBindings": 0, "reason": "cleared"])
+  }
+
+  // ── In-view marker highlight (identify recognised markers on the steel) ──
+  // A thin colour-keyed square frame laid in the marker's plane, parented to the
+  // marker's AnchorEntity so it rides the physical marker. Colour encodes state and
+  // mirrors marker-format.ts: green = driving, blue = bound, amber = detected, slate =
+  // lost. Ids are shown in the JS HUD (MarkerOverlay). Toggled by the `markerHighlight`
+  // prop. NOTE: native (RealityKit/ARKit) — verified on-device, not in CI.
+  func setMarkerHighlight(_ v: Bool) {
+    markerHighlightEnabled = v
+    for (_, h) in markerHighlights { h.isEnabled = v }
+  }
+
+  private func markerStateColor(tracked: Bool, bound: Bool, active: Bool) -> UIColor {
+    if !tracked { return UIColor(red: 0.39, green: 0.45, blue: 0.55, alpha: 1) }   // slate — lost
+    if active { return UIColor(red: 0.06, green: 0.73, blue: 0.51, alpha: 1) }     // green — driving
+    if bound { return UIColor(red: 0.05, green: 0.65, blue: 0.91, alpha: 1) }      // blue — bound
+    return UIColor(red: 0.96, green: 0.62, blue: 0.04, alpha: 1)                   // amber — detected
+  }
+
+  // Build the highlight once per marker: four thin border bars forming a square frame in
+  // the marker's local x-z plane (the ARImageAnchor surface), sized to the printed
+  // marker. Stored so updateMarkerHighlight can recolour it per state.
+  private func ensureMarkerHighlight(name: String, on anchor: AnchorEntity, physicalWidth: Float) {
+    guard markerHighlights[name] == nil else { return }
+    let side = max(0.03, physicalWidth)
+    let t = side * 0.06               // bar thickness
+    let half = side / 2
+    let frame = Entity()
+    let color = markerStateColor(tracked: false, bound: false, active: false)
+    func bar(_ w: Float, _ d: Float, _ x: Float, _ z: Float) -> ModelEntity {
+      let m = ModelEntity(mesh: .generateBox(size: SIMD3<Float>(w, 0.002, d)), materials: [UnlitMaterial(color: color)])
+      m.position = SIMD3<Float>(x, 0.001, z)
+      return m
+    }
+    frame.addChild(bar(side + t, t, 0, -half))   // top
+    frame.addChild(bar(side + t, t, 0, half))    // bottom
+    frame.addChild(bar(t, side + t, -half, 0))   // left
+    frame.addChild(bar(t, side + t, half, 0))    // right
+    anchor.addChild(frame)
+    frame.isEnabled = markerHighlightEnabled
+    markerHighlights[name] = frame
+  }
+
+  // Recolour a marker's highlight to its current state (called from emitMarkerUpdates).
+  private func updateMarkerHighlight(name: String, tracked: Bool, bound: Bool, active: Bool) {
+    guard let frame = markerHighlights[name] else { return }
+    frame.isEnabled = markerHighlightEnabled
+    guard markerHighlightEnabled else { return }
+    let mat = UnlitMaterial(color: markerStateColor(tracked: tracked, bound: bound, active: active))
+    for child in frame.children {
+      if let m = child as? ModelEntity { m.model?.materials = [mat] }
+    }
+  }
+
+  // ── Stability benchmark pose sampling ──
+  func setPoseSampling(_ v: Bool) { poseSamplingEnabled = v }
+
+  // Emit the model's world pose + the nearest TRACKED marker's world pose (the drift-
+  // free reference) so JS scores the model's wander in the marker's frame. Throttled;
+  // only while a benchmark recording is active (poseSampling prop).
+  private func emitPoseSample() {
+    guard poseSamplingEnabled, let pivot = modelPivot else { return }
+    let now = Date()
+    guard now.timeIntervalSince(lastPoseSampleEmit) > 0.08 else { return }   // ~12 Hz
+    lastPoseSampleEmit = now
+    let cam = arView.cameraTransform.translation
+    var payload: [String: Any] = [
+      "t": now.timeIntervalSince1970 * 1000.0,
+      "model": matrixToArray(pivot.transformMatrix(relativeTo: nil)),
+      "markerActive": markerLockEnabled && activeMarkerName != nil,
+      "tracking": lastTrackingState,
+    ]
+    var bestD = Float.greatestFiniteMagnitude
+    var bestM: simd_float4x4?
+    for (mname, e) in markerEntities where (markerTracked[mname] ?? false) {
+      let w = e.transformMatrix(relativeTo: nil)
+      let p = SIMD3<Float>(w.columns.3.x, w.columns.3.y, w.columns.3.z)
+      let d = simd_distance(p, cam)
+      if d < bestD { bestD = d; bestM = w }
+    }
+    if let m = bestM { payload["refMarker"] = matrixToArray(m) }
+    onPoseSample(payload)
   }
 
   // A printable contact sheet (PNG, base64) of the generated markers, labelled with
@@ -1880,6 +1978,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     if pendingPlacement { tryPlaceModel() }
     else if awaitingManualPlace { emitScanState() }
     driveMarkerLock()  // keep the model glued to the active printed marker (drift-free)
+    emitPoseSample()   // stream model+marker pose to JS while a benchmark is recording
   }
 
   func session(_ session: ARSession, didAdd anchors: [ARAnchor]) { ingestImageAnchors(anchors) }
@@ -1893,6 +1992,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       markerEntities[name]?.removeFromParent()
       markerEntities[name] = nil
       markerTracked[name] = nil
+      markerHighlights[name] = nil   // highlight is a child of the anchor -> already detached
       // Keep the binding: the marker may reappear (occlusion / out-of-frame); a stale
       // binding is harmless because selectActiveMarkerNative requires it to be tracked.
       if activeMarkerName == name { activeMarkerName = nil }

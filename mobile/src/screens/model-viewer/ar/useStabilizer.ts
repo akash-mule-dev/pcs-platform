@@ -11,6 +11,7 @@ import {
   selectActiveMarker,
   MarkerObservation,
 } from './marker-lock';
+import { MarkerView } from './marker-format';
 import {
   evaluateDrift,
   DriftSample,
@@ -59,6 +60,8 @@ export interface StabilizerState {
   boundCount: number;
   /** At least one marker is visible right now (so Bind is meaningful). */
   markerVisible: boolean;
+  /** Per-marker view (id + distance + state) for the in-view HUD overlay. */
+  markers: MarkerView[];
   /** Lock armed + bound but nothing acceptable in view → frozen on last pose. */
   holding: boolean;
   lastResidualMm: number | null;
@@ -90,6 +93,7 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
   const [trackedCount, setTrackedCount] = useState(0);
   const [boundCount, setBoundCount] = useState(0);
   const [markerVisible, setMarkerVisible] = useState(false);
+  const [markers, setMarkers] = useState<MarkerView[]>([]);
   const [holding, setHolding] = useState(false);
   const [lastResidualMm, setLastResidualMm] = useState<number | null>(null);
 
@@ -120,6 +124,16 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
       });
       activeRef.current = sel.active;
       setActiveMarker(sel.active);
+      // Expose the per-marker view (id + distance + state) for the in-view HUD overlay.
+      setMarkers(
+        markers.map((m) => ({
+          name: m.name,
+          distanceM: m.distance,
+          tracked: m.tracked,
+          bound: m.bound,
+          active: m.name === sel.active,
+        })),
+      );
     },
     [],
   );
@@ -199,6 +213,7 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
       setActiveMarker(null);
       setLastResidualMm(null);
       setHolding(false);
+      setMarkers([]);
     }
   }, [placed]);
 
@@ -208,6 +223,7 @@ export function useStabilizer(input: StabilizerInput): StabilizerState {
     trackedCount,
     boundCount,
     markerVisible,
+    markers,
     holding,
     lastResidualMm,
     onMarkerUpdate,

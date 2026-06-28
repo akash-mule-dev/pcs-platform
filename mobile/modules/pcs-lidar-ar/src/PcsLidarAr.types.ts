@@ -106,6 +106,20 @@ export type PcsLidarScanStateEvent = {
  * by `togglesToFlags()` (see ar/types.ts) so the toggle→flags mapping lives in
  * one place. Event payloads arrive under `event.nativeEvent`.
  */
+/**
+ * A pose tick for the stability benchmark (markers-OFF vs markers-ON). `model` is the
+ * model's WORLD transform (column-major 16); `refMarker` the nearest TRACKED marker's
+ * WORLD transform (the drift-free reference), if any; `markerActive` = a marker is
+ * currently driving the pose. Emitted only while `poseSampling` is true.
+ */
+export type PcsLidarPoseSampleEvent = {
+  t: number;
+  model: number[];
+  refMarker?: number[];
+  markerActive?: boolean;
+  tracking?: string;
+};
+
 export type PcsLidarArViewProps = {
   /** GLB to render. A file:// URL (from useRemoteModel) is the normal case. */
   modelUri?: string;
@@ -140,6 +154,12 @@ export type PcsLidarArViewProps = {
   markerLock?: boolean;
   /** Printed marker physical edge length in metres (default 0.15). */
   markerWidthMeters?: number;
+  /** Draw a colour-keyed highlight frame on each DETECTED printed marker (so the
+   *  inspector sees what the engine recognises + each marker's state). Default on. */
+  markerHighlight?: boolean;
+  /** Stream onPoseSample (model + nearest-marker world pose) for the stability
+   *  benchmark. Keep it off except while recording a run — it's per-frame telemetry. */
+  poseSampling?: boolean;
 
   /** Arms direct manipulation: one-finger drag slides the model on the surface,
    *  two-finger twist yaws it. Should be off during measure / part-pick / lock. */
@@ -169,6 +189,7 @@ export type PcsLidarArViewProps = {
   onScanState?: (event: { nativeEvent: PcsLidarScanStateEvent }) => void;
   onMarkerUpdate?: (event: { nativeEvent: PcsLidarMarkerUpdateEvent }) => void;
   onLockStatus?: (event: { nativeEvent: PcsLidarLockStatusEvent }) => void;
+  onPoseSample?: (event: { nativeEvent: PcsLidarPoseSampleEvent }) => void;
 } & ViewProps;
 
 export type PcsLidarArViewRef = {

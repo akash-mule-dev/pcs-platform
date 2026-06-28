@@ -37,6 +37,9 @@ interface ToolBarProps {
    *  onToggleLock is provided (LiDAR only), so the shared Viro toolbar is unchanged. */
   lockPanelOpen?: boolean;
   onToggleLock?: () => void;
+  /** Optional extra tab: stability benchmark ("Bench"). LiDAR only. */
+  benchPanelOpen?: boolean;
+  onToggleBench?: () => void;
   /** Layout: 'bottom' = the classic horizontal bar (default); 'right' = a vertical
    *  rail pinned to the right edge, slightly below centre, so the docked panel can
    *  sit low and the model keeps the whole middle of the screen. */
@@ -83,6 +86,8 @@ export default function ToolBar({
   onToggleRegister,
   lockPanelOpen = false,
   onToggleLock,
+  benchPanelOpen = false,
+  onToggleBench,
   side = 'bottom',
 }: ToolBarProps) {
   if (!(modelLoaded && (placed || anchored))) return null;
@@ -97,6 +102,9 @@ export default function ToolBar({
       )}
       {onToggleLock && (
         <Tab icon="⚓" label="Lock" active={lockPanelOpen} onPress={onToggleLock} />
+      )}
+      {onToggleBench && (
+        <Tab icon="📊" label="Bench" active={benchPanelOpen} onPress={onToggleBench} />
       )}
     </>
   );

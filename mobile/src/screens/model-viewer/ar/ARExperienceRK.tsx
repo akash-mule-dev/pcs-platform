@@ -43,6 +43,8 @@ import AppearancePanel from './AppearancePanel';
 import MeasurementPanel from './MeasurementPanel';
 import RegisterPanel from './RegisterPanel';
 import LockPanel from './LockPanel';
+import BenchmarkPanel from './BenchmarkPanel';
+import MarkerOverlay from './MarkerOverlay';
 import QualityPanel from './QualityPanel';
 import LogInspectionForm, { InspectionFormResult } from './LogInspectionForm';
 import { projectsService, MNode } from '../../../services/projects.service';
@@ -53,6 +55,8 @@ import { UnitSystem } from './dimensionExtractor';
 import { loadUnitSystem, saveUnitSystem } from './unitPreference';
 import { solveRigid, PointPair, RigidFit } from './rigid-registration';
 import { useStabilizer } from './useStabilizer';
+import { useStabilityBenchmark } from './useStabilityBenchmark';
+import { benchmarkCsv } from './stability-benchmark';
 import { lockStateLabel } from './drift-monitor';
 import { captureNativeSnapshot } from './arSnapshotNative';
 import { useAuth } from '../../../context/AuthContext';
@@ -165,6 +169,9 @@ export default function ARExperienceRK({
   const [markerLockOn, setMarkerLockOn] = useState(false);
   const [continuousLockOn, setContinuousLockOn] = useState(false);
   const [lockPanelOpen, setLockPanelOpen] = useState(false);
+  const [markerHighlightOn, setMarkerHighlightOn] = useState(true);
+  const [benchPanelOpen, setBenchPanelOpen] = useState(false);
+  const [exportingBench, setExportingBench] = useState(false);
 
   // ── Tool panels (mutually exclusive, like the Viro toolbar) ──
   // displayPanelOpen drives the single merged "Display" tab (surface colour-by +
@@ -326,7 +333,7 @@ export default function ARExperienceRK({
   // Direct manipulation is armed only when the model is placed, unlocked, and no
   // capture mode owns taps — so drag/twist never fights measure / part-pick / register.
   const directManip =
-    placed && !locked && measureMode === 'off' && !partTapMode && !registerPanelOpen;
+    placed && !locked && measureMode === 'off' && !partTapMode && !registerPanelOpen && !benchPanelOpen;
 
   // Which point the next register tap captures (native routes the tap accordingly).
   const registerMode: 'off' | 'model' | 'real' = !registerPanelOpen
@@ -351,6 +358,10 @@ export default function ARExperienceRK({
     markerLockOn,
     continuousLockOn,
   });
+
+  // The on-device stability A/B (markers OFF vs ON). Streams native pose samples only
+  // while recording (poseSampling) and scores them with stability-benchmark.ts.
+  const benchmark = useStabilityBenchmark();
 
   // Live rigid-fit over the completed pairs (cheap for the handful of corners QA uses).
   const registerFit: RigidFit | null = useMemo(
@@ -451,8 +462,8 @@ export default function ARExperienceRK({
   // so it can hide the bottom-center engine switcher and avoid overlap.
   const awaitingPlacement = model.phase === 'ready' && !placed;
   useEffect(() => {
-    onChromeBusy?.(precisionMode || displayPanelOpen || measurePanelOpen || registerPanelOpen || lockPanelOpen || awaitingPlacement);
-  }, [precisionMode, displayPanelOpen, measurePanelOpen, registerPanelOpen, lockPanelOpen, awaitingPlacement, onChromeBusy]);
+    onChromeBusy?.(precisionMode || displayPanelOpen || measurePanelOpen || registerPanelOpen || lockPanelOpen || benchPanelOpen || awaitingPlacement);
+  }, [precisionMode, displayPanelOpen, measurePanelOpen, registerPanelOpen, lockPanelOpen, benchPanelOpen, awaitingPlacement, onChromeBusy]);
 
   // Surface the drag/twist hint for a few seconds whenever the model (re)places.
   useEffect(() => {
@@ -829,6 +840,7 @@ export default function ARExperienceRK({
     setDisplayPanelOpen(false);
     setMeasurePanelOpen(false);
     setLockPanelOpen(false);
+    setBenchPanelOpen(false);
     closeRegister();
   }, [closeRegister]);
   const toggleDisplay = useCallback(() => {
@@ -837,6 +849,7 @@ export default function ARExperienceRK({
     setPrecisionMode(false);
     setMeasurePanelOpen(false);
     setLockPanelOpen(false);
+    setBenchPanelOpen(false);
     closeRegister();
     // Opening the Display tab turns the edge overlay ON by default.
     if (opening && renderMode !== 'wireframe') handleSelectView('wireframe');
@@ -846,6 +859,7 @@ export default function ARExperienceRK({
     setPrecisionMode(false);
     setDisplayPanelOpen(false);
     setLockPanelOpen(false);
+    setBenchPanelOpen(false);
     closeRegister();
   }, [closeRegister]);
   const toggleRegister = useCallback(() => {
@@ -861,6 +875,7 @@ export default function ARExperienceRK({
     setDisplayPanelOpen(false);
     setMeasurePanelOpen(false);
     setLockPanelOpen(false);
+    setBenchPanelOpen(false);
     setPartTapMode(false); // register taps must not also fire part-pick
   }, []);
 
@@ -870,8 +885,59 @@ export default function ARExperienceRK({
     setPrecisionMode(false);
     setDisplayPanelOpen(false);
     setMeasurePanelOpen(false);
+    setBenchPanelOpen(false);
     closeRegister();
   }, [closeRegister]);
+
+  // Stability benchmark tab.
+  const toggleBenchPanel = useCallback(() => {
+    setBenchPanelOpen((o) => !o);
+    setPrecisionMode(false);
+    setDisplayPanelOpen(false);
+    setMeasurePanelOpen(false);
+    setLockPanelOpen(false);
+    closeRegister();
+  }, [closeRegister]);
+
+  // Run 1 = markers OFF; run 2 = markers ON (auto-bind whatever's visible so the A/B is
+  // turnkey). The pure module scores the two runs into the headline reduction.
+  const startBenchOff = useCallback(() => {
+    setMarkerLockOn(false);
+    benchmark.startRun('off');
+  }, [benchmark]);
+  const startBenchOn = useCallback(() => {
+    setMarkerLockOn(true);
+    if (stabilizer.boundCount === 0) stabilizer.bindMarkers();
+    benchmark.startRun('on');
+  }, [benchmark, stabilizer]);
+
+  const handleExportBenchmark = useCallback(async () => {
+    setExportingBench(true);
+    try {
+      const exp = benchmark.buildExport({
+        modelId,
+        fileName,
+        partLabel: partLabel ?? null,
+        assemblyNodeId: qaContext?.assemblyNodeId ?? null,
+        projectId: qaContext?.projectId ?? null,
+        lidar,
+        device: Platform.OS,
+      });
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const dir = `${FileSystem.cacheDirectory}pcs-ar-benchmark/`;
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+      const base = `${dir}stability-${stamp}`;
+      await FileSystem.writeAsStringAsync(`${base}.json`, JSON.stringify(exp, null, 2));
+      await FileSystem.writeAsStringAsync(`${base}.csv`, benchmarkCsv(exp));
+      // Share the spreadsheet-ready CSV; the full JSON log sits beside it in the folder.
+      await Share.share({ url: `${base}.csv`, title: 'PCS AR stability benchmark' });
+    } catch {
+      notifyError();
+      Alert.alert('Benchmark', 'Could not export the benchmark log.');
+    } finally {
+      setExportingBench(false);
+    }
+  }, [benchmark, modelId, fileName, partLabel, qaContext, lidar]);
 
   const handlePrintMarkers = useCallback(async () => {
     try {
@@ -919,6 +985,8 @@ export default function ARExperienceRK({
         manualPlacement
         markerLock={markerLockOn}
         markerWidthMeters={MARKER_WIDTH_M}
+        markerHighlight={markerHighlightOn}
+        poseSampling={benchmark.sampling}
         directManipulation={directManip}
         registerMode={registerMode}
         occlusion={flags.occlusion}
@@ -940,6 +1008,7 @@ export default function ARExperienceRK({
         onAutoAlign={onAutoAlign as any}
         onMarkerUpdate={stabilizer.onMarkerUpdate as any}
         onLockStatus={stabilizer.onLockStatus as any}
+        onPoseSample={benchmark.onPoseSample as any}
       />
 
       {/* Header — Back + assembly name on the left, Records + Occlusion on the right */}
@@ -990,7 +1059,20 @@ export default function ARExperienceRK({
             onPress={() => setOpacity((o) => (o < 0.999 ? 1 : DEFAULT_MODEL_OPACITY))}
           />
         )}
+        {placed && (
+          <ToggleChip
+            icon="⊡"
+            label="Markers"
+            on={markerHighlightOn}
+            onPress={() => setMarkerHighlightOn((v) => !v)}
+          />
+        )}
       </View>
+
+      {/* In-view marker identification HUD (which printed markers are recognised + state) */}
+      {placed && (lockPanelOpen || benchPanelOpen || markerLockOn) && (
+        <MarkerOverlay markers={stabilizer.markers} markerLockOn={markerLockOn} holding={stabilizer.holding} />
+      )}
 
       {/* Loading pill over the live camera */}
       {downloading && (
@@ -1207,6 +1289,26 @@ export default function ARExperienceRK({
         />
       )}
 
+      {/* Stability benchmark panel (markers OFF vs ON, with exportable log) */}
+      {benchPanelOpen && placed && (
+        <BenchmarkPanel
+          bottom={PANEL_BOTTOM}
+          recording={benchmark.recording}
+          elapsedMs={benchmark.elapsedMs}
+          runMs={benchmark.runMs}
+          offMetrics={benchmark.offMetrics}
+          onMetrics={benchmark.onMetrics}
+          comparison={benchmark.comparison}
+          markerVisible={stabilizer.markerVisible}
+          exporting={exportingBench}
+          onStartOff={startBenchOff}
+          onStartOn={startBenchOn}
+          onStop={benchmark.stop}
+          onReset={benchmark.reset}
+          onExport={handleExportBenchmark}
+        />
+      )}
+
       {/* Aim reticle + "Place point" for real-world / deviation-real points */}
       {showReticle && (
         <View style={styles.reticleWrap} pointerEvents="box-none">
@@ -1241,6 +1343,8 @@ export default function ARExperienceRK({
         onToggleRegister={toggleRegister}
         lockPanelOpen={lockPanelOpen}
         onToggleLock={toggleLockPanel}
+        benchPanelOpen={benchPanelOpen}
+        onToggleBench={toggleBenchPanel}
         side="right"
       />
 

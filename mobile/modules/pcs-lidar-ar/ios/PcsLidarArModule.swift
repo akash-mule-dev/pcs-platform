@@ -12,7 +12,7 @@ public class PcsLidarArModule: Module {
     Name("PcsLidarAr")
 
     View(PcsLidarArView.self) {
-      Events("onLoad", "onError", "onTracking", "onAnchor", "onMeasure", "onPartTap", "onRegisterPoint", "onAutoAlign", "onScanState", "onMarkerUpdate", "onLockStatus")
+      Events("onLoad", "onError", "onTracking", "onAnchor", "onMeasure", "onPartTap", "onRegisterPoint", "onAutoAlign", "onScanState", "onMarkerUpdate", "onLockStatus", "onPoseSample")
 
       // The model to render. file:// (from useRemoteModel) is the normal case.
       Prop("modelUri") { (view: PcsLidarArView, uri: URL?) in
@@ -52,6 +52,13 @@ public class PcsLidarArModule: Module {
       // marker's physical edge length (so detected anchors are metrically correct).
       Prop("markerLock") { (view: PcsLidarArView, v: Bool) in view.setMarkerLockEnabled(v) }
       Prop("markerWidthMeters") { (view: PcsLidarArView, m: Double) in view.setMarkerWidth(Float(m)) }
+
+      // In-view highlight of detected markers (a colour-keyed frame on each physical
+      // marker so the inspector sees what's recognised + each marker's state).
+      Prop("markerHighlight") { (view: PcsLidarArView, v: Bool) in view.setMarkerHighlight(v) }
+      // Stream onPoseSample (model + nearest-marker world pose) for the stability
+      // benchmark — driven only while a benchmark run is recording.
+      Prop("poseSampling") { (view: PcsLidarArView, v: Bool) in view.setPoseSampling(v) }
 
       // Direct manipulation (Phase 1): arms one-finger drag-to-move + two-finger
       // twist-for-yaw. Off during measure / part-pick / lock so they never clash.
