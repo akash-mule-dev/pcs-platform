@@ -30,9 +30,11 @@ directly with `node` instead:
   → http://localhost:3000 (connects to the Neon **dev** DB — no local Postgres/Docker needed)
 - **Frontend (dev):** `cd frontend && node node_modules/@angular/cli/bin/ng.js serve --port 4200`
   → http://localhost:4200 (calls the backend via `environment.ts` → `http://localhost:3000/api`)
-- **Conversion worker (only if `REDIS_URL` is set):** `cd backend && npm run worker` — drains the
-  BullMQ conversion queue. With no `REDIS_URL` the queue runs **inline** in the API process, so
-  the worker isn't needed in plain dev.
+- **Pipeline worker (only if `REDIS_URL` is set):** `cd backend && npm run worker`
+  (`node dist/conversion/worker.js`) — drains BOTH BullMQ queues: `pcs-import` (the import
+  pipeline) **and** `pcs-conversion` (GLB conversion). With no `REDIS_URL` both run **inline** in
+  the API process, so the worker isn't needed in plain dev. In the deployed env the API is a pure
+  producer and this worker (on Railway) does the heavy lifting — see `docs/PIPELINE-DEPLOY.md`.
 
 The default web login is prefilled on the login screen (Neon dataset, admin role).
 
@@ -107,14 +109,25 @@ Key services & flows:
   `POST /api/projects/:id/import-ifc`): the upload is stored durably FIRST (StorageProvider
   `import-sources/…` + import_files row), the request returns immediately, then the background
   pipeline runs `uploaded → queued → extracting → persisting → converting → completed|failed`.
-  Pipelines run through an in-process **FIFO queue with bounded concurrency**
+  The pipeline runs in one of **two modes**, chosen by `resolveQueueDriver()` (`projects/queue/`):
+  **inline** (default, no `REDIS_URL`) keeps an in-process **FIFO queue with bounded concurrency**
   (`IMPORT_PIPELINE_CONCURRENCY`, default 2) so "N packages ahead of yours" is real, and
-  `onModuleInit` re-queues imports interrupted by a restart from their stored source. Spawns
+  `onModuleInit` re-queues imports interrupted by a restart from their stored source; **bullmq**
+  (`REDIS_URL` / `CONVERSION_DRIVER=bullmq`) makes the API a pure **producer** — `dispatchPipeline`
+  enqueues a durable `pcs-import` job (dedup by `importFileId`, 3 attempts) and returns, a
+  long-running **worker** (`npm run worker`, `runImportJob` entry) consumes it, and the
+  `onModuleInit` recovery sweep is skipped (BullMQ owns recovery — no double-processing). This
+  hybrid is what lets a serverless API survive the heavy work: deployed as **Vercel producer →
+  Upstash Redis → Railway worker** with instant rollback by dropping `REDIS_URL`
+  (`docs/PIPELINE-DEPLOY.md`). Either way the worker spawns
   `cad-conversion/scripts/extract-ifc-structure.mjs` (web-ifc) → normalized JSON tree →
   persisted into `assembly_nodes` **idempotently by `ifc_guid`** → GLB queued via
   `ConversionService.createJob`. Every transition updates `import_files.stage/progress`, appends
-  an `import_file_events` row and emits the room-scoped `import:progress` websocket event
-  (rooms: `join-project`/`leave-project`). Conversion progress (55→99%) + completion/failure are
+  an `import_file_events` row and emits `import:progress` on the owning tenant's **`org:<id>`
+  channel** (`emitToOrg`; clients auto-join that room from their JWT on connect, the workspace
+  store filters by `projectId`), so it streams live over **both** Ably (serverless API + the
+  Railway worker) and in-process Socket.IO (dev) — replacing the old Socket.IO-only `project:<id>`
+  room that only worked locally. Conversion progress (55→99%) + completion/failure are
   mirrored onto the import row by `conversion/import-conversion-link.service.ts` inside the
   processor (works inline + BullMQ, survives API restarts; entity-only cross-module dep).
   Monitoring API: `GET :id/imports` (history), `GET :id/imports/:importId` (timeline + conversion
@@ -336,10 +349,10 @@ standalone `quality-ncr` module + `ncrs`/`capas`/`ncr_events` tables were retire
 Front end: `/projects`, `/projects/:id` workspace tabs (Overview / Assemblies & 3D / Work Orders /
 Monitoring); production tracking lives inside each order at
 `/projects/:id/orders/:orderId/(board|progress|quality|shipping)`.
-Import progress is live: the `ProjectWorkspaceStore` joins the `project:<id>` socket room
-(`RealtimeService.joinRoom`, re-joined on reconnect) and falls back to 5s polling of
-`GET :id/imports` while anything is active — uploads show browser→server % first, then the
-pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
+Import progress is live: the `ProjectWorkspaceStore` subscribes to `import:progress` (delivered on
+the auto-joined `org:<id>` channel over both Ably + Socket.IO) and filters by `projectId`, with a
+5s polling fallback of `GET :id/imports` while anything is active — uploads show browser→server %
+first, then the pipeline % end-to-end (header bar, Monitoring tab, assemblies empty-state).
 
 **3D viewer — measurement + data overlays** (`shared/components/three-viewer`, opt-in inputs so
 read-only embeds are unchanged): on the Assemblies tab the viewer offers an in-canvas toolbar
