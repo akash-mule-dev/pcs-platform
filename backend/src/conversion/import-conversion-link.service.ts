@@ -141,6 +141,7 @@ export class ImportConversionLinkService {
       this.ws.emitImportProgress({
         importFileId: imp.id,
         projectId: imp.projectId,
+        organizationId: imp.organizationId,
         status: imp.status,
         stage: imp.stage,
         progress: imp.progress,

@@ -27,6 +27,8 @@ import { EventsGateway } from '../websocket/events.gateway.js';
 import { STORAGE_PROVIDER } from '../storage/storage.interface.js';
 import type { StorageProvider } from '../storage/storage.interface.js';
 import { StorageKeys } from '../storage/storage-keys.js';
+import { IMPORT_QUEUE } from './queue/import-queue.interface.js';
+import type { ImportQueue, ImportJobPayload } from './queue/import-queue.interface.js';
 
 /** One node as emitted by extract-ifc-structure.mjs (the normalized intermediate). */
 interface ExtractedNode {
@@ -110,15 +112,23 @@ export class IfcImportService implements OnModuleInit {
     private readonly conversionService: ConversionService,
     private readonly ws: EventsGateway,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    // Durable pipeline queue (BullMQ) when REDIS_URL is set; null in the default
+    // inline mode, where the in-process FIFO below drives the pipeline instead.
+    @Inject(IMPORT_QUEUE) private readonly importQueue: ImportQueue | null,
   ) {}
 
   /**
    * Restart recovery: imports that were mid-pipeline when the process died are
    * re-queued from their durably stored source. Conversions already handed to
    * the conversion queue heal through the processor mirror / linkPendingModels.
-   * (Single-API-instance assumption — same as the inline conversion driver.)
+   * INLINE MODE ONLY — same reasoning as ConversionService.onModuleInit: with a
+   * durable queue (bullmq), Redis already persists pending jobs and BullMQ
+   * re-runs stalled ones after a worker crash, so a DB-sweep re-enqueue here
+   * would race the worker (and both the API + worker boot this module). Skipping
+   * it in bullmq mode is the correct, non-duplicating behavior.
    */
   async onModuleInit(): Promise<void> {
+    if (this.importQueue) return; // bullmq: BullMQ owns recovery, don't double-enqueue
     try {
       const stuck = await this.importRepo.find({
         where: [
@@ -138,7 +148,7 @@ export class IfcImportService implements OnModuleInit {
           message: 'Recovered after a service restart — re-queued from the stored source',
           detail: { recovered: true },
         });
-        this.enqueuePipeline(imp.id, imp.organizationId as string, nameById.get(imp.projectId) ?? '');
+        await this.dispatchPipeline(imp.id, imp.organizationId as string, nameById.get(imp.projectId) ?? '');
       }
       this.logger.log(`Recovered ${recoverable.length} interrupted import(s) into the pipeline queue`);
     } catch (e) {
@@ -156,6 +166,39 @@ export class IfcImportService implements OnModuleInit {
   private enqueuePipeline(importFileId: string, organizationId: string, projectName: string): void {
     this.pipelineQueue.push({ importFileId, organizationId, projectName });
     this.pumpQueue();
+  }
+
+  /**
+   * Single dispatch point for "this import needs processing". With a durable
+   * queue configured (bullmq) the API process is a pure producer: it enqueues
+   * and returns, and the standalone worker runs the heavy pipeline — so import
+   * survives a serverless/stateless API. With no queue (inline, default) it
+   * falls back to the in-process FIFO, leaving local dev + the current deploy
+   * byte-for-byte unchanged.
+   */
+  private async dispatchPipeline(importFileId: string, organizationId: string, projectName: string): Promise<void> {
+    if (this.importQueue) {
+      try {
+        await this.importQueue.enqueue({ importFileId, organizationId, projectName });
+      } catch (err) {
+        // Redis unreachable / enqueue failed: the source is already stored, so
+        // mark the import failed (retryable) rather than hanging the request.
+        const imp = await this.importRepo.findOne({ where: { id: importFileId } });
+        if (imp) await this.fail(imp, 'queued', err);
+        throw err;
+      }
+    } else {
+      this.enqueuePipeline(importFileId, organizationId, projectName);
+    }
+  }
+
+  /**
+   * Worker entry point: run one import job end-to-end. Called by the BullMQ
+   * worker (npm run worker) draining the durable import queue. The API process
+   * never calls this in bullmq mode — it only produces.
+   */
+  async runImportJob(payload: ImportJobPayload): Promise<void> {
+    await this.runPipeline(payload.importFileId, payload.organizationId, payload.projectName);
   }
 
   private pumpQueue(): void {
@@ -242,7 +285,7 @@ export class IfcImportService implements OnModuleInit {
       message: ahead > 0 ? `Queued for processing — ${ahead} package(s) ahead` : 'Queued for processing',
       detail: { ahead },
     });
-    this.enqueuePipeline(importFile.id, organizationId, project.name);
+    await this.dispatchPipeline(importFile.id, organizationId, project.name);
 
     return {
       importFileId: importFile.id,
@@ -758,7 +801,7 @@ export class IfcImportService implements OnModuleInit {
           : 'Retry: re-queued from the stored source',
         detail: { retry: true, ahead },
       });
-      this.enqueuePipeline(imp.id, organizationId, project.name);
+      await this.dispatchPipeline(imp.id, organizationId, project.name);
     }
 
     return {
@@ -1197,6 +1240,7 @@ export class IfcImportService implements OnModuleInit {
       this.ws.emitImportProgress({
         importFileId: imp.id,
         projectId: imp.projectId,
+        organizationId: imp.organizationId,
         status: imp.status,
         stage: imp.stage,
         progress: imp.progress,

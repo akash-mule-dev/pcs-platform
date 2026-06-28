@@ -20,9 +20,12 @@ import { environment } from '../../../environments/environment';
  * Backend events: time-entry-update · stage-update · dashboard-refresh ·
  * work-order-update · quality-alert · notification · unread-count-update
  * (operational + notification events are carried on both transports).
- * Room-scoped feeds (import:progress, conversion:progress, support:changed)
- * are Socket.IO-only for now — under Ably those views use their polling
- * fallback until migrated.
+ * import:progress is also carried on BOTH transports — it's published on the
+ * tenant `org:<id>` channel (the workspace store filters by projectId), so it
+ * streams live under Ably too (no polling fallback needed).
+ * The remaining room-scoped feeds (conversion:progress, support:changed) are
+ * still Socket.IO-only — under Ably those views use their polling fallback
+ * until migrated the same way.
  */
 @Injectable({ providedIn: 'root' })
 export class RealtimeService implements OnDestroy {
