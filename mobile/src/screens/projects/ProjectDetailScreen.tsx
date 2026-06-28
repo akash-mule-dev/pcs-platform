@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
 import { ProjectsStackParamList } from '../../navigation/types';
-import { ordersService, MOrder, MProcess, OrderStatusColors, OrderStatusLabels } from '../../services/projects.service';
+import { ordersService, projectsService, MOrder, MProcess, OrderStatusColors, OrderStatusLabels } from '../../services/projects.service';
+import { can } from '../../config/permissions';
 
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'ProjectDetail'>;
 type Rt = RouteProp<ProjectsStackParamList, 'ProjectDetail'>;
@@ -27,6 +28,32 @@ export function ProjectDetailScreen() {
   const [quantity, setQuantity] = useState('1');
   const [processId, setProcessId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const canDelete = can('projects.delete');
+
+  // Soft-delete the project (Trash). The server rejects with a clear message if
+  // the project still has work orders, which we surface verbatim.
+  const onDelete = useCallback(() => {
+    Alert.alert(
+      'Delete project?',
+      `"${name}" will be moved to the Trash (recoverable for 30 days). Projects with work orders can't be deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await projectsService.remove(projectId);
+              projectsService.list(true).catch(() => {}); // refresh cached portfolio
+              navigation.goBack();
+            } catch (e: any) {
+              Alert.alert('Could not delete project', e?.message || 'Delete failed.');
+            }
+          },
+        },
+      ],
+    );
+  }, [projectId, name, navigation]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -40,6 +67,15 @@ export function ProjectDetailScreen() {
           >
             <Ionicons name="pulse-outline" size={20} color={Colors.primary} />
           </TouchableOpacity>
+          {canDelete && (
+            <TouchableOpacity
+              style={styles.headBtn}
+              onPress={onDelete}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="trash-outline" size={19} color={Colors.danger} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.headBtn}
             onPress={() => navigation.navigate('ProjectViewer', { projectId, name })}
@@ -51,7 +87,7 @@ export function ProjectDetailScreen() {
         </View>
       ),
     });
-  }, [navigation, name, projectId]);
+  }, [navigation, name, projectId, canDelete, onDelete]);
 
   const load = useCallback(async () => {
     setError(null);
