@@ -152,6 +152,28 @@ function worldTriPrimitives(doc: Document): WorldPrimitive[] {
  * by URI and won't re-apply a changed material prop, so a per-colour file is the
  * only reliable way to recolour the edge view.
  */
+// Edge tubes turn every crease edge into a small cylinder, so the output GLB grows
+// roughly with the triangle count (~200 bytes/triangle). A large assembly (e.g. a
+// 1700-part / ~290k-triangle truss) would yield a ~60 MB wireframe GLB whose
+// base64 encode + write + native load blocks the JS/main thread long enough to trip
+// the iOS 10 s watchdog → SIGKILL. Above this cap we refuse to build it (caller
+// keeps the solid view + surfaces "edges unavailable"); below it the output stays
+// comfortably small. Prefix-tagged so callers can detect this specific case.
+export const WIREFRAME_TOO_LARGE = 'WIREFRAME_TOO_LARGE';
+const MAX_WIREFRAME_TRIANGLES = 90_000;
+
+function countTriangles(doc: Document): number {
+  let tris = 0;
+  for (const mesh of doc.getRoot().listMeshes()) {
+    for (const prim of mesh.listPrimitives()) {
+      const idx = prim.getIndices();
+      const pos = prim.getAttribute('POSITION');
+      tris += idx ? idx.getCount() / 3 : pos ? pos.getCount() / 3 : 0;
+    }
+  }
+  return tris;
+}
+
 export async function generateWireframeGlb(
   glbData: Uint8Array,
   radiusScale = 1,
@@ -160,6 +182,13 @@ export async function generateWireframeGlb(
   const [cr, cg, cb] = hexToRgb(colorHex);
   const io = new WebIO();
   const inputDoc = await io.readBinary(glbData);
+
+  // Bail BEFORE the expensive edge-tube build for oversized models (cheap count of
+  // indices only) — this is the fix for the AR crash on large assemblies.
+  const triCount = countTriangles(inputDoc);
+  if (triCount > MAX_WIREFRAME_TRIANGLES) {
+    throw new Error(`${WIREFRAME_TOO_LARGE}: ${Math.round(triCount)} triangles > ${MAX_WIREFRAME_TRIANGLES}`);
+  }
 
   const outputDoc = new Document();
   const buffer = outputDoc.createBuffer('wireframe');

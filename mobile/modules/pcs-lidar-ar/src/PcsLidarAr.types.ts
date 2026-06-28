@@ -50,6 +50,55 @@ export type PcsLidarAutoAlignEvent = {
   fromMm?: number;
   inlierRatio?: number;
   iterations?: number;
+  /** True when emitted by the continuous world-lock (refineLock) rather than the
+   *  user-tapped Auto-snap — JS reports continuous failures silently. */
+  continuous?: boolean;
+};
+
+/** One marker in an onMarkerUpdate snapshot. `transform` is the marker's WORLD pose
+ *  (column-major 16); `tracked` = ARKit is tracking it this frame; `bound` = the model
+ *  has an offset stored against it; `distance` = metres from the camera. */
+export type PcsLidarMarker = {
+  name: string;
+  transform: number[];
+  tracked: boolean;
+  bound: boolean;
+  distance: number;
+};
+
+/** Throttled (~8 Hz) snapshot of the detected printed markers + native's active pick.
+ *  `active` is the marker currently driving the pose (null = none). */
+export type PcsLidarMarkerUpdateEvent = {
+  markers: PcsLidarMarker[];
+  cameraPos: [number, number, number];
+  active: string | null;
+  lockEnabled: boolean;
+  /** Markers actually contributing to the fused pose (bound + tracked + in range). */
+  acceptedCount?: number;
+  /** Lock armed + bound but nothing acceptable in view → model frozen on last pose. */
+  holding?: boolean;
+};
+
+/** Acknowledgement of a marker bind / clear / lock toggle. `bound` = how many markers
+ *  were just bound; `totalBindings` = total stored; `reason` ∈ ok | no-markers-visible |
+ *  not-placed | cleared. */
+export type PcsLidarLockStatusEvent = {
+  lockEnabled?: boolean;
+  bound?: number;
+  totalBindings?: number;
+  reason?: string;
+};
+
+/**
+ * Scan-before-place readiness (only while a model is loaded but not yet placed in
+ * `manualPlacement` mode). `ready` = the scene is mapped enough to place (normal
+ * tracking + a real mapped surface under the reticle). `tracking` is the current
+ * ARKit tracking state; `reason` is set on a failed placeNow (e.g. 'no-surface').
+ */
+export type PcsLidarScanStateEvent = {
+  ready: boolean;
+  tracking: string;
+  reason?: string;
 };
 
 /**
@@ -66,6 +115,12 @@ export type PcsLidarArViewProps = {
   showEdges?: boolean;
   /** Edge-view colour (hex, e.g. "#00e5ff") — painted as one uniform flat fill. */
   edgeColor?: string;
+  /** Per-entity colour overlay for the SOLID model (Color-by Profile/Grade):
+   *  entity-name (== ifc_guid) → hex. Empty/omitted = uniform grey. */
+  colorOverlay?: Record<string, string>;
+  /** True 1:1 scale: metres-per-GLB-unit (calibrated from part lengths). >0 renders
+   *  at the real assembly's size; 0/omitted keeps the fixed fit-scale. */
+  realScale?: number;
   /** Real-world (LiDAR mesh) occlusion of the virtual model. */
   occlusion?: boolean;
   /** People/hand occlusion (ARKit personSegmentationWithDepth). */
@@ -76,6 +131,15 @@ export type PcsLidarArViewProps = {
   planeAnchor?: boolean;
   /** Draw the LiDAR scene-reconstruction mesh (scanning visualization). */
   showMesh?: boolean;
+  /** Scan-before-place: hold a freshly loaded model until the user has mapped the
+   *  area and calls placeNow(). False/omitted = auto-place on load. */
+  manualPlacement?: boolean;
+
+  /** Image-marker lock (FabStation-style anti-drift): when true, the model is
+   *  continuously driven by the nearest bound printed marker's live pose. */
+  markerLock?: boolean;
+  /** Printed marker physical edge length in metres (default 0.15). */
+  markerWidthMeters?: number;
 
   /** Arms direct manipulation: one-finger drag slides the model on the surface,
    *  two-finger twist yaws it. Should be off during measure / part-pick / lock. */
@@ -102,11 +166,16 @@ export type PcsLidarArViewProps = {
   onPartTap?: (event: { nativeEvent: PcsLidarPartTapEvent }) => void;
   onRegisterPoint?: (event: { nativeEvent: PcsLidarRegisterPointEvent }) => void;
   onAutoAlign?: (event: { nativeEvent: PcsLidarAutoAlignEvent }) => void;
+  onScanState?: (event: { nativeEvent: PcsLidarScanStateEvent }) => void;
+  onMarkerUpdate?: (event: { nativeEvent: PcsLidarMarkerUpdateEvent }) => void;
+  onLockStatus?: (event: { nativeEvent: PcsLidarLockStatusEvent }) => void;
 } & ViewProps;
 
 export type PcsLidarArViewRef = {
   resetTracking: () => Promise<void>;
   recenter: () => Promise<void>;
+  /** Scan-first: anchor the model at the reticle after the area is scanned. */
+  placeNow: () => Promise<void>;
   capture: () => Promise<string | null>;
   /** Align: relative position nudge in metres (anchor-local axes). */
   nudge: (dx: number, dy: number, dz: number) => Promise<void>;
@@ -135,4 +204,12 @@ export type PcsLidarArViewRef = {
   autoAlign: () => Promise<void>;
   /** See-through overlay: set the model's render opacity (1 = opaque). */
   setModelOpacity: (opacity: number) => Promise<void>;
+  /** Marker lock: bind every currently-tracked marker to the model's current pose. */
+  bindVisibleMarkers: () => Promise<void>;
+  /** Marker lock: drop all marker bindings. */
+  clearMarkerBindings: () => Promise<void>;
+  /** Continuous world-lock: ease the model onto the LiDAR mesh (JS-scheduled). */
+  refineLock: () => Promise<void>;
+  /** Export a printable PNG (base64) contact sheet of the markers for the shop. */
+  exportMarkerSheet: () => Promise<string | null>;
 };

@@ -26,6 +26,9 @@ import { MaterialListScreen } from '../screens/more/MaterialListScreen';
 import { NotificationsScreen } from '../screens/more/NotificationsScreen';
 import { StorageSettingsScreen } from '../screens/more/StorageSettingsScreen';
 import { ProjectListScreen } from '../screens/projects/ProjectListScreen';
+import { ProjectCreateScreen } from '../screens/projects/ProjectCreateScreen';
+import { ProjectMonitoringScreen } from '../screens/projects/ProjectMonitoringScreen';
+import { PackageMonitorScreen } from '../screens/projects/PackageMonitorScreen';
 import { ProjectDetailScreen } from '../screens/projects/ProjectDetailScreen';
 import { ProjectViewerScreen } from '../screens/projects/ProjectViewerScreen';
 import { AssemblyDetailScreen } from '../screens/projects/AssemblyDetailScreen';
@@ -92,6 +95,9 @@ function ProjectsStack() {
   return (
     <PStack.Navigator screenOptions={{ headerShown: true, headerTintColor: Colors.primary }}>
       <PStack.Screen name="ProjectList" component={ProjectListScreen} options={{ title: 'Projects' }} />
+      <PStack.Screen name="ProjectCreate" component={ProjectCreateScreen} options={{ title: 'New project' }} />
+      <PStack.Screen name="PackageMonitor" component={PackageMonitorScreen} options={{ title: 'Package Monitor' }} />
+      <PStack.Screen name="ProjectMonitoring" component={ProjectMonitoringScreen} options={{ title: 'Monitoring' }} />
       <PStack.Screen name="Scan" component={ScanScreen} options={{ title: 'Scan label' }} />
       <PStack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: 'Project' }} />
       <PStack.Screen name="ProjectViewer" component={ProjectViewerScreen} options={{ title: '3D Viewer' }} />

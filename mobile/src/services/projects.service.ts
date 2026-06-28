@@ -1,5 +1,8 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api.service';
 import { dataCache } from './dataCache';
+
+const TOKEN_KEY = 'auth_token';
 
 export interface MProject {
   id: string;
@@ -58,6 +61,179 @@ export interface MNodeLot {
   material_name: string | null;
 }
 
+/** A project import (upload pipeline row) — carries the converted model id even
+ *  for geometry-only imports (STEP/IGES/GLB) that produce NO assembly nodes.
+ *  The monitor/history endpoints return the same row enriched with `projectName`
+ *  (+ `ahead` queue position on the live monitor). */
+export interface MImport {
+  id: string;
+  originalName: string;
+  status: string; // uploaded | queued | extracting | converting | completed | failed
+  stage: string;  // uploaded | queued | extracting | persisting | converting | completed | failed
+  progress: number;
+  format?: string | null;
+  size?: number | null;
+  nodeCount?: number;
+  modelId?: string | null;
+  conversionJobId?: string | null;
+  error?: string | null;
+  storageKey?: string | null;
+  createdByName?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+  // ── monitor/history enrichment ──
+  projectId?: string;
+  projectName?: string | null;
+  /** Live monitor only: org packages queued ahead of this one ("N ahead of yours"). */
+  ahead?: number;
+}
+
+/** Response from kicking off an upload — POST :id/import-ifc and the retry endpoint. */
+export interface MImportStarted {
+  importFileId: string;
+  originalName: string;
+  status: string;
+  stage: string;
+  progress: number;
+}
+
+/** Org-wide live pipeline + KPI counts (GET /imports/monitor). */
+export interface MImportsMonitor {
+  active: MImport[];
+  kpis: {
+    inProgress: number;
+    queued: number;
+    processing: number;
+    completedToday: number;
+    failedToday: number;
+    completedTotal: number;
+    failedTotal: number;
+    totalPackages: number;
+  };
+}
+
+/** Paged org-wide upload history (GET /imports/history). */
+export interface MImportsHistory {
+  rows: MImport[];
+  total: number;
+}
+
+/** One stage transition in an import's append-only timeline. */
+export interface MImportEvent {
+  id: string;
+  stage: string;
+  status: string;
+  progress: number;
+  message: string;
+  detail?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+/** The GLB conversion-job snapshot attached to a completed/converting import. */
+export interface MImportConversion {
+  id: string;
+  status: string;
+  progress: number;
+  error: string | null;
+  durationMs: number | null;
+  trianglesAfter: number | null;
+  outputSize: number | null;
+}
+
+/** One import + its full event timeline + conversion snapshot (GET :id/imports/:importId). */
+export interface MImportDetail {
+  file: MImport;
+  events: MImportEvent[];
+  conversion: MImportConversion | null;
+}
+
+/** Live `import:progress` websocket payload (room-scoped to `project:<id>`). */
+export interface MImportProgress {
+  importFileId: string;
+  projectId: string;
+  status: string;
+  stage: string;
+  progress: number;
+  originalName: string;
+  nodeCount: number;
+  modelId: string | null;
+  conversionJobId: string | null;
+  error: string | null;
+  message: string | null;
+  at: string;
+}
+
+/** A local file to upload (matches expo-document-picker's asset shape). */
+export interface MUploadFile {
+  uri: string;
+  name: string;
+  mimeType?: string | null;
+}
+
+/** Extensions the import pipeline accepts (mirrors the web wizard's file input). */
+export const ACCEPTED_IMPORT_EXTENSIONS = [
+  'ifc', 'zip', 'step', 'stp', 'iges', 'igs', 'glb', 'gltf', 'obj', 'stl', 'dae', 'fbx', '3ds', 'ply',
+];
+
+/** Raw-hex status colours for import rows (service stays theme-free, like OrderStatusColors). */
+export const ImportStatusColors: Record<string, string> = {
+  uploaded: '#9ca3af', queued: '#9ca3af', extracting: '#f9a825', persisting: '#f9a825',
+  converting: '#3d5aff', completed: '#2e7d32', failed: '#c62828',
+};
+
+/** True while an import is still moving through the pipeline (not done/failed). */
+export function isActiveImport(imp: { status: string }): boolean {
+  return imp.status !== 'completed' && imp.status !== 'failed';
+}
+
+/**
+ * Upload a CAD/IFC/ZIP file to a project via multipart, reporting upload %.
+ * Uses XMLHttpRequest (not fetch) because RN's fetch can't surface upload
+ * progress; mirrors the evidence-upload pattern in ar/qaApi.ts.
+ */
+async function uploadImport(
+  projectId: string,
+  file: MUploadFile,
+  onProgress?: (pct: number) => void,
+): Promise<MImportStarted> {
+  const token = await AsyncStorage.getItem(TOKEN_KEY);
+  const form = new FormData();
+  // RN FormData file shape — the cast is required; RN sets the multipart boundary.
+  form.append('file', { uri: file.uri, name: file.name, type: file.mimeType || 'application/octet-stream' } as any);
+
+  return new Promise<MImportStarted>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${api.baseUrl}/projects/${projectId}/import-ifc`);
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    if (xhr.upload) {
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable && e.total > 0) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const body = JSON.parse(xhr.responseText);
+          resolve((body && body.data ? body.data : body) as MImportStarted);
+        } catch {
+          reject(new Error('Upload succeeded but the response could not be read'));
+        }
+      } else {
+        let msg = `Upload failed (HTTP ${xhr.status})`;
+        try { const b = JSON.parse(xhr.responseText); if (b?.message) msg = b.message; } catch { /* keep default */ }
+        reject(new Error(msg));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.send(form);
+  });
+}
+
 export interface MStage { id: string; name: string; sequence: number; targetTimeSeconds: number }
 
 export interface MQualityEntry {
@@ -92,8 +268,36 @@ export const projectsService = {
   // trees are served from local storage and not re-fetched. Pass force=true
   // (pull-to-refresh) to bypass the cache and refresh the stored copy.
   list: (force = false) => dataCache.cached('projects:list', () => api.getList<MProject>('/projects'), force),
+  /** Create a project (design container). Mirrors the web wizard step 1 — only `name` is required. */
+  create: (body: { name: string; projectNumber?: string; clientName?: string; description?: string }) =>
+    api.post<MProject>('/projects', body),
+  /** Upload a CAD/IFC/ZIP source to a project; the async pipeline builds the tree + GLB. */
+  importIfc: (projectId: string, file: MUploadFile, onProgress?: (pct: number) => void) =>
+    uploadImport(projectId, file, onProgress),
+  /** One import + its event timeline + conversion snapshot. */
+  getImportDetail: (projectId: string, importId: string) =>
+    api.get<MImportDetail>(`/projects/${projectId}/imports/${importId}`),
+  /** Retry a failed import (conversion-only when structure already extracted, else full re-run). */
+  retryImport: (projectId: string, importId: string) =>
+    api.post<MImportStarted>(`/projects/${projectId}/imports/${importId}/retry`),
+  /** Org-wide live pipeline (active packages + queue positions + KPI counts). */
+  importsMonitor: () => api.get<MImportsMonitor>('/imports/monitor'),
+  /** Org-wide upload history (paged, sortable, optional project filter). */
+  importsHistory: (opts: { projectIds?: string[]; sort?: 'asc' | 'desc'; limit?: number; offset?: number } = {}) => {
+    const params: Record<string, string | number> = {
+      sort: opts.sort ?? 'desc',
+      limit: opts.limit ?? 25,
+      offset: opts.offset ?? 0,
+    };
+    if (opts.projectIds?.length) params.projects = opts.projectIds.join(',');
+    return api.get<MImportsHistory>('/imports/history', params);
+  },
   getNodes: (projectId: string, force = false) =>
     dataCache.cached(`projects:nodes:${projectId}`, () => api.getList<MNode>(`/projects/${projectId}/nodes`), force),
+  /** Import history (newest first). Fetched fresh (not cached) so model-readiness
+   *  reflects a just-finished conversion. Used to resolve the project's 3D model
+   *  for geometry-only imports, which leave no assembly node to carry the modelId. */
+  getImports: (projectId: string) => api.getList<MImport>(`/projects/${projectId}/imports`),
   getNode: (projectId: string, nodeId: string) => api.get<MNode>(`/projects/${projectId}/nodes/${nodeId}`),
   getNodeMeshes: (projectId: string, nodeId: string) => api.get<string[]>(`/projects/${projectId}/nodes/${nodeId}/meshes`),
   getNodeQuality: (projectId: string, nodeId: string) =>

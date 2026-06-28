@@ -1,6 +1,7 @@
 import { Component, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
+import { MODEL_UPLOAD_ACCEPT, fileAccept } from '../shared/upload-accept';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -91,7 +92,7 @@ interface StepDef { key: string; label: string; icon: string; }
               @if (k.active > 0) { <span class="chip run">{{ k.active }} running</span> }
             }
             <button class="ghost-btn" (click)="store.refreshImports()" matTooltip="Refresh"><mat-icon>refresh</mat-icon></button>
-            <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
+            <input #fileInput type="file" hidden [attr.accept]="acceptModel" (change)="onFile($event)">
             <button class="ghost-btn primary" (click)="fileInput.click()" [disabled]="store.importing()">
               <mat-icon>upload_file</mat-icon><span>Import package</span>
             </button>
@@ -461,6 +462,8 @@ interface StepDef { key: string; label: string; icon: string; }
   `],
 })
 export class ProjectMonitoringComponent implements OnDestroy {
+  /** Desktop accept filter; dropped on iOS so WebKit doesn't grey out .ifc/.step files. */
+  readonly acceptModel = fileAccept(MODEL_UPLOAD_ACCEPT);
   store = inject(ProjectWorkspaceStore);
   private svc = inject(ProjectsService);
 

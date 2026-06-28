@@ -1,7 +1,8 @@
-// AR bottom toolbar (pure RN, no native deps). Three tabs, each toggling a
-// docked panel above it: Align (move/rotate/scale), Edges (view/colour/weight),
-// Measure (dimensions/rulers). There is no separate render-mode button —
-// Solid/Edges live inside the Edges panel's VIEW section.
+// AR bottom toolbar (pure RN, no native deps). Tabs, each toggling a docked
+// panel above it: Align (move/rotate/scale), Display (the merged appearance tab:
+// surface colour-by + see-through + edge overlay), Measure (dimensions/rulers).
+// There is no separate render-mode button — the edge overlay toggle lives inside
+// the Display panel. (The old separate "Color" tab was merged into Display.)
 //
 // The open tab is clearly highlighted: bright fill + white text + a white
 // indicator bar on top. Inactive tabs are muted. The indicator slot is always
@@ -16,16 +17,26 @@ interface ToolBarProps {
   anchored?: boolean;
   modelLoaded: boolean;
   precisionMode: boolean;
+  /** The merged "Display" / appearance tab open-state (legacy name: edges). */
   edgesPanelOpen: boolean;
   measurePanelOpen: boolean;
   onTogglePrecision: () => void;
   onToggleEdges: () => void;
   onToggleMeasure: () => void;
-  /** Optional 4th tab: point-pair registration ("Align by points"). Only rendered
+  /** Label + icon for the appearance tab. Defaults to "Edges"/"◰" (Viro, which
+   *  only styles edges); the LiDAR experience passes "Display"/"◑" because that
+   *  tab also carries colour-by + see-through. */
+  appearanceLabel?: string;
+  appearanceIcon?: string;
+  /** Optional extra tab: point-pair registration ("Align by points"). Only rendered
    *  when onToggleRegister is provided (LiDAR only — Viro can't do it), so the
    *  shared Viro toolbar is unchanged. */
   registerPanelOpen?: boolean;
   onToggleRegister?: () => void;
+  /** Optional extra tab: stability / anti-drift lock ("Lock"). Only rendered when
+   *  onToggleLock is provided (LiDAR only), so the shared Viro toolbar is unchanged. */
+  lockPanelOpen?: boolean;
+  onToggleLock?: () => void;
   /** Layout: 'bottom' = the classic horizontal bar (default); 'right' = a vertical
    *  rail pinned to the right edge, slightly below centre, so the docked panel can
    *  sit low and the model keeps the whole middle of the screen. */
@@ -66,8 +77,12 @@ export default function ToolBar({
   onTogglePrecision,
   onToggleEdges,
   onToggleMeasure,
+  appearanceLabel = 'Edges',
+  appearanceIcon = '◰',
   registerPanelOpen = false,
   onToggleRegister,
+  lockPanelOpen = false,
+  onToggleLock,
   side = 'bottom',
 }: ToolBarProps) {
   if (!(modelLoaded && (placed || anchored))) return null;
@@ -75,10 +90,13 @@ export default function ToolBar({
   const tabs = (
     <>
       <Tab icon="#" label="Align" active={precisionMode} onPress={onTogglePrecision} />
-      <Tab icon="◰" label="Edges" active={edgesPanelOpen} onPress={onToggleEdges} />
+      <Tab icon={appearanceIcon} label={appearanceLabel} active={edgesPanelOpen} onPress={onToggleEdges} />
       <Tab icon="M" label="Measure" active={measurePanelOpen} onPress={onToggleMeasure} />
       {onToggleRegister && (
         <Tab icon="⊹" label="Points" active={registerPanelOpen} onPress={onToggleRegister} />
+      )}
+      {onToggleLock && (
+        <Tab icon="⚓" label="Lock" active={lockPanelOpen} onPress={onToggleLock} />
       )}
     </>
   );

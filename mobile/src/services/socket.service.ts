@@ -32,6 +32,10 @@ let connecting = false;
 let socket: Socket | null = null;
 let ably: any = null;
 let currentUserId: string | null = null;
+// Project rooms this client wants to be in (for room-scoped `import:progress`).
+// Tracked so they're re-joined on every (re)connect. Socket.IO only — on Ably
+// import:progress isn't published to a channel, so monitoring falls back to polling.
+const joinedProjects = new Set<string>();
 
 // Registry: event name -> handlers. Both transports funnel into dispatch().
 const handlers: Record<string, Set<Handler>> = {};
@@ -109,6 +113,8 @@ function initSocketIo(token: string | null): void {
   });
   socket.on('connect', () => {
     if (currentUserId) socket?.emit('join-user', currentUserId);
+    // Re-assert every project room after a (re)connect so the live import feed survives drops.
+    joinedProjects.forEach((projectId) => socket?.emit('join-project', projectId));
   });
   for (const event of Object.keys(handlers)) bindSocketEvent(event);
 }
@@ -123,6 +129,16 @@ export const socketService = {
   get connected(): boolean {
     if (transport === 'ably') return ably?.connection?.state === 'connected';
     return !!socket?.connected;
+  },
+
+  /**
+   * Whether the live transport delivers the room-scoped `import:progress` feed.
+   * Only Socket.IO does — Ably has no project channel — so monitoring screens
+   * must keep a polling floor when this is false (also true before the transport
+   * has been detected, which is the safe default).
+   */
+  get importPushAvailable(): boolean {
+    return transport === 'socketio';
   },
 
   /** Open (or re-use) the connection. Detects the transport on first call. */
@@ -157,8 +173,28 @@ export const socketService = {
     ably?.close?.();
     ably = null;
     boundSocketEvents.clear();
+    joinedProjects.clear();
     transport = null;
     currentUserId = null;
+  },
+
+  /**
+   * Join a project's room to receive its room-scoped `import:progress` events
+   * (the live import-pipeline feed). Idempotent and re-asserted on reconnect.
+   * No-op on the Ably transport (the event isn't published to a channel there —
+   * monitoring screens poll as a fallback regardless).
+   */
+  joinProject(projectId: string): void {
+    if (!projectId) return;
+    joinedProjects.add(projectId);
+    if (transport === 'socketio' && socket?.connected) socket.emit('join-project', projectId);
+  },
+
+  /** Leave a project's room (screen unmount). */
+  leaveProject(projectId: string): void {
+    if (!projectId) return;
+    joinedProjects.delete(projectId);
+    if (transport === 'socketio' && socket?.connected) socket.emit('leave-project', projectId);
   },
 
   /** Subscribe to a server event. Returns an unsubscribe function. */

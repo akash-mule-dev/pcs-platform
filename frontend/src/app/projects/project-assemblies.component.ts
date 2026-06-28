@@ -1,13 +1,13 @@
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MODEL_UPLOAD_ACCEPT, fileAccept } from '../shared/upload-accept';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ThreeViewerComponent, ViewerReferenceLength, ViewerColorOverlay } from '../shared/components/three-viewer/three-viewer.component';
 import { ProjectWorkspaceStore } from './project-workspace.store';
-import { ProjectsService, AssemblyNode, NodeType, NodeDocument, NodeLotRow, LotOption, KanbanData, KanbanCard, RevisionDiffData } from '../core/services/projects.service';
-import { ShippingService } from '../core/services/shipping.service';
+import { ProjectsService, AssemblyNode, NodeType, NodeDocument, NodeLotRow, LotOption, RevisionDiffData } from '../core/services/projects.service';
 import { ToastService } from '../core/services/toast.service';
 
 /** Dimension-like IFC property keys surfaced in the detail panel. */
@@ -24,6 +24,20 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
   template: `
     @if (store.loading() && !store.hasNodes()) {
       <div class="center"><mat-spinner diameter="36"></mat-spinner></div>
+    } @else if (store.geometryOnly()) {
+      <!-- Geometry-only import (STEP/IGES/mesh): a 3D model, but no assembly tree -->
+      <div class="geo-only">
+        <div class="geo-banner">
+          <mat-icon>view_in_ar</mat-icon>
+          <div class="geo-text">
+            <strong>Geometry-only model</strong>
+            <span>This file was imported as 3D geometry with no assembly structure — there's no parts tree, piece marks or BOM. Import an IFC for the full breakdown.</span>
+          </div>
+          <input #geoInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
+          <button class="geo-import" (click)="geoInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>Import another</button>
+        </div>
+        <div class="geo-viewer"><app-three-viewer [modelUrl]="store.fullModelUrl()!" [autoFocus]="true" [showTools]="true"></app-three-viewer></div>
+      </div>
     } @else if (!store.hasNodes()) {
       <div class="empty-state">
         @if (store.pipelineActive()) {
@@ -40,7 +54,7 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
           <mat-icon>account_tree</mat-icon>
           <h3>No assemblies yet</h3>
           <p>Upload an IFC / STEP model or a ZIP package (Tekla, SDS2, Advance Steel exports: model + PDF drawings). Structure, 3D and drawings are extracted automatically.</p>
-          <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
+          <input #fileInput type="file" hidden [attr.accept]="acceptModel" (change)="onFile($event)">
           <button class="cta" (click)="fileInput.click()" [disabled]="store.importing()"><mat-icon>upload_file</mat-icon>Import package / model</button>
         }
       </div>
@@ -96,7 +110,6 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
                   <option value="none">No coloring</option>
                   <option value="profile">By profile</option>
                   <option value="grade">By grade</option>
-                  <option value="production">By production status</option>
                   <option value="revision">By latest changes</option>
                 </select>
               </label>
@@ -121,17 +134,6 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
                 @if (n.mark) { <span class="mark">{{ n.mark }}</span> }
                 <span class="d-type">{{ n.nodeType }}</span>
               </div>
-              @if (selectedProduction(); as ps) {
-                <div class="prod-row">
-                  <span class="prod-chip" [style.background]="ps.color">{{ ps.label }}@if (ps.percent) { · {{ ps.percent }}% }</span>
-                  @if (ps.via) { <span class="prod-via">via {{ ps.via }}</span> }
-                  @if (ps.orderId) {
-                    <button class="prod-btn" (click)="openOrderBoard(ps.orderId)" title="Open this piece's production order board">
-                      <mat-icon>open_in_new</mat-icon>Order board
-                    </button>
-                  }
-                </div>
-              }
               @if (n.revisionStatus && !n.revisionAckedAt) {
                 <div class="rev-note rev-{{ n.revisionStatus }}">
                   <mat-icon>difference</mat-icon>
@@ -214,6 +216,19 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
     .cta mat-icon { font-size: 18px; width: 18px; height: 18px; }
     .cta:disabled { opacity: .6; cursor: default; }
 
+    /* ── Geometry-only import (3D model, no assembly tree) ── */
+    .geo-only { display: flex; flex-direction: column; gap: 12px; height: calc(100vh - 332px); min-height: 480px; }
+    .geo-banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); box-shadow: var(--clay-shadow-soft); flex-shrink: 0; }
+    .geo-banner > mat-icon { font-size: 26px; width: 26px; height: 26px; color: var(--clay-primary); flex-shrink: 0; }
+    .geo-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .geo-text strong { font-size: 13px; color: var(--clay-text); }
+    .geo-text span { font-size: 12px; color: var(--clay-text-muted); }
+    .geo-import { display: inline-flex; align-items: center; gap: 6px; background: var(--clay-primary); color: #fff; padding: 8px 14px; border-radius: var(--clay-radius-sm); font-size: 13px; font-weight: 600; border: none; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+    .geo-import mat-icon { font-size: 17px; width: 17px; height: 17px; }
+    .geo-import:disabled { opacity: .6; cursor: default; }
+    .geo-viewer { flex: 1; min-height: 0; background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); overflow: hidden; }
+    .geo-viewer app-three-viewer { display: block; height: 100%; }
+
     /* Two-pane layout sized to the viewport so the tree scrolls internally
        (search bar + viewer always stay on screen). */
     .layout { display: flex; gap: 16px; align-items: stretch; height: calc(100vh - 332px); min-height: 480px; }
@@ -280,13 +295,6 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
     .d-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .d-name { font-size: 14px; font-weight: 600; color: var(--clay-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .d-type { margin-left: auto; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clay-text-muted); background: var(--clay-bg-warm); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
-    /* Production status chip + drill-in (shown once production data is loaded) */
-    .prod-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-    .prod-chip { color: #fff; font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; letter-spacing: .01em; }
-    .prod-via { font-size: 11.5px; color: var(--clay-text-muted); }
-    .prod-btn { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border: 1px solid var(--clay-primary); background: var(--clay-surface); color: var(--clay-primary); border-radius: var(--clay-radius-sm); padding: 4px 10px; font-size: 11.5px; font-weight: 600; font-family: inherit; cursor: pointer; }
-    .prod-btn:hover { background: var(--info-bg); }
-    .prod-btn mat-icon { font-size: 15px; width: 15px; height: 15px; }
 
     /* ── Revision markers ── */
     .rev-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -339,9 +347,10 @@ const DIM_KEYS = ['width', 'height', 'depth', 'thickness', 'diameter', 'radius',
   `],
 })
 export class ProjectAssembliesComponent implements OnInit {
+  /** Desktop accept filter; dropped on iOS so WebKit doesn't grey out .ifc/.step files. */
+  readonly acceptModel = fileAccept(MODEL_UPLOAD_ACCEPT);
   store = inject(ProjectWorkspaceStore);
   private svc = inject(ProjectsService);
-  private shippingSvc = inject(ShippingService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private toast = inject(ToastService);
@@ -376,27 +385,26 @@ export class ProjectAssembliesComponent implements OnInit {
       .map((n) => ({ meshName: n.ifcGuid as string, lengthMm: n.lengthMm as number })),
   );
 
-  /** Color-by overlay mode for the 3D model. */
-  colorMode = signal<'none' | 'profile' | 'grade' | 'production' | 'revision'>('none');
+  /** Color-by overlay mode for the 3D model. Defaults to PROFILE so members read
+   *  by section on open (recolours once the tree loads; profile uses the already-
+   *  loaded nodes — no lazy fetch like production/revision). */
+  colorMode = signal<'none' | 'profile' | 'grade' | 'revision'>('profile');
   /** Categorical palette (last entry is reserved for the "Other" bucket). */
   private readonly PALETTE = ['#4e79a7', '#f28e2b', '#59a14f', '#e15759', '#76b7b2', '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#86bcb6', '#d37295'];
 
-  // Lazily-fetched data sources for the status overlays.
-  private kanban = signal<KanbanData | null>(null);
+  // Lazily-fetched data source for the revision overlay.
   private revision = signal<RevisionDiffData | null>(null);
-  /** Assembly-node ids that appear on a shipped/delivered load (project-scoped). */
-  private shipped = signal<Set<string>>(new Set());
-  private kanbanLoaded = false;
   private revisionLoaded = false;
   readonly overlayLoading = signal(false);
 
   /** The active viewer color overlay, switched by mode. Property modes use the
-   *  already-loaded tree; status modes use the lazily-fetched kanban / revision. */
+   *  already-loaded tree; the revision mode uses the lazily-fetched diff.
+   *  Production status lives on the work order, not the project (a project is a
+   *  pure design container), so it is not offered here. */
   colorOverlay = computed<ViewerColorOverlay | null>(() => {
     switch (this.colorMode()) {
       case 'profile': return this.propertyOverlay('profile');
       case 'grade': return this.propertyOverlay('grade');
-      case 'production': return this.productionOverlay();
       case 'revision': return this.revisionOverlay();
       default: return null;
     }
@@ -428,38 +436,6 @@ export class ProjectAssembliesComponent implements OnInit {
     return { colors, legend };
   }
 
-  /** Production heatmap: color each fabricated node's descendant meshes by the
-   *  furthest milestone it has reached, except active work always shows "in
-   *  production". Precedence: in-progress > shipped > complete; uncolored = not started. */
-  private productionOverlay(): ViewerColorOverlay {
-    const C = { progress: '#f59e0b', shipped: '#3b82f6', complete: '#27ae60', none: '#c8c2b6' };
-    const data = this.kanban();
-    if (!data) return { colors: {}, legend: [{ label: 'Loading production status…', color: C.none }] };
-    const shipped = this.shipped();
-    const state = new Map<string, 'progress' | 'shipped' | 'complete'>();
-    for (const c of data.done) if (c.assemblyNodeId) state.set(c.assemblyNodeId, 'complete');
-    for (const nid of shipped) state.set(nid, 'shipped');                                      // shipped > complete
-    for (const c of data.cards) if (c.assemblyNodeId) state.set(c.assemblyNodeId, 'progress'); // active work wins
-    const byId = this.byId();
-    const colors: Record<string, string> = {};
-    const n = { progress: 0, shipped: 0, complete: 0 };
-    for (const [nodeId, s] of state) {
-      const node = byId.get(nodeId);
-      if (!node) continue;
-      n[s]++;
-      for (const guid of this.descendantGuids(node)) colors[guid] = C[s];
-    }
-    return {
-      colors,
-      legend: [
-        { label: `In production (${n.progress})`, color: C.progress },
-        { label: `Complete (${n.complete})`, color: C.complete },
-        { label: `Shipped (${n.shipped})`, color: C.shipped },
-        { label: 'Not started / no order', color: C.none },
-      ],
-    };
-  }
-
   /** Change overlay vs the latest import: added (green) / changed (amber).
    *  Removed pieces aren't in the current model so they're noted, not drawn. */
   private revisionOverlay(): ViewerColorOverlay {
@@ -487,45 +463,8 @@ export class ProjectAssembliesComponent implements OnInit {
   colorLabel(): string {
     return {
       none: '', profile: 'Colored by profile', grade: 'Colored by grade',
-      production: 'Colored by production status', revision: 'Colored by latest changes',
+      revision: 'Colored by latest changes',
     }[this.colorMode()] ?? '';
-  }
-
-  /** Production status of the selected piece — found by walking up to the nearest
-   *  work-ordered ancestor (work orders sit on assemblies, parts are leaves).
-   *  Drives the detail-panel chip + the click-through to that order's board. */
-  selectedProduction = computed(() => {
-    const node = this.selectedNode();
-    const data = this.kanban();
-    if (!node || !data) return null;
-    const cardByNode = new Map<string, KanbanCard>();
-    for (const c of data.done) if (c.assemblyNodeId) cardByNode.set(c.assemblyNodeId, c);
-    for (const c of data.cards) if (c.assemblyNodeId) cardByNode.set(c.assemblyNodeId, c); // active overrides done
-    const byId = this.byId();
-    let n: AssemblyNode | undefined = node;
-    while (n) {
-      const card = cardByNode.get(n.id);
-      if (card) {
-        const inProgress = !!card.currentStage;
-        const isShipped = this.shipped().has(n.id);
-        return {
-          label: inProgress ? `In production · ${card.currentStage!.name}` : isShipped ? 'Shipped' : 'Complete',
-          color: inProgress ? '#f59e0b' : isShipped ? '#3b82f6' : '#27ae60',
-          percent: card.overall.percent,
-          orderId: card.productionOrderId,
-          orderNumber: card.productionOrderNumber,
-          // Name the bearing assembly when the status comes from an ancestor, not the clicked part.
-          via: n.id === node.id ? null : (n.mark || this.displayName(n)),
-        };
-      }
-      n = n.parentId ? byId.get(n.parentId) : undefined;
-    }
-    return null;
-  });
-
-  /** Drill into the selected piece's production order board. */
-  openOrderBoard(orderId: string | null): void {
-    if (orderId) this.router.navigate(['/projects', this.store.id(), 'orders', orderId, 'board']);
   }
 
   goMonitoring(): void {
@@ -608,31 +547,10 @@ export class ProjectAssembliesComponent implements OnInit {
         this.svc.availableLots(this.store.id()).subscribe({ next: (o) => this.lotOptions.set(o), error: () => {} });
       }
     }, { allowSignalWrites: true });
-    // Lazily fetch the data a status overlay needs the first time it's picked.
+    // Lazily fetch the revision diff the first time the overlay is picked.
     effect(() => {
       const mode = this.colorMode();
       const pid = this.store.id();
-      if (mode === 'production' && !this.kanbanLoaded && pid) {
-        this.kanbanLoaded = true;
-        this.overlayLoading.set(true);
-        this.svc.projectKanban(pid).subscribe({
-          next: (d) => { this.kanban.set(d); this.overlayLoading.set(false); },
-          error: () => { this.overlayLoading.set(false); this.kanbanLoaded = false; },
-        });
-        // Shipped assemblies (best-effort, parallel) — what's left the shop.
-        this.shippingSvc.listByProject(pid).subscribe({
-          next: (loads) => {
-            const out = new Set<string>();
-            for (const s of loads) {
-              if (s.status === 'shipped' || s.status === 'delivered') {
-                for (const it of s.items ?? []) if (it.assemblyNodeId) out.add(it.assemblyNodeId);
-              }
-            }
-            this.shipped.set(out);
-          },
-          error: () => {},
-        });
-      }
       if (mode === 'revision' && !this.revisionLoaded && pid) {
         this.revisionLoaded = true;
         this.overlayLoading.set(true);

@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { MODEL_UPLOAD_ACCEPT, fileAccept } from '../shared/upload-accept';
 import { Subscription } from 'rxjs';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
@@ -52,7 +53,7 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
 
             <div class="actions">
               <app-tour-launcher tourId="project-workspace" [auto]="true" tooltip="Tour this project"></app-tour-launcher>
-              <input #fileInput type="file" hidden accept=".ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply" (change)="onFile($event)">
+              <input #fileInput type="file" hidden [attr.accept]="acceptModel" (change)="onFile($event)">
               <button class="act-btn primary" data-tour="ws-import" (click)="fileInput.click()" [disabled]="store.importing()">
                 <mat-icon>upload_file</mat-icon><span>Import Package</span>
               </button>
@@ -302,6 +303,8 @@ interface WorkspaceTab { path: string; label: string; icon: string; }
   `],
 })
 export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
+  /** Desktop accept filter; dropped on iOS so WebKit doesn't grey out .ifc/.step files. */
+  readonly acceptModel = fileAccept(MODEL_UPLOAD_ACCEPT);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private dialog = inject(MatDialog);

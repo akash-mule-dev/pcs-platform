@@ -65,7 +65,7 @@ export class ProjectWorkspaceStore implements OnDestroy {
       const stamp = `${p.id}|${url}|${version}`;
       if (this.autoCachedFor === stamp) return;
       this.autoCachedFor = stamp;
-      const modelId = this.nodes().find((n) => n.modelId)?.modelId ?? null;
+      const modelId = this.displayModelId();
       void this.cache.cacheProject(
         {
           projectId: p.id,
@@ -109,10 +109,28 @@ export class ProjectWorkspaceStore implements OnDestroy {
 
   // ── Derived (shared) ──────────────────────────────────────────────────────
   readonly hasNodes = computed(() => this.nodes().length > 0);
-  readonly hasModel = computed(() => this.nodes().some((n) => n.modelId));
+  /**
+   * The model id to display. Normally this comes from the assembly tree (an
+   * IFC import stamps `modelId` onto its nodes). Geometry-only imports
+   * (STEP/IGES/STL/OBJ/GLB) produce NO nodes, so we fall back to the latest
+   * completed import's model — otherwise the converted GLB would be orphaned.
+   */
+  readonly displayModelId = computed<string | null>(() => {
+    const fromNode = this.nodes().find((n) => n.modelId)?.modelId;
+    if (fromNode) return fromNode;
+    const completed = this.imports().filter((i) => i.status === 'completed' && i.modelId);
+    if (!completed.length) return null;
+    const latest = [...completed].sort((a, b) =>
+      (b.finishedAt || b.updatedAt || b.createdAt || '').localeCompare(a.finishedAt || a.updatedAt || a.createdAt || ''),
+    )[0];
+    return latest.modelId ?? null;
+  });
+  readonly hasModel = computed(() => !!this.displayModelId());
+  /** True when there's a viewable model but no assembly tree (geometry-only import). */
+  readonly geometryOnly = computed(() => !this.hasNodes() && this.hasModel());
   readonly fullModelUrl = computed(() => {
-    const withModel = this.nodes().find((n) => n.modelId);
-    return withModel?.modelId ? `${environment.apiUrl}/models/${withModel.modelId}/file` : null;
+    const id = this.displayModelId();
+    return id ? `${environment.apiUrl}/models/${id}/file` : null;
   });
   readonly openNcr = computed(() => this.quality()?.totals?.openNcr ?? 0);
   /** True when the latest revision still needs review (drives the banner). */

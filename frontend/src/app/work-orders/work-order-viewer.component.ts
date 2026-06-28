@@ -41,12 +41,13 @@ import { ProjectsService, AssemblyNode, AuditItem, OrderAudit } from '../core/se
 
         @if (hasGeometry()) {
           <div class="controls">
-            <label class="color-by" title="Colour the model by a property">
+            <label class="color-by" title="Colour the model by a property or production status">
               <mat-icon>palette</mat-icon>
               <select [ngModel]="colorMode()" (ngModelChange)="colorMode.set($event)">
                 <option value="none">No colouring</option>
                 <option value="profile">By profile</option>
                 <option value="grade">By grade</option>
+                <option value="production">By production status</option>
               </select>
             </label>
             <button type="button" class="tgl" [class.on]="xray()" (click)="xray.set(!xray())" title="Toggle x-ray / solid">
@@ -174,7 +175,9 @@ export class WorkOrderViewerComponent implements OnInit {
   /** The selected node + all its descendants (what the isolated GLB contains). */
   private subtree = signal<AssemblyNode[]>([]);
 
-  readonly colorMode = signal<'none' | 'profile' | 'grade'>('none');
+  // Default to PROFILE so members read by section on open (recolours once the
+  // subtree loads); switch to Grade / Production status / None in the picker.
+  readonly colorMode = signal<'none' | 'profile' | 'grade' | 'production'>('profile');
   readonly xray = signal(false);
   readonly selectedPart = signal<AssemblyNode | null>(null);
 
@@ -238,10 +241,11 @@ export class WorkOrderViewerComponent implements OnInit {
       .map((n) => ({ meshName: (n.ifcGuid ?? n.meshName) as string, lengthMm: n.lengthMm as number })),
   );
 
-  /** Colour-by profile / grade over the subtree (most common → stable colours). */
+  /** Colour-by profile / grade / production status over the subtree. */
   colorOverlay = computed<ViewerColorOverlay | null>(() => {
     const mode = this.colorMode();
     if (mode === 'none') return null;
+    if (mode === 'production') return this.productionOverlay();
     const nodes = this.subtree();
     const keyOf = (n: AssemblyNode) => this.defined(mode === 'profile' ? n.profile : n.materialGrade);
     const counts = new Map<string, number>();
@@ -266,6 +270,60 @@ export class WorkOrderViewerComponent implements OnInit {
     if (distinct.length > MAX) legend.push({ label: `Other (${distinct.length - MAX})`, color: OTHER });
     return { colors, legend };
   });
+
+  /** Production / ship-status overlay for the work order's piece(s): every
+   *  audited assembly shown in this view, painted by its status (NCR > shipped >
+   *  on-a-load > ready > in-production > not started) and propagated to its
+   *  descendant meshes — the web twin of the mobile work-order "3D" status view.
+   *  A project has no status, but a work order does, so the overlay lives here. */
+  private productionOverlay(): ViewerColorOverlay {
+    const NONE = '#9aa7b0';
+    const a = this.audit();
+    const nodes = this.subtree();
+    if (!a || !nodes.length) return { colors: {}, legend: [{ label: 'Loading production status…', color: NONE }] };
+    // Descendant-guid walk scoped to the displayed subtree.
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const kids = new Map<string, AssemblyNode[]>();
+    for (const n of nodes) if (n.parentId) { const arr = kids.get(n.parentId) ?? []; arr.push(n); kids.set(n.parentId, arr); }
+    const descendantGuids = (root: AssemblyNode): string[] => {
+      const out: string[] = []; const stack = [root];
+      while (stack.length) { const cur = stack.pop()!; const g = cur.ifcGuid ?? cur.meshName; if (g) out.push(g); for (const c of kids.get(cur.id) ?? []) stack.push(c); }
+      return out;
+    };
+    const colors: Record<string, string> = {};
+    const n = { ncr: 0, shipped: 0, loaded: 0, ready: 0, prod: 0, not: 0 };
+    for (const it of a.items) {
+      if (!it.nodeId || !byId.has(it.nodeId)) continue; // only pieces shown in THIS view
+      for (const g of descendantGuids(byId.get(it.nodeId)!)) colors[g] = this.statusColor(it);
+      if (it.openNcrs > 0 || it.shipStatus === 'blocked_ncr') n.ncr++;
+      else if (it.shipStatus === 'shipped') n.shipped++;
+      else if (it.shipStatus === 'allocated') n.loaded++;
+      else if (it.shipStatus === 'ready') n.ready++;
+      else if (it.status === 'in_progress') n.prod++;
+      else n.not++;
+    }
+    return {
+      colors,
+      legend: [
+        { label: `Not started (${n.not})`, color: '#9aa7b0' },
+        { label: `In production (${n.prod})`, color: '#f59e0b' },
+        { label: `Ready (${n.ready})`, color: '#2e7d32' },
+        { label: `On a load (${n.loaded})`, color: '#1565c0' },
+        { label: `Shipped (${n.shipped})`, color: '#64748b' },
+        { label: `NCR (${n.ncr})`, color: '#c62828' },
+      ],
+    };
+  }
+
+  /** One status colour per piece (NCR > shipped > on-a-load > ready > in-prod > not). */
+  private statusColor(it: AuditItem): string {
+    if (it.openNcrs > 0 || it.shipStatus === 'blocked_ncr') return '#c62828';
+    if (it.shipStatus === 'shipped') return '#64748b';
+    if (it.shipStatus === 'allocated') return '#1565c0';
+    if (it.shipStatus === 'ready') return '#2e7d32';
+    if (it.status === 'in_progress') return '#f59e0b';
+    return '#9aa7b0';
+  }
 
   onMeshClicked(name: string): void {
     const n = this.subtree().find((x) => x.ifcGuid === name || x.meshName === name) ?? null;

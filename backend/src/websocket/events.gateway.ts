@@ -258,20 +258,25 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   }
 
   /**
-   * Live import-pipeline progress for a project (room-scoped — see
-   * join-project). Fired on every stage transition and on progress ticks.
+   * Live import-pipeline progress for a project. Fired on every stage transition
+   * and progress tick. Routed on the owning tenant's `org:<id>` channel so it
+   * reaches BOTH transports — Ably's hosted edge (serverless API / the worker on
+   * a persistent host) AND in-process Socket.IO (dev) — instead of the old
+   * project:<id> room, which was Socket.IO-only (the deployed import bar only
+   * limped along on the 5s polling fallback). The project workspace store filters
+   * by projectId, so org-wide delivery is correct and tenant-safe; this is the
+   * same pattern emitProjectModelUpdated already uses.
    */
   emitImportProgress(data: {
     importFileId: string;
     projectId: string;
+    organizationId?: string | null;
     status: string;
     stage: string;
     progress: number;
     [key: string]: any;
   }) {
-    if (this.server) {
-      this.server.to(`project:${data.projectId}`).emit('import:progress', sanitize(data));
-    }
+    this.emitToOrg('import:progress', data, data.organizationId);
   }
 
   /**

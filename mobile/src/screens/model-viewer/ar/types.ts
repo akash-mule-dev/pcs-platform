@@ -22,32 +22,30 @@ export interface EdgeColorOption {
 export const EDGE_COLORS: EdgeColorOption[] = [
   { key: 'cyan', label: 'Cyan', hex: '#00e5ff', material: 'edge_cyan' },
   { key: 'green', label: 'Green', hex: '#39ff14', material: 'edge_green' },
+  { key: 'red', label: 'Red', hex: '#ff3b30', material: 'edge_red' },
+  { key: 'blue', label: 'Blue', hex: '#0a84ff', material: 'edge_blue' },
   { key: 'yellow', label: 'Yellow', hex: '#ffe600', material: 'edge_yellow' },
   { key: 'orange', label: 'Orange', hex: '#ff7a00', material: 'edge_orange' },
   { key: 'magenta', label: 'Pink', hex: '#ff2bd6', material: 'edge_magenta' },
   { key: 'white', label: 'White', hex: '#ffffff', material: 'edge_white' },
 ];
 
-export const DEFAULT_EDGE_COLOR = EDGE_COLORS[0].hex; // cyan
+// Default edge/border colour — RED. The model loads with a high-visibility red
+// outline over the real part (the AR inspection overlay look), not plain cyan.
+export const DEFAULT_EDGE_COLOR =
+  EDGE_COLORS.find((c) => c.key === 'red')?.hex ?? EDGE_COLORS[0].hex; // #ff3b30
 
-// Edge weight (line thickness) is BAKED into the tube geometry (radius), so
-// changing it regenerates + re-caches the wireframe GLB at this radius
-// multiplier. The Edges panel exposes both quick presets and a free slider over
-// [EDGE_WEIGHT_MIN, EDGE_WEIGHT_MAX]; 1 = the default medium line.
-export interface EdgeWeightPreset {
-  label: string;
-  scale: number;
-}
+// Edge weight (line thickness) is BAKED into the tube geometry (radius), adjusted
+// via a thickness SLIDER (no discrete presets). Default is Fine; the slider spans
+// [EDGE_WEIGHT_MIN … EDGE_WEIGHT_MAX] = Fine … Thin (Medium/Thick removed).
+export const DEFAULT_EDGE_WEIGHT = 0.1;  // Fine — the default render weight
+export const EDGE_WEIGHT_MIN = 0.1;      // Fine — nothing thinner
+export const EDGE_WEIGHT_MAX = 0.55;     // Thin — nothing thicker (no Medium/Thick)
 
-export const EDGE_WEIGHT_PRESETS: EdgeWeightPreset[] = [
-  { label: 'Thin', scale: 0.55 },
-  { label: 'Medium', scale: 1 },
-  { label: 'Thick', scale: 2.2 },
-];
-
-export const DEFAULT_EDGE_WEIGHT = 1;
-export const EDGE_WEIGHT_MIN = 0.3;
-export const EDGE_WEIGHT_MAX = 4;
+// Initial model opacity for the AR overlay (1 = solid). The model loads at 25%
+// (heavily see-through) so the real part stays clearly visible through it for QA
+// overlay — the "see-through" inspection look. Only the LiDAR engine renders opacity.
+export const DEFAULT_MODEL_OPACITY = 0.25;
 
 // Lifecycle of the on-device model load. The camera is live the whole time —
 // these phases only describe the model streaming in over the live camera.

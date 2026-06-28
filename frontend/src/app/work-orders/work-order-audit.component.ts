@@ -214,7 +214,7 @@ const PAGE = 200;
                 </div>
                 <div class="ractions">
                   @if (selItem.nodeId) {
-                    <a class="view3d" [routerLink]="['/work-orders', orderId, '3d']" [queryParams]="{ node: selItem.nodeId }" matTooltip="View this piece in 3D — orbit, measure and colour by profile/grade">
+                    <a class="view3d" [routerLink]="['/work-orders', orderId, '3d']" [queryParams]="{ node: selItem.nodeId }" matTooltip="View this piece in 3D — orbit, measure and colour by profile / grade / production status">
                       <mat-icon>view_in_ar</mat-icon>View in 3D
                     </a>
                   }

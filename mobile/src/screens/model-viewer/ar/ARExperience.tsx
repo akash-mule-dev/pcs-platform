@@ -29,7 +29,7 @@ import ToggleChip from './ToggleChip';
 import TrackingModeSwitcher from './TrackingModeSwitcher';
 import MeasurementPanel from './MeasurementPanel';
 import AlignPanel from './AlignPanel';
-import EdgesPanel from './EdgesPanel';
+import AppearancePanel from './AppearancePanel';
 import QualityPanel from './QualityPanel';
 import LogInspectionForm, { InspectionFormResult } from './LogInspectionForm';
 import { useModelState } from './useModelState';
@@ -45,7 +45,7 @@ import {
   MeasurementState,
   DEFAULT_MEASUREMENTS,
   DEFAULT_EDGE_COLOR,
-  EDGE_WEIGHT_MIN,
+  DEFAULT_EDGE_WEIGHT,
 } from './types';
 import { captureSnapshot } from './arSnapshot';
 import { loadRegistration, saveRegistration } from './arRegistration';
@@ -126,8 +126,9 @@ export default function ARExperience({
   // (a continuous line-thickness multiplier) re-bakes the tube radius via an
   // on-demand wireframe build.
   const [edgeColor, setEdgeColor] = useState<string>(DEFAULT_EDGE_COLOR);
-  // Edges default to the THINNEST line weight (matches the LiDAR experience).
-  const [edgeWeight, setEdgeWeight] = useState<number>(EDGE_WEIGHT_MIN);
+  // Edges default to a thin crisp line (matches the LiDAR experience); finer
+  // (down to 0.10×) via the Edges panel.
+  const [edgeWeight, setEdgeWeight] = useState<number>(DEFAULT_EDGE_WEIGHT);
   // Bumped by the "Place point" button to drop a real-world point at the reticle.
   const [placeNonce, setPlaceNonce] = useState(0);
   const [trackingStatus, setTrackingStatus] = useState<string>('normal');
@@ -216,9 +217,13 @@ export default function ARExperience({
     }
   }, [model.wireframeUri, pendingWireframe, setWireframeUri, setRenderMode]);
 
-  // Reset measurements when the model changes.
+  // Reset measurements + edge styling when the model changes, so a switched-in
+  // model loads with the default border look (red, thin) rather than inheriting
+  // the previous model's edge colour/weight.
   useEffect(() => {
     setMeasurements(DEFAULT_MEASUREMENTS);
+    setEdgeColor(DEFAULT_EDGE_COLOR);
+    setEdgeWeight(DEFAULT_EDGE_WEIGHT);
   }, [model.uri]);
 
   // Tracking-loss drift suspicion (only meaningful once placed).
@@ -959,14 +964,15 @@ export default function ARExperience({
         />
       )}
 
-      {/* ── Edge-view controls (view / colour / weight) ── */}
+      {/* ── Edge-view controls (toggle / colour / weight). Viro has no per-mesh
+          colour overlay or opacity, so the merged panel degrades to EDGES only. ── */}
       {edgesPanelOpen && state.placed && (
-        <EdgesPanel
+        <AppearancePanel
           renderMode={state.renderMode}
+          onSelectView={handleSelectView}
           edgeColor={edgeColor}
           edgeWeight={edgeWeight}
-          busy={model.wireframeBusy}
-          onSelectView={handleSelectView}
+          edgesBusy={model.wireframeBusy}
           onSelectColor={handleSelectColor}
           onCommitWeight={handleCommitWeight}
           bottomOffset={PANEL_BOTTOM}

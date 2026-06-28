@@ -41,7 +41,9 @@ export function PartViewerScreen() {
 
   // ── Tool state ──
   const [tab, setTab] = useState<ViewerTab | null>(null);
-  const [colorBy, setColorBy] = useState<ColorBy>('none');
+  // Default the 3D viewer to colour-by-PROFILE so members read by section on open
+  // (the model recolours once the node data loads); switch to Grade/None in the panel.
+  const [colorBy, setColorBy] = useState<ColorBy>('profile');
   const [renderMode, setRenderMode] = useState<ViewerRenderMode>('solid');
   const [distanceOn, setDistanceOn] = useState(false);
   const [dimensionsOn, setDimensionsOn] = useState(false);
@@ -168,6 +170,8 @@ export function PartViewerScreen() {
             fileUrl,
             meshNames: meshNames && meshNames.length ? meshNames : undefined,
             partLabel: title,
+            // Carries the project so AR can colour-by Profile / Grade (needs node data).
+            projectId,
           })
         }
       >

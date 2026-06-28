@@ -35,6 +35,8 @@ import ExpoModulesCore
 import ARKit
 import RealityKit
 import simd
+import UIKit
+import ImageIO  // CGImagePropertyOrientation (ARReferenceImage init)
 
 class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // Event names MUST exactly match the Events(...) declared in PcsLidarArModule.
@@ -46,6 +48,10 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   let onPartTap = EventDispatcher()
   let onRegisterPoint = EventDispatcher()
   let onAutoAlign = EventDispatcher()
+  let onScanState = EventDispatcher()
+  // Image-marker stabilization telemetry (FabStation-style anti-drift).
+  let onMarkerUpdate = EventDispatcher()  // the live marker set + native's active pick
+  let onLockStatus = EventDispatcher()    // bind/clear/lock-toggle acknowledgements
 
   private let arView = ARView(frame: .zero)
   private let config = ARWorldTrackingConfiguration()
@@ -64,19 +70,52 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // rotation / translate) — so Align edits never disturb the centring, and yaw
   // spins the model in place on the surface. modelPivot is the child of the
   // surface-anchored modelAnchor.
-  private var modelEntity: Entity?
+  private var modelEntity: Entity?            // the SOLID model — always present once loaded
   private var modelPivot: Entity?
   private var modelAnchor: AnchorEntity?
+  // The SESSION-TRACKED ARKit anchor backing modelAnchor. The model is anchored to a
+  // real ARAnchor (added to the session) rather than a static world coordinate, so it
+  // rides ARKit's MAP-REFINEMENT corrections — loop closure, interruption recovery, a
+  // restored world map — which a free AnchorEntity(world:) never receives. NOTE: a
+  // user-created ARAnchor is NOT continuously nudged frame-to-frame, so this does not
+  // by itself cancel the steady-state VIO drift you accumulate walking the length of a
+  // large piece; that residual is handled by re-running auto-snap (ICP) / point-pair
+  // registration at the far end. The bigger far-end win is the 1:1 scale fix: with a
+  // correctly-scaled model, aligning one end lines the whole piece up.
+  private var modelArAnchor: ARAnchor?
+  // Correction node BETWEEN the (ARKit-driven) anchor and the user pivot:
+  //   modelAnchor (rides relocalization) → modelCorrection (registration / one-shot
+  //   auto-snap delta) → modelPivot (user transform) → entity.
+  // A solved correction (point-pair registration or the manual one-shot Auto-snap) is
+  // applied here (in the anchor's local frame) instead of tearing down + re-seating the
+  // ARAnchor — so the long-lived anchor keeps its relocalization continuity. Identity
+  // until the first correction.
+  private var modelCorrection: Entity?
   private var pendingPlacement = false
   private var placeAttempts = 0
+  // Scan-before-place gate. When manualPlacement is on, the model is NOT auto-placed
+  // on load; it waits until the user has scanned the area (ARKit tracking == normal
+  // with a real mapped surface under the reticle) and taps Place. Anchoring into a
+  // well-mapped scene markedly reduces later drift vs anchoring against a half-
+  // initialised world map. (This does NOT affect scale — the model is 1:1 from
+  // realScale regardless; scanning buys placement quality + tracking stability.)
+  private var manualPlacement = false
+  private var awaitingManualPlace = false
+  private var lastTrackingState = "starting"
+  private var lastScanReady: Bool? = nil
   private var loadToken = UUID()
-  // Variant selection (solid ↔ edges) is driven by an EXPLICIT flag, not by a
-  // prop transitioning to nil (Expo's nil-diffing for cleared props is fragile).
+  // Edges are a COMPOSITE overlay, not a variant swap: the solid model is ALWAYS
+  // shown (so Colour-by + see-through opacity apply in BOTH view modes), and in
+  // "edges" view the wireframe tubes are added ON TOP as a separate, collision-free
+  // child of the pivot. Driven by the explicit (wantEdges, uris) state — not a prop
+  // going nil (fragile under Expo).
   private var solidUri: URL?                  // the solid model
-  private var wireframeUri: URL?              // the edge-view variant (if any)
-  private var wantEdges = false               // show the wireframe variant?
-  private var loadedUri: URL?                 // what's actually on screen now
-  private var currentUnlit = true             // true while showing the SOLID model
+  private var wireframeUri: URL?              // the edge-tube overlay (if any)
+  private var wantEdges = false               // overlay the edges on top of the solid?
+  private var loadedSolidUri: URL?            // solid currently loaded
+  private var edgeEntity: Entity?             // the edge-tube overlay entity (if shown)
+  private var loadedEdgeUri: URL?             // wireframe currently overlaid
+  private var edgeLoadToken = UUID()          // guards async edge loads (weight-slider spam)
 
   // Flat unlit fill colours (no lighting → one uniform colour across the whole
   // assembly, no gradient). Solid = steel grey; the wireframe is painted with the
@@ -88,18 +127,33 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // Persisted across variant swaps / recolours so the overlay doesn't flicker back.
   private var modelOpacity: Float = 1
 
+  // Per-entity colour overlay (Color-by Profile/Grade), keyed by entity name
+  // (== ifc_guid) → UIColor. Applies ONLY to the SOLID model; empty = the uniform
+  // steel grey. Unmapped meshes get a neutral "ghost" grey so coloured members pop
+  // (mirrors the web/3D-viewer colorOverlay, which ghosts non-mapped meshes).
+  private var colorOverlay: [String: UIColor] = [:]
+  private let ghostColor = UIColor(red: 0.55, green: 0.60, blue: 0.66, alpha: 1.0)
+
+  // TRUE 1:1 scale: metres-per-GLB-unit, calibrated JS-side from each part's real
+  // length (length_mm) vs its GLB bounding box. When >0 it REPLACES the loader's
+  // fixed 0.6 m auto-fit so the model renders at the real assembly's size (the AR
+  // overlay point). 0 = unknown → keep the fit fallback. The Align scale (userScale)
+  // multiplies this, so the operator can still nudge it.
+  private var realScale: Float = 0
+
   // ── User transform (Align) ──
   private var userScale: Float = 1
-  private var userYaw: Float = 0              // radians
-  private var userPitch: Float = 0
-  private var userRoll: Float = 0
+  // Rotation is a single quaternion, NOT accumulated Euler angles. Each Turn/Tilt/
+  // Roll nudge rotates about a FIXED WORLD axis (composed onto this), so the three
+  // controls stay independent and can never collapse onto one another — the Euler
+  // gimbal-lock that made Turn ≡ Roll once the model was tilted ~90° is gone.
+  private var userOrientation = simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0)) // identity
   private var userTranslate = SIMD3<Float>(repeating: 0)
   private var locked = false
 
   // ── Direct manipulation (Phase 1) ──
   private var directManipulation = false
   private var panOnModel = false                    // did the current drag start on the model?
-  private var rotateBaselineYaw: Float = 0          // userYaw captured at twist .began
   private var rotateBaselineRotation: Float = 0     // gesture rotation captured at twist .began
   private var dragGrabOffset = SIMD2<Float>(0, 0)   // world XZ: pivot-origin − grab hit point
   private var dragPlaneY: Float = 0                 // world Y of the drag plane (model height at grab)
@@ -115,6 +169,36 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   private var registerMarkers: [Entity] = []
   private var registerModelPoints: [SIMD3<Float>] = []
   private var registerRealPoints: [SIMD3<Float>] = []
+
+  // ── Image-marker stabilization (FabStation-style anti-drift) ──
+  // FabStation (Vuforia Image Targets) kills drift by sticking printed markers on the
+  // steel and re-anchoring the model to whichever one you've walked up to. ARKit's
+  // analog: register the printed markers as ARReferenceImages on the WORLD-tracking
+  // config (so LiDAR mesh + occlusion are KEPT — unlike ARImageTrackingConfiguration),
+  // and bind the model to a marker by storing its pose offset in that marker's local
+  // frame. An ARImageAnchor is re-solved against the PHYSICAL marker every frame, so
+  // driving the model from `markerWorldLive · offset` cancels the steady-state VIO
+  // drift a free anchor accrues as you walk a long piece — the gap this engine's own
+  // comments flagged. The per-frame drive is native (here); the active-marker POLICY
+  // is the unit-tested marker-lock.ts mirrored in selectActiveMarkerNative().
+  private var markerLockEnabled = false
+  private var markerWidthMeters: Float = 0.15           // printed marker edge length (m)
+  private var referenceImages: Set<ARReferenceImage> = []
+  private var detectionConfigured = false
+  private var markerEntities: [String: AnchorEntity] = [:]   // name → RealityKit anchor (ARKit auto-tracks it)
+  private var markerTracked: [String: Bool] = [:]            // name → tracked THIS frame?
+  private var markerBindings: [String: simd_float4x4] = [:]  // name → offset (markerWorld⁻¹ · correctionWorld) at bind
+  private var activeMarkerName: String?                      // the marker currently driving the pose
+  private var lastMarkerEmit = Date(timeIntervalSince1970: 0)
+  // Item 1+2 — fusion / quality-gating tuning.
+  private let markerMaxRangeM: Float = 3.0      // beyond this a marker is dropped (weight 0)
+  private let markerNearFavorM: Float = 0.5     // distance falloff scale (closer = higher weight)
+  private let markerRejectStepM: Float = 0.30   // reject a fused target this far from current (outlier)
+  private var markerOutlierStreak = 0           // consecutive rejects (accept after a few → no permanent stuck)
+  // How many markers the runtime generator makes (== the printable sheet). A curated
+  // bundled "PcsMarkers" AR Resources group, if present, overrides this for tracking
+  // quality (see buildReferenceImages).
+  private static let generatedMarkerCount = 12
 
   // ── Measurement ──
   private var measureMode = "off"             // off | model | real | deviation
@@ -182,32 +266,101 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     }
     config.planeDetection = [.horizontal, .vertical]
     config.environmentTexturing = .automatic
+    // Gravity-aligned world (the default — set explicitly to document intent): the
+    // world frame stays fixed to the room (never camera-relative) so the anchored
+    // model keeps a stable up-axis as the iPad moves.
+    config.worldAlignment = .gravity
+    // Enable printed-marker DETECTION up front (cheap; a world-tracking feature that
+    // coexists with the LiDAR mesh). Marker LOCK is then a pure live toggle — no
+    // session re-run — so arming it never hitches the scene.
+    configureMarkerDetection()
     arView.session.run(config)
     onTracking(["state": "starting", "lidar": meshSupported])
   }
 
   // MARK: - Props (called from the Module's Prop closures)
 
-  func setModelUri(_ uri: URL?) { solidUri = uri; reconcileVariant() }
-  func setWireframeUri(_ uri: URL?) { wireframeUri = uri; reconcileVariant() }
-  func setShowEdges(_ v: Bool) { wantEdges = v; reconcileVariant() }
+  func setModelUri(_ uri: URL?) { solidUri = uri; reconcileSolid() }
+  func setWireframeUri(_ uri: URL?) { wireframeUri = uri; reconcileEdges() }
+  func setShowEdges(_ v: Bool) { wantEdges = v; reconcileEdges() }
 
-  // The edge-view colour. Re-tints the wireframe IN PLACE (order-independent of
-  // the wireframeUri prop) so it's always one uniform colour. No reload needed.
+  // The edge-overlay colour. Re-tints the (opaque) edge tubes in place. No reload.
   func setEdgeColor(_ hex: String) {
     guard let c = Self.colorFromHex(hex) else { return }
     wireframeTint = c
-    // Repaint the wireframe in the new colour, honouring any see-through opacity.
-    if !currentUnlit, modelEntity != nil { applyOpacity() }
+    if let e = edgeEntity { paintUniform(e, wireframeTint, opaque: true) }
   }
 
-  // Paint every mesh of `entity` with one flat UnlitMaterial (uniform colour, no
-  // lighting gradient). Used to re-colour the edge view live.
-  private func retint(_ entity: Entity, _ color: UIColor) {
-    let flat = UnlitMaterial(color: color)
+  // Per-entity colour overlay for the SOLID model (Color-by Profile/Grade). `map`
+  // is entity-name (== ifc_guid) → hex; empty restores the uniform grey. The solid
+  // is always shown, so this applies in BOTH view modes (solid, and solid+edges).
+  func setColorOverlay(_ map: [String: String]) {
+    var parsed: [String: UIColor] = [:]
+    parsed.reserveCapacity(map.count)
+    for (k, v) in map { if let c = Self.colorFromHex(v) { parsed[k] = c } }
+    colorOverlay = parsed
+    repaintSolid()
+  }
+
+  // See-through overlay: repaint the SOLID at `modelOpacity` (1 = opaque; <1 = a
+  // transparent fill so the real assembly shows through). The edge overlay stays
+  // opaque, so the outlines stay crisp as the fill fades — the inspection view.
+  func setModelOpacity(_ a: Float) {
+    modelOpacity = max(0.05, min(1, a))
+    repaintSolid()
+  }
+
+  // True 1:1 scale (metres-per-GLB-unit). Replaces the fit-scale; re-applies live to
+  // an already-placed model (the prop usually arrives after the model is on screen,
+  // once the JS calibration completes).
+  func setRealScale(_ s: Float) {
+    let v = max(0, s)
+    if abs(v - realScale) < 1e-9 { return }
+    realScale = v
+    guard v > 0 else { return }
+    if let e = modelEntity { applyRealScale(e) }
+    if let e = edgeEntity { applyRealScale(e) }
+  }
+
+  // Set the entity's uniform scale to realScale and re-seat its base, keeping it
+  // under the same pivot (so placement + the user transform survive).
+  private func applyRealScale(_ entity: Entity) {
+    guard realScale > 0 else { return }
+    let pivot = entity.parent
+    entity.scale = SIMD3<Float>(repeating: realScale)
+    recenterEntityToBase(entity)        // detaches + re-bases at the new scale
+    if let p = pivot { p.addChild(entity) }
+  }
+
+  // A flat UnlitMaterial in `color` (no lighting gradient). The SOLID carries the
+  // current see-through opacity via the documented blending MULTIPLIER (UnlitMaterial
+  // may ignore tint alpha); `opaque` forces full opacity for the edge overlay.
+  private func unlitMaterial(_ color: UIColor, opaque: Bool = false) -> UnlitMaterial {
+    var mat = UnlitMaterial(color: color)
+    if !opaque && modelOpacity < 0.999 {
+      mat.blending = .transparent(opacity: .init(floatLiteral: modelOpacity))
+    }
+    return mat
+  }
+
+  // Repaint the SOLID model: per-entity colour overlay if set (Colour-by), else the
+  // uniform steel grey — both carrying the see-through opacity. The edge overlay is
+  // painted separately (always opaque, in the edge colour).
+  private func repaintSolid() {
+    guard let entity = modelEntity else { return }
+    if colorOverlay.isEmpty {
+      paintUniform(entity, solidColor)
+    } else {
+      paintByOverlay(entity)
+    }
+  }
+
+  // Paint every mesh with one flat colour (uniform — no lighting gradient).
+  private func paintUniform(_ entity: Entity, _ color: UIColor, opaque: Bool = false) {
+    let mat = unlitMaterial(color, opaque: opaque)
     func walk(_ e: Entity) {
       if var m = e.components[ModelComponent.self] {
-        m.materials = Array(repeating: flat, count: max(m.materials.count, 1))
+        m.materials = Array(repeating: mat, count: max(m.materials.count, 1))
         e.components.set(m)
       }
       for child in e.children { walk(child) }
@@ -215,23 +368,21 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     walk(entity)
   }
 
-  // See-through overlay: repaint the model at `modelOpacity` (1 = opaque, reusing
-  // retint; <1 = a transparent flat fill so the real assembly shows through).
-  func setModelOpacity(_ a: Float) {
-    modelOpacity = max(0.05, min(1, a))
-    applyOpacity()
-  }
-
-  private func applyOpacity() {
-    guard let entity = modelEntity else { return }
-    let base = currentUnlit ? solidColor : wireframeTint
-    if modelOpacity >= 0.999 { retint(entity, base); return }
-    // Drive transparency through the documented opacity MULTIPLIER (not tint alpha,
-    // which UnlitMaterial may ignore) with an opaque tint.
-    var mat = UnlitMaterial(color: base)
-    mat.blending = .transparent(opacity: .init(floatLiteral: modelOpacity))
+  // Tint each mesh by its nearest NAMED ancestor's overlay colour (GLTFKit2 names
+  // entities by glTF node name == ifc_guid; a ModelComponent may sit on a child of
+  // the named node, so we walk up). Unmapped meshes get the neutral ghost grey.
+  private func paintByOverlay(_ entity: Entity) {
+    func resolve(_ e: Entity) -> UIColor {
+      var cur: Entity? = e
+      while let c = cur {
+        if !c.name.isEmpty, let col = colorOverlay[c.name] { return col }
+        cur = c.parent
+      }
+      return ghostColor
+    }
     func walk(_ e: Entity) {
       if var m = e.components[ModelComponent.self] {
+        let mat = unlitMaterial(resolve(e))
         m.materials = Array(repeating: mat, count: max(m.materials.count, 1))
         e.components.set(m)
       }
@@ -252,25 +403,39 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     )
   }
 
-  // Decide what should be on screen from the explicit (wantEdges, uris) state and
-  // load it only if it differs from what's already shown — so repeated prop
-  // applications never thrash the loader, and toggling edges off reliably
-  // restores the solid model (no dependence on a prop going nil).
-  private func reconcileVariant() {
-    let targetUri: URL?
-    let unlit: Bool
-    if wantEdges, let w = wireframeUri {
-      targetUri = w; unlit = false
-    } else {
-      targetUri = solidUri; unlit = true
+  // Ensure the SOLID model matches solidUri (load/swap only when it changed, so
+  // repeated prop applications never thrash the loader).
+  private func reconcileSolid() {
+    if loadedSolidUri == solidUri && modelEntity != nil { return }
+    loadSolid(solidUri)
+  }
+
+  // Add / refresh / remove the edge-tube OVERLAY to match (wantEdges, wireframeUri).
+  // It's a collision-free child of the pivot, painted opaque in the edge colour,
+  // sitting on top of the (always-present) solid. No-op until the solid is placed;
+  // the post-placement hook calls this again so a pre-placement toggle still applies.
+  private func reconcileEdges() {
+    guard wantEdges, let w = wireframeUri, modelPivot != nil else {
+      removeEdgeOverlay()
+      return
     }
-    if loadedUri == targetUri && currentUnlit == unlit && modelEntity != nil { return }
-    loadModel(targetUri, applyUnlit: unlit)
+    if loadedEdgeUri == w && edgeEntity != nil { return } // already correct
+    loadEdgeOverlay(w)
+  }
+
+  private func removeEdgeOverlay() {
+    edgeEntity?.removeFromParent()
+    edgeEntity = nil
+    loadedEdgeUri = nil
   }
   func setOcclusion(_ v: Bool) { wantOcclusion = v; applyFlags() }
   func setPersonSegmentation(_ v: Bool) { wantPeople = v; applyFlags() }
   func setPhysics(_ v: Bool) { wantPhysics = v; applyFlags() }
   func setPlaneAnchor(_ v: Bool) { wantPlaneAnchor = v }
+  // Scan-before-place: when true, a freshly loaded model waits for the user to scan
+  // the area + tap Place (see placeNow) instead of auto-dropping on load.
+  func setManualPlacement(_ v: Bool) { manualPlacement = v }
+
   func setShowMesh(_ v: Bool) { wantShowMesh = v; applyFlags() }
 
   func setMeasureMode(_ v: String) {
@@ -313,6 +478,8 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   private func updateModelPhysics() {
     guard let entity = modelEntity else { return }
     if wantPhysics {
+      // Same watchdog guard as the load path — don't convex-hull a huge model.
+      guard Self.meshCount(entity, cap: Self.maxCollisionMeshes + 1) <= Self.maxCollisionMeshes else { return }
       entity.generateCollisionShapes(recursive: true)
       entity.components.set(
         PhysicsBodyComponent(
@@ -328,32 +495,64 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
   // MARK: - Model loading
 
-  private func loadModel(_ uri: URL?, applyUnlit: Bool) {
+  // Above this many meshes, skip the synchronous convex-hull collision pass (it
+  // would risk the main-thread watchdog on huge assemblies). Rendering/placement
+  // are unaffected; only on-model hit-testing is dropped for such models.
+  private static let maxCollisionMeshes = 800
+
+  // Count ModelComponents in a subtree, stopping early once `cap` is reached (so a
+  // 1700-mesh model isn't fully walked just to learn it's over the limit).
+  private static func meshCount(_ entity: Entity, cap: Int) -> Int {
+    var n = 0
+    func walk(_ e: Entity) {
+      if n >= cap { return }
+      if e.components[ModelComponent.self] != nil { n += 1 }
+      for c in e.children { if n >= cap { return }; walk(c) }
+    }
+    walk(entity)
+    return n
+  }
+
+  private func loadSolid(_ uri: URL?) {
     let token = UUID()
     loadToken = token
-    currentUnlit = applyUnlit
-    loadedUri = uri
-    // Flat fill colour for this variant (captured now; the loader paints every
-    // mesh with it so the whole assembly is one uniform colour).
-    let unlitColor = applyUnlit ? solidColor : wireframeTint
+    loadedSolidUri = uri
 
     let place: (Entity) -> Void = { [weak self] entity in
       guard let self, self.loadToken == token else { return }
-      // Collision shapes power on-model ruler hit-tests + part picking (and
-      // physics). Generate once here, recursively, before placement.
-      entity.generateCollisionShapes(recursive: true)
+      // TRUE 1:1 scale (if calibrated) REPLACES the loader's fit-scale — set before
+      // recentring/placement so the base sits correctly at the real size.
+      if self.realScale > 0 { entity.scale = SIMD3<Float>(repeating: self.realScale) }
+      // Collision shapes power on-model ruler hit-tests + part picking (and physics)
+      // — the SOLID owns them; the edge overlay stays collision-free so taps fall
+      // through to the part underneath. Generate once, recursively, before placement.
+      // GUARDED: convex-hull generation is O(meshes) synchronous work on the main
+      // actor; on a very large assembly (~1700 meshes) it can block long enough to
+      // trip the iOS watchdog. Past a cap we skip it — the model still renders +
+      // places; only on-model hit-testing (ruler / part-tap) is unavailable there.
+      if Self.meshCount(entity, cap: Self.maxCollisionMeshes + 1) <= Self.maxCollisionMeshes {
+        entity.generateCollisionShapes(recursive: true)
+      }
       if self.modelPivot != nil {
-        // In-place swap (solid ↔ edges): keep placement + user transform.
+        // In-place swap (solid reload): keep placement + user transform + overlay.
         self.swapModelEntity(entity)
       } else {
         self.modelEntity = entity
         self.updateModelPhysics()
-        self.pendingPlacement = true
-        self.placeAttempts = 0
-        self.tryPlaceModel()
+        if self.manualPlacement {
+          // Scan-first: hold the model until the user has mapped the area + taps Place.
+          self.awaitingManualPlace = true
+          self.pendingPlacement = false
+          self.lastScanReady = nil
+          self.emitScanState()
+        } else {
+          self.pendingPlacement = true
+          self.placeAttempts = 0
+          self.tryPlaceModel()
+        }
       }
-      // Keep the see-through overlay across reloads / variant swaps.
-      if self.modelOpacity < 0.999 { self.applyOpacity() }
+      self.repaintSolid()    // colour overlay / grey + see-through
+      self.reconcileEdges()  // (re)attach the edge overlay if wanted
       self.onLoad(["uri": uri?.absoluteString ?? "placeholder"])
     }
 
@@ -361,7 +560,8 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     if let uri = uri {
       Task { [weak self] in
         do {
-          let entity = try await GltfModelLoader.load(from: uri, unlitColor: unlitColor)
+          let color = self?.solidColor ?? UIColor.gray
+          let entity = try await GltfModelLoader.load(from: uri, unlitColor: color)
           await MainActor.run { place(entity) }
         } catch {
           await MainActor.run {
@@ -378,19 +578,51 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     if modelPivot == nil { place(makePlaceholder()) }
   }
 
-  // Replace the rendered entity under the existing pivot WITHOUT re-placing —
-  // used to switch between the solid model and the edge/wireframe variant.
+  // Replace the SOLID entity under the existing pivot WITHOUT re-placing — used on a
+  // solid reload (rare). The edge overlay is a separate child of the pivot and is
+  // left untouched.
   private func swapModelEntity(_ entity: Entity) {
     guard let pivot = modelPivot else { return }
     if let old = modelEntity { pivot.removeChild(old) }
-    // Keep each variant's OWN normalize scale (set by the loader) — the pivot
-    // carries userScale on top. Recenter then re-parent under the same pivot, so
-    // placement + the user transform survive the solid↔edges switch.
     recenterEntityToBase(entity)
     pivot.addChild(entity)
     modelEntity = entity
     updateModelPhysics()
     rebuildDimensionBoxes()
+  }
+
+  // Load the wireframe GLB as a COLLISION-FREE overlay child of the pivot, aligned
+  // to the solid (same base-recenter + matching normalize scale), painted OPAQUE in
+  // the edge colour. Guarded by edgeLoadToken so rapid wireframeUri changes (the
+  // weight slider) don't race a stale load onto the scene.
+  private func loadEdgeOverlay(_ uri: URL) {
+    let token = UUID()
+    edgeLoadToken = token
+
+    let attach: (Entity) -> Void = { [weak self] entity in
+      guard let self, self.edgeLoadToken == token, let pivot = self.modelPivot else { return }
+      self.edgeEntity?.removeFromParent()
+      // Match the solid's true scale (if calibrated) so the outlines overlay 1:1.
+      if self.realScale > 0 { entity.scale = SIMD3<Float>(repeating: self.realScale) }
+      self.recenterEntityToBase(entity)
+      self.paintUniform(entity, self.wireframeTint, opaque: true)
+      // NO generateCollisionShapes → taps/measure/part-pick reach the solid beneath.
+      pivot.addChild(entity)
+      self.edgeEntity = entity
+      self.loadedEdgeUri = uri
+    }
+
+    #if canImport(GLTFKit2)
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        let entity = try await GltfModelLoader.load(from: uri, unlitColor: self.wireframeTint)
+        await MainActor.run { attach(entity) }
+      } catch {
+        await MainActor.run { self.onError(["message": "Edge overlay load failed: \(error.localizedDescription)"]) }
+      }
+    }
+    #endif
   }
 
   // Steel-grey box (~beam-ish) used until GLTFKit2 + a real model are wired in.
@@ -421,22 +653,61 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     }
   }
 
+  // Create a SESSION-TRACKED anchor at `worldTransform`: a real ARAnchor added to the
+  // ARKit session, wrapped by an AnchorEntity tied to it. When ARKit refines its world
+  // map (loop closure / interruption recovery / a restored map) it updates the
+  // ARAnchor's transform and RealityKit rides that onto the AnchorEntity — corrections
+  // a static AnchorEntity(world:) never gets. This is the correct primitive for a
+  // placed model; it does NOT eliminate the continuous walk-induced VIO drift on a
+  // large piece (use auto-snap / registration at the far end for that). The backing
+  // ARAnchor is returned so the caller can track it for teardown.
+  private func makeTrackedAnchor(_ worldTransform: simd_float4x4) -> (AnchorEntity, ARAnchor) {
+    let ar = ARAnchor(transform: worldTransform)
+    arView.session.add(anchor: ar)
+    return (AnchorEntity(anchor: ar), ar)
+  }
+
+  // Detach + remove the current model anchor from BOTH the RealityKit scene and the
+  // ARKit session (a tracked ARAnchor must be removed from the session too, or it
+  // lingers and keeps getting relocalization updates).
+  private func teardownModelAnchor() {
+    if let a = modelAnchor { arView.scene.removeAnchor(a) }
+    if let ar = modelArAnchor { arView.session.remove(anchor: ar) }
+    modelAnchor = nil
+    modelArAnchor = nil
+  }
+
   // Anchor the model at `worldTransform`, inserting the user-transform pivot.
   private func placeOn(_ worldTransform: simd_float4x4, onSurface: Bool) {
     guard let entity = modelEntity else { return }
     // Remove the old anchor BEFORE recentring (recenter detaches the entity too,
     // but this also tears down the stale pivot so nothing dangles in the scene).
-    if let a = modelAnchor { arView.scene.removeAnchor(a) }
+    teardownModelAnchor()
     recenterEntityToBase(entity)
 
     let pivot = Entity()
     pivot.addChild(entity)
-    let anchor = AnchorEntity(world: worldTransform)
-    anchor.addChild(pivot)
+    // Re-attach the edge overlay (orphaned when the old pivot was torn down) to the
+    // new pivot, so it survives re-placement (recenter / reset) without a reload.
+    if let edge = edgeEntity {
+      edge.removeFromParent()
+      recenterEntityToBase(edge)
+      pivot.addChild(edge)
+    }
+    let (anchor, ar) = makeTrackedAnchor(worldTransform)
+    let correction = Entity()        // identity at placement; holds smoothed ICP deltas
+    correction.addChild(pivot)
+    anchor.addChild(correction)
     arView.scene.addAnchor(anchor)
     modelPivot = pivot
+    modelCorrection = correction
     modelAnchor = anchor
+    modelArAnchor = ar
     applyUserTransform()
+    // Post-placement hook: now that the pivot exists, (re)build the edge overlay so
+    // an edge view requested BEFORE placement (the scan-first flow / edges-on default)
+    // actually attaches. reconcileEdges() no-ops if the overlay is already correct.
+    reconcileEdges()
     rebuildDimensionBoxes()
     pendingPlacement = false
     placeAttempts = 0
@@ -475,40 +746,106 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     }
   }
 
+  // MARK: - Scan-before-place gate
+
+  // Is there a REAL (LiDAR-/feature-mapped) surface under the reticle right now? This
+  // is the "the area is understood here" signal — it only succeeds once ARKit has an
+  // actual plane (existingPlaneGeometry), not a fleeting estimate.
+  private func reticleHasRealSurface() -> Bool {
+    guard bounds.width > 0, bounds.height > 0 else { return false }
+    let c = CGPoint(x: bounds.midX, y: bounds.midY)
+    return arView.raycast(from: c, allowing: .existingPlaneGeometry, alignment: .any).first != nil
+  }
+
+  // Tell JS whether the scene is mapped enough to place (normal tracking + a real
+  // surface at the reticle). Emitted only on change while awaiting placement, so the
+  // session-update firehose doesn't spam the bridge.
+  private func emitScanState() {
+    guard awaitingManualPlace else { return }
+    let ready = (lastTrackingState == "normal") && reticleHasRealSurface()
+    if ready == lastScanReady { return }
+    lastScanReady = ready
+    onScanState(["ready": ready, "tracking": lastTrackingState])
+  }
+
+  // The "Place model" action (scan-first mode). Anchors the model at the reticle onto
+  // the best available surface — a real mapped plane first (the payoff of scanning),
+  // falling back to an infinite plane then an estimate so it can never dead-end.
+  func placeNow() {
+    guard awaitingManualPlace, modelEntity != nil, bounds.width > 0, bounds.height > 0 else { return }
+    let c = CGPoint(x: bounds.midX, y: bounds.midY)
+    let hit = arView.raycast(from: c, allowing: .existingPlaneGeometry, alignment: .any).first
+      ?? arView.raycast(from: c, allowing: .existingPlaneInfinite, alignment: .any).first
+      ?? arView.raycast(from: c, allowing: .estimatedPlane, alignment: .any).first
+    guard let r = hit else {
+      onScanState(["ready": false, "tracking": lastTrackingState, "reason": "no-surface"])
+      return
+    }
+    awaitingManualPlace = false
+    lastScanReady = nil
+    placeOn(r.worldTransform, onSurface: true)
+  }
+
   // MARK: - Align (user transform on the pivot)
 
   private func applyUserTransform() {
     guard let pivot = modelPivot else { return }
-    let qYaw = simd_quatf(angle: userYaw, axis: SIMD3<Float>(0, 1, 0))
-    let qPitch = simd_quatf(angle: userPitch, axis: SIMD3<Float>(1, 0, 0))
-    let qRoll = simd_quatf(angle: userRoll, axis: SIMD3<Float>(0, 0, 1))
     pivot.transform = Transform(
       scale: SIMD3<Float>(repeating: userScale),
-      rotation: qYaw * qPitch * qRoll,
+      rotation: userOrientation,
       translation: userTranslate
     )
   }
 
+  // Screen-relative move (the Align panel's MOVE buttons). The deltas are intent
+  // in the INSPECTOR'S view, not raw anchor axes:
+  //   dx = +Right (screen), dy = +Up (WORLD), dz = +Near (toward the camera).
+  // We map them onto world directions from the live camera pose — Left/Right along
+  // the camera's horizontal right axis, Near/Far toward/away from the viewer, Up/Down
+  // along world-up — then convert that world delta into anchor-local space for the
+  // pivot. The old version added the delta directly to anchor-LOCAL userTranslate,
+  // so on a rotated anchor (arbitrary heading) or a tilted surface the buttons moved
+  // the model in directions that didn't match their labels / the screen.
   func nudge(_ dx: Float, _ dy: Float, _ dz: Float) {
-    guard !locked, modelPivot != nil else { return }
-    userTranslate += SIMD3<Float>(dx, dy, dz)
+    guard !locked, let correction = modelCorrection, modelPivot != nil else { return }
+    let m = arView.cameraTransform.matrix
+    // Camera basis in world space: column 0 = right, column 2 = backward (toward the
+    // viewer, since the camera looks down its own −Z). Flatten the horizontal axes to
+    // the world ground plane so a move never sneaks in a height change.
+    func flatNorm(_ v: SIMD3<Float>) -> SIMD3<Float> {
+      let f = SIMD3<Float>(v.x, 0, v.z)
+      let len = simd_length(f)
+      return len > 1e-4 ? f / len : SIMD3<Float>(repeating: 0)
+    }
+    let right = flatNorm(SIMD3<Float>(m.columns.0.x, m.columns.0.y, m.columns.0.z))
+    let towardViewer = flatNorm(SIMD3<Float>(m.columns.2.x, m.columns.2.y, m.columns.2.z))
+    let worldDelta = right * dx + SIMD3<Float>(0, dy, 0) + towardViewer * dz
+    // Convert the world delta into the pivot's PARENT frame (the correction node), since
+    // userTranslate is the pivot's local translation under modelCorrection.
+    userTranslate += correction.convert(direction: worldDelta, from: nil)
     applyUserTransform()
   }
 
   // Nudge along WORLD axes (the elevation handle wants true world-up, not the
   // anchor's local Y which is the surface normal on a tilted/vertical anchor).
   func nudgeWorld(_ dx: Float, _ dy: Float, _ dz: Float) {
-    guard !locked, let anchor = modelAnchor, modelPivot != nil else { return }
-    userTranslate += anchor.convert(direction: SIMD3<Float>(dx, dy, dz), from: nil)
+    guard !locked, let correction = modelCorrection, modelPivot != nil else { return }
+    userTranslate += correction.convert(direction: SIMD3<Float>(dx, dy, dz), from: nil)
     applyUserTransform()
   }
 
   func rotate(_ dPitchDeg: Float, _ dYawDeg: Float, _ dRollDeg: Float) {
     guard !locked, modelPivot != nil else { return }
     let r = Float.pi / 180
-    userPitch += dPitchDeg * r
-    userYaw += dYawDeg * r
-    userRoll += dRollDeg * r
+    // Compose each nudge as a rotation about a FIXED WORLD axis (pre-multiply onto
+    // the current orientation): Turn → world-up (Y), Tilt → world-X, Roll → world-Z.
+    // The axes never coincide, so there's no gimbal lock — turn/tilt/roll stay
+    // independent and predictable at any orientation.
+    var q = userOrientation
+    if dYawDeg != 0 { q = simd_quatf(angle: dYawDeg * r, axis: SIMD3<Float>(0, 1, 0)) * q }
+    if dPitchDeg != 0 { q = simd_quatf(angle: dPitchDeg * r, axis: SIMD3<Float>(1, 0, 0)) * q }
+    if dRollDeg != 0 { q = simd_quatf(angle: dRollDeg * r, axis: SIMD3<Float>(0, 0, 1)) * q }
+    userOrientation = simd_normalize(q)
     applyUserTransform()
   }
 
@@ -522,13 +859,14 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
   // Reset the user transform and re-acquire a surface in front of the camera.
   func recenter() {
-    userScale = 1; userYaw = 0; userPitch = 0; userRoll = 0
+    userScale = 1; userOrientation = simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0))
     userTranslate = SIMD3<Float>(repeating: 0)
     clearRegistration() // the model moves → any captured pairs are stale
+    markerBindings.removeAll(); activeMarkerName = nil // marker offsets are stale too
     guard let entity = modelEntity else { return }
-    if let a = modelAnchor { arView.scene.removeAnchor(a) }
-    modelAnchor = nil
+    teardownModelAnchor()
     modelPivot = nil
+    modelCorrection = nil
     // Re-parent a fresh entity reference is unnecessary; re-place the same one.
     entity.removeFromParent()
     pendingPlacement = true
@@ -552,7 +890,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // handle. A drag that begins off the model is ignored, so tap / measure /
   // part-pick stay untouched.
   @objc private func handlePan(_ g: UIPanGestureRecognizer) {
-    guard directManipulation, !locked, let anchor = modelAnchor, let pivot = modelPivot,
+    guard directManipulation, !locked, let correction = modelCorrection, let pivot = modelPivot,
           measureMode == "off", registerMode == "off", !partPick else { return }
     let p = g.location(in: arView)
     switch g.state {
@@ -576,7 +914,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       // height; convert that WORLD point to anchor-local for the pivot translation
       // (all three components, so the world height is preserved on any anchor tilt).
       let targetWorld = SIMD3<Float>(hit.x + dragGrabOffset.x, dragPlaneY, hit.z + dragGrabOffset.y)
-      userTranslate = anchor.convert(position: targetWorld, from: nil)
+      userTranslate = correction.convert(position: targetWorld, from: nil)
       applyUserTransform()
     default:
       panOnModel = false
@@ -593,19 +931,20 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     return ray.origin + ray.direction * t
   }
 
-  // Two-finger twist → yaw the model in place about its base. Baseline BOTH the
-  // yaw and the gesture rotation at .began, so the pre-.began arc (g.rotation is
-  // cumulative from touch-down) doesn't cause a jump on the first .changed.
+  // Two-finger twist → yaw the model in place about world-up. Apply the gesture
+  // delta INCREMENTALLY onto userOrientation (about world Y), re-baselining each
+  // frame, so it composes with the quaternion orientation without a first-move jump.
   @objc private func handleRotate(_ g: UIRotationGestureRecognizer) {
     guard directManipulation, !locked, modelPivot != nil,
           measureMode == "off", registerMode == "off", !partPick else { return }
     switch g.state {
     case .began:
-      rotateBaselineYaw = userYaw
       rotateBaselineRotation = Float(g.rotation)
       panOnModel = false                             // a 2nd finger ends the 1-finger drag
     case .changed:
-      userYaw = rotateBaselineYaw - (Float(g.rotation) - rotateBaselineRotation)
+      let delta = -(Float(g.rotation) - rotateBaselineRotation) // clockwise twist → yaw right
+      rotateBaselineRotation = Float(g.rotation)
+      userOrientation = simd_normalize(simd_quatf(angle: delta, axis: SIMD3<Float>(0, 1, 0)) * userOrientation)
       applyUserTransform()
     default:
       break
@@ -832,19 +1171,16 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     rebuildRegisterMarkers()
   }
 
-  // Compose a world-space correction T onto the anchor: newAnchorWorld = T ·
-  // oldAnchorWorld, keeping the EXISTING pivot (so any manual nudges survive).
-  // Shared by point-pair registration + ICP auto-snap.
+  // Apply a world-space correction T (newModelWorld = T · oldModelWorld) onto the
+  // CORRECTION NODE instead of re-seating the ARAnchor — so the long-lived anchor keeps
+  // its relocalization continuity. The correction lives in the anchor's local frame:
+  // correctionNew = anchorWorld⁻¹ · T · anchorWorld · correctionOld. Used by point-pair
+  // registration and the manual one-shot Auto-snap button (both instant, full corrections).
   private func applyWorldCorrection(_ tfix: simd_float4x4) {
-    guard let anchor = modelAnchor, let pivot = modelPivot else { return }
-    let newWorld = tfix * anchor.transformMatrix(relativeTo: nil)
-    arView.scene.removeAnchor(anchor)
-    pivot.removeFromParent()
-    let newAnchor = AnchorEntity(world: newWorld)
-    newAnchor.addChild(pivot)
-    arView.scene.addAnchor(newAnchor)
-    modelAnchor = newAnchor
-    rebuildDimensionBoxes()
+    guard let anchor = modelAnchor, let correction = modelCorrection else { return }
+    let anchorWorld = anchor.transformMatrix(relativeTo: nil)
+    let targetMat = anchorWorld.inverse * tfix * anchorWorld * correction.transform.matrix
+    correction.transform = Transform(matrix: targetMat)
     onAnchor(["placed": true, "onSurface": true])
   }
 
@@ -865,10 +1201,11 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
   // MARK: - ICP auto-snap (refine the pose onto the scanned LiDAR mesh)
 
-  // One-tap refinement: pull the real LiDAR mesh near the model, run point-to-plane
-  // ICP seeded from the CURRENT (already roughly-aligned) pose, and apply the
-  // correction ONLY if it lowers the residual — otherwise revert + report why, so
-  // it can never make alignment worse.
+  // One-tap refinement (the manual "Auto-snap" button): pull the real LiDAR mesh near
+  // the model, run point-to-plane ICP seeded from the CURRENT (already roughly-aligned)
+  // pose, and apply the correction ONLY if it lowers the residual — otherwise revert +
+  // report why, so it can never make alignment worse. Model + real-mesh points are
+  // gathered on the main thread, ICP solves off-main, the apply/revert is back on main.
   func autoAlign() {
     guard meshSupported else { onAutoAlign(["ok": false, "reason": "no-lidar"]); return }
     guard !locked else { onAutoAlign(["ok": false, "reason": "locked"]); return }
@@ -876,59 +1213,66 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       onAutoAlign(["ok": false, "reason": "not-placed"]); return
     }
     let model = gatherModelPointsWorld(cap: 600)
-    guard model.count >= 20 else { onAutoAlign(["ok": false, "reason": "no-model-geometry"]); return }
+    guard model.count >= 20 else {
+      onAutoAlign(["ok": false, "reason": "no-model-geometry"]); return
+    }
 
     var lo = model[0], hi = model[0]
     for p in model { lo = simd_min(lo, p); hi = simd_max(hi, p) }
     let margin = SIMD3<Float>(repeating: 0.3)
     let (real, normals) = gatherRealMeshWorld(aabbMin: lo - margin, aabbMax: hi + margin, cap: 4000)
-    guard real.count >= 80 else { onAutoAlign(["ok": false, "reason": "sparse-mesh"]); return }
+    guard real.count >= 80 else {
+      onAutoAlign(["ok": false, "reason": "sparse-mesh"]); return
+    }
 
-    // The gather above reads the scene/ARFrame (main thread); the ICP numerics are
-    // pure array math → run them off-main so a tap doesn't hitch the AR view, then
-    // apply + emit back on main.
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
       let res = IcpAligner.solve(modelPoints: model, realPoints: real, realNormals: normals)
       DispatchQueue.main.async {
         guard let self else { return }
-        // Accept only a genuine improvement (0.5 mm margin so a numerically-equal
-        // pose isn't applied) with enough surface overlap — else revert (no-op).
-        let improved = res.finalRmsM.isFinite
-          && res.finalRmsM < res.initialRmsM - 0.0005
-          && res.inlierRatio >= 0.3
-        if improved {
-          self.applyWorldCorrection(res.transform)
-          self.onAutoAlign([
-            "ok": true,
-            "rmsMm": res.finalRmsM * 1000,
-            "fromMm": res.initialRmsM * 1000,
-            "inlierRatio": res.inlierRatio,
-            "iterations": res.iterations,
-          ])
-        } else {
-          self.onAutoAlign([
-            "ok": false,
-            "reason": res.inlierRatio < 0.3 ? "low-overlap" : "no-improvement",
-            "rmsMm": res.finalRmsM.isFinite ? res.finalRmsM * 1000 : 0,
-            "inlierRatio": res.inlierRatio,
-          ])
-        }
+        self.handleSnapResult(res)
       }
     }
   }
 
-  // Sample the model's mesh vertices in WORLD space (subsampled + capped).
+  private func handleSnapResult(_ res: IcpAligner.Result) {
+    let inlierFloor: Float = 0.3
+    let rmsMargin: Float = 0.0005
+    let improved = res.finalRmsM.isFinite
+      && res.finalRmsM < res.initialRmsM - rmsMargin
+      && res.inlierRatio >= inlierFloor
+
+    guard improved else {
+      let reason = res.inlierRatio < inlierFloor ? "low-overlap" : "no-improvement"
+      onAutoAlign(["ok": false, "reason": reason,
+                   "rmsMm": res.finalRmsM.isFinite ? res.finalRmsM * 1000 : 0,
+                   "inlierRatio": res.inlierRatio])
+      return
+    }
+
+    applyWorldCorrection(res.transform)
+    onAutoAlign([
+      "ok": true,
+      "rmsMm": res.finalRmsM * 1000,
+      "fromMm": res.initialRmsM * 1000,
+      "inlierRatio": res.inlierRatio,
+      "iterations": res.iterations,
+    ])
+  }
+
+  // Sample the model's mesh vertices in WORLD space (subsampled + capped) for the ICP
+  // auto-snap. Walks every ModelComponent's vertex buffer; this runs only on the manual
+  // Auto-snap button (not per frame), so it isn't cached.
   private func gatherModelPointsWorld(cap: Int) -> [SIMD3<Float>] {
     guard let model = modelEntity else { return [] }
     var pts: [SIMD3<Float>] = []
     func walk(_ e: Entity) {
       if let mc = e.components[ModelComponent.self] {
-        let world = e.transformMatrix(relativeTo: nil)
+        let toWorld = e.transformMatrix(relativeTo: nil)
         let positions = mc.mesh.contents.models.flatMap { $0.parts }.flatMap { Array($0.positions) }
         let step = max(1, positions.count / 200)
         var i = 0
         while i < positions.count {
-          let v = world * SIMD4<Float>(positions[i], 1)
+          let v = toWorld * SIMD4<Float>(positions[i], 1)
           pts.append(SIMD3<Float>(v.x, v.y, v.z))
           i += step
         }
@@ -1089,14 +1433,24 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     measureAnchor = nil
     clearRegistration()
     registerAnchor = nil
+    // A full reset wipes the world map + every ARImageAnchor → drop all marker state.
+    for e in markerEntities.values { e.removeFromParent() }
+    markerEntities.removeAll(); markerTracked.removeAll(); markerBindings.removeAll(); activeMarkerName = nil
     if modelEntity != nil {
-      if let a = modelAnchor { arView.scene.removeAnchor(a) }
-      modelAnchor = nil
+      teardownModelAnchor()
       modelPivot = nil
       modelEntity?.removeFromParent()
-      pendingPlacement = true
-      placeAttempts = 0
-      tryPlaceModel()
+      if manualPlacement {
+        // A full tracking reset throws away the world map → require a fresh scan.
+        awaitingManualPlace = true
+        pendingPlacement = false
+        lastScanReady = nil
+        emitScanState()
+      } else {
+        pendingPlacement = true
+        placeAttempts = 0
+        tryPlaceModel()
+      }
     }
   }
 
@@ -1106,10 +1460,445 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     }
   }
 
+  // MARK: - Image-marker stabilization (FabStation-style)
+
+  // Register the printed markers as ARReferenceImages and turn on image DETECTION in
+  // the world-tracking config. Prefers a curated bundled "PcsMarkers" AR Resources
+  // group (best tracking when the team supplies real images); otherwise synthesizes a
+  // deterministic high-contrast pack so the feature works on a clean build and the
+  // SAME images can be printed (exportMarkerSheet). Marker tracking stays a feature of
+  // ARWorldTrackingConfiguration, so the LiDAR mesh + occlusion are untouched.
+  private func configureMarkerDetection() {
+    if referenceImages.isEmpty {
+      referenceImages = Self.buildReferenceImages(widthMeters: markerWidthMeters)
+    }
+    guard !referenceImages.isEmpty else { return }
+    config.detectionImages = referenceImages
+    config.maximumNumberOfTrackedImages = 4  // track several at once → seamless hand-off
+    detectionConfigured = true
+  }
+
+  private static func buildReferenceImages(widthMeters: Float) -> Set<ARReferenceImage> {
+    if let group = ARReferenceImage.referenceImages(inGroupNamed: "PcsMarkers", bundle: nil), !group.isEmpty {
+      return group
+    }
+    var imgs: Set<ARReferenceImage> = []
+    let w = CGFloat(max(0.02, widthMeters))
+    for i in 0..<generatedMarkerCount {
+      guard let cg = makeMarkerCGImage(index: i, pixels: 512) else { continue }
+      let ref = ARReferenceImage(cg, orientation: .up, physicalWidth: w)
+      ref.name = "pcs-marker-\(i)"
+      imgs.insert(ref)
+    }
+    return imgs
+  }
+
+  // A unique, asymmetric, feature-dense marker (deterministic per index): a dense
+  // pseudo-random black/white grid (lots of trackable features), a heavy border with
+  // a thick top-left bar (unambiguous orientation), and a human-readable id disc.
+  private static func makeMarkerCGImage(index: Int, pixels: Int) -> CGImage? {
+    let size = CGSize(width: pixels, height: pixels)
+    let renderer = UIGraphicsImageRenderer(size: size)
+    let img = renderer.image { rctx in
+      let ctx = rctx.cgContext
+      UIColor.white.setFill(); ctx.fill(CGRect(origin: .zero, size: size))
+      // Typed UInt64 (not UInt64(...)) so the high-bit-set 64-bit constants don't
+      // overflow Swift's default Int literal type.
+      var seed: UInt64 = 0x9E37_79B9_7F4A_7C15 &+ UInt64(bitPattern: Int64(index)) &* 0x100_0000_01B3
+      func rnd() -> UInt64 { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return seed }
+      let n = 16
+      let cell = CGFloat(pixels) / CGFloat(n)
+      UIColor.black.setFill()
+      for gx in 0..<n {
+        for gy in 0..<n {
+          if (rnd() >> 33) & 1 == 0 { continue }
+          ctx.fill(CGRect(x: CGFloat(gx) * cell, y: CGFloat(gy) * cell, width: cell, height: cell)
+            .insetBy(dx: cell * 0.12, dy: cell * 0.12))
+        }
+      }
+      let b = CGFloat(pixels) * 0.05
+      UIColor.black.setFill()
+      ctx.fill(CGRect(x: 0, y: 0, width: size.width, height: b))
+      ctx.fill(CGRect(x: 0, y: size.height - b, width: size.width, height: b))
+      ctx.fill(CGRect(x: 0, y: 0, width: b, height: size.height))
+      ctx.fill(CGRect(x: size.width - b, y: 0, width: b, height: size.height))
+      ctx.fill(CGRect(x: 0, y: 0, width: size.width * 0.34, height: b * 3))  // thick bar = "up"
+      let disc = CGRect(x: size.width * 0.68, y: size.height * 0.68, width: size.width * 0.28, height: size.width * 0.28)
+      UIColor.white.setFill(); ctx.fillEllipse(in: disc)
+      ctx.setLineWidth(pixels > 256 ? 6 : 3); UIColor.black.setStroke(); ctx.strokeEllipse(in: disc)
+      let s = "\(index)" as NSString
+      let attrs: [NSAttributedString.Key: Any] = [
+        .font: UIFont.boldSystemFont(ofSize: size.width * 0.16),
+        .foregroundColor: UIColor.black,
+      ]
+      let ts = s.size(withAttributes: attrs)
+      s.draw(at: CGPoint(x: disc.midX - ts.width / 2, y: disc.midY - ts.height / 2), withAttributes: attrs)
+    }
+    return img.cgImage
+  }
+
+  // Ingest ARImageAnchor adds/updates: keep a RealityKit AnchorEntity bound to each
+  // (RealityKit then auto-tracks the physical marker every frame), record its tracked
+  // state, and emit a throttled snapshot to JS for the HUD / bound-set bookkeeping.
+  private func ingestImageAnchors(_ anchors: [ARAnchor]) {
+    var changed = false
+    for case let img as ARImageAnchor in anchors {
+      let name = img.referenceImage.name ?? "marker"
+      if markerEntities[name] == nil {
+        let e = AnchorEntity(anchor: img)
+        arView.scene.addAnchor(e)
+        markerEntities[name] = e
+      }
+      markerTracked[name] = img.isTracked
+      changed = true
+    }
+    if changed { emitMarkerUpdates() }
+  }
+
+  private func emitMarkerUpdates() {
+    let now = Date()
+    guard now.timeIntervalSince(lastMarkerEmit) > 0.12 else { return }  // ~8 Hz cap
+    lastMarkerEmit = now
+    let cam = arView.cameraTransform.translation
+    var list: [[String: Any]] = []
+    var accepted = 0  // bound + tracked + within quality gate (i.e. actually contributing)
+    for (name, e) in markerEntities {
+      let w = e.transformMatrix(relativeTo: nil)
+      let pos = SIMD3<Float>(w.columns.3.x, w.columns.3.y, w.columns.3.z)
+      let d = simd_distance(pos, cam)
+      let bound = markerBindings[name] != nil
+      let tracked = markerTracked[name] ?? false
+      if bound, tracked, markerQualityWeight(distance: d) > 0 { accepted += 1 }
+      list.append([
+        "name": name,
+        "transform": matrixToArray(w),
+        "tracked": tracked,
+        "bound": bound,
+        "distance": d,
+      ])
+    }
+    // Holding = lock armed and bound, but nothing acceptable in view → the model is
+    // frozen on its last pose (Item 2). The HUD surfaces this so the inspector re-aims.
+    let holding = markerLockEnabled && !markerBindings.isEmpty && accepted == 0
+    onMarkerUpdate([
+      "markers": list,
+      "cameraPos": [cam.x, cam.y, cam.z],
+      "active": activeMarkerName ?? "",
+      "lockEnabled": markerLockEnabled,
+      "acceptedCount": accepted,
+      "holding": holding,
+    ])
+  }
+
+  // Per-frame: drive the model's correction node from the FUSED pose of every
+  // acceptable marker in view (Item 1), gated by quality (Item 2). We want
+  // anchorWorld · correction = markerWorld · offset ⇒ correction =
+  // anchorWorld⁻¹ · markerWorld · offset, fused across markers. The user pivot (Align
+  // edits) rides on top, untouched. Eased (slerp/lerp) so jitter / hand-off doesn't pop.
+  private func driveMarkerLock() {
+    guard markerLockEnabled, modelPivot != nil,
+          let anchor = modelAnchor, let correction = modelCorrection else { return }
+    // Item 2 — freeze on degraded world tracking: HOLD the last pose rather than let a
+    // bad frame slide the model.
+    if lastTrackingState == "limited" || lastTrackingState == "unavailable" { return }
+
+    let cam = arView.cameraTransform.translation
+    let anchorInv = anchor.transformMatrix(relativeTo: nil).inverse
+    var items: [(simd_float4x4, Float)] = []
+    var bestW: Float = 0
+    var bestName: String?
+    for (name, e) in markerEntities {
+      guard (markerTracked[name] ?? false), let offset = markerBindings[name] else { continue }
+      let markerWorld = e.transformMatrix(relativeTo: nil)
+      let mp = markerWorld.columns.3
+      let d = simd_distance(SIMD3<Float>(mp.x, mp.y, mp.z), cam)
+      let w = markerQualityWeight(distance: d)
+      if w <= 0 { continue }                          // Item 2 — gate out far / untracked
+      items.append((anchorInv * markerWorld * offset, w))  // candidate correction
+      if w > bestW { bestW = w; bestName = name }
+    }
+
+    // Item 2 — no acceptable marker in view: HOLD (don't drift-drive, don't reset).
+    guard let target = fuseCorrections(items) else { activeMarkerName = nil; return }
+
+    // Item 2 — reject a single wild target (a misdetection) for a few frames, but accept
+    // eventually so a genuine relocalization isn't stuck out.
+    let cur = correction.transform.matrix
+    let curT = SIMD3<Float>(cur.columns.3.x, cur.columns.3.y, cur.columns.3.z)
+    let tgtT = SIMD3<Float>(target.columns.3.x, target.columns.3.y, target.columns.3.z)
+    if simd_distance(curT, tgtT) > markerRejectStepM && markerOutlierStreak < 8 {
+      markerOutlierStreak += 1
+      return
+    }
+    markerOutlierStreak = 0
+    activeMarkerName = bestName
+    correction.transform = blendedTransform(from: cur, to: target, t: 0.35)
+  }
+
+  // Smooth distance falloff in [0,1]; 0 past the max range. A far-but-present marker
+  // still contributes at low weight (not binary-lost). Mirrors marker-lock.ts
+  // markerWeight (unit-tested).
+  private func markerQualityWeight(distance d: Float) -> Float {
+    if d > markerMaxRangeM { return 0 }
+    let s = d / markerNearFavorM
+    return 1 / (1 + s * s)
+  }
+
+  // Item 1 — fuse weighted rigid corrections: weighted-average translation + sign-
+  // aligned weighted-average quaternion (normalized). Fusing every visible marker
+  // cancels each one's individual pose noise and smooths the hand-off as you walk.
+  // Mirrors marker-lock.ts fuseMarkerPoses. Returns nil when no positive weight.
+  private func fuseCorrections(_ items: [(simd_float4x4, Float)]) -> simd_float4x4? {
+    var wsum: Float = 0
+    var tsum = SIMD3<Float>(repeating: 0)
+    var qsum = SIMD4<Float>(repeating: 0)
+    var ref: SIMD4<Float>?
+    for (m, w) in items where w > 0 {
+      let tf = Transform(matrix: m)
+      var qv = tf.rotation.vector
+      if let r = ref { if simd_dot(qv, r) < 0 { qv = -qv } } else { ref = qv }  // hemisphere-align
+      qsum += qv * w
+      tsum += tf.translation * w
+      wsum += w
+    }
+    guard wsum > 1e-6, simd_length(qsum) > 1e-6 else { return nil }
+    let qavg = simd_normalize(simd_quatf(vector: qsum / wsum))
+    let r3 = simd_float3x3(qavg)
+    var out = matrix_identity_float4x4
+    out.columns.0 = SIMD4<Float>(r3.columns.0, 0)
+    out.columns.1 = SIMD4<Float>(r3.columns.1, 0)
+    out.columns.2 = SIMD4<Float>(r3.columns.2, 0)
+    out.columns.3 = SIMD4<Float>(tsum / wsum, 1)
+    return out
+  }
+
+  // Component-wise eased blend between two rigid transforms (lerp translation, slerp
+  // rotation; scale forced to 1 — the correction is rigid).
+  private func blendedTransform(from a: simd_float4x4, to b: simd_float4x4, t: Float) -> Transform {
+    let ta = Transform(matrix: a)
+    let tb = Transform(matrix: b)
+    let tr = simd_mix(ta.translation, tb.translation, SIMD3<Float>(repeating: t))
+    let rot = simd_slerp(ta.rotation, tb.rotation, t)
+    return Transform(scale: SIMD3<Float>(repeating: 1), rotation: rot, translation: tr)
+  }
+
+  // JS-facing controls (wired in PcsLidarArModule).
+  func setMarkerLockEnabled(_ v: Bool) {
+    markerLockEnabled = v
+    if !v { activeMarkerName = nil }
+    onLockStatus(["lockEnabled": v, "totalBindings": markerBindings.count])
+  }
+
+  func setMarkerWidth(_ m: Float) {
+    let v = max(0.02, m)
+    if abs(v - markerWidthMeters) < 1e-4 { return }
+    markerWidthMeters = v
+    referenceImages = []  // rebuild at the new physical size
+    if detectionConfigured {
+      configureMarkerDetection()
+      arView.session.run(config)  // no reset flags → tracking + placed model survive
+    }
+  }
+
+  // Bind EVERY currently-tracked marker to the model's current pose. Call once the
+  // model is correctly aligned (after drag / point-pair / auto-snap): each marker
+  // stores the model's correction-world pose in its own local frame, so any of them
+  // can later reproduce that exact pose drift-free.
+  func bindVisibleMarkers() {
+    guard let anchor = modelAnchor, let correction = modelCorrection else {
+      onLockStatus(["bound": 0, "totalBindings": markerBindings.count, "reason": "not-placed"]); return
+    }
+    let correctionWorld = anchor.transformMatrix(relativeTo: nil) * correction.transform.matrix
+    var bound = 0
+    for (name, e) in markerEntities where (markerTracked[name] ?? false) {
+      let markerWorld = e.transformMatrix(relativeTo: nil)
+      markerBindings[name] = markerWorld.inverse * correctionWorld
+      bound += 1
+    }
+    onLockStatus(["bound": bound, "totalBindings": markerBindings.count,
+                  "reason": bound == 0 ? "no-markers-visible" : "ok"])
+  }
+
+  func clearMarkerBindings() {
+    markerBindings.removeAll()
+    activeMarkerName = nil
+    onLockStatus(["bound": 0, "totalBindings": 0, "reason": "cleared"])
+  }
+
+  // A printable contact sheet (PNG, base64) of the generated markers, labelled with
+  // their ids + physical size, so the shop prints the exact images the tracker expects.
+  func exportMarkerSheet(_ completion: @escaping (String?) -> Void) {
+    let count = Self.generatedMarkerCount
+    let widthMm = Int((markerWidthMeters * 1000).rounded())
+    DispatchQueue.global(qos: .userInitiated).async {
+      let cols = 3
+      let rows = (count + cols - 1) / cols
+      let tile = 480, pad = 40, label = 40
+      let footer = 220  // room for the scale bar + instructions
+      let cellW = tile + pad, cellH = tile + pad + label
+      let w = cols * cellW + pad, h = rows * cellH + pad + 60 + footer
+      let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h))
+      let out = renderer.image { rctx in
+        let ctx = rctx.cgContext
+        UIColor.white.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        let head = "PCS AR markers — print at \(widthMm) mm edge, mount flat on the assembly" as NSString
+        head.draw(at: CGPoint(x: CGFloat(pad), y: 20),
+                  withAttributes: [.font: UIFont.boldSystemFont(ofSize: 26), .foregroundColor: UIColor.black])
+        for i in 0..<count {
+          guard let cg = Self.makeMarkerCGImage(index: i, pixels: tile) else { continue }
+          let r = i / cols, c = i % cols
+          let x = pad + c * cellW, y = 60 + pad + r * cellH
+          UIImage(cgImage: cg).draw(in: CGRect(x: x, y: y, width: tile, height: tile))
+          let s = "pcs-marker-\(i)" as NSString
+          s.draw(at: CGPoint(x: CGFloat(x), y: CGFloat(y + tile + 6)),
+                 withAttributes: [.font: UIFont.boldSystemFont(ofSize: 24), .foregroundColor: UIColor.black])
+        }
+
+        // ── Labeled scale bar (printable ruler) ──
+        // Calibrated to the marker tile: a tile is `tile` px == `widthMm` mm, so this
+        // 100 mm bar prints at exactly 100 mm IFF the markers print at their intended
+        // size. Measure it after printing to verify scale and recover the true marker
+        // size (set the app's marker size to widthMm × measured ÷ 100).
+        let pxPerMm = CGFloat(tile) / CGFloat(max(1, widthMm))
+        let barMm = 100
+        let baseX = CGFloat(pad)
+        let baseY = CGFloat(h) - 70
+        let barPx = CGFloat(barMm) * pxPerMm
+        let note = "Scale check: this bar = 100 mm at actual size. If it measures M mm, set the marker size to \(widthMm) × (M ÷ 100) mm (or reprint scaled by 100 ÷ M)." as NSString
+        note.draw(at: CGPoint(x: baseX, y: baseY - 96),
+                  withAttributes: [.font: UIFont.systemFont(ofSize: 18), .foregroundColor: UIColor.black])
+        ctx.setStrokeColor(UIColor.black.cgColor)
+        ctx.setLineWidth(3)
+        ctx.move(to: CGPoint(x: baseX, y: baseY))
+        ctx.addLine(to: CGPoint(x: baseX + barPx, y: baseY))
+        for i in 0...(barMm / 10) {
+          let x = baseX + CGFloat(i * 10) * pxPerMm
+          let tall: CGFloat = (i % 5 == 0) ? 28 : 14
+          ctx.move(to: CGPoint(x: x, y: baseY))
+          ctx.addLine(to: CGPoint(x: x, y: baseY - tall))
+        }
+        ctx.strokePath()
+        let tick: (String, CGFloat) -> Void = { txt, x in
+          (txt as NSString).draw(at: CGPoint(x: x, y: baseY + 6),
+            withAttributes: [.font: UIFont.systemFont(ofSize: 18), .foregroundColor: UIColor.black])
+        }
+        tick("0", baseX - 4)
+        tick("50", baseX + CGFloat(50) * pxPerMm - 10)
+        tick("100 mm", baseX + barPx - 28)
+      }
+      completion(out.pngData()?.base64EncodedString())
+    }
+  }
+
+  // MARK: - Continuous ICP world-lock (the FrozenWorld analog)
+
+  // A gentle, throttled refinement: ease the model onto the scanned LiDAR mesh to
+  // cancel VIO drift BETWEEN marker sightings. Scheduling/throttling lives in JS
+  // (drift-monitor.ts, unit-tested) which calls this; native just guards + applies a
+  // small, capped fraction of the ICP correction (snapping every couple of seconds
+  // would read as jitter), and only when it strictly lowers the residual.
+  func refineLock() {
+    // Every return path emits an onAutoAlign(continuous:true) so the JS scheduler's
+    // in-flight flag always clears (no silent return can wedge the world-lock).
+    guard !locked, modelEntity != nil, modelPivot != nil, modelAnchor != nil else {
+      onAutoAlign(["ok": false, "reason": "not-ready", "continuous": true]); return
+    }
+    guard meshSupported else {
+      onAutoAlign(["ok": false, "reason": "no-lidar", "continuous": true]); return
+    }
+    // A live marker is more authoritative than the mesh — leave the pose to it.
+    if markerLockEnabled, activeMarkerName != nil {
+      onAutoAlign(["ok": false, "reason": "marker-active", "continuous": true]); return
+    }
+    let model = gatherModelPointsWorld(cap: 500)
+    guard model.count >= 20 else {
+      onAutoAlign(["ok": false, "reason": "no-model-geometry", "continuous": true]); return
+    }
+    var lo = model[0], hi = model[0]
+    for p in model { lo = simd_min(lo, p); hi = simd_max(hi, p) }
+    let margin = SIMD3<Float>(repeating: 0.3)
+    let (real, normals) = gatherRealMeshWorld(aabbMin: lo - margin, aabbMax: hi + margin, cap: 3500)
+    guard real.count >= 80 else {
+      onAutoAlign(["ok": false, "reason": "sparse-mesh", "continuous": true]); return
+    }
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      let res = IcpAligner.solve(modelPoints: model, realPoints: real, realNormals: normals)
+      DispatchQueue.main.async { self?.handleRefineResult(res) }
+    }
+  }
+
+  private func handleRefineResult(_ res: IcpAligner.Result) {
+    let improved = res.finalRmsM.isFinite
+      && res.finalRmsM < res.initialRmsM - 0.0003
+      && res.inlierRatio >= 0.3
+    guard improved else {
+      onAutoAlign(["ok": false,
+                   "reason": res.inlierRatio < 0.3 ? "low-overlap" : "no-improvement",
+                   "continuous": true,
+                   "rmsMm": res.finalRmsM.isFinite ? res.finalRmsM * 1000 : 0,
+                   "inlierRatio": res.inlierRatio]); return
+    }
+    let scaled = scaledCorrection(res.transform, gain: 0.5, maxTransM: 0.05, maxRotRad: 3 * .pi / 180)
+    applyWorldCorrection(scaled)
+    onAutoAlign(["ok": true, "rmsMm": res.finalRmsM * 1000, "fromMm": res.initialRmsM * 1000,
+                 "inlierRatio": res.inlierRatio, "iterations": res.iterations, "continuous": true])
+  }
+
+  // Scale a rigid correction toward identity by `gain`, then cap its translation +
+  // rotation magnitude (so a single continuous step can only ease the model a little).
+  private func scaledCorrection(_ t: simd_float4x4, gain: Float, maxTransM: Float, maxRotRad: Float) -> simd_float4x4 {
+    let tr = Transform(matrix: t)
+    var dt = tr.translation * gain
+    let dl = simd_length(dt)
+    if dl > maxTransM, dl > 1e-6 { dt *= (maxTransM / dl) }
+    let identityQ = simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0))
+    var q = simd_slerp(identityQ, tr.rotation, gain)
+    let ang = q.angle
+    if ang.isFinite, ang > maxRotRad { q = simd_quatf(angle: maxRotRad, axis: q.axis) }
+    let r3 = simd_float3x3(q)
+    var m = matrix_identity_float4x4
+    m.columns.0 = SIMD4<Float>(r3.columns.0, 0)
+    m.columns.1 = SIMD4<Float>(r3.columns.1, 0)
+    m.columns.2 = SIMD4<Float>(r3.columns.2, 0)
+    m.columns.3 = SIMD4<Float>(dt, 1)
+    return m
+  }
+
+  // Column-major [Float] (16) for the JS bridge / events (matches simd_float4x4).
+  private func matrixToArray(_ m: simd_float4x4) -> [Float] {
+    return [
+      m.columns.0.x, m.columns.0.y, m.columns.0.z, m.columns.0.w,
+      m.columns.1.x, m.columns.1.y, m.columns.1.z, m.columns.1.w,
+      m.columns.2.x, m.columns.2.y, m.columns.2.z, m.columns.2.w,
+      m.columns.3.x, m.columns.3.y, m.columns.3.z, m.columns.3.w,
+    ]
+  }
+
   // MARK: - ARSessionDelegate
 
   func session(_ session: ARSession, didUpdate frame: ARFrame) {
     if pendingPlacement { tryPlaceModel() }
+    else if awaitingManualPlace { emitScanState() }
+    driveMarkerLock()  // keep the model glued to the active printed marker (drift-free)
+  }
+
+  func session(_ session: ARSession, didAdd anchors: [ARAnchor]) { ingestImageAnchors(anchors) }
+
+  func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) { ingestImageAnchors(anchors) }
+
+  func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
+    var changed = false
+    for case let img as ARImageAnchor in anchors {
+      let name = img.referenceImage.name ?? "marker"
+      markerEntities[name]?.removeFromParent()
+      markerEntities[name] = nil
+      markerTracked[name] = nil
+      // Keep the binding: the marker may reappear (occlusion / out-of-frame); a stale
+      // binding is harmless because selectActiveMarkerNative requires it to be tracked.
+      if activeMarkerName == name { activeMarkerName = nil }
+      changed = true
+    }
+    if changed { emitMarkerUpdates() }
   }
 
   func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
@@ -1120,7 +1909,9 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     case .notAvailable: s = "unavailable"
     @unknown default: s = "unknown"
     }
+    lastTrackingState = s
     onTracking(["state": s, "lidar": meshSupported])
+    if awaitingManualPlace { emitScanState() }
   }
 
   func session(_ session: ARSession, didFailWithError error: Error) {

@@ -31,18 +31,26 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Share,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
 import { useRemoteModel } from './useRemoteModel';
 import { useQualityData, ARQualityEntry } from './useQualityData';
 import ToggleChip from './ToggleChip';
 import ToolBar from './ToolBar';
 import AlignPanel from './AlignPanel';
-import EdgesPanel from './EdgesPanel';
+import AppearancePanel from './AppearancePanel';
 import MeasurementPanel from './MeasurementPanel';
 import RegisterPanel from './RegisterPanel';
+import LockPanel from './LockPanel';
 import QualityPanel from './QualityPanel';
 import LogInspectionForm, { InspectionFormResult } from './LogInspectionForm';
+import { projectsService, MNode } from '../../../services/projects.service';
+import { buildColorBy, ColorBy } from '../../projects/partviewer/viewerTools';
+import { resolveRealScale } from './realScale';
 import { solveRigid, PointPair, RigidFit } from './rigid-registration';
+import { useStabilizer } from './useStabilizer';
+import { lockStateLabel } from './drift-monitor';
 import { captureNativeSnapshot } from './arSnapshotNative';
 import { useAuth } from '../../../context/AuthContext';
 import { can } from '../../../config/permissions';
@@ -57,16 +65,26 @@ import {
   RenderMode,
   Vec3,
   DEFAULT_EDGE_COLOR,
-  EDGE_WEIGHT_MIN,
+  DEFAULT_EDGE_WEIGHT,
+  DEFAULT_MODEL_OPACITY,
 } from './types';
 import { PcsLidarArView } from '../../../../modules/pcs-lidar-ar';
+
+// The model loads ready for QA overlay: edges ON (red, from DEFAULT_EDGE_COLOR),
+// semi-transparent (DEFAULT_MODEL_OPACITY) so the real part shows through, and
+// painted by Profile so members are distinguishable straight away.
+const DEFAULT_COLOR_BY: ColorBy = 'profile';
+
+// Physical edge length of the printed AR markers (m) — must match the printed sheet
+// (exportMarkerSheet stamps this size). 150 mm tracks well at shop arm's-length.
+const MARKER_WIDTH_M = 0.15;
 
 // LiDAR layout: the Align/Edges/Measure toolbar is a right-side rail, so the
 // docked panels sit LOW (just above the bottom edge) to free the model's space.
 const PANEL_BOTTOM = 28;
 
 // Quick height control for direct manipulation (the planar drag only moves x/z).
-const ELEV_STEP = 0.004; // metres per tick — matches AlignPanel's MOVE step
+const ELEV_STEP = 0.001; // metres per tick (~1 mm) — matches AlignPanel's fine MOVE step
 const ELEV_TICK_MS = 40;
 
 /** Raise/lower the placed model in Y without opening the Align panel.
@@ -136,10 +154,20 @@ export default function ARExperienceRK({
   const [placed, setPlaced] = useState(false);
   const [nativeError, setNativeError] = useState<string | null>(null);
   const [capWarningDismissed, setCapWarningDismissed] = useState(false);
+  // Scan-before-place: the model is held until the user maps the area + taps Place.
+  // `scanReady` (from the native onScanState) = enough understanding to anchor well.
+  const [scanReady, setScanReady] = useState(false);
+
+  // ── Stability / anti-drift (FabStation-style marker lock + continuous world-lock) ──
+  const [markerLockOn, setMarkerLockOn] = useState(false);
+  const [continuousLockOn, setContinuousLockOn] = useState(false);
+  const [lockPanelOpen, setLockPanelOpen] = useState(false);
 
   // ── Tool panels (mutually exclusive, like the Viro toolbar) ──
+  // displayPanelOpen drives the single merged "Display" tab (surface colour-by +
+  // see-through + edge overlay) — it replaced the old separate Edges + Color tabs.
   const [precisionMode, setPrecisionMode] = useState(false);
-  const [edgesPanelOpen, setEdgesPanelOpen] = useState(false);
+  const [displayPanelOpen, setDisplayPanelOpen] = useState(false);
   const [measurePanelOpen, setMeasurePanelOpen] = useState(false);
   const [qaPanelOpen, setQaPanelOpen] = useState(false);
   const [logFormOpen, setLogFormOpen] = useState(false);
@@ -151,9 +179,15 @@ export default function ARExperienceRK({
   // ── Edges ──
   const [renderMode, setRenderMode] = useState<RenderMode>('solid');
   const [edgeColor, setEdgeColor] = useState(DEFAULT_EDGE_COLOR);
-  // Edges default to the THINNEST line weight.
-  const [edgeWeight, setEdgeWeight] = useState(EDGE_WEIGHT_MIN);
+  // Edge weight defaults to Fine and is adjusted via the Display panel's thickness
+  // slider (no discrete presets).
+  const [edgeWeight, setEdgeWeight] = useState(DEFAULT_EDGE_WEIGHT);
   const [pendingWireframe, setPendingWireframe] = useState(false);
+
+  // ── Colour-by (Profile / Grade) — the SAME overlay as the web + 3D viewer.
+  // Lives inside the merged Display panel now (no separate open-state). ──
+  const [nodes, setNodes] = useState<MNode[]>([]);
+  const [colorBy, setColorBy] = useState<ColorBy>(DEFAULT_COLOR_BY);
 
   // ── Measure ──
   const [measurements, setMeasurements] = useState<MeasurementState>(DEFAULT_MEASUREMENTS);
@@ -170,8 +204,11 @@ export default function ARExperienceRK({
   const [registerMiss, setRegisterMiss] = useState(false);
   const [lastRegRms, setLastRegRms] = useState<number | null>(null);
 
-  // ── See-through overlay (Phase 3) ──
-  const [seeThrough, setSeeThrough] = useState(false);
+  // ── See-through overlay (Phase 3) — continuous opacity (1 = solid). Loads
+  // semi-transparent (DEFAULT_MODEL_OPACITY) so the real part shows through for QA
+  // overlay; raised to solid / fine-tuned from the Display panel's See-through
+  // slider + the quick top-right "See-through" chip. ──
+  const [opacity, setOpacity] = useState(DEFAULT_MODEL_OPACITY);
 
   // Brief "drag to move / twist to turn" hint shown right after placement.
   const [showDragHint, setShowDragHint] = useState(false);
@@ -194,6 +231,55 @@ export default function ARExperienceRK({
 
   const flags = togglesToFlags(toggles);
   const dimensions = model.dimensions;
+
+  // Colour-by is only meaningful with the project's node attributes — fetch them
+  // (cache-first) when AR is opened in a project context. No projectId → no Color
+  // tab (the overlay needs profile/grade per mesh).
+  const projectId = qaContext?.projectId;
+  useEffect(() => {
+    if (!projectId) { setNodes([]); return; }
+    let cancelled = false;
+    projectsService.getNodes(projectId)
+      .then((ns) => { if (!cancelled) setNodes(Array.isArray(ns) ? ns : []); })
+      .catch(() => { /* keep empty — Color tab just won't show */ });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  // name(ifc_guid)→hex map + legend, scoped to the meshes actually shown (the
+  // isolated set, or the whole model). Reuses buildColorBy verbatim, so AR matches
+  // the web/3D-viewer colours exactly. The native overlay wants hex STRINGS.
+  const colorResult = useMemo(
+    () => buildColorBy(nodes, colorBy, meshNames ?? null),
+    [nodes, colorBy, meshNames],
+  );
+  const colorByAvailable = nodes.length > 0;
+  // The solid model is ALWAYS rendered (edges are a composite overlay on top), so
+  // the colour overlay applies in BOTH view modes; only an empty map when off.
+  const colorOverlay = useMemo(() => {
+    if (colorBy === 'none') return {} as Record<string, string>;
+    const out: Record<string, string> = {};
+    for (const [name, intColor] of Object.entries(colorResult.colors)) {
+      out[name] = `#${(intColor >>> 0).toString(16).padStart(6, '0').slice(-6)}`;
+    }
+    return out;
+  }, [colorBy, colorResult]);
+
+  // TRUE 1:1 scale: metres-per-GLB-unit so the model renders at the real
+  // assembly's size instead of a fixed 0.6 m. Resolved robustly from the GLB's own
+  // geometry magnitude (the trustworthy signal — the converter writes native units
+  // with no baked fit-scale) and REFINED by part-length calibration when the two
+  // agree. 0 = undeterminable → the native view keeps its fit-scale. `source` tells
+  // the inspector whether it's exact ('calibrated') or an auto estimate ('estimated').
+  const realScaleResult = useMemo(() => {
+    if (!dimensions) return { mpu: 0, source: 'none' as const };
+    const longest = Math.max(
+      dimensions.overall.size[0],
+      dimensions.overall.size[1],
+      dimensions.overall.size[2],
+    );
+    return resolveRealScale(longest, dimensions.parts, nodes);
+  }, [dimensions, nodes]);
+  const realScale = realScaleResult.mpu;
 
   // The active measurement tool, sent to the native view as a prop. 'off' when
   // the Measure panel is closed (so taps don't capture stray points).
@@ -218,6 +304,23 @@ export default function ARExperienceRK({
     : pendingModelPoint
       ? 'real'
       : 'model';
+
+  // Anything that actively moves / measures the model suppresses the continuous
+  // auto-refine so the world-lock never fights the user mid-edit.
+  const userInteracting =
+    precisionMode || measurePanelOpen || registerPanelOpen || partTapMode;
+
+  // The anti-drift brain: derives lock state + active marker for the HUD and drives
+  // the continuous ICP world-lock (calls native refineLock on a throttle). The
+  // per-frame marker pose drive itself is native. See useStabilizer / drift-monitor.
+  const stabilizer = useStabilizer({
+    arRef,
+    placed,
+    tracking,
+    userInteracting,
+    markerLockOn,
+    continuousLockOn,
+  });
 
   // Live rigid-fit over the completed pairs (cheap for the handful of corners QA uses).
   const registerFit: RigidFit | null = useMemo(
@@ -252,6 +355,12 @@ export default function ARExperienceRK({
     if (typeof e.nativeEvent.lidar === 'boolean') setLidar(e.nativeEvent.lidar);
   }, []);
   const onAnchor = useCallback(() => setPlaced(true), []);
+  const onScanState = useCallback((e: { nativeEvent: { ready: boolean } }) => {
+    setScanReady(!!e.nativeEvent.ready);
+  }, []);
+  const handlePlaceNow = useCallback(() => {
+    arRef.current?.placeNow?.();
+  }, []);
   const onError = useCallback((e: { nativeEvent: { message: string } }) => {
     setNativeError(e.nativeEvent.message);
   }, []);
@@ -284,7 +393,17 @@ export default function ARExperienceRK({
     setRegisterPairs([]);
     setPendingModelPoint(null);
     setRegisterMiss(false);
-    setSeeThrough(false);
+    setColorBy(DEFAULT_COLOR_BY);
+    setDisplayPanelOpen(false);
+    setOpacity(DEFAULT_MODEL_OPACITY);
+    // Edge styling resets to defaults too (red, thin) so a switched-in model
+    // loads with the same border look — not the previous model's customisation.
+    setEdgeColor(DEFAULT_EDGE_COLOR);
+    setEdgeWeight(DEFAULT_EDGE_WEIGHT);
+    setPendingWireframe(false);
+    // A new model re-enters the scan-before-place gate.
+    setPlaced(false);
+    setScanReady(false);
     // Tear down stale native markers from the previous model too (both sides reset).
     arRef.current?.clearRegistration?.();
     arRef.current?.clearMeasurement?.();
@@ -298,10 +417,12 @@ export default function ARExperienceRK({
     }
   }, [model.wireframeUri, pendingWireframe]);
 
-  // Tell the host when a docked panel is open so it can hide the engine switcher.
+  // Tell the host when a docked panel is open (or the scan-before-place prompt is up)
+  // so it can hide the bottom-center engine switcher and avoid overlap.
+  const awaitingPlacement = model.phase === 'ready' && !placed;
   useEffect(() => {
-    onChromeBusy?.(precisionMode || edgesPanelOpen || measurePanelOpen || registerPanelOpen);
-  }, [precisionMode, edgesPanelOpen, measurePanelOpen, registerPanelOpen, onChromeBusy]);
+    onChromeBusy?.(precisionMode || displayPanelOpen || measurePanelOpen || registerPanelOpen || lockPanelOpen || awaitingPlacement);
+  }, [precisionMode, displayPanelOpen, measurePanelOpen, registerPanelOpen, lockPanelOpen, awaitingPlacement, onChromeBusy]);
 
   // Surface the drag/twist hint for a few seconds whenever the model (re)places.
   useEffect(() => {
@@ -364,6 +485,14 @@ export default function ARExperienceRK({
         setRenderMode('solid');
         return;
       }
+      // Edge view is refused for very large models (building it would crash the AR
+      // view) — keep solid and say so instead of silently doing nothing.
+      if (model.wireframeUnavailable) {
+        setRenderMode('solid');
+        notifyError();
+        Alert.alert('Edges unavailable', 'This model is too large for the edge overlay — showing the solid view.');
+        return;
+      }
       if (model.wireframeUri) {
         setRenderMode('wireframe');
       } else {
@@ -396,14 +525,29 @@ export default function ARExperienceRK({
   );
 
   // Edges ON by default: once the model is ready, switch into the (thinnest) edge
-  // view automatically — done once per model.
+  // view automatically — done once per model. Skipped for models flagged too large
+  // for the edge overlay (they stay solid; building edges would crash the AR view).
   const autoEdgesRef = useRef<string | null>(null);
   useEffect(() => {
-    if (model.phase === 'ready' && model.uri && autoEdgesRef.current !== model.uri) {
+    if (
+      model.phase === 'ready' &&
+      model.uri &&
+      !model.wireframeUnavailable &&
+      autoEdgesRef.current !== model.uri
+    ) {
       autoEdgesRef.current = model.uri;
       handleSelectView('wireframe');
     }
-  }, [model.phase, model.uri, handleSelectView]);
+  }, [model.phase, model.uri, model.wireframeUnavailable, handleSelectView]);
+
+  // If edges get refused mid-flight (the too-large flag flips after the first
+  // attempt), fall back to the solid view so we never sit waiting on a wireframe.
+  useEffect(() => {
+    if (model.wireframeUnavailable) {
+      setRenderMode('solid');
+      setPendingWireframe(false);
+    }
+  }, [model.wireframeUnavailable]);
 
   // ── Measure handlers ──
   const updateMeasurements = useCallback((patch: Partial<MeasurementState>) => {
@@ -513,8 +657,12 @@ export default function ARExperienceRK({
   }, []);
 
   const onAutoAlign = useCallback(
-    (e: { nativeEvent: { ok: boolean; rmsMm?: number; reason?: string } }) => {
-      const { ok, rmsMm, reason } = e.nativeEvent;
+    (e: { nativeEvent: { ok: boolean; rmsMm?: number; reason?: string; continuous?: boolean } }) => {
+      const { ok, rmsMm, reason, continuous } = e.nativeEvent;
+      // Feed every result (manual Auto-snap AND continuous world-lock) to the monitor.
+      stabilizer.noteAutoAlign(e.nativeEvent);
+      // The continuous world-lock runs silently — no toasts/alerts every couple seconds.
+      if (continuous) return;
       if (ok) {
         if (typeof rmsMm === 'number') setLastRegRms(rmsMm);
         notifySuccess(`Auto-snapped${rmsMm != null ? ` · ${rmsMm.toFixed(1)} mm RMS` : ''}`);
@@ -533,13 +681,13 @@ export default function ARExperienceRK({
       notifyError();
       Alert.alert('Auto-snap', msg);
     },
-    [],
+    [stabilizer.noteAutoAlign],
   );
 
-  // Apply the see-through overlay opacity whenever the toggle flips.
+  // Apply the see-through overlay opacity whenever it changes.
   useEffect(() => {
-    arRef.current?.setModelOpacity?.(seeThrough ? 0.45 : 1);
-  }, [seeThrough]);
+    arRef.current?.setModelOpacity?.(opacity);
+  }, [opacity]);
 
   const handleLogDeviation = useCallback(async () => {
     const a = measurements.deviationModelPoint;
@@ -648,23 +796,26 @@ export default function ARExperienceRK({
   }, []);
   const togglePrecision = useCallback(() => {
     setPrecisionMode((p) => !p);
-    setEdgesPanelOpen(false);
+    setDisplayPanelOpen(false);
     setMeasurePanelOpen(false);
+    setLockPanelOpen(false);
     closeRegister();
   }, [closeRegister]);
-  const toggleEdges = useCallback(() => {
-    const opening = !edgesPanelOpen;
-    setEdgesPanelOpen(opening);
+  const toggleDisplay = useCallback(() => {
+    const opening = !displayPanelOpen;
+    setDisplayPanelOpen(opening);
     setPrecisionMode(false);
     setMeasurePanelOpen(false);
+    setLockPanelOpen(false);
     closeRegister();
-    // Opening the Edges tab turns the edge view ON by default.
+    // Opening the Display tab turns the edge overlay ON by default.
     if (opening && renderMode !== 'wireframe') handleSelectView('wireframe');
-  }, [edgesPanelOpen, renderMode, handleSelectView, closeRegister]);
+  }, [displayPanelOpen, renderMode, handleSelectView, closeRegister]);
   const toggleMeasure = useCallback(() => {
     setMeasurePanelOpen((m) => !m);
     setPrecisionMode(false);
-    setEdgesPanelOpen(false);
+    setDisplayPanelOpen(false);
+    setLockPanelOpen(false);
     closeRegister();
   }, [closeRegister]);
   const toggleRegister = useCallback(() => {
@@ -677,9 +828,44 @@ export default function ARExperienceRK({
       return !open;
     });
     setPrecisionMode(false);
-    setEdgesPanelOpen(false);
+    setDisplayPanelOpen(false);
     setMeasurePanelOpen(false);
+    setLockPanelOpen(false);
     setPartTapMode(false); // register taps must not also fire part-pick
+  }, []);
+
+  // Stability / anti-drift tab.
+  const toggleLockPanel = useCallback(() => {
+    setLockPanelOpen((o) => !o);
+    setPrecisionMode(false);
+    setDisplayPanelOpen(false);
+    setMeasurePanelOpen(false);
+    closeRegister();
+  }, [closeRegister]);
+
+  const handlePrintMarkers = useCallback(async () => {
+    try {
+      const base64 = await arRef.current?.exportMarkerSheet?.();
+      if (!base64) {
+        Alert.alert('Markers', 'Could not generate the marker sheet on this device.');
+        return;
+      }
+      // Write the PNG to cache + hand it to the iOS share sheet (AirPrint / Save to
+      // Files). Print at 100% (1:1) so the printed edge matches MARKER_WIDTH_M.
+      const dir = `${FileSystem.cacheDirectory}pcs-ar-markers/`;
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+      const uri = `${dir}pcs-ar-markers.png`;
+      await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      await Share.share({ url: uri, title: 'PCS AR markers' });
+    } catch {
+      notifyError();
+      Alert.alert('Markers', 'Could not export the marker sheet.');
+    }
+  }, []);
+  // Colour-by paints the solid, which is shown in BOTH view modes (in edges view
+  // the outlines sit on top of the coloured solid), so no view switch is needed.
+  const handleColorBy = useCallback((by: ColorBy) => {
+    setColorBy(by);
   }, []);
 
   const downloading = model.phase !== 'ready' && model.phase !== 'error';
@@ -698,6 +884,11 @@ export default function ARExperienceRK({
         wireframeUri={model.wireframeUri ?? undefined}
         showEdges={renderMode === 'wireframe'}
         edgeColor={edgeColor}
+        colorOverlay={colorOverlay}
+        realScale={realScale}
+        manualPlacement
+        markerLock={markerLockOn}
+        markerWidthMeters={MARKER_WIDTH_M}
         directManipulation={directManip}
         registerMode={registerMode}
         occlusion={flags.occlusion}
@@ -711,11 +902,14 @@ export default function ARExperienceRK({
         showPartBoxes={measurements.showParts}
         onTracking={onTracking}
         onAnchor={onAnchor}
+        onScanState={onScanState}
         onError={onError}
         onMeasure={onMeasure as any}
         onPartTap={onPartTap as any}
         onRegisterPoint={onRegisterPoint as any}
         onAutoAlign={onAutoAlign as any}
+        onMarkerUpdate={stabilizer.onMarkerUpdate as any}
+        onLockStatus={stabilizer.onLockStatus as any}
       />
 
       {/* Header — Back + assembly name on the left, Records + Occlusion on the right */}
@@ -730,6 +924,14 @@ export default function ARExperienceRK({
         </Text>
         <Text style={styles.subText} numberOfLines={1}>
           {lidar === false ? 'LiDAR unavailable' : `tracking: ${tracking}`}
+          {realScale > 0
+            ? realScaleResult.source === 'calibrated'
+              ? '  ·  1:1 scale'
+              : '  ·  ≈1:1 (auto)'
+            : ''}
+          {placed && (markerLockOn || continuousLockOn)
+            ? `  ·  ${lockStateLabel(stabilizer.lockState)}`
+            : ''}
         </Text>
       </View>
 
@@ -739,7 +941,8 @@ export default function ARExperienceRK({
         </TouchableOpacity>
       )}
 
-      {/* Quick toggles — top-right, off-centre: Occlusion, then Edges below it */}
+      {/* Quick toggles — top-right, off-centre: Occlusion, then See-through.
+          (The Edges quick toggle was removed — edges live in the Display tab.) */}
       <View style={styles.occlusionWrap} pointerEvents="box-none">
         <ToggleChip
           icon="👁"
@@ -749,18 +952,10 @@ export default function ARExperienceRK({
         />
         {placed && (
           <ToggleChip
-            icon="◰"
-            label="Edges"
-            on={renderMode === 'wireframe'}
-            onPress={() => handleSelectView(renderMode === 'wireframe' ? 'solid' : 'wireframe')}
-          />
-        )}
-        {placed && (
-          <ToggleChip
             icon="◐"
             label="See-through"
-            on={seeThrough}
-            onPress={() => setSeeThrough((s) => !s)}
+            on={opacity < 0.999}
+            onPress={() => setOpacity((o) => (o < 0.999 ? 1 : DEFAULT_MODEL_OPACITY))}
           />
         )}
       </View>
@@ -775,11 +970,39 @@ export default function ARExperienceRK({
         </View>
       )}
 
-      {/* Hint while the model auto-places (tap-to-place was removed) */}
+      {/* Scan-before-place: map the area first, then drop the model where you aim.
+          Scanning builds ARKit's world map so the placed model tracks stably (it does
+          NOT change scale — that's already 1:1 from the geometry). A centre reticle
+          shows where it will land; the button enables once tracking is solid. */}
       {model.phase === 'ready' && !placed && (
-        <View style={styles.hintWrap} pointerEvents="none">
-          <Text style={styles.hintText}>Point the iPad at the area — placing the model…</Text>
-        </View>
+        <>
+          <View style={styles.reticleWrap} pointerEvents="none">
+            <View style={styles.reticle}>
+              <View style={[styles.reticleRing, scanReady && styles.reticleRingReady]} />
+              <View style={styles.reticleDot} />
+            </View>
+          </View>
+          <View style={styles.scanWrap} pointerEvents="box-none">
+            <Text style={styles.scanTitle}>
+              {scanReady ? '✓ Area mapped' : 'Scan the area'}
+            </Text>
+            <Text style={styles.scanHint}>
+              {scanReady
+                ? 'Aim the circle where the assembly sits, then place the model.'
+                : 'Move the iPad slowly around the spot — pan across the floor and the real assembly so it maps in 3D.'}
+            </Text>
+            <TouchableOpacity
+              style={[styles.placeModelBtn, (!scanReady && tracking !== 'normal') && styles.placeModelBtnDisabled]}
+              onPress={handlePlaceNow}
+              disabled={!scanReady && tracking !== 'normal'}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.placeModelBtnText}>
+                {scanReady || tracking === 'normal' ? '＋ Place model here' : 'Scanning…'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
       )}
 
       {/* Banner stack: no-LiDAR + tracking state */}
@@ -824,19 +1047,19 @@ export default function ARExperienceRK({
 
       {/* Elevation handle — quick height for direct manipulation (no panel open).
           Uses nudgeWorld so height tracks true world-up even on a tilted anchor. */}
-      {directManip && !precisionMode && !edgesPanelOpen && !measurePanelOpen && (
+      {directManip && !precisionMode && !displayPanelOpen && !measurePanelOpen && (
         <ElevationHandle onStep={(dy) => arRef.current?.nudgeWorld?.(0, dy, 0)} />
       )}
 
       {/* Brief drag/twist hint after placement */}
-      {showDragHint && directManip && !precisionMode && !edgesPanelOpen && !measurePanelOpen && (
+      {showDragHint && directManip && !precisionMode && !displayPanelOpen && !measurePanelOpen && (
         <View style={styles.dragHintWrap} pointerEvents="none">
           <Text style={styles.dragHintText}>✋ Drag to move  ·  ↻ twist to turn  ·  ▲▼ height</Text>
         </View>
       )}
 
       {/* Offline-queue sync pill */}
-      {!precisionMode && !edgesPanelOpen && !measurePanelOpen && pendingCount > 0 && (
+      {!precisionMode && !displayPanelOpen && !measurePanelOpen && pendingCount > 0 && (
         <View style={styles.bottomCenter} pointerEvents="box-none">
           <TouchableOpacity
             style={[styles.queueChip, syncingQueue && styles.queueChipBusy]}
@@ -869,16 +1092,23 @@ export default function ARExperienceRK({
         />
       )}
 
-      {/* Edges panel */}
-      {edgesPanelOpen && placed && (
-        <EdgesPanel
+      {/* Display panel — the merged appearance tab: surface colour-by +
+          see-through + the edge overlay (was the separate Edges + Color tabs). */}
+      {displayPanelOpen && placed && (
+        <AppearancePanel
           renderMode={renderMode}
+          onSelectView={handleSelectView}
           edgeColor={edgeColor}
           edgeWeight={edgeWeight}
-          busy={model.wireframeBusy}
-          onSelectView={handleSelectView}
+          edgesBusy={model.wireframeBusy}
           onSelectColor={handleSelectColor}
           onCommitWeight={handleCommitWeight}
+          colorByAvailable={colorByAvailable}
+          colorBy={colorBy}
+          legend={colorResult.legend}
+          onColorBy={handleColorBy}
+          opacity={opacity}
+          onOpacity={setOpacity}
           bottomOffset={PANEL_BOTTOM}
           translucent
         />
@@ -922,6 +1152,27 @@ export default function ARExperienceRK({
         </>
       )}
 
+      {/* Stability / anti-drift panel (marker lock + continuous world-lock) */}
+      {lockPanelOpen && placed && (
+        <LockPanel
+          bottom={PANEL_BOTTOM}
+          markerLockOn={markerLockOn}
+          continuousLockOn={continuousLockOn}
+          lockState={stabilizer.lockState}
+          activeMarker={stabilizer.activeMarker}
+          trackedCount={stabilizer.trackedCount}
+          boundCount={stabilizer.boundCount}
+          markerVisible={stabilizer.markerVisible}
+          holding={stabilizer.holding}
+          lastResidualMm={stabilizer.lastResidualMm}
+          onToggleMarkerLock={() => setMarkerLockOn((v) => !v)}
+          onToggleContinuousLock={() => setContinuousLockOn((v) => !v)}
+          onBind={stabilizer.bindMarkers}
+          onClearBindings={stabilizer.clearBindings}
+          onPrintMarkers={handlePrintMarkers}
+        />
+      )}
+
       {/* Aim reticle + "Place point" for real-world / deviation-real points */}
       {showReticle && (
         <View style={styles.reticleWrap} pointerEvents="box-none">
@@ -945,13 +1196,17 @@ export default function ARExperienceRK({
         placed={placed}
         modelLoaded={!!model.uri}
         precisionMode={precisionMode}
-        edgesPanelOpen={edgesPanelOpen}
+        edgesPanelOpen={displayPanelOpen}
         measurePanelOpen={measurePanelOpen}
         onTogglePrecision={togglePrecision}
-        onToggleEdges={toggleEdges}
+        onToggleEdges={toggleDisplay}
         onToggleMeasure={toggleMeasure}
+        appearanceLabel="Display"
+        appearanceIcon="◑"
         registerPanelOpen={registerPanelOpen}
         onToggleRegister={toggleRegister}
+        lockPanelOpen={lockPanelOpen}
+        onToggleLock={toggleLockPanel}
         side="right"
       />
 
@@ -1112,7 +1367,35 @@ const styles = StyleSheet.create({
   },
   missHintText: { color: '#1f2937', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   reticleRing: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.05)' },
+  reticleRingReady: { borderColor: 'rgba(34, 197, 94, 0.95)', backgroundColor: 'rgba(34, 197, 94, 0.12)' },
   reticleDot: { position: 'absolute', width: 6, height: 6, borderRadius: 3, backgroundColor: '#0ea5e9' },
+  // Scan-before-place prompt + action, docked low so the reticle/area stays clear.
+  scanWrap: { position: 'absolute', bottom: 56, left: 24, right: 24, alignItems: 'center', zIndex: 31 },
+  scanTitle: { color: '#fff', fontSize: 17, fontWeight: '800', marginBottom: 4, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4 },
+  scanHint: {
+    color: '#0b1220',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  placeModelBtn: {
+    minHeight: 48,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(14, 165, 233, 0.97)',
+    paddingVertical: 13,
+    paddingHorizontal: 34,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: '#fff',
+  },
+  placeModelBtnDisabled: { backgroundColor: 'rgba(100, 116, 139, 0.85)', borderColor: 'rgba(255,255,255,0.4)' },
+  placeModelBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   placeButton: {
     marginTop: 76,
     backgroundColor: 'rgba(14, 165, 233, 0.97)',

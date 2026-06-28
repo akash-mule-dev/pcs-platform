@@ -85,6 +85,8 @@ enum IcpAligner {
     var pts = modelPoints
     var total = identity
     var threshold: Float = 0.10
+    let thresholdFloor: Float = 0.03
+    let iterCap = maxIterations
 
     // Accept/revert metric: a TRUNCATED point-to-plane cost at a FIXED gate radius,
     // measured over ALL model points (constant denominator). Initial vs final is
@@ -96,7 +98,7 @@ enum IcpAligner {
     var converged = false
     var iter = 0
 
-    while iter < maxIterations {
+    while iter < iterCap {
       iter += 1
       // Accumulate the point-to-plane normal equations: for each correspondence
       // a·x = b with a = [pt×n, n], b = -(p−q)·n, x = [rotationVec(3), translation(3)].
@@ -117,8 +119,6 @@ enum IcpAligner {
         inliers += 1
       }
       if inliers < 6 { break }
-      // Light damping for a stable solve (Levenberg-ish).
-      for i in 0..<6 { ata[i][i] += 1e-6 }
       guard let x = solve6(ata, atb) else { break }
 
       let rot = SIMD3<Float>(Float(x[0]), Float(x[1]), Float(x[2]))
@@ -130,7 +130,7 @@ enum IcpAligner {
         pts[i] = SIMD3<Float>(v.x, v.y, v.z)
       }
       total = inc * total
-      threshold = max(0.03, threshold * 0.85)
+      threshold = max(thresholdFloor, threshold * 0.85)
       if simd_length(rot) < 1e-4 && simd_length(trans) < 1e-4 { converged = true; break }
     }
 

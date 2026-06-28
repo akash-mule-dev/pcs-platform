@@ -6,15 +6,23 @@
  *   (dev):  npm run worker:dev
  *
  * Boots the Nest application context (DB, storage, converters) and consumes
- * conversion jobs. Deploy as a long-running process/container alongside the
- * API; scale horizontally for throughput.
+ * BOTH pipeline queues:
+ *   - 'pcs-import'     → the IFC/CAD import pipeline (extract structure + persist
+ *                        the assembly tree, then enqueue the GLB conversion)
+ *   - 'pcs-conversion' → the GLB conversion + optimization
+ * Deploy as a long-running process/container alongside the (serverless) API;
+ * this is the persistent compute that the heavy, spawn-based pipeline needs.
+ * Scale horizontally for throughput.
  */
+import 'dotenv/config'; // load backend/.env for local runs (the API's main.ts does the same); on a host, env comes from the platform
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { Worker, type ConnectionOptions } from 'bullmq';
 import IORedis from 'ioredis';
 import { AppModule } from '../app.module.js';
 import { ConversionProcessor } from './conversion.processor.js';
+import { IfcImportService } from '../projects/ifc-import.service.js';
+import { IMPORT_QUEUE_NAME_DEFAULT } from '../projects/queue/import-queue.interface.js';
 
 async function bootstrap() {
   const logger = new Logger('ConversionWorker');
@@ -29,26 +37,41 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log'],
   });
   const processor = app.get(ConversionProcessor, { strict: false });
+  const ifcImport = app.get(IfcImportService, { strict: false });
 
-  const queueName = process.env.CONVERSION_QUEUE_NAME || 'pcs-conversion';
-  const concurrency = parseInt(process.env.CONVERSION_CONCURRENCY || '2', 10);
-  const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+  // Separate Redis connections per worker — BullMQ workers issue blocking
+  // commands, so they must not share one connection.
+  const conversionConn = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+  const importConn = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 
-  const worker = new Worker(
-    queueName,
+  // 1. GLB conversion queue.
+  const conversionQueueName = process.env.CONVERSION_QUEUE_NAME || 'pcs-conversion';
+  const conversionConcurrency = parseInt(process.env.CONVERSION_CONCURRENCY || '2', 10);
+  const conversionWorker = new Worker(
+    conversionQueueName,
     async (job) => { await processor.process(job.data.jobId); },
-    { connection: connection as unknown as ConnectionOptions, concurrency },
+    { connection: conversionConn as unknown as ConnectionOptions, concurrency: conversionConcurrency },
   );
+  conversionWorker.on('completed', (job) => logger.log(`Conversion job ${job.id} completed`));
+  conversionWorker.on('failed', (job, err) => logger.error(`Conversion job ${job?.id} failed: ${err?.message}`));
 
-  worker.on('completed', (job) => logger.log(`Job ${job.id} completed`));
-  worker.on('failed', (job, err) => logger.error(`Job ${job?.id} failed: ${err?.message}`));
+  // 2. Import pipeline queue (structure extraction + tree persist → conversion).
+  const importQueueName = process.env.IMPORT_QUEUE_NAME || IMPORT_QUEUE_NAME_DEFAULT;
+  const importConcurrency = parseInt(process.env.IMPORT_CONCURRENCY || process.env.IMPORT_PIPELINE_CONCURRENCY || '2', 10);
+  const importWorker = new Worker(
+    importQueueName,
+    async (job) => { await ifcImport.runImportJob(job.data); },
+    { connection: importConn as unknown as ConnectionOptions, concurrency: importConcurrency },
+  );
+  importWorker.on('completed', (job) => logger.log(`Import job ${job.id} completed`));
+  importWorker.on('failed', (job, err) => logger.error(`Import job ${job?.id} failed: ${err?.message}`));
 
-  logger.log(`Conversion worker listening on '${queueName}' (concurrency ${concurrency})`);
+  logger.log(`Worker listening on '${importQueueName}' (concurrency ${importConcurrency}) + '${conversionQueueName}' (concurrency ${conversionConcurrency})`);
 
   const shutdown = async () => {
-    logger.log('Shutting down conversion worker...');
-    await worker.close();
-    await connection.quit();
+    logger.log('Shutting down worker...');
+    await Promise.allSettled([conversionWorker.close(), importWorker.close()]);
+    await Promise.allSettled([conversionConn.quit(), importConn.quit()]);
     await app.close();
     process.exit(0);
   };

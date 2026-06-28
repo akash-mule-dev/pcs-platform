@@ -10,7 +10,7 @@ import { Colors } from '../../theme/colors';
 import { WO } from '../../theme/wo';
 import { environment } from '../../config/environment';
 import { ProjectsStackParamList } from '../../navigation/types';
-import { projectsService, MNode } from '../../services/projects.service';
+import { projectsService, MNode, MImport } from '../../services/projects.service';
 import { PartWebViewer } from './PartWebViewer';
 import { displayName, defined } from './assembly/treeIndex';
 
@@ -35,6 +35,7 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
   const wide = width >= 700; // side-by-side (tablet) vs stacked (phone)
 
   const [nodes, setNodes] = useState<MNode[]>([]);
+  const [imports, setImports] = useState<MImport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -53,6 +54,10 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
       .then((n) => { if (alive) setNodes(n || []); })
       .catch((e) => { if (alive) setError(e?.message || 'Could not load assemblies.'); })
       .finally(() => { if (alive) setLoading(false); });
+    // Imports carry the model id for geometry-only uploads (no nodes). Best-effort.
+    projectsService.getImports(projectId)
+      .then((i) => { if (alive) setImports(i || []); })
+      .catch(() => { /* model falls back to node-derived only */ });
     return () => { alive = false; };
   }, [projectId]);
 
@@ -64,7 +69,23 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
     return m;
   }, [nodes]);
   const roots = useMemo(() => nodes.filter((n) => !n.parentId || !byId.has(n.parentId)), [nodes, byId]);
-  const modelId = useMemo(() => nodes.find((n) => n.modelId)?.modelId ?? null, [nodes]);
+  // Resolve the project's 3D model: from the assembly tree (IFC stamps modelId
+  // onto its nodes) or, for geometry-only imports (STEP/IGES/GLB) that produce
+  // NO nodes, from the latest completed import — otherwise the converted GLB is
+  // invisible on mobile even though the web shows it. Mirrors the web store.
+  const modelId = useMemo(() => {
+    const fromNode = nodes.find((n) => n.modelId)?.modelId;
+    if (fromNode) return fromNode;
+    const completed = imports.filter((i) => i.status === 'completed' && i.modelId);
+    if (!completed.length) return null;
+    const latest = [...completed].sort((a, b) =>
+      (b.finishedAt || b.createdAt || '').localeCompare(a.finishedAt || a.createdAt || ''))[0];
+    return latest.modelId ?? null;
+  }, [nodes, imports]);
+  // True when there's a viewable model but no assembly tree (geometry-only import).
+  const geometryOnly = nodes.length === 0 && !!modelId;
+  // Still converting (or failed) with nothing to show yet.
+  const importPending = nodes.length === 0 && !modelId && imports.some((i) => i.status !== 'completed' && i.status !== 'failed');
 
   // Map a tapped mesh name (== ifc_guid / mesh_name) back to its node.
   const nodeByMesh = useMemo(() => {
@@ -150,8 +171,10 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
       fileUrl: `${environment.apiUrl}/models/${modelId}/file`,
       meshNames: meshes.length ? meshes : undefined,
       partLabel: selectedNode ? displayName(selectedNode) : undefined,
+      // Carries the project so AR can colour-by Profile / Grade (needs node data).
+      projectId,
     });
-  }, [modelId, selectedNode, descendantGuids, navigation]);
+  }, [modelId, selectedNode, descendantGuids, navigation, projectId]);
 
   const renderRow = useCallback(({ item }: { item: Row }) => {
     const n = item.node;
@@ -181,11 +204,36 @@ export function ProjectAssemblies({ projectId }: { projectId: string }) {
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>;
   if (error) return <View style={styles.center}><Text style={styles.muted}>{error}</Text></View>;
+  // Geometry-only import: a 3D model exists but there's no assembly tree.
+  if (geometryOnly && modelId) {
+    return (
+      <View style={[styles.viewerPane, { flex: 1 }]}>
+        <PartWebViewer modelId={modelId} highlight={[]} autoFocus focusNonce={0} onMeshClicked={() => {}} />
+        <View style={styles.geoBanner} pointerEvents="none">
+          <Ionicons name="cube-outline" size={15} color="#c7d6e6" />
+          <Text style={styles.geoBannerTxt} numberOfLines={2}>
+            Geometry-only model — no assembly tree (marks / BOM). Import an IFC on the web for the full breakdown.
+          </Text>
+        </View>
+        <View style={styles.viewerBar} pointerEvents="box-none">
+          <Text style={styles.viewerHint} numberOfLines={1}>Geometry-only model</Text>
+          <TouchableOpacity style={styles.arBtn} onPress={openAr}>
+            <Ionicons name="scan-outline" size={15} color={Colors.white} />
+            <Text style={styles.arTxt}>AR</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
   if (nodes.length === 0) {
     return (
       <View style={styles.center}>
-        <Ionicons name="git-branch-outline" size={34} color={Colors.medium} />
-        <Text style={styles.muted}>No assemblies yet. Import an IFC / model on the web — the structure and 3D appear here.</Text>
+        {importPending ? <ActivityIndicator color={Colors.primary} /> : <Ionicons name="git-branch-outline" size={34} color={Colors.medium} />}
+        <Text style={styles.muted}>
+          {importPending
+            ? 'Import in progress — the 3D model will appear here once converting finishes.'
+            : 'No assemblies yet. Import an IFC / model on the web — the structure and 3D appear here.'}
+        </Text>
       </View>
     );
   }
@@ -333,6 +381,10 @@ const styles = StyleSheet.create({
   detailFacts: { color: '#c7d6e6', fontSize: 12.5, fontWeight: '600' },
 
   noViewer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16 },
+
+  // Geometry-only model banner (no assembly tree)
+  geoBanner: { position: 'absolute', left: 10, right: 10, top: 10, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(13,17,23,0.92)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  geoBannerTxt: { flex: 1, color: '#c7d6e6', fontSize: 12.5, fontWeight: '600' },
 
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, margin: 12, marginBottom: 8 },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },

@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors } from '../../theme/colors';
 import { ProjectsStackParamList } from '../../navigation/types';
 import { projectsService, MProject } from '../../services/projects.service';
+import { can } from '../../config/permissions';
 
 type Nav = NativeStackNavigationProp<ProjectsStackParamList, 'ProjectList'>;
 
@@ -14,6 +15,7 @@ export function ProjectListScreen() {
   const [projects, setProjects] = useState<MProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const canCreate = can('projects.create');
 
   const load = useCallback(async (force = false) => {
     try {
@@ -25,9 +27,35 @@ export function ProjectListScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    load(); // cache-first: instant from local storage if already loaded
-  }, [load]);
+  // Cache-first: instant from local storage if already loaded. useFocusEffect
+  // fires on the initial focus too, so it also covers first mount — and picks up
+  // a project just created on the New-project screen when we return to the list.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={styles.headRow}>
+          <TouchableOpacity
+            style={styles.headIcon}
+            onPress={() => navigation.navigate('PackageMonitor')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="pulse-outline" size={22} color={Colors.primary} />
+          </TouchableOpacity>
+          {canCreate && (
+            <TouchableOpacity
+              style={styles.headIcon}
+              onPress={() => navigation.navigate('ProjectCreate')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="add-circle" size={26} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      ),
+    });
+  }, [navigation, canCreate]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -82,7 +110,14 @@ export function ProjectListScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       ListEmptyComponent={
         <View style={styles.center}>
+          <Ionicons name="folder-open-outline" size={40} color={Colors.medium} />
           <Text style={styles.muted}>No projects yet.</Text>
+          {canCreate && (
+            <TouchableOpacity style={styles.cta} onPress={() => navigation.navigate('ProjectCreate')}>
+              <Ionicons name="add" size={18} color={Colors.white} />
+              <Text style={styles.ctaTxt}>Create a project</Text>
+            </TouchableOpacity>
+          )}
         </View>
       }
     />
@@ -108,6 +143,10 @@ const styles = StyleSheet.create({
   viewBtnTxt: { color: Colors.primary, fontWeight: '700', fontSize: 12 },
   name: { fontSize: 15, fontWeight: '600', color: Colors.text },
   sub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 12 },
   muted: { color: Colors.textSecondary },
+  headRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  headIcon: { padding: 2 },
+  cta: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11, marginTop: 4 },
+  ctaTxt: { color: Colors.white, fontWeight: '700', fontSize: 15 },
 });
