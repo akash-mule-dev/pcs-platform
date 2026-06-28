@@ -33,7 +33,8 @@ const cls = classifyPackageEntries([
 ]);
 assert(cls.models.length === 2 && cls.models[0].path === 'Project model.ifc', 'IFCs classified, largest first (primary)');
 assert(cls.geometry.length === 1 && cls.geometry[0].path === 'col.step', 'STEP classified as geometry');
-assert(cls.documents.length === 3, 'PDF drawings + .kss kept as documents');
+assert(cls.documents.length === 2, 'PDF drawings kept as documents');
+assert(cls.fabrication.length === 1 && cls.fabrication[0].path === 'Demo Project.kss', '.kss routed to the fabrication bucket');
 assert(cls.skipped.length === 2, 'junk + unknown types skipped');
 assert(/2 models, 1 geometry file, 3 documents.*1 skipped/.test(packageSummaryMessage(cls, 0)) === false
   ? /2 models/.test(packageSummaryMessage(cls, 0)) : true, 'summary message mentions models');

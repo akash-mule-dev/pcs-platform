@@ -15,10 +15,15 @@ import { resolveDistScript } from '../common/script-path.js';
 import { computeRevisionDiff, revisionSummaryMessage, RevisionDiff } from './revision-diff.js';
 import { revisionSeverity, summarizeImpact, bySeverity, RevisionSeverity } from './revision-impact.js';
 import {
-  ACCEPTED_UPLOAD_EXTS, MODEL_EXTS, GEOMETRY_EXTS, STRUCTURED_CAD_EXTS, DOC_CONTENT_TYPES,
+  ACCEPTED_UPLOAD_EXTS, MODEL_EXTS, GEOMETRY_EXTS, STRUCTURED_CAD_EXTS, FAB_EXTS, DOC_CONTENT_TYPES,
   classifyPackageEntries, matchDrawingsToMarks, packageSummaryMessage, extOf,
   ClassifiedPackage,
 } from './package-import-math.js';
+import { parseDstvNc } from './dstv-nc-parser.js';
+import { parseSdnf } from './sdnf-parser.js';
+import { parseKiss } from './kiss-parser.js';
+import { dstvToExtract, sdnfToExtract, kissToExtract } from './fab-extract.js';
+import type { FabBundle } from './fab-extract.js';
 import { AssemblyDocument } from './assembly-document.entity.js';
 import * as unzipper from 'unzipper';
 import { ConversionService } from '../conversion/conversion.service.js';
@@ -91,6 +96,8 @@ export class IfcImportService implements OnModuleInit {
   private readonly scriptPath = resolveDistScript(__dirname, 'cad-conversion/scripts/extract-ifc-structure.mjs');
   // STEP → assembly-tree JSON + node-named GLB, in one XDE pass (OpenCASCADE).
   private readonly stepScriptPath = resolveDistScript(__dirname, 'cad-conversion/scripts/convert-step.mjs');
+  // Synthesizes a GLB from parsed DSTV/SDNF/KISS solids (one named node per part).
+  private readonly fabScriptPath = resolveDistScript(__dirname, 'cad-conversion/scripts/build-fab-glb.mjs');
   private readonly tmpDir = path.join(os.tmpdir(), 'pcs-ifc-import');
 
   /**
@@ -322,6 +329,8 @@ export class IfcImportService implements OnModuleInit {
         await this.queueGlb(imp, inPath, imp.originalName, projectName, r.nodeCount);
       } else if (STRUCTURED_CAD_EXTS.has(fmt)) {
         await this.runStepPipeline(imp, organizationId, projectName, inPath, imp.originalName, cleanup);
+      } else if (FAB_EXTS.has(fmt)) {
+        await this.runFabPipeline(imp, organizationId, projectName, [{ path: inPath, name: imp.originalName }], fmt, cleanup);
       } else if (GEOMETRY_EXTS.has(fmt)) {
         await this.record(imp, {
           stage: 'extracting',
@@ -374,8 +383,8 @@ export class IfcImportService implements OnModuleInit {
         skipped: cls.skipped.length,
       },
     });
-    if (!cls.models.length && !cls.geometry.length && !cls.documents.length) {
-      throw new Error('The package contains no usable files (expected IFC/STEP models, PDF drawings or related documents)');
+    if (!cls.models.length && !cls.geometry.length && !cls.fabrication.length && !cls.documents.length) {
+      throw new Error('The package contains no usable files (expected IFC/STEP models, DSTV/SDNF/KISS fabrication files, PDF drawings or related documents)');
     }
 
     const entryByPath = new Map(dir.files.map((f: any) => [f.path, f]));
@@ -422,6 +431,16 @@ export class IfcImportService implements OnModuleInit {
       } else {
         await this.queueGlb(imp, gPath, path.basename(g.path), projectName, nodeCount);
       }
+    } else if (cls.fabrication.length) {
+      // No IFC/STEP in the package: build the tree from the fabrication files.
+      const fabFmt = extOf(cls.fabrication[0].path);
+      const fabFiles: { path: string; name: string }[] = [];
+      for (const fb of cls.fabrication) {
+        if (extOf(fb.path) !== fabFmt) continue; // one fab type per package
+        fabFiles.push({ path: await extractEntry(fb.path, fabFmt), name: path.basename(fb.path) });
+        if (fabFmt === 'sdnf' || fabFmt === 'kss') break; // whole-model formats: first only
+      }
+      await this.runFabPipeline(imp, organizationId, projectName, fabFiles, fabFmt, cleanup);
     } else {
       await this.complete(imp, `Package processed: ${attached.count} document(s) attached (no 3D model in the package)`);
     }
@@ -1375,6 +1394,100 @@ export class IfcImportService implements OnModuleInit {
         code === 0 ? resolve() : reject(new Error(`STEP converter exited with code ${code}: ${stderr}`));
       });
       child.on('error', (err) => reject(new Error(`Failed to spawn STEP converter: ${err.message}`)));
+    });
+  }
+
+  /**
+   * Fabrication pipeline: DSTV NC1 (parts list), SDNF (whole structural model)
+   * or KISS (bill of materials). The parsers + fab-extract build the SAME
+   * normalized tree the IFC/STEP paths persist, and emit a list of "solids" we
+   * synthesize into a node-named GLB (build-fab-glb.mjs) so the pieces render
+   * and highlight in the viewer exactly like the other formats. mm / Z-up to
+   * match the CAD path's AR scaling.
+   */
+  private async runFabPipeline(
+    imp: ImportFile,
+    organizationId: string,
+    projectName: string,
+    files: { path: string; name: string }[],
+    format: string,
+    cleanup: string[],
+  ): Promise<void> {
+    await this.record(imp, {
+      stage: 'extracting',
+      status: ImportFileStatus.EXTRACTING,
+      progress: IMPORT_STAGE_PROGRESS.extracting,
+      message: `Reading ${format.toUpperCase()} fabrication data (${files.length} file(s))`,
+      detail: { fabrication: true, format, files: files.length },
+    });
+
+    const bundle = this.buildFabBundle(files, format, projectName);
+    if (!bundle || !bundle.result.nodes.length) {
+      throw new Error(`No fabrication parts could be parsed from the ${format.toUpperCase()} file`);
+    }
+
+    const { nodeCount } = await this.persistExtractResults(imp, organizationId, [bundle.result as unknown as ExtractResult]);
+
+    // Synthesize approximate 3D from the parsed solids (best-effort: a failure
+    // here still leaves a complete, queryable parts tree).
+    if (bundle.solids.length) {
+      const solidsPath = path.join(this.tmpDir, `${imp.id}-${crypto.randomUUID()}-solids.json`);
+      const glbPath = path.join(this.tmpDir, `${imp.id}-${crypto.randomUUID()}.glb`);
+      cleanup.push(solidsPath, glbPath);
+      try {
+        fs.writeFileSync(solidsPath, JSON.stringify({ solids: bundle.solids }));
+        await this.runFabConverter(solidsPath, glbPath);
+      } catch (e) {
+        this.logger.warn(`Fab GLB synthesis failed for ${imp.id} (import continues without 3D): ${this.errMsg(e)}`);
+      }
+      if (fs.existsSync(glbPath) && fs.statSync(glbPath).size > 0) {
+        const baseName = path.basename(files[0]?.name || format, path.extname(files[0]?.name || ''));
+        await this.queueGlb(imp, glbPath, `${baseName}.glb`, projectName, nodeCount, { sourceUnit: 'mm', upAxis: 'Z' });
+        return;
+      }
+    }
+    await this.complete(imp, `${format.toUpperCase()} import: ${nodeCount} node(s) - no 3D geometry generated`);
+  }
+
+  /** Dispatch parsed fab files to the right parser + tree/solid mapper. */
+  private buildFabBundle(files: { path: string; name: string }[], format: string, projectName: string): FabBundle | null {
+    const read = (f: { path: string }) => fs.readFileSync(f.path, 'utf8');
+    if (format === 'nc1' || format === 'nc') {
+      const parts = [];
+      for (const f of files) {
+        const stem = path.basename(f.name, path.extname(f.name));
+        const part = parseDstvNc(read(f), stem);
+        if (part) parts.push(part);
+      }
+      return parts.length ? dstvToExtract(parts, projectName) : null;
+    }
+    if (format === 'sdnf') {
+      const model = files[0] ? parseSdnf(read(files[0])) : null;
+      return model ? sdnfToExtract(model, projectName) : null;
+    }
+    if (format === 'kss') {
+      const model = files[0] ? parseKiss(read(files[0])) : null;
+      return model ? kissToExtract(model, projectName) : null;
+    }
+    return null;
+  }
+
+  /** Run build-fab-glb.mjs: parsed solids JSON -> node-named GLB. */
+  private runFabConverter(solidsPath: string, glbPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('node', [this.fabScriptPath, solidsPath, glbPath], {
+        timeout: 120_000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stderr = '';
+      let stdout = '';
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+      child.on('close', (code) => {
+        if (stdout) this.logger.log(`Fab GLB: ${stdout.trim().split('\n').pop()}`);
+        code === 0 ? resolve() : reject(new Error(`Fab GLB synth exited with code ${code}: ${stderr}`));
+      });
+      child.on('error', (err) => reject(new Error(`Failed to spawn fab GLB synth: ${err.message}`)));
     });
   }
 

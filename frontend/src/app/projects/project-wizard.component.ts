@@ -61,7 +61,7 @@ import { ProjectsService, Project, CreateProject } from '../core/services/projec
               <button mat-stroked-button color="primary" (click)="fileInput.click()">
                 <mat-icon>upload_file</mat-icon>&nbsp;Choose model or package
               </button>
-              <p class="hint">Supported: <strong>IFC</strong>, <strong>ZIP packages</strong> (model + PDF shop drawings — drawings auto-attach to piece marks), <strong>STEP/IGES</strong> and mesh formats (GLB, OBJ, STL). You can also skip and add files later.</p>
+              <p class="hint">Supported: <strong>IFC</strong>, <strong>ZIP packages</strong> (model + PDF shop drawings — drawings auto-attach to piece marks), <strong>fabrication exports</strong> (DSTV NC1, SDNF, KISS), <strong>STEP/IGES</strong> and mesh formats (GLB, OBJ, STL). You can also skip and add files later.</p>
             } @else {
               <div class="file">
                 <mat-icon>description</mat-icon>
