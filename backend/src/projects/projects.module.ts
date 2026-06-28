@@ -29,6 +29,27 @@ import { QualityDataModule } from '../quality-data/quality-data.module.js';
 import { QualityReport } from '../quality-reports/quality-report.entity.js';
 import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { ConversionModule } from '../conversion/conversion.module.js';
+import { IMPORT_QUEUE, IMPORT_QUEUE_NAME_DEFAULT, resolveQueueDriver } from './queue/import-queue.interface.js';
+import type { ImportQueue } from './queue/import-queue.interface.js';
+import { BullMqImportQueue } from './queue/bullmq-import.queue.js';
+
+/**
+ * Selects the import-pipeline backend at runtime (same switch as the conversion
+ * queue, so they always agree):
+ *   - bullmq (REDIS_URL set): the API is a pure producer; the standalone worker
+ *     runs the heavy pipeline — this is what lets import survive a serverless API.
+ *   - inline (default): resolves to null, so IfcImportService keeps its existing
+ *     in-process FIFO queue. Local dev + the current deploy are unchanged.
+ */
+const importQueueProvider = {
+  provide: IMPORT_QUEUE,
+  useFactory: (): ImportQueue | null => {
+    if (resolveQueueDriver() !== 'bullmq') return null;
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) throw new Error('CONVERSION_DRIVER=bullmq requires REDIS_URL to be set');
+    return new BullMqImportQueue(redisUrl, process.env.IMPORT_QUEUE_NAME || IMPORT_QUEUE_NAME_DEFAULT);
+  },
+};
 
 @Module({
   imports: [
@@ -42,6 +63,7 @@ import { ConversionModule } from '../conversion/conversion.module.js';
   providers: [
     ProjectsService, ProjectPurgeService, IfcImportService, ImportMonitorService, ProjectProgressService, ProjectModelService, ProjectQualityService,
     ProjectInsightsService, ProjectDocumentService, ProjectTraceabilityService,
+    importQueueProvider,
   ],
   exports: [ProjectsService, IfcImportService, TypeOrmModule],
 })
