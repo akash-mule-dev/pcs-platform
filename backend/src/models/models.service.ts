@@ -2,6 +2,7 @@ import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Model3D } from './model.entity.js';
+import { ConversionJob } from '../conversion/conversion-job.entity.js';
 import { CreateModelDto } from './dto/create-model.dto.js';
 import { UpdateModelDto } from './dto/update-model.dto.js';
 import { PageOptionsDto, PageDto, PageMetaDto } from '../common/dto/pagination.dto.js';
@@ -18,6 +19,7 @@ import * as fs from 'fs';
 export class ModelsService {
   constructor(
     @InjectRepository(Model3D) private readonly repo: Repository<Model3D>,
+    @InjectRepository(ConversionJob) private readonly jobs: Repository<ConversionJob>,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
@@ -39,6 +41,48 @@ export class ModelsService {
     const item = await this.repo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('3D Model not found');
     return item;
+  }
+
+  /**
+   * Fetch a model for the metadata endpoint, with a SELF-HEALING 1:1 AR scale.
+   *
+   * `meters_per_unit` (the metres-per-GLB-unit the AR client renders at 1:1) is
+   * normally stored on the row. But that value can go missing — a stale-code
+   * instance booting against this DB with DB_SYNCHRONIZE=ON can transiently drop +
+   * recreate the column empty, a model may predate the column, or a fresh import
+   * may not be backfilled yet. Rather than depend on the stored value being intact,
+   * we DERIVE it on read from the conversion source (exactly as the processor does:
+   * the job's stamped option, else the source extension), so AR ALWAYS gets true
+   * 1:1 regardless of the column's state. Best-effort heals the row too. Kept off
+   * the internal findOne so the hot file-download path stays a single cheap read.
+   */
+  async getWithScale(id: string): Promise<Model3D> {
+    const item = await this.findOne(id);
+    if (item.metersPerUnit == null) {
+      const derived = await this.deriveMetersPerUnit(item);
+      if (derived != null && derived > 0) {
+        item.metersPerUnit = derived;
+        // Repopulate the row so the list endpoint + later reads recover too; never
+        // let a write hiccup affect the response (the value is already set above).
+        this.repo.update(id, { metersPerUnit: derived }).catch(() => {});
+      }
+    }
+    return item;
+  }
+
+  /** metres-per-GLB-unit derived from the model's conversion source, mirroring the
+   *  conversion processor's logic; null when the source can't be determined. */
+  private async deriveMetersPerUnit(model: Model3D): Promise<number | null> {
+    const job = await this.jobs.findOne({
+      where: { modelId: model.id },
+      order: { createdAt: 'DESC' },
+    });
+    const opt = job?.options?.metersPerUnit;
+    if (typeof opt === 'number' && Number.isFinite(opt) && opt > 0) return opt;
+    // The job's originalName is the SOURCE file (e.g. "post_base.ifc"); for a direct
+    // upload there is no job, so the model's own originalName IS the source.
+    const sourceName = job?.originalName ?? model.originalName;
+    return sourceName ? defaultMetersPerUnit(sourceName) : null;
   }
 
   async create(

@@ -56,7 +56,9 @@ export class ModelsController {
   @RequireAnyPermission('coordination.view', 'quality-analysis.view', 'projects.view')
   @ApiOperation({ summary: 'Get 3D model by ID' })
   findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+    // getWithScale self-heals the 1:1 AR scale (metersPerUnit) if the stored value
+    // is missing — the AR client reads it from here, so it must always be correct.
+    return this.service.getWithScale(id);
   }
 
   @Get(':id/file')
