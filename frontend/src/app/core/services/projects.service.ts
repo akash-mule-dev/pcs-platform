@@ -14,11 +14,6 @@ export interface Project {
   clientName: string | null;
   description: string | null;
   isActive: boolean;
-  /** Who created / last modified the project (stamped server-side from the JWT). */
-  createdById?: string | null;
-  createdByName?: string | null;
-  updatedById?: string | null;
-  updatedByName?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -71,36 +71,12 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
           </div>
         </div>
 
-        <!-- Toolbar: search + sort + creator filter -->
+        <!-- Toolbar: search -->
         <div class="toolbar">
           <div class="search-box" data-tour="proj-search">
             <mat-icon class="search-ico">search</mat-icon>
-            <input type="text" placeholder="Search by name, job #, client or creator…" [(ngModel)]="search" />
+            <input type="text" placeholder="Search by name, job # or client…" [(ngModel)]="search" />
             @if (search) { <mat-icon class="clear" (click)="search = ''">close</mat-icon> }
-          </div>
-
-          <div class="filters">
-            <button class="filter-btn" [matMenuTriggerFor]="sortMenu" title="Sort projects">
-              <mat-icon>swap_vert</mat-icon>{{ sortLabel() }}
-            </button>
-            <mat-menu #sortMenu="matMenu">
-              <button mat-menu-item (click)="sort = 'newest'">Newest first</button>
-              <button mat-menu-item (click)="sort = 'oldest'">Oldest first</button>
-              <button mat-menu-item (click)="sort = 'updated'">Recently updated</button>
-              <button mat-menu-item (click)="sort = 'name'">Name (A–Z)</button>
-            </mat-menu>
-
-            @if (creators().length > 1) {
-              <button class="filter-btn" [class.active]="!!creator" [matMenuTriggerFor]="creatorMenu" title="Filter by who created the project">
-                <mat-icon>person</mat-icon>{{ creator || 'All creators' }}
-              </button>
-              <mat-menu #creatorMenu="matMenu">
-                <button mat-menu-item (click)="creator = null">All creators</button>
-                @for (c of creators(); track c) {
-                  <button mat-menu-item (click)="creator = c">{{ c }}</button>
-                }
-              </mat-menu>
-            }
           </div>
         </div>
 
@@ -150,17 +126,10 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
                   </div>
                 </div>
 
-                <!-- Insight meta line: tonnage, created/modified by + when -->
+                <!-- Insight meta line: tonnage, age -->
                 <div class="row-meta">
                   @if (p.metrics.tonnage.totalKg > 0) { <span class="m"><mat-icon>scale</mat-icon>{{ tonnes(p.metrics.tonnage.totalKg) }} t total</span> }
-                  <span class="m muted">
-                    <mat-icon>schedule</mat-icon>Created {{ p.createdAt | date:'mediumDate' }}@if (p.createdByName) { <span>&nbsp;·&nbsp;{{ p.createdByName }}</span> }
-                  </span>
-                  @if (edited(p)) {
-                    <span class="m muted">
-                      <mat-icon>edit</mat-icon>Updated {{ p.updatedAt | date:'mediumDate' }}@if (p.updatedByName) { <span>&nbsp;·&nbsp;{{ p.updatedByName }}</span> }
-                    </span>
-                  }
+                  <span class="m muted"><mat-icon>schedule</mat-icon>Created {{ p.createdAt | date:'mediumDate' }}</span>
                 </div>
               </div>
             }
@@ -230,16 +199,6 @@ import { ListStateComponent } from '../shared/components/list-state/list-state.c
     .search-box input { border: none; outline: none; background: transparent; font-size: 13px; color: var(--clay-text); width: 100%; font-family: inherit; }
     .search-box input::placeholder { color: var(--clay-text-muted); }
     .search-box .clear { font-size: 16px; width: 16px; height: 16px; color: var(--clay-text-muted); cursor: pointer; }
-    .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .filter-btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--clay-surface); color: var(--clay-text-secondary);
-      border: 1px solid var(--clay-border); border-radius: var(--clay-radius-sm);
-      padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s;
-    }
-    .filter-btn:hover { border-color: var(--clay-primary); color: var(--clay-primary); }
-    .filter-btn.active { border-color: var(--clay-primary); color: var(--clay-primary); background: var(--info-bg); }
-    .filter-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
 
     /* ── Project rows ──────────────────────────────────────── */
     .proj-list {
@@ -309,8 +268,6 @@ export class ProjectListComponent implements OnInit {
   loading = true;
   error: string | null = null;
   search = '';
-  sort: 'newest' | 'oldest' | 'updated' | 'name' = 'newest';
-  creator: string | null = null;
 
   ngOnInit(): void {
     this.load();
@@ -338,43 +295,10 @@ export class ProjectListComponent implements OnInit {
 
   filtered(): ProjectSummary[] {
     const q = this.search.trim().toLowerCase();
-    const list = this.projects.filter((p) => {
-      if (this.creator && this.creatorOf(p) !== this.creator) return false;
-      if (!q) return true;
-      return [p.name, p.projectNumber, p.clientName, p.createdByName].some(
-        (v) => (v ?? '').toLowerCase().includes(q),
-      );
-    });
-    return [...list].sort((a, b) => {
-      switch (this.sort) {
-        case 'name': return a.name.localeCompare(b.name);
-        case 'oldest': return this.ts(a.createdAt) - this.ts(b.createdAt);
-        case 'updated': return this.ts(b.updatedAt) - this.ts(a.updatedAt);
-        default: return this.ts(b.createdAt) - this.ts(a.createdAt); // newest
-      }
-    });
-  }
-
-  private ts(iso?: string): number { return iso ? Date.parse(iso) : 0; }
-
-  /** Creator label for a project — its createdByName, or 'Unknown' for legacy rows. */
-  creatorOf(p: ProjectSummary): string { return (p.createdByName ?? '').trim() || 'Unknown'; }
-
-  /** Distinct creators across the portfolio (Unknown sorted last) — feeds the filter. */
-  creators(): string[] {
-    const set = new Set<string>();
-    this.projects.forEach((p) => set.add(this.creatorOf(p)));
-    return [...set].sort((a, b) => (a === 'Unknown' ? 1 : b === 'Unknown' ? -1 : a.localeCompare(b)));
-  }
-
-  sortLabel(): string {
-    return { newest: 'Newest', oldest: 'Oldest', updated: 'Recently updated', name: 'Name A–Z' }[this.sort];
-  }
-
-  /** True once the project has been edited after creation (so we show a Modified line). */
-  edited(p: ProjectSummary): boolean {
-    if (!p.updatedAt || !p.createdAt) return false;
-    return this.ts(p.updatedAt) - this.ts(p.createdAt) > 2000;
+    if (!q) return this.projects;
+    return this.projects.filter((p) =>
+      [p.name, p.projectNumber, p.clientName].some((v) => (v ?? '').toLowerCase().includes(q)),
+    );
   }
 
   totalAssemblies(): number { return this.projects.reduce((s, p) => s + (p.metrics.assemblyCount ?? 0), 0); }

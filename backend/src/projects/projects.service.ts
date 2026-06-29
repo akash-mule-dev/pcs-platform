@@ -1,9 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import { Project } from './project.entity.js';
 import { AssemblyNode } from './assembly-node.entity.js';
-import { WorkOrder } from '../work-orders/work-order.entity.js';
 import { TenantScopedService } from '../common/tenant/tenant-scoped.service.js';
 import { TenantContext } from '../common/tenant/tenant-context.js';
 import { ProjectPurgeService, PROJECT_RETENTION_DAYS } from './project-purge.service.js';
@@ -33,23 +32,9 @@ export class ProjectsService extends TenantScopedService<Project> {
   constructor(
     @InjectRepository(Project) repo: Repository<Project>,
     @InjectRepository(AssemblyNode) private readonly nodeRepo: Repository<AssemblyNode>,
-    @InjectRepository(WorkOrder) private readonly workOrderRepo: Repository<WorkOrder>,
     private readonly purgeService: ProjectPurgeService,
   ) {
     super(repo);
-  }
-
-  /** Count work orders that belong to this project — whether linked via one of its
-   *  production orders or directly to one of its assembly nodes. */
-  private async workOrderCount(projectId: string): Promise<number> {
-    return this.workOrderRepo
-      .createQueryBuilder('wo')
-      .where(
-        `(wo.production_order_id IN (SELECT po.id FROM production_orders po WHERE po.project_id = :projectId)
-          OR wo.assembly_node_id IN (SELECT an.id FROM assembly_nodes an WHERE an.project_id = :projectId))`,
-        { projectId },
-      )
-      .getCount();
   }
 
   /**
@@ -60,16 +45,6 @@ export class ProjectsService extends TenantScopedService<Project> {
    */
   override async remove(id: string): Promise<void> {
     await this.findOne(id); // org-scoped existence check (404 if missing / already trashed)
-    // Guard: a project with work orders represents committed production — block the
-    // delete so its work orders (and their time/quality/shipping history) can't be
-    // orphaned. The user must cancel/remove those orders first.
-    const wos = await this.workOrderCount(id);
-    if (wos > 0) {
-      throw new ConflictException(
-        `Cannot delete this project: it has ${wos} work order${wos === 1 ? '' : 's'} in production. ` +
-          `Remove or cancel its production orders first.`,
-      );
-    }
     await this.repo.softDelete(id);
   }
 

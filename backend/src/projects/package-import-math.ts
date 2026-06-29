@@ -19,17 +19,10 @@ export const STRUCTURED_CAD_EXTS = new Set(['step', 'stp']);
 /** Geometry-only formats the conversion pipeline can turn into a GLB. */
 export const GEOMETRY_EXTS = new Set(['step', 'stp', 'iges', 'igs', 'glb', 'gltf', 'obj', 'stl', 'dae', 'fbx', '3ds', 'ply']);
 /** Document formats worth keeping from a package (drawings, certs, NC data). */
-export const DOCUMENT_EXTS = new Set(['pdf', 'png', 'jpg', 'jpeg', 'webp', 'dwg', 'dxf']);
-/**
- * Native fabrication-detailing outputs that carry an assembly/parts structure:
- * DSTV NC/NC1 (one part per file), SDNF (whole structural model) and KISS (a
- * bill of materials). Parsed by the dstv/sdnf/kiss parsers + fab-extract, which
- * also synthesize approximate GLB geometry so the pieces render in the viewer.
- */
-export const FAB_EXTS = new Set(['nc1', 'nc', 'sdnf', 'kss']);
+export const DOCUMENT_EXTS = new Set(['pdf', 'png', 'jpg', 'jpeg', 'webp', 'dwg', 'dxf', 'kss']);
 
 /** Every single-file upload format the import endpoint accepts. */
-export const ACCEPTED_UPLOAD_EXTS = ['ifc', 'zip', ...GEOMETRY_EXTS, ...FAB_EXTS];
+export const ACCEPTED_UPLOAD_EXTS = ['ifc', 'zip', ...GEOMETRY_EXTS];
 
 export const DOC_CONTENT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
@@ -49,16 +42,15 @@ export function extOf(name: string): string {
 
 export interface PackageEntryIn { path: string; size: number; }
 export interface ClassifiedPackage {
-  models: PackageEntryIn[];      // IFCs, largest first (the primary drives the GLB)
-  geometry: PackageEntryIn[];    // STEP/IGES/…, largest first (fallback when no IFC)
-  fabrication: PackageEntryIn[]; // DSTV/SDNF/KISS (used for the tree when no IFC/STEP)
-  documents: PackageEntryIn[];   // drawings / certs
-  skipped: PackageEntryIn[];     // everything else
+  models: PackageEntryIn[];    // IFCs, largest first (the primary drives the GLB)
+  geometry: PackageEntryIn[];  // STEP/IGES/…, largest first (fallback when no IFC)
+  documents: PackageEntryIn[]; // drawings / certs / NC data
+  skipped: PackageEntryIn[];   // everything else
 }
 
 /** Split a ZIP's member list into models / geometry / documents / skipped. */
 export function classifyPackageEntries(entries: PackageEntryIn[]): ClassifiedPackage {
-  const out: ClassifiedPackage = { models: [], geometry: [], fabrication: [], documents: [], skipped: [] };
+  const out: ClassifiedPackage = { models: [], geometry: [], documents: [], skipped: [] };
   for (const e of entries) {
     const base = e.path.split('/').pop() ?? '';
     if (!base || e.path.endsWith('/')) continue; // directory
@@ -66,13 +58,11 @@ export function classifyPackageEntries(entries: PackageEntryIn[]): ClassifiedPac
     const ext = extOf(base);
     if (MODEL_EXTS.has(ext)) out.models.push(e);
     else if (GEOMETRY_EXTS.has(ext)) out.geometry.push(e);
-    else if (FAB_EXTS.has(ext)) out.fabrication.push(e);
     else if (DOCUMENT_EXTS.has(ext)) out.documents.push(e);
     else out.skipped.push(e);
   }
   out.models.sort((a, b) => b.size - a.size);
   out.geometry.sort((a, b) => b.size - a.size);
-  out.fabrication.sort((a, b) => b.size - a.size);
   return out;
 }
 
@@ -120,7 +110,6 @@ export function packageSummaryMessage(c: ClassifiedPackage, matchedDocs: number)
   const bits: string[] = [];
   if (c.models.length) bits.push(`${c.models.length} model${c.models.length > 1 ? 's' : ''}`);
   if (c.geometry.length) bits.push(`${c.geometry.length} geometry file${c.geometry.length > 1 ? 's' : ''}`);
-  if (c.fabrication.length) bits.push(`${c.fabrication.length} fabrication file${c.fabrication.length > 1 ? 's' : ''}`);
   if (c.documents.length) bits.push(`${c.documents.length} document${c.documents.length > 1 ? 's' : ''}${matchedDocs > 0 ? ` (${matchedDocs} matched to piece marks)` : ''}`);
   if (c.skipped.length) bits.push(`${c.skipped.length} skipped`);
   return `Package unpacked: ${bits.join(', ') || 'no usable files'}`;

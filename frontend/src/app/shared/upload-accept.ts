@@ -18,7 +18,7 @@
 
 /** The model/package upload list shared by the project import inputs. */
 export const MODEL_UPLOAD_ACCEPT =
-  '.ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply,.nc1,.nc,.sdnf,.kss';
+  '.ifc,.zip,.step,.stp,.iges,.igs,.glb,.gltf,.obj,.stl,.dae,.fbx,.3ds,.ply';
 
 /**
  * True on iPhone/iPad/iPod — including iPadOS 13+ Safari/Chrome, which default

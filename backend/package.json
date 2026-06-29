@@ -35,7 +35,6 @@
     "test:e2e:projects": "node scripts/projects-value-e2e.mjs",
     "test:revision": "node --experimental-strip-types src/projects/revision-diff.test.ts",
     "test:package": "node --experimental-strip-types src/projects/package-import-math.test.ts",
-    "test:fabformats": "node --experimental-strip-types src/projects/dstv-nc-parser.test.ts && node --experimental-strip-types src/projects/sdnf-parser.test.ts && node --experimental-strip-types src/projects/kiss-parser.test.ts && node --experimental-strip-types src/projects/fab-extract.test.ts",
     "test:storage": "node --experimental-strip-types src/storage/storage-keys.test.ts",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

@@ -11,13 +11,7 @@ export interface MProject {
   clientName?: string | null;
   description?: string | null;
   processId?: string | null;
-  /** Who created / last modified the project (stamped server-side from the JWT). Null for legacy rows. */
-  createdById?: string | null;
-  createdByName?: string | null;
-  updatedById?: string | null;
-  updatedByName?: string | null;
   createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface MNode {
@@ -277,8 +271,6 @@ export const projectsService = {
   /** Create a project (design container). Mirrors the web wizard step 1 — only `name` is required. */
   create: (body: { name: string; projectNumber?: string; clientName?: string; description?: string }) =>
     api.post<MProject>('/projects', body),
-  /** Soft-delete a project (Trash, recoverable). The server rejects (409) if it has work orders. */
-  remove: (projectId: string) => api.delete<void>(`/projects/${projectId}`),
   /** Upload a CAD/IFC/ZIP source to a project; the async pipeline builds the tree + GLB. */
   importIfc: (projectId: string, file: MUploadFile, onProgress?: (pct: number) => void) =>
     uploadImport(projectId, file, onProgress),
