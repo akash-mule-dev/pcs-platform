@@ -23,6 +23,13 @@ export function fmtDuration(ms?: number | null): string {
   return `${h}h ${m % 60}m`;
 }
 
+export function fmtDate(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export function fmtRelTime(iso?: string | null): string {
   if (!iso) return '';
   const t = new Date(iso).getTime();

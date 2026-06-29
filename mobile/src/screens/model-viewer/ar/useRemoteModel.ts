@@ -163,11 +163,11 @@ export function useRemoteModel(
     // `p2` cache version: older builds cached EMPTY isolated GLBs; bump forces a
     // fresh extraction with the fixed subtree-keeping logic.
     const variantKey = isolateKey ? `${baseKey}__p2_${isolateKey}` : baseKey;
-    // `_v3`: wireframe is now solid edge TUBES (triangles, not Viro-unsupported
-    // LINES) built in WORLD space (baked through the normalize/pcs-fit transforms
-    // so it lines up with the solid). Bumping the suffix discards stale caches.
+    // `_v4`: edge-tube radius is now a fraction of the model diagonal with a
+    // RELATIVE floor (v3's absolute 1e-5 floor underflowed on tiny-diag IFC GLBs →
+    // fixed huge borders that ignored the weight). Bumping discards stale caches.
     // The per-thickness file appends `_<thickness>.glb` to this base.
-    wireframeBaseRef.current = `${dir}${variantKey}_wireframe_v3`;
+    wireframeBaseRef.current = `${dir}${variantKey}_wireframe_v4`;
 
     setState({ ...INITIAL, fileName, progress: 'Downloading model…' });
 

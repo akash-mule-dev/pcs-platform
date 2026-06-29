@@ -42,6 +42,22 @@ export class Project extends TenantOwnedEntity {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  /** Who created the project — stamped from the JWT at creation (the import row
+   *  carries the same `created_by_*` pair). Nullable: legacy rows predate it. */
+  @Column({ name: 'created_by_id', type: 'uuid', nullable: true })
+  createdById: string | null;
+
+  @Column({ name: 'created_by_name', type: 'varchar', length: 255, nullable: true })
+  createdByName: string | null;
+
+  /** Who last modified the project — stamped from the JWT on every update (and
+   *  seeded to the creator at creation). Pairs with the auto `updated_at`. */
+  @Column({ name: 'updated_by_id', type: 'uuid', nullable: true })
+  updatedById: string | null;
+
+  @Column({ name: 'updated_by_name', type: 'varchar', length: 255, nullable: true })
+  updatedByName: string | null;
+
   @OneToMany(() => AssemblyNode, (n) => n.project)
   nodes: AssemblyNode[];
 

@@ -46,8 +46,11 @@ import LockPanel from './LockPanel';
 import QualityPanel from './QualityPanel';
 import LogInspectionForm, { InspectionFormResult } from './LogInspectionForm';
 import { projectsService, MNode } from '../../../services/projects.service';
+import { modelsService } from '../../../services/models.service';
 import { buildColorBy, ColorBy } from '../../projects/partviewer/viewerTools';
 import { resolveRealScale } from './realScale';
+import { UnitSystem } from './dimensionExtractor';
+import { loadUnitSystem, saveUnitSystem } from './unitPreference';
 import { solveRigid, PointPair, RigidFit } from './rigid-registration';
 import { useStabilizer } from './useStabilizer';
 import { lockStateLabel } from './drift-monitor';
@@ -256,6 +259,28 @@ export default function ARExperienceRK({
     return () => { cancelled = true; };
   }, [projectId]);
 
+  // AUTHORITATIVE 1:1 scale: metres-per-GLB-unit recorded on the model at conversion
+  // from the source file's real unit (IFC IfcUnitAssignment / glTF metres / OCCT mm).
+  // This is exact and unit-system-agnostic (metric OR imperial), and arrives with the
+  // model record — before first placement — so it replaces the fragile geometry guess.
+  const [apiMetersPerUnit, setApiMetersPerUnit] = useState<number | null>(null);
+  useEffect(() => {
+    if (!modelId) { setApiMetersPerUnit(null); return; }
+    let cancelled = false;
+    modelsService.get(modelId)
+      .then((m) => { if (!cancelled) setApiMetersPerUnit(typeof m.metersPerUnit === 'number' && Number.isFinite(m.metersPerUnit) && m.metersPerUnit > 0 ? m.metersPerUnit : null); })
+      .catch(() => { if (!cancelled) setApiMetersPerUnit(null); /* fall back to the geometry estimate */ });
+    return () => { cancelled = true; };
+  }, [modelId]);
+
+  // Display-unit preference (metric ↔ imperial) for measurement readouts — UI only;
+  // geometry/scale + logged QA records stay metric. Persisted across sessions.
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
+  useEffect(() => { loadUnitSystem().then(setUnitSystem); }, []);
+  const toggleUnitSystem = useCallback(() => {
+    setUnitSystem((s) => { const next: UnitSystem = s === 'metric' ? 'imperial' : 'metric'; saveUnitSystem(next); return next; });
+  }, []);
+
   // name(ifc_guid)→hex map + legend, scoped to the meshes actually shown (the
   // isolated set, or the whole model). Reuses buildColorBy verbatim, so AR matches
   // the web/3D-viewer colours exactly. The native overlay wants hex STRINGS.
@@ -282,6 +307,11 @@ export default function ARExperienceRK({
   // agree. 0 = undeterminable → the native view keeps its fit-scale. `source` tells
   // the inspector whether it's exact ('calibrated') or an auto estimate ('estimated').
   const realScaleResult = useMemo(() => {
+    // Authoritative unit from the backend wins — it's exact and available immediately
+    // (no wait for the background GLB dimension pass), so the FIRST placement is 1:1.
+    if (apiMetersPerUnit && apiMetersPerUnit > 0) {
+      return { mpu: apiMetersPerUnit, source: 'authoritative' as const };
+    }
     if (!dimensions) return { mpu: 0, source: 'none' as const };
     const longest = Math.max(
       dimensions.overall.size[0],
@@ -289,7 +319,7 @@ export default function ARExperienceRK({
       dimensions.overall.size[2],
     );
     return resolveRealScale(longest, dimensions.parts, nodes);
-  }, [dimensions, nodes]);
+  }, [apiMetersPerUnit, dimensions, nodes]);
   const realScale = realScaleResult.mpu;
 
   // The active measurement tool, sent to the native view as a prop. 'off' when
@@ -982,9 +1012,11 @@ export default function ARExperienceRK({
         <Text style={styles.subText} numberOfLines={1}>
           {lidar === false ? 'LiDAR unavailable' : `tracking: ${tracking}`}
           {realScale > 0
-            ? realScaleResult.source === 'calibrated'
+            ? realScaleResult.source === 'authoritative'
               ? '  ·  1:1 scale'
-              : '  ·  ≈1:1 (auto)'
+              : realScaleResult.source === 'calibrated'
+                ? '  ·  1:1 (calibrated)'
+                : '  ·  ≈1:1 (auto)'
             : ''}
           {placed && (markerLockOn || continuousLockOn)
             ? `  ·  ${lockStateLabel(stabilizer.lockState)}`
@@ -1202,6 +1234,8 @@ export default function ARExperienceRK({
           onLogDeviation={handleLogDeviation}
           bottomOffset={PANEL_BOTTOM}
           translucent
+          unitSystem={unitSystem}
+          onToggleUnitSystem={toggleUnitSystem}
         />
       )}
 
