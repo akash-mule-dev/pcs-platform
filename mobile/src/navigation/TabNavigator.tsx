@@ -106,7 +106,7 @@ function ProjectsStack() {
       <PStack.Screen name="AssemblyDetail" component={AssemblyDetailScreen} options={{ title: 'Assembly' }} />
       <PStack.Screen name="PartViewer" component={PartViewerScreen} options={{ title: '3D Viewer' }} />
       <PStack.Screen name="ModelView" component={ModelViewScreen} options={{ title: '3D Model' }} />
-      <PStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View' }} />
+      <PStack.Screen name="ARView" component={ARViewScreen} options={{ title: 'AR View', headerShown: false }} />
       <PStack.Screen name="VRView" component={VRViewScreen} options={{ title: 'VR View', headerShown: false }} />
       <PStack.Screen name="QualityView" component={QualityViewScreen} options={{ title: 'Quality Inspection' }} />
       <PStack.Screen name="QcReportFill" component={QcReportFillScreen} options={{ title: 'QC Report' }} />

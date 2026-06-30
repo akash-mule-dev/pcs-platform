@@ -213,6 +213,10 @@ export default function ARExperienceRK({
   // slider + the quick top-right "See-through" chip. ──
   const [opacity, setOpacity] = useState(DEFAULT_MODEL_OPACITY);
 
+  // XYZ orientation gizmo overlay (toggle) — shows the model's axis directions
+  // (X=red, Y=green, Z=blue) so the operator can line them up with the real assembly.
+  const [showAxes, setShowAxes] = useState(false);
+
   // Brief "drag to move / twist to turn" hint shown right after placement.
   const [showDragHint, setShowDragHint] = useState(false);
 
@@ -930,6 +934,7 @@ export default function ARExperienceRK({
         partPick={partTapMode}
         showOverallBox={measurements.showOverall}
         showPartBoxes={measurements.showParts}
+        showAxes={showAxes}
         onTracking={onTracking}
         onAnchor={onAnchor}
         onScanState={onScanState}
@@ -973,15 +978,9 @@ export default function ARExperienceRK({
         </TouchableOpacity>
       )}
 
-      {/* Quick toggles — top-right, off-centre: Occlusion, then See-through.
-          (The Edges quick toggle was removed — edges live in the Display tab.) */}
+      {/* Quick toggles — top-right: See-through only. Occlusion + Axes were moved
+          into the Align panel (below SCALE) by request. */}
       <View style={styles.occlusionWrap} pointerEvents="box-none">
-        <ToggleChip
-          icon="👁"
-          label="Occlusion"
-          on={toggles.occlusion}
-          onPress={() => setToggles((t) => ({ occlusion: !t.occlusion }))}
-        />
         {placed && (
           <ToggleChip
             icon="◐"
@@ -1121,6 +1120,10 @@ export default function ARExperienceRK({
           bottomOffset={PANEL_BOTTOM}
           translucent
           onAutoSnap={handleAutoSnap}
+          occlusionOn={toggles.occlusion}
+          onToggleOcclusion={() => setToggles((t) => ({ occlusion: !t.occlusion }))}
+          axesOn={showAxes}
+          onToggleAxes={() => setShowAxes((v) => !v)}
         />
       )}
 

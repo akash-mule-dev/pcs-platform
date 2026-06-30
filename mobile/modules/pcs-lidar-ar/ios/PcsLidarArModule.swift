@@ -66,6 +66,8 @@ public class PcsLidarArModule: Module {
       Prop("partPick") { (view: PcsLidarArView, v: Bool) in view.setPartPick(v) }
       Prop("showOverallBox") { (view: PcsLidarArView, v: Bool) in view.setShowOverallBox(v) }
       Prop("showPartBoxes") { (view: PcsLidarArView, v: Bool) in view.setShowPartBoxes(v) }
+      // XYZ orientation gizmo on the model (toggle) — shows which way the model points.
+      Prop("showAxes") { (view: PcsLidarArView, v: Bool) in view.setShowAxes(v) }
 
       // ── Imperative methods on the JS component ref (run on the UI thread) ──
       AsyncFunction("resetTracking") { (view: PcsLidarArView) in

@@ -157,6 +157,9 @@ export type PcsLidarArViewProps = {
   showOverallBox?: boolean;
   /** Draw a wireframe box around each part. */
   showPartBoxes?: boolean;
+  /** Show an XYZ orientation gizmo (X=red, Y=green, Z=blue) on the model, rotating
+   *  with it — so the operator can see which way it points and line it up. */
+  showAxes?: boolean;
 
   onLoad?: (event: { nativeEvent: PcsLidarLoadEvent }) => void;
   onError?: (event: { nativeEvent: PcsLidarErrorEvent }) => void;

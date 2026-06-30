@@ -66,6 +66,12 @@ interface AlignPanelProps {
   /** LiDAR only: one-tap ICP refinement onto the scanned mesh. Renders an
    *  "Auto-snap" button only when provided (Viro never passes it). */
   onAutoSnap?: () => void;
+  /** View toggles relocated here (below SCALE) from the top-right chips. Each renders
+   *  a toggle button only when its handler is provided. */
+  occlusionOn?: boolean;
+  onToggleOcclusion?: () => void;
+  axesOn?: boolean;
+  onToggleAxes?: () => void;
 }
 
 /** A button that fires `onHold` once on press and then repeats while held. */
@@ -138,6 +144,10 @@ export default function AlignPanel({
   bottomOffset = 148,
   translucent = false,
   onAutoSnap,
+  occlusionOn = false,
+  onToggleOcclusion,
+  axesOn = false,
+  onToggleAxes,
 }: AlignPanelProps) {
   const scaleLabel = `${(scale[0] ?? 1).toFixed(2)}×`;
 
@@ -224,6 +234,35 @@ export default function AlignPanel({
               </View>
             </Section>
 
+            {/* ── VIEW toggles (Occlusion + XYZ Axes), docked below SCALE ── */}
+            {(onToggleOcclusion || onToggleAxes) && (
+              <>
+                <View style={styles.divider} />
+                <Section title="VIEW">
+                  <View style={styles.viewToggleCol}>
+                    {onToggleOcclusion && (
+                      <TouchableOpacity
+                        style={[styles.viewToggle, occlusionOn && styles.viewToggleOn]}
+                        onPress={onToggleOcclusion}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.viewToggleText}>👁  Occlusion  {occlusionOn ? 'ON' : 'OFF'}</Text>
+                      </TouchableOpacity>
+                    )}
+                    {onToggleAxes && (
+                      <TouchableOpacity
+                        style={[styles.viewToggle, axesOn && styles.viewToggleOn]}
+                        onPress={onToggleAxes}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.viewToggleText}>✛  Axes  {axesOn ? 'ON' : 'OFF'}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </Section>
+              </>
+            )}
+
             {onAutoSnap && (
               <>
                 <View style={styles.divider} />
@@ -307,6 +346,18 @@ const styles = StyleSheet.create({
   },
   quickRow: { flexDirection: 'row', gap: 8 },
   scaleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  viewToggleCol: { gap: 8, alignItems: 'stretch' },
+  viewToggle: {
+    minWidth: 150,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewToggleOn: { backgroundColor: 'rgba(14, 165, 233, 0.97)' },
+  viewToggleText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
   scaleReadout: {
     minWidth: 72,
     alignItems: 'center',

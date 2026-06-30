@@ -211,6 +211,12 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   private var showOverallBox = false
   private var showPartBoxes = false
   private var dimsContainer: Entity?          // child of modelPivot
+  // XYZ orientation gizmo (X=red, Y=green, Z=blue) — a child of modelPivot, so it
+  // rides the model's rotation and shows which way the model is facing, letting the
+  // operator line the model's axes up with the real assembly. Off by default.
+  private var showAxes = false
+  private var axesContainer: Entity?          // child of modelPivot
+  private var axisLabels: [Entity] = []       // the X/Y/Z text labels (billboarded each frame)
   private var partPick = false
 
   required init(appContext: AppContext? = nil) {
@@ -446,6 +452,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   func setPartPick(_ v: Bool) { partPick = v }
   func setShowOverallBox(_ v: Bool) { showOverallBox = v; rebuildDimensionBoxes() }
   func setShowPartBoxes(_ v: Bool) { showPartBoxes = v; rebuildDimensionBoxes() }
+  func setShowAxes(_ v: Bool) { showAxes = v; rebuildAxes() }
 
   // MARK: - Mode application (the live switcher core)
 
@@ -589,6 +596,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     modelEntity = entity
     updateModelPhysics()
     rebuildDimensionBoxes()
+    rebuildAxes()
   }
 
   // Load the wireframe GLB as a COLLISION-FREE overlay child of the pivot, aligned
@@ -709,6 +717,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     // actually attaches. reconcileEdges() no-ops if the overlay is already correct.
     reconcileEdges()
     rebuildDimensionBoxes()
+    rebuildAxes()
     pendingPlacement = false
     placeAttempts = 0
     onAnchor(["placed": true, "onSurface": onSurface])
@@ -1415,6 +1424,87 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     return group
   }
 
+  // XYZ orientation gizmo at the model origin (base-centre): X=red, Y=green, Z=blue,
+  // the universal convention. Parented to the pivot, so it rotates WITH the model —
+  // the operator reads which way the model points and rotates it (Turn/Tilt/Roll) to
+  // line its axes up with the real assembly. A cube cap marks the + end of each axis
+  // so direction is unambiguous. Boxes only (no cone/cylinder mesh API needed).
+  private func rebuildAxes() {
+    axesContainer?.removeFromParent()
+    axesContainer = nil
+    axisLabels.removeAll()
+    guard let pivot = modelPivot, let model = modelEntity, showAxes else { return }
+    let b = model.visualBounds(relativeTo: pivot)
+    guard b.extents.x.isFinite else { return }
+    // Length ~60% of the largest half-extent so the gizmo reads clearly against the model.
+    let half = max(b.extents.x, max(b.extents.y, b.extents.z)) / 2
+    let len = max(half * 0.6, 0.05)
+    let r = max(len * 0.02, 0.003)
+    let cap = r * 3
+
+    let container = Entity()
+    pivot.addChild(container)
+    axesContainer = container
+
+    let red = UIColor(red: 0.95, green: 0.26, blue: 0.21, alpha: 1.0)   // +X
+    let green = UIColor(red: 0.30, green: 0.85, blue: 0.39, alpha: 1.0) // +Y
+    let blue = UIColor(red: 0.13, green: 0.59, blue: 0.95, alpha: 1.0)  // +Z
+
+    func axisBox(_ size: SIMD3<Float>, _ pos: SIMD3<Float>, _ color: UIColor) {
+      let e = ModelEntity(mesh: .generateBox(size: size), materials: [unlitMaterial(color, opaque: true)])
+      e.position = pos
+      container.addChild(e)
+    }
+    // The container shares the pivot's frame, so the model's local X/Y/Z ARE the
+    // container's axes — each shaft is just an axis-aligned thin box, + a cube cap.
+    axisBox([len, r, r], [len / 2, 0, 0], red);    axisBox([cap, cap, cap], [len, 0, 0], red)
+    axisBox([r, len, r], [0, len / 2, 0], green);  axisBox([cap, cap, cap], [0, len, 0], green)
+    axisBox([r, r, len], [0, 0, len / 2], blue);   axisBox([cap, cap, cap], [0, 0, len], blue)
+
+    // Named labels just past the + cap of each axis, billboarded to the camera each
+    // frame (billboardAxisLabels) so they stay readable from any angle.
+    let labelSize = max(len * 0.32, 0.03)
+    let off = len + cap * 2
+    func label(_ s: String, _ pos: SIMD3<Float>, _ color: UIColor) {
+      let l = makeAxisLabel(s, color: color, size: labelSize)
+      l.position = pos
+      container.addChild(l)
+      axisLabels.append(l)
+    }
+    label("X", [off, 0, 0], red)
+    label("Y", [0, off, 0], green)
+    label("Z", [0, 0, off], blue)
+  }
+
+  // A single axis letter as a centred 3D text entity (sized in metres). Wrapped in a
+  // holder whose origin is the glyph centre, so billboarding rotates it cleanly in place.
+  private func makeAxisLabel(_ s: String, color: UIColor, size: Float) -> Entity {
+    let mesh = MeshResource.generateText(
+      s,
+      extrusionDepth: max(size * 0.05, 0.0005),
+      font: .systemFont(ofSize: CGFloat(size), weight: .bold),
+      containerFrame: .zero, alignment: .center, lineBreakMode: .byClipping)
+    let glyph = ModelEntity(mesh: mesh, materials: [unlitMaterial(color, opaque: true)])
+    let b = glyph.visualBounds(relativeTo: glyph)
+    glyph.position = SIMD3<Float>(-b.center.x, -b.center.y, -b.center.z) // centre on origin
+    let holder = Entity()
+    holder.addChild(glyph)
+    return holder
+  }
+
+  // Face every axis label at the camera (billboard) so the X/Y/Z stay readable as the
+  // operator moves around. RealityKit text reads on its +Z, so look() (-Z → target) is
+  // followed by a 180° flip about up. Cheap (3 labels); only runs while the gizmo is on.
+  private func billboardAxisLabels() {
+    guard showAxes, !axisLabels.isEmpty else { return }
+    let cam = arView.cameraTransform.translation
+    for l in axisLabels {
+      let p = l.position(relativeTo: nil)
+      l.look(at: cam, from: p, upVector: SIMD3<Float>(0, 1, 0), relativeTo: nil)
+      l.orientation = simd_normalize(l.orientation * simd_quatf(angle: .pi, axis: SIMD3<Float>(0, 1, 0)))
+    }
+  }
+
   // MARK: - Tap routing
 
   @objc private func handleTap(_ g: UITapGestureRecognizer) {
@@ -1880,6 +1970,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     if pendingPlacement { tryPlaceModel() }
     else if awaitingManualPlace { emitScanState() }
     driveMarkerLock()  // keep the model glued to the active printed marker (drift-free)
+    billboardAxisLabels()  // keep the X/Y/Z labels facing the camera (no-op when gizmo off)
   }
 
   func session(_ session: ARSession, didAdd anchors: [ARAnchor]) { ingestImageAnchors(anchors) }

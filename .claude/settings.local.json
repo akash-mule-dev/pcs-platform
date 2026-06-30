@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(*)",
       "PowerShell(*)",
@@ -16,7 +15,12 @@
       "NotebookEdit(*)",
       "mcp__context7__*",
       "mcp__playwright__*",
-      "mcp__stitch__*"
-    ]
+      "mcp__stitch__*",
+      "mcp__palmier-pro__get_timeline",
+      "mcp__palmier-pro__get_media",
+      "mcp__palmier-pro__list_models",
+      "mcp__palmier-pro__set_project_settings"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }
