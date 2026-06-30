@@ -45,6 +45,14 @@ const SENS_LOG_MAX = Math.log(SENS_MAX);
 const SENS_LOG_DEFAULT = Math.log(SENS_DEFAULT);
 const SENS_WIDTH = 184;
 
+// Axis colours — MUST match the native XYZ gizmo (PcsLidarArView.rebuildAxes:
+// X=red, Y=green, Z=blue) so a rotate button and the axis it spins read as the same
+// colour. The operator turns on the gizmo, then "the green button spins the green
+// axis" — no guessing which of Tilt/Turn/Roll is which.
+const AXIS_X = '#E5392F'; // red   — Tilt (pitch, about X)
+const AXIS_Y = '#22A447'; // green — Turn (yaw, about Y)
+const AXIS_Z = '#1F8FE5'; // blue  — Roll (about Z)
+
 interface AlignPanelProps {
   scale: Vec3;
   locked: boolean;
@@ -82,6 +90,7 @@ function HoldButton({
   locked,
   repeat = true,
   wide = false,
+  accent,
 }: {
   glyph: string;
   caption: string;
@@ -89,6 +98,9 @@ function HoldButton({
   locked: boolean;
   repeat?: boolean;
   wide?: boolean;
+  /** Axis colour (gizmo-matched). When set, the button gets a coloured border and the
+   *  glyph/caption are tinted to it — so the button maps to its XYZ-gizmo axis. */
+  accent?: string;
 }) {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const onHoldRef = useRef(onHold);
@@ -112,14 +124,19 @@ function HoldButton({
 
   return (
     <TouchableOpacity
-      style={[styles.btn, wide && styles.btnWide, locked && styles.btnDisabled]}
+      style={[
+        styles.btn,
+        wide && styles.btnWide,
+        accent && { borderWidth: 2, borderColor: accent },
+        locked && styles.btnDisabled,
+      ]}
       onPressIn={start}
       onPressOut={stop}
       disabled={locked}
       activeOpacity={0.6}
     >
-      <Text style={styles.btnGlyph}>{glyph}</Text>
-      <Text style={styles.btnCaption}>{caption}</Text>
+      <Text style={[styles.btnGlyph, accent && { color: accent }]}>{glyph}</Text>
+      <Text style={[styles.btnCaption, accent && { color: accent }]}>{caption}</Text>
     </TouchableOpacity>
   );
 }
@@ -204,16 +221,18 @@ export default function AlignPanel({
 
             <View style={styles.divider} />
 
-            {/* ── ROTATE: all three axes — Tilt (pitch / X), Turn (yaw / Y),
-                Roll (roll / Z), each ±, plus the 90°/180° quick yaw. ── */}
+            {/* ── ROTATE: all three axes — Tilt (pitch / X / red), Turn (yaw / Y /
+                green), Roll (roll / Z / blue), each ±, plus the 90°/180° quick yaw.
+                Captions name the axis + direction and the colour matches the XYZ
+                gizmo, so each button maps to the axis it spins. ── */}
             <Section title="ROTATE">
               <View style={styles.grid}>
-                <HoldButton glyph="⤢" caption="Tilt+" locked={locked} onHold={() => onNudgeRotation([rotStep, 0, 0])} />
-                <HoldButton glyph="↺" caption="Turn+" locked={locked} onHold={() => onNudgeRotation([0, rotStep, 0])} />
-                <HoldButton glyph="⟲" caption="Roll+" locked={locked} onHold={() => onNudgeRotation([0, 0, rotStep])} />
-                <HoldButton glyph="⤡" caption="Tilt−" locked={locked} onHold={() => onNudgeRotation([-rotStep, 0, 0])} />
-                <HoldButton glyph="↻" caption="Turn−" locked={locked} onHold={() => onNudgeRotation([0, -rotStep, 0])} />
-                <HoldButton glyph="⟳" caption="Roll−" locked={locked} onHold={() => onNudgeRotation([0, 0, -rotStep])} />
+                <HoldButton glyph="⤢" caption="Tilt+ X" accent={AXIS_X} locked={locked} onHold={() => onNudgeRotation([rotStep, 0, 0])} />
+                <HoldButton glyph="↺" caption="Turn+ Y" accent={AXIS_Y} locked={locked} onHold={() => onNudgeRotation([0, rotStep, 0])} />
+                <HoldButton glyph="⟲" caption="Roll+ Z" accent={AXIS_Z} locked={locked} onHold={() => onNudgeRotation([0, 0, rotStep])} />
+                <HoldButton glyph="⤡" caption="Tilt− X" accent={AXIS_X} locked={locked} onHold={() => onNudgeRotation([-rotStep, 0, 0])} />
+                <HoldButton glyph="↻" caption="Turn− Y" accent={AXIS_Y} locked={locked} onHold={() => onNudgeRotation([0, -rotStep, 0])} />
+                <HoldButton glyph="⟳" caption="Roll− Z" accent={AXIS_Z} locked={locked} onHold={() => onNudgeRotation([0, 0, -rotStep])} />
               </View>
               <View style={styles.quickRow}>
                 <HoldButton glyph="90°" caption="Turn" locked={locked} repeat={false} wide onHold={() => onQuickRotate(90)} />

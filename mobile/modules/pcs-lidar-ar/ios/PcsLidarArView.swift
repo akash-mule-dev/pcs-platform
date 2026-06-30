@@ -1461,6 +1461,12 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     axisBox([r, len, r], [0, len / 2, 0], green);  axisBox([cap, cap, cap], [0, len, 0], green)
     axisBox([r, r, len], [0, 0, len / 2], blue);   axisBox([cap, cap, cap], [0, 0, len], blue)
 
+    // Pivot marker: a white cube at the origin (= the pivot / base-centre). This is
+    // the exact point EVERY rotation turns around — seeing it explains why the far
+    // end of the model swings when you tilt/turn. Slightly bigger than the axis caps
+    // so it reads as the centre rather than a fourth axis tip.
+    axisBox([cap * 1.5, cap * 1.5, cap * 1.5], [0, 0, 0], UIColor.white)
+
     // Named labels just past the + cap of each axis, billboarded to the camera each
     // frame (billboardAxisLabels) so they stay readable from any angle.
     let labelSize = max(len * 0.32, 0.03)
