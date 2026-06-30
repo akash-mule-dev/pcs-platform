@@ -39,6 +39,7 @@ import { useQualityData, ARQualityEntry } from './useQualityData';
 import ToggleChip from './ToggleChip';
 import ToolBar from './ToolBar';
 import AlignPanel from './AlignPanel';
+import AlignSidebar from './AlignSidebar';
 import AppearancePanel from './AppearancePanel';
 import MeasurementPanel from './MeasurementPanel';
 import RegisterPanel from './RegisterPanel';
@@ -170,6 +171,9 @@ export default function ARExperienceRK({
   // displayPanelOpen drives the single merged "Display" tab (surface colour-by +
   // see-through + edge overlay) — it replaced the old separate Edges + Color tabs.
   const [precisionMode, setPrecisionMode] = useState(false);
+  // Additive: the new self-contained reference-style align sidebar (independent of
+  // precisionMode / AlignPanel — it drives the native view directly via arRef).
+  const [alignSidebarOpen, setAlignSidebarOpen] = useState(false);
   const [displayPanelOpen, setDisplayPanelOpen] = useState(false);
   const [measurePanelOpen, setMeasurePanelOpen] = useState(false);
   const [qaPanelOpen, setQaPanelOpen] = useState(false);
@@ -1247,6 +1251,21 @@ export default function ARExperienceRK({
         side="right"
       />
 
+      {/* Additive: reference-style align sidebar toggle + the sidebar itself.
+          Fully self-contained — opening it does not affect any existing panel. */}
+      {placed && (
+        <TouchableOpacity
+          style={[styles.alignSidebarToggle, alignSidebarOpen && styles.alignSidebarToggleOn]}
+          onPress={() => setAlignSidebarOpen((o) => !o)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.alignSidebarToggleText}>{alignSidebarOpen ? '✕ Sidebar' : '▥ Align sidebar'}</Text>
+        </TouchableOpacity>
+      )}
+      {placed && alignSidebarOpen && (
+        <AlignSidebar arRef={arRef} onClose={() => setAlignSidebarOpen(false)} />
+      )}
+
       {/* QA panel toggle */}
       {placed && (
         <TouchableOpacity style={styles.qaButton} onPress={() => setQaPanelOpen((o) => !o)} activeOpacity={0.7}>
@@ -1317,6 +1336,23 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   recordsButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  // Additive: toggle for the reference-style align sidebar (top-centre, clear of
+  // the Back / Records / title chrome). Does not affect any existing control.
+  alignSidebarToggle: {
+    position: 'absolute',
+    top: 50,
+    left: '50%',
+    marginLeft: -85,
+    width: 170,
+    alignItems: 'center',
+    backgroundColor: 'rgba(13, 17, 23, 0.85)',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    zIndex: 31,
+  },
+  alignSidebarToggleOn: { backgroundColor: 'rgba(14, 165, 233, 0.95)' },
+  alignSidebarToggleText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   occlusionWrap: { position: 'absolute', top: 92, right: 16, alignItems: 'flex-end', gap: 8, zIndex: 24 },
   pillWrap: { position: 'absolute', top: 150, left: 0, right: 0, alignItems: 'center', zIndex: 16 },
   pill: {

@@ -91,6 +91,11 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   // ARAnchor — so the long-lived anchor keeps its relocalization continuity. Identity
   // until the first correction.
   private var modelCorrection: Entity?
+  // The model's GEOMETRIC centre expressed in the (unscaled, unrotated) pivot frame —
+  // measured once at placement. Rotations pivot about THIS point (not the pivot origin,
+  // which is the base-centre) so pitch/roll/yaw spin the piece in place about its middle
+  // instead of swinging its far end through a big arc (matches the reference app).
+  private var modelCenterOffset = SIMD3<Float>(repeating: 0)
   private var pendingPlacement = false
   private var placeAttempts = 0
   // Scan-before-place gate. When manualPlacement is on, the model is NOT auto-placed
@@ -711,6 +716,10 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     modelCorrection = correction
     modelAnchor = anchor
     modelArAnchor = ar
+    // Capture the geometric centre in the pivot frame NOW, while the pivot transform is
+    // still identity — this is the point rotations will pivot about (see applyUserTransform).
+    let cb = entity.visualBounds(relativeTo: pivot)
+    modelCenterOffset = cb.extents.x.isFinite ? cb.center : SIMD3<Float>(repeating: 0)
     applyUserTransform()
     // Post-placement hook: now that the pivot exists, (re)build the edge overlay so
     // an edge view requested BEFORE placement (the scan-first flow / edges-on default)
@@ -797,12 +806,22 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
   // MARK: - Align (user transform on the pivot)
 
+  // The translation we ADD to the pivot so it rotates about the model's GEOMETRIC CENTRE
+  // rather than the pivot origin (= base-centre). A RealityKit Transform always rotates a
+  // child about the pivot origin, so we fold "rotate about a point" into the translation:
+  // for the scaled centre cs, the offset (cs − R·cs) holds cs fixed under the rotation.
+  // Zero at identity rotation, so placement (base on the surface) is unchanged.
+  private func centrePivotOffset() -> SIMD3<Float> {
+    let cs = modelCenterOffset * userScale
+    return cs - userOrientation.act(cs)
+  }
+
   private func applyUserTransform() {
     guard let pivot = modelPivot else { return }
     pivot.transform = Transform(
       scale: SIMD3<Float>(repeating: userScale),
       rotation: userOrientation,
-      translation: userTranslate
+      translation: userTranslate + centrePivotOffset()
     )
   }
 
@@ -844,16 +863,30 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   }
 
   func rotate(_ dPitchDeg: Float, _ dYawDeg: Float, _ dRollDeg: Float) {
-    guard !locked, modelPivot != nil else { return }
+    guard !locked, let correction = modelCorrection, modelPivot != nil else { return }
     let r = Float.pi / 180
-    // Compose each nudge as a rotation about a FIXED WORLD axis (pre-multiply onto
-    // the current orientation): Turn → world-up (Y), Tilt → world-X, Roll → world-Z.
-    // The axes never coincide, so there's no gimbal lock — turn/tilt/roll stay
-    // independent and predictable at any orientation.
+    // VIEW-RELATIVE rotation (matches the reference app): each axis is taken from the
+    // live camera/world and converted into the pivot's PARENT (correction) frame, since
+    // userOrientation is pre-multiplied there.
+    //   • YAW   → true WORLD-UP (turns the piece left/right; gravity vertical).
+    //   • PITCH → camera RIGHT (screen-horizontal) — tips the piece toward/away as seen.
+    //   • ROLL  → camera FORWARD (the view/screen-depth axis) — spins it in the screen plane.
+    // So tilt/roll always move the model the way the inspector sees it, from any viewpoint.
+    let m = arView.cameraTransform.matrix
+    let camRightWorld = SIMD3<Float>(m.columns.0.x, m.columns.0.y, m.columns.0.z)
+    let camForwardWorld = SIMD3<Float>(-m.columns.2.x, -m.columns.2.y, -m.columns.2.z)
+    func axisInPivotParent(_ world: SIMD3<Float>) -> SIMD3<Float> {
+      let v = correction.convert(direction: world, from: nil)
+      let len = simd_length(v)
+      return len > 1e-5 ? v / len : world
+    }
+    let yawAxis = axisInPivotParent(SIMD3<Float>(0, 1, 0))
+    let pitchAxis = axisInPivotParent(camRightWorld)
+    let rollAxis = axisInPivotParent(camForwardWorld)
     var q = userOrientation
-    if dYawDeg != 0 { q = simd_quatf(angle: dYawDeg * r, axis: SIMD3<Float>(0, 1, 0)) * q }
-    if dPitchDeg != 0 { q = simd_quatf(angle: dPitchDeg * r, axis: SIMD3<Float>(1, 0, 0)) * q }
-    if dRollDeg != 0 { q = simd_quatf(angle: dRollDeg * r, axis: SIMD3<Float>(0, 0, 1)) * q }
+    if dYawDeg != 0 { q = simd_quatf(angle: dYawDeg * r, axis: yawAxis) * q }
+    if dPitchDeg != 0 { q = simd_quatf(angle: dPitchDeg * r, axis: pitchAxis) * q }
+    if dRollDeg != 0 { q = simd_quatf(angle: dRollDeg * r, axis: rollAxis) * q }
     userOrientation = simd_normalize(q)
     applyUserTransform()
   }
@@ -923,7 +956,10 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
       // height; convert that WORLD point to anchor-local for the pivot translation
       // (all three components, so the world height is preserved on any anchor tilt).
       let targetWorld = SIMD3<Float>(hit.x + dragGrabOffset.x, dragPlaneY, hit.z + dragGrabOffset.y)
-      userTranslate = correction.convert(position: targetWorld, from: nil)
+      // Subtract the centre-pivot offset so the FINAL pivot translation (which adds it
+      // back in applyUserTransform) lands the pivot origin exactly at targetWorld — i.e.
+      // the grabbed point stays under the finger even when the model is rotated.
+      userTranslate = correction.convert(position: targetWorld, from: nil) - centrePivotOffset()
       applyUserTransform()
     default:
       panOnModel = false
@@ -1424,7 +1460,7 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     return group
   }
 
-  // XYZ orientation gizmo at the model origin (base-centre): X=red, Y=green, Z=blue,
+  // XYZ orientation gizmo at the model's geometric centre: X=red, Y=green, Z=blue,
   // the universal convention. Parented to the pivot, so it rotates WITH the model —
   // the operator reads which way the model points and rotates it (Turn/Tilt/Roll) to
   // line its axes up with the real assembly. A cube cap marks the + end of each axis
@@ -1444,6 +1480,10 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
 
     let container = Entity()
     pivot.addChild(container)
+    // Sit the gizmo at the model's GEOMETRIC CENTRE — which is now the rotation pivot
+    // (see applyUserTransform) — so the white centre-marker truthfully shows the point
+    // every rotation turns about.
+    container.position = b.center
     axesContainer = container
 
     let red = UIColor(red: 0.95, green: 0.26, blue: 0.21, alpha: 1.0)   // +X
@@ -1461,10 +1501,9 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
     axisBox([r, len, r], [0, len / 2, 0], green);  axisBox([cap, cap, cap], [0, len, 0], green)
     axisBox([r, r, len], [0, 0, len / 2], blue);   axisBox([cap, cap, cap], [0, 0, len], blue)
 
-    // Pivot marker: a white cube at the origin (= the pivot / base-centre). This is
-    // the exact point EVERY rotation turns around — seeing it explains why the far
-    // end of the model swings when you tilt/turn. Slightly bigger than the axis caps
-    // so it reads as the centre rather than a fourth axis tip.
+    // Pivot marker: a white cube at the gizmo origin, which now sits at the model's
+    // geometric CENTRE — the exact point EVERY rotation turns about. Slightly bigger
+    // than the axis caps so it reads as the centre rather than a fourth axis tip.
     axisBox([cap * 1.5, cap * 1.5, cap * 1.5], [0, 0, 0], UIColor.white)
 
     // Named labels just past the + cap of each axis, billboarded to the camera each
