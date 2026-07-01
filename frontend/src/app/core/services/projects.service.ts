@@ -476,9 +476,14 @@ export class ProjectsService {
     return this.http.patch<Project>(`${this.base}/${id}`, dto);
   }
 
-  /** Soft-delete: move the project to the Trash (recoverable for 30 days). */
-  remove(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.base}/${id}`);
+  /**
+   * Soft-delete: move the project to the Trash (recoverable for 30 days). The
+   * server rejects with 409 if the project still has work orders — pass
+   * `cascade: true` to ALSO permanently remove those work orders first (not
+   * recoverable), then Trash the project.
+   */
+  remove(id: string, cascade = false): Observable<void> {
+    return this.http.delete<void>(`${this.base}/${id}${cascade ? '?cascade=true' : ''}`);
   }
 
   /** Soft-deleted projects (the Trash), newest first, each with a purge countdown. */
@@ -684,6 +689,10 @@ export class ProjectsService {
   }
   getOrder(orderId: string): Observable<ProductionOrder> {
     return this.http.get<ProductionOrder>(`${environment.apiUrl}/orders/${orderId}`);
+  }
+  /** Permanently delete a work order and its per-assembly work orders (+ stages, time, NCRs). Irreversible. */
+  deleteOrder(orderId: string): Observable<{ ok: true }> {
+    return this.http.delete<{ ok: true }>(`${environment.apiUrl}/orders/${orderId}`);
   }
   orderBoard(orderId: string): Observable<OrderBoard> {
     return this.http.get<OrderBoard>(`${environment.apiUrl}/orders/${orderId}/stage-board`);

@@ -29,28 +29,38 @@ export function ProjectDetailScreen() {
   const [processId, setProcessId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const canDelete = can('projects.delete');
+  const canDeleteOrder = can('production-orders.delete');
 
-  // Soft-delete the project (Trash). The server rejects with a clear message if
-  // the project still has work orders, which we surface verbatim.
+  // Soft-delete the project (Trash). If it still has work orders the server
+  // rejects (409); we then offer to remove them together — a permanent cascade.
   const onDelete = useCallback(() => {
+    const runDelete = async (cascade: boolean) => {
+      try {
+        await projectsService.remove(projectId, cascade);
+        projectsService.list(true).catch(() => {}); // refresh cached portfolio
+        navigation.goBack();
+      } catch (e: any) {
+        const msg = e?.message || 'Delete failed.';
+        if (!cascade && /work order/i.test(msg)) {
+          Alert.alert(
+            'Delete project and its work orders?',
+            `"${name}" has work orders in production. Deleting will PERMANENTLY remove its work orders, stages, logged time, shipments and quality records (not recoverable), then move the project to the Trash.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete everything', style: 'destructive', onPress: () => runDelete(true) },
+            ],
+          );
+          return;
+        }
+        Alert.alert('Could not delete project', msg);
+      }
+    };
     Alert.alert(
       'Delete project?',
-      `"${name}" will be moved to the Trash (recoverable for 30 days). Projects with work orders can't be deleted.`,
+      `"${name}" will be moved to the Trash (recoverable for 30 days).`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await projectsService.remove(projectId);
-              projectsService.list(true).catch(() => {}); // refresh cached portfolio
-              navigation.goBack();
-            } catch (e: any) {
-              Alert.alert('Could not delete project', e?.message || 'Delete failed.');
-            }
-          },
-        },
+        { text: 'Delete', style: 'destructive', onPress: () => runDelete(false) },
       ],
     );
   }, [projectId, name, navigation]);
@@ -110,6 +120,29 @@ export function ProjectDetailScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+
+  // Permanently delete one work order (production run) + everything it owns.
+  const onDeleteOrder = useCallback((order: MOrder) => {
+    Alert.alert(
+      'Delete work order?',
+      `"${order.number}" and all of its per-assembly work orders, stages, logged time, shipments and NCRs will be permanently deleted. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ordersService.remove(order.id);
+              setOrders((prev) => prev.filter((o) => o.id !== order.id));
+            } catch (e: any) {
+              Alert.alert('Could not delete work order', e?.message || 'Delete failed.');
+            }
+          },
+        },
+      ],
+    );
+  }, []);
 
   const submit = async () => {
     if (!processId) { setError('Pick a process for this work order.'); return; }
@@ -172,7 +205,14 @@ export function ProjectDetailScreen() {
       <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('OrderBoard', { orderId: item.id, projectId, orderNumber: item.number })}>
         <View style={styles.cardTop}>
           <Text style={styles.num}>{item.number}</Text>
-          <View style={[styles.statusChip, { backgroundColor: color }]}><Text style={styles.statusTxt}>{OrderStatusLabels[item.status] || item.status}</Text></View>
+          <View style={styles.cardTopRight}>
+            <View style={[styles.statusChip, { backgroundColor: color }]}><Text style={styles.statusTxt}>{OrderStatusLabels[item.status] || item.status}</Text></View>
+            {canDeleteOrder && (
+              <TouchableOpacity style={styles.trashBtn} onPress={() => onDeleteOrder(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="trash-outline" size={17} color={Colors.danger} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <Text style={styles.meta} numberOfLines={1}>{item.customerName ? item.customerName + '  ·  ' : ''}Qty {item.quantity}</Text>
       </TouchableOpacity>
@@ -234,6 +274,8 @@ const styles = StyleSheet.create({
   createTxt: { color: Colors.white, fontWeight: '700', fontSize: 15 },
   card: { backgroundColor: Colors.card, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, padding: 14, marginBottom: 10 },
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardTopRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  trashBtn: { padding: 2 },
   num: { fontSize: 16, fontWeight: '700', color: Colors.text },
   statusChip: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
   statusTxt: { color: Colors.white, fontSize: 11, fontWeight: '700' },

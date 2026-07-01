@@ -1,8 +1,14 @@
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { ProjectsService, ProductionOrder } from '../core/services/projects.service';
+import { PermissionsService } from '../core/services/permissions.service';
+import { ToastService } from '../core/services/toast.service';
+import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/confirm-dialog.component';
 import { ProjectWorkspaceStore } from './project-workspace.store';
 import { TourLauncherComponent } from '../shared/components/tour-launcher/tour-launcher.component';
 
@@ -17,7 +23,7 @@ interface OrderTab { path: string; label: string; icon: string; }
 @Component({
   selector: 'app-order-workspace',
   standalone: true,
-  imports: [CommonModule, RouterModule, MatIconModule, TourLauncherComponent],
+  imports: [CommonModule, RouterModule, MatIconModule, MatMenuModule, MatTooltipModule, MatDialogModule, TourLauncherComponent],
   template: `
     <div class="ows">
       <a class="back" [routerLink]="['/projects', projectId, 'orders']"><mat-icon>arrow_back</mat-icon><span>Work orders</span></a>
@@ -28,6 +34,12 @@ interface OrderTab { path: string; label: string; icon: string; }
           <h2>{{ order?.number || 'Work order' }}</h2>
           @if (order) { <span class="pill st-{{ order.status }}">{{ statusLabel(order.status) }}</span> }
           <app-tour-launcher class="ow-tour" tourId="order-workspace" [auto]="true" tooltip="Tour this order"></app-tour-launcher>
+          @if (order && perms.can('production-orders.delete')) {
+            <button class="ow-more" [matMenuTriggerFor]="owMenu" matTooltip="More actions"><mat-icon>more_vert</mat-icon></button>
+            <mat-menu #owMenu="matMenu">
+              <button mat-menu-item class="danger-item" (click)="deleteOrder()"><mat-icon>delete</mat-icon><span>Delete work order</span></button>
+            </mat-menu>
+          }
         </div>
         <div class="meta">
           @if (order?.customerName) { <span><mat-icon>business</mat-icon>{{ order?.customerName }}</span> }
@@ -60,6 +72,11 @@ interface OrderTab { path: string; label: string; icon: string; }
     .ohead { background: var(--clay-surface); border: 1px solid var(--clay-border); border-radius: var(--clay-radius); padding: 14px 18px 0; margin-bottom: 16px; }
     .title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .ow-tour { margin-left: auto; }
+    .ow-more { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--clay-border); background: var(--clay-surface); color: var(--clay-text-secondary); border-radius: var(--clay-radius-sm); cursor: pointer; padding: 0; }
+    .ow-more:hover { border-color: var(--clay-primary); color: var(--clay-primary); }
+    .ow-more mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    ::ng-deep .danger-item { color: var(--danger) !important; }
+    ::ng-deep .danger-item mat-icon { color: var(--danger) !important; }
     .t-ico { color: var(--clay-primary); }
     .title h2 { margin: 0; font-size: 19px; font-weight: 700; color: var(--clay-text); letter-spacing: -0.01em; }
     .pill { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
@@ -86,7 +103,11 @@ interface OrderTab { path: string; label: string; icon: string; }
 })
 export class OrderWorkspaceComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private svc = inject(ProjectsService);
+  private dialog = inject(MatDialog);
+  private toast = inject(ToastService);
+  perms = inject(PermissionsService);
   store = inject(ProjectWorkspaceStore);
 
   projectId = '';
@@ -123,5 +144,24 @@ export class OrderWorkspaceComponent implements OnInit, OnDestroy {
 
   statusLabel(s: string): string {
     return ({ planned: 'Planned', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled' } as Record<string, string>)[s] ?? s;
+  }
+
+  /** Permanently delete this work order (its per-assembly WOs, stages, time, NCRs and shipments). */
+  deleteOrder(): void {
+    if (!this.order) return;
+    const o = this.order;
+    this.dialog.open(ConfirmDialogComponent, {
+      data: {
+        title: 'Delete work order?',
+        message: `"${o.number}" and all of its per-assembly work orders, stages, logged time, stage history, shipments and NCRs will be permanently deleted. This cannot be undone.`,
+        confirmText: 'Delete work order',
+      },
+    }).afterClosed().subscribe((ok: boolean) => {
+      if (!ok) return;
+      this.svc.deleteOrder(o.id).subscribe({
+        next: () => { this.toast.success('Work order deleted'); this.router.navigate(['/projects', this.projectId, 'orders']); },
+        error: (e) => this.toast.error(e?.error?.message || 'Could not delete work order'),
+      });
+    });
   }
 }

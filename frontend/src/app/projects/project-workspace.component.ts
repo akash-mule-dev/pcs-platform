@@ -380,6 +380,28 @@ export class ProjectWorkspaceComponent implements OnInit, OnDestroy {
       if (!ok) return;
       this.svc.remove(p.id).subscribe({
         next: () => { this.toast.success('Project moved to Trash — recoverable for 30 days'); this.router.navigate(['/projects']); },
+        error: (e) => {
+          // The project has work orders — the server blocks a plain delete (409).
+          // Offer to remove them together (a permanent, non-recoverable cascade).
+          if (e?.status === 409) { this.confirmCascadeDelete(p); return; }
+          this.toast.error(e?.error?.message || 'Could not delete project');
+        },
+      });
+    });
+  }
+
+  /** Second-step confirm: delete the project AND permanently remove its work orders. */
+  private confirmCascadeDelete(p: Project): void {
+    this.dialog.open(ConfirmDialogComponent, {
+      data: {
+        title: 'Delete project and its work orders?',
+        message: `"${p.name}" has work orders in production. Deleting will PERMANENTLY remove its work orders, stages, logged time, shipments and quality records (not recoverable), then move the project to the Trash (the design tree stays restorable for 30 days).`,
+        confirmText: 'Delete everything',
+      },
+    }).afterClosed().subscribe((ok: boolean) => {
+      if (!ok) return;
+      this.svc.remove(p.id, true).subscribe({
+        next: () => { this.toast.success('Project and its work orders deleted — project recoverable for 30 days'); this.router.navigate(['/projects']); },
         error: (e) => this.toast.error(e?.error?.message || 'Could not delete project'),
       });
     });

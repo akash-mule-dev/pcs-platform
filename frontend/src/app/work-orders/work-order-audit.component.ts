@@ -5,11 +5,15 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { Subscription } from 'rxjs';
 import {
   ProjectsService, OrderAudit, AuditItem, AuditStageRow, NodeAuditDetail, BulkStageResult, StageEventRow, ShipStatus,
 } from '../core/services/projects.service';
 import { RealtimeService } from '../core/services/realtime.service';
+import { PermissionsService } from '../core/services/permissions.service';
+import { ToastService } from '../core/services/toast.service';
+import { ConfirmDialogComponent } from '../shared/components/confirm-dialog/confirm-dialog.component';
 import * as QRCode from 'qrcode';
 
 type StatusFilter = 'all' | 'not_started' | 'in_progress' | 'completed' | 'holds';
@@ -32,7 +36,7 @@ const PAGE = 200;
 @Component({
   selector: 'app-work-order-audit',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [CommonModule, RouterModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, MatDialogModule],
   template: `
     <div class="page">
       <a class="back" routerLink="/work-orders"><mat-icon>arrow_back</mat-icon><span>Work orders</span></a>
@@ -67,6 +71,9 @@ const PAGE = 200;
                 <a class="ghost" [routerLink]="['/projects', audit.project.id, 'orders', orderId, 'quality']"><mat-icon>verified</mat-icon>Quality</a>
               }
               <a class="ghost" [routerLink]="['/work-orders', orderId, 'shipping']"><mat-icon>local_shipping</mat-icon>Shipping</a>
+              @if (perms.can('production-orders.delete')) {
+                <button class="ghost danger" (click)="deleteOrder()" matTooltip="Permanently delete this work order"><mat-icon>delete</mat-icon>Delete</button>
+              }
             </div>
           </div>
           <div class="meta">
@@ -515,6 +522,8 @@ const PAGE = 200;
     .actions .ghost { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--clay-border); background: var(--clay-surface); color: var(--clay-text-secondary); border-radius: var(--clay-radius-sm); padding: 7px 12px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; font-family: inherit; }
     .actions .ghost:hover { border-color: var(--clay-primary); color: var(--clay-primary); }
     .actions .ghost.on { background: var(--clay-primary); color: #fff; border-color: var(--clay-primary); }
+    .actions .ghost.danger { color: var(--danger-text); }
+    .actions .ghost.danger:hover { border-color: var(--danger); color: var(--danger-text); background: var(--danger-bg); }
     .actions mat-icon { font-size: 17px; width: 17px; height: 17px; }
     .meta { display: flex; gap: 6px 16px; flex-wrap: wrap; margin-top: 8px; }
     .m { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--clay-text-secondary); text-decoration: none; }
@@ -811,6 +820,9 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private svc = inject(ProjectsService);
+  private dialog = inject(MatDialog);
+  private toast = inject(ToastService);
+  perms = inject(PermissionsService);
 
   orderId = '';
   audit: OrderAudit | null = null;
@@ -1300,6 +1312,29 @@ export class WorkOrderAuditComponent implements OnInit, OnDestroy {
   // ── Misc ──
   switchOrder(id: string): void {
     if (id && id !== this.orderId) this.router.navigate(['/work-orders', id]);
+  }
+
+  /** Permanently delete this work order (its per-assembly WOs, stages, time, NCRs and shipments). */
+  deleteOrder(): void {
+    const o = this.audit?.order;
+    if (!o) return;
+    this.dialog.open(ConfirmDialogComponent, {
+      data: {
+        title: 'Delete work order?',
+        message: `"${o.number}" and all of its per-assembly work orders, stages, logged time, stage history, shipments and NCRs will be permanently deleted. This cannot be undone.`,
+        confirmText: 'Delete work order',
+      },
+    }).afterClosed().subscribe((ok: boolean) => {
+      if (!ok) return;
+      const projectId = this.audit?.project?.id;
+      this.svc.deleteOrder(o.id).subscribe({
+        next: () => {
+          this.toast.success('Work order deleted');
+          this.router.navigate(projectId ? ['/projects', projectId, 'orders'] : ['/work-orders']);
+        },
+        error: (e) => this.toast.error(e?.error?.message || 'Could not delete work order'),
+      });
+    });
   }
 
   tagOf(t: string): string { return t === 'subassembly' ? 'SUB' : t === 'part' ? 'PART' : t === 'group' ? 'GRP' : 'ASM'; }

@@ -51,6 +51,69 @@ export class ProjectPurgeService {
   }
 
   /**
+   * Hard-delete ONLY a project's PRODUCTION graph — its production orders, their
+   * per-assembly work orders + stages, logged time, stage-audit trail,
+   * traceability, order shipments and order NCRs — child-first in one
+   * transaction, while LEAVING the design container (assembly tree, models,
+   * imports, node-level documents/quality) intact.
+   *
+   * This is the engine behind "delete project with its work orders" (the cascade
+   * option): it clears exactly what the work-order guard in `ProjectsService.remove`
+   * blocks on, so the project can then be soft-deleted to the Trash and later
+   * RESTORED as a pure design record. No blobs are touched (the design tree that
+   * owns them survives). Order/WO/time/quality/shipping history is NOT recoverable.
+   */
+  async deleteProductionGraph(projectId: string): Promise<void> {
+    await this.dataSource.transaction((m) => this.deleteProductionGraphTx(m, projectId));
+  }
+
+  /**
+   * Atomic cascade behind "delete project with its work orders": hard-delete the
+   * production graph AND soft-delete (Trash) the project in ONE transaction, so a
+   * mid-operation failure can never leave the graph destroyed while the project
+   * still shows as active (or the reverse). The project row stays restorable for
+   * the retention window; its production/time/quality/shipping history does not.
+   */
+  async cascadeToTrash(projectId: string, organizationId: string): Promise<void> {
+    await this.dataSource.transaction(async (m) => {
+      await this.deleteProductionGraphTx(m, projectId);
+      await m.query(
+        `UPDATE projects SET deleted_at = now() WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL`,
+        [projectId, organizationId],
+      );
+    });
+  }
+
+  /** The production-graph delete body (child-first), reusable inside any caller's transaction. */
+  private async deleteProductionGraphTx(m: EntityManager, projectId: string): Promise<void> {
+    const p = [projectId];
+    const PO = `(SELECT id FROM production_orders WHERE project_id = $1)`;
+      const NODES = `(SELECT id FROM assembly_nodes WHERE project_id = $1)`;
+      const WO = `(SELECT id FROM work_orders WHERE production_order_id IN ${PO} OR assembly_node_id IN ${NODES})`;
+      const WOS = `(SELECT id FROM work_order_stages WHERE work_order_id IN ${WO})`;
+      const SHIPMENTS = `(SELECT id FROM shipments WHERE production_order_id IN ${PO})`;
+      const QR = `(SELECT id FROM quality_reports WHERE production_order_id IN ${PO})`;
+
+      // Work-order subtree (weak/no FKs → explicit, child-first).
+      await m.query(`DELETE FROM genealogy_links WHERE serial_id IN (SELECT id FROM serial_units WHERE work_order_id IN ${WO})`, p);
+      await m.query(`DELETE FROM serial_units WHERE work_order_id IN ${WO}`, p);
+      await m.query(`DELETE FROM time_entries WHERE work_order_stage_id IN ${WOS}`, p); // FK NO ACTION → before stages
+      await m.query(`UPDATE quality_reports SET work_order_stage_id = NULL WHERE work_order_stage_id IN ${WOS}`, p); // keep node NCRs, drop dead stage link
+      await m.query(`DELETE FROM work_order_stage_events WHERE work_order_id IN ${WO} OR production_order_id IN ${PO} OR assembly_node_id IN ${NODES}`, p);
+      await m.query(`DELETE FROM work_order_stages WHERE work_order_id IN ${WO}`, p);
+      await m.query(`UPDATE work_orders SET depends_on_id = NULL WHERE depends_on_id IN ${WO}`, p);
+      await m.query(`UPDATE stock_movements SET work_order_id = NULL WHERE work_order_id IN ${WO}`, p); // keep ledger, drop link
+      await m.query(`DELETE FROM work_orders WHERE id IN ${WO}`, p);
+      // Order shipping + order NCRs (assembly-level NCRs / node-level quality survive with the tree).
+      await m.query(`DELETE FROM shipment_items WHERE shipment_id IN ${SHIPMENTS}`, p);
+      await m.query(`DELETE FROM shipments WHERE id IN ${SHIPMENTS}`, p);
+      await m.query(`DELETE FROM quality_report_events WHERE report_id IN ${QR}`, p);
+      await m.query(`DELETE FROM quality_reports WHERE id IN ${QR}`, p);
+      await m.query(`UPDATE stock_movements SET production_order_id = NULL WHERE production_order_id IN ${PO}`, p);
+      await m.query(`DELETE FROM production_orders WHERE project_id = $1`, p);
+  }
+
+  /**
    * Cross-org retention sweep: permanently delete every project whose
    * `deleted_at` is older than the retention window. Context-less by design —
    * mirrors `AlertsService`/`TenantBootstrapService`: a raw query with no org

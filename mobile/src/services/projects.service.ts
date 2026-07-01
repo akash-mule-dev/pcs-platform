@@ -277,8 +277,13 @@ export const projectsService = {
   /** Create a project (design container). Mirrors the web wizard step 1 — only `name` is required. */
   create: (body: { name: string; projectNumber?: string; clientName?: string; description?: string }) =>
     api.post<MProject>('/projects', body),
-  /** Soft-delete a project (Trash, recoverable). The server rejects (409) if it has work orders. */
-  remove: (projectId: string) => api.delete<void>(`/projects/${projectId}`),
+  /**
+   * Soft-delete a project (Trash, recoverable). The server rejects (409) if it
+   * still has work orders — pass `cascade: true` to ALSO permanently remove those
+   * work orders first (not recoverable), then Trash the project.
+   */
+  remove: (projectId: string, cascade = false) =>
+    api.delete<void>(`/projects/${projectId}${cascade ? '?cascade=true' : ''}`),
   /** Upload a CAD/IFC/ZIP source to a project; the async pipeline builds the tree + GLB. */
   importIfc: (projectId: string, file: MUploadFile, onProgress?: (pct: number) => void) =>
     uploadImport(projectId, file, onProgress),
@@ -421,6 +426,8 @@ export const ordersService = {
   listByProject: (projectId: string) => api.getList<MOrder>(`/projects/${projectId}/orders`),
   create: (projectId: string, body: MCreateOrder) => api.post<MOrder>(`/projects/${projectId}/orders`, body),
   get: (orderId: string) => api.get<MOrder>(`/orders/${orderId}`),
+  /** Permanently delete a work order and its per-assembly work orders (+ stages, time, NCRs). Irreversible. */
+  remove: (orderId: string) => api.delete<{ ok: true }>(`/orders/${orderId}`),
   board: (orderId: string) => api.get<MOrderBoard>(`/orders/${orderId}/stage-board`),
   nodeStages: (orderId: string, nodeId: string) => api.get<MOrderNodeStages>(`/orders/${orderId}/nodes/${nodeId}/stages`),
   setStage: (orderId: string, workOrderStageId: string, body: { qtyDone?: number; status?: string }) =>

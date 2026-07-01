@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service.js';
 import { ProjectProgressService } from './project-progress.service.js';
@@ -104,9 +104,9 @@ export class ProjectsController {
 
   @Delete(':id')
   @RequirePermissions('projects.delete')
-  @ApiOperation({ summary: 'Delete project (soft — recoverable from the Trash for 30 days)' })
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  @ApiOperation({ summary: 'Delete project (soft — recoverable from the Trash for 30 days). ?cascade=true also permanently removes its work orders first.' })
+  remove(@Param('id') id: string, @Query('cascade') cascade?: string) {
+    return this.service.remove(id, cascade === 'true');
   }
 
   @Post(':id/restore')

@@ -290,11 +290,58 @@ export class ProductionOrderService {
     return this.orderRepo.save(o);
   }
 
+  /**
+   * Permanently delete a production order and EVERYTHING it owns — its per-assembly
+   * work orders, their stages, logged time, stage-audit trail, traceability, the
+   * order's shipments and its NCRs — child-first in ONE transaction. A naive
+   * `woRepo.delete()` (relying on FK cascade) FAILS the moment any stage has a
+   * time entry: `time_entries.work_order_stage_id` is FK `NO ACTION`, so the
+   * cascade to stages raises a foreign-key violation (23503) and the delete 500s.
+   * We therefore delete in dependency order, scoped to this order (mirrors
+   * `ProjectPurgeService.deleteGraph` and `WorkOrdersService.remove`). The costing
+   * ledger keeps its movements (org history) but drops the now-dangling links.
+   * Hard delete by design — gated by the manager/admin `production-orders.delete`
+   * permission at the controller.
+   */
   async remove(orderId: string): Promise<{ ok: true }> {
     const org = this.org;
-    await this.get(orderId);
-    await this.woRepo.delete({ productionOrderId: orderId, organizationId: org }); // stages cascade via WO FK
-    await this.orderRepo.delete({ id: orderId, organizationId: org });
+    await this.get(orderId); // org-scoped existence check (404 if not this tenant's)
+
+    await this.orderRepo.manager.transaction(async (m) => {
+      const p = [orderId, org];
+      // Reusable id-subqueries, all org-scoped and keyed off this one order.
+      const WO = `(SELECT id FROM work_orders WHERE production_order_id = $1 AND organization_id = $2)`;
+      const WOS = `(SELECT id FROM work_order_stages WHERE work_order_id IN ${WO})`;
+      const SHIP = `(SELECT id FROM shipments WHERE production_order_id = $1 AND organization_id = $2)`;
+      const QR = `(SELECT id FROM quality_reports WHERE production_order_id = $1 AND organization_id = $2)`;
+
+      // Traceability: serial units + their genealogy links (deepest first).
+      await m.query(`DELETE FROM genealogy_links WHERE serial_id IN (SELECT id FROM serial_units WHERE work_order_id IN ${WO})`, p);
+      await m.query(`DELETE FROM serial_units WHERE work_order_id IN ${WO}`, p);
+      // Labor: time entries hang off the stages (FK NO ACTION → delete before stages).
+      await m.query(`DELETE FROM time_entries WHERE work_order_stage_id IN ${WOS}`, p);
+      // Quality reports stay on their assembly but drop the deleted stage instance.
+      await m.query(`UPDATE quality_reports SET work_order_stage_id = NULL WHERE work_order_stage_id IN ${WOS}`, p);
+      // Stage audit trail (denormalized, no FK).
+      await m.query(`DELETE FROM work_order_stage_events WHERE production_order_id = $1 OR work_order_id IN ${WO}`, p);
+      // Stages, then unlink any self-FK dependents, keep the costing ledger, then the WOs.
+      await m.query(`DELETE FROM work_order_stages WHERE work_order_id IN ${WO}`, p);
+      await m.query(`UPDATE work_orders SET depends_on_id = NULL WHERE depends_on_id IN ${WO}`, p);
+      await m.query(`UPDATE stock_movements SET work_order_id = NULL WHERE work_order_id IN ${WO}`, p);
+      await m.query(`DELETE FROM work_orders WHERE production_order_id = $1 AND organization_id = $2`, p);
+      // Shipping: this order's loads and their items.
+      await m.query(`DELETE FROM shipment_items WHERE shipment_id IN ${SHIP}`, p);
+      await m.query(`DELETE FROM shipments WHERE production_order_id = $1 AND organization_id = $2`, p);
+      // Quality: this order's NCRs + their timeline (assembly-level NCRs are untouched).
+      await m.query(`DELETE FROM quality_report_events WHERE report_id IN ${QR}`, p);
+      await m.query(`DELETE FROM quality_reports WHERE production_order_id = $1 AND organization_id = $2`, p);
+      // Keep the costing ledger; just drop the gone order's link.
+      await m.query(`UPDATE stock_movements SET production_order_id = NULL WHERE production_order_id = $1 AND organization_id = $2`, p);
+      // Finally the order itself.
+      await m.query(`DELETE FROM production_orders WHERE id = $1 AND organization_id = $2`, p);
+    });
+
+    this.events.emitDashboardRefresh(org);
     return { ok: true };
   }
 

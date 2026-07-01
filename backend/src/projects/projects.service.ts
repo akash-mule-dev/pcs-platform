@@ -58,17 +58,27 @@ export class ProjectsService extends TenantScopedService<Project> {
    * recoverable for the retention window before the scheduled purge removes it
    * for good. Overrides the base hard delete.
    */
-  override async remove(id: string): Promise<void> {
+  override async remove(id: string, cascade = false): Promise<void> {
     await this.findOne(id); // org-scoped existence check (404 if missing / already trashed)
-    // Guard: a project with work orders represents committed production — block the
-    // delete so its work orders (and their time/quality/shipping history) can't be
-    // orphaned. The user must cancel/remove those orders first.
+    // Guard: a project with work orders represents committed production. By default
+    // block the delete so its work orders (and their time/quality/shipping history)
+    // can't be orphaned — the user removes/cancels those orders first. With
+    // `cascade`, permanently remove that production graph FIRST (its work orders,
+    // stages, time, shipments and NCRs — NOT recoverable), leaving the design tree
+    // intact, then soft-delete the project to the Trash as usual.
     const wos = await this.workOrderCount(id);
     if (wos > 0) {
-      throw new ConflictException(
-        `Cannot delete this project: it has ${wos} work order${wos === 1 ? '' : 's'} in production. ` +
-          `Remove or cancel its production orders first.`,
-      );
+      if (!cascade) {
+        throw new ConflictException(
+          `Cannot delete this project: it has ${wos} work order${wos === 1 ? '' : 's'} in production. ` +
+            `Remove or cancel its production orders first, or delete the project together with its work orders.`,
+        );
+      }
+      // Atomic: hard-delete the production graph AND soft-delete the project in ONE
+      // transaction, so a mid-operation failure can't destroy the graph while
+      // leaving the project active (or vice-versa).
+      await this.purgeService.cascadeToTrash(id, this.organizationId);
+      return;
     }
     await this.repo.softDelete(id);
   }
