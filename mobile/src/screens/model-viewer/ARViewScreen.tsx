@@ -22,6 +22,11 @@ import { ErrorBoundary } from '../../components/ErrorBoundary';
 // it everywhere and fall back to Viro-only with zero other changes.
 const REALITYKIT_ENGINE_ENABLED = true;
 
+// The Standard (Viro) engine is unused in the demo, so the Standard↔LiDAR switcher
+// is hidden — LiDAR (the default) is the only engine offered. Flip to true to bring
+// the toggle back once Standard is needed again.
+const SHOW_ENGINE_SWITCHER = false;
+
 type Route = RouteProp<ViewerScreenParams, 'ARView'>;
 type Nav = NativeStackNavigationProp<ViewerScreenParams, 'ARView'>;
 
@@ -153,7 +158,7 @@ export function ARViewScreen() {
           />
         )}
 
-        {supportsRealityKit && !panelOpen && (
+        {SHOW_ENGINE_SWITCHER && supportsRealityKit && !panelOpen && (
           <EngineSwitcher value={engine} onChange={setEngine} style={styles.engineSwitchLow} />
         )}
       </View>

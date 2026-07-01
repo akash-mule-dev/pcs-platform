@@ -865,24 +865,22 @@ class PcsLidarArView: ExpoView, ARSessionDelegate, UIGestureRecognizerDelegate {
   func rotate(_ dPitchDeg: Float, _ dYawDeg: Float, _ dRollDeg: Float) {
     guard !locked, let correction = modelCorrection, modelPivot != nil else { return }
     let r = Float.pi / 180
-    // VIEW-RELATIVE rotation (matches the reference app): each axis is taken from the
-    // live camera/world and converted into the pivot's PARENT (correction) frame, since
-    // userOrientation is pre-multiplied there.
-    //   • YAW   → true WORLD-UP (turns the piece left/right; gravity vertical).
-    //   • PITCH → camera RIGHT (screen-horizontal) — tips the piece toward/away as seen.
-    //   • ROLL  → camera FORWARD (the view/screen-depth axis) — spins it in the screen plane.
-    // So tilt/roll always move the model the way the inspector sees it, from any viewpoint.
-    let m = arView.cameraTransform.matrix
-    let camRightWorld = SIMD3<Float>(m.columns.0.x, m.columns.0.y, m.columns.0.z)
-    let camForwardWorld = SIMD3<Float>(-m.columns.2.x, -m.columns.2.y, -m.columns.2.z)
+    // WORLD-AXIS rotation — matches FabStation exactly (decompiled: Transform.Rotate(axis,
+    // angle, Space.World)). Each axis is a TRUE WORLD axis converted into the pivot's PARENT
+    // (correction) frame, since userOrientation is pre-multiplied there.
+    //   • YAW   → world-up   (0,1,0)   — turn left/right about gravity.
+    //   • PITCH → world-right (1,0,0)  — tip about the global X axis.
+    //   • ROLL  → world-fwd  (0,0,1)   — spin about the global Z axis.
+    // Fixed world axes (NOT camera-relative). Rotation still pivots about the model's
+    // geometric centre (applyUserTransform), which is where FabStation's assembly origin sits.
     func axisInPivotParent(_ world: SIMD3<Float>) -> SIMD3<Float> {
       let v = correction.convert(direction: world, from: nil)
       let len = simd_length(v)
       return len > 1e-5 ? v / len : world
     }
     let yawAxis = axisInPivotParent(SIMD3<Float>(0, 1, 0))
-    let pitchAxis = axisInPivotParent(camRightWorld)
-    let rollAxis = axisInPivotParent(camForwardWorld)
+    let pitchAxis = axisInPivotParent(SIMD3<Float>(1, 0, 0))
+    let rollAxis = axisInPivotParent(SIMD3<Float>(0, 0, 1))
     var q = userOrientation
     if dYawDeg != 0 { q = simd_quatf(angle: dYawDeg * r, axis: yawAxis) * q }
     if dPitchDeg != 0 { q = simd_quatf(angle: dPitchDeg * r, axis: pitchAxis) * q }

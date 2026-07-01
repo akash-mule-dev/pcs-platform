@@ -22,10 +22,20 @@ type V3 = [number, number, number];
 const POS_STEP = 0.002; // metres/tick (~2 mm)
 const ROT_STEP = 0.5; // degrees/tick
 const TICK_MS = 45; // ~22 steps/sec on hold
+// ROLL dial gear-reduction: the model rolls only ROLL_DAMP° per 1° of finger drag around
+// the dial (before the sensitivity multiplier). The raw 1:1 dial was far too twitchy.
+const ROLL_DAMP = 0.28;
+// Ignore dial touches within this fraction of the dial radius of the centre — atan2 is
+// unstable near the centre, so tiny moves there produced huge, jumpy roll deltas.
+const ROLL_DEADZONE_FRAC = 0.28;
 const SCALE_MIN = 0.05;
 const SCALE_MAX = 20;
 const DEPTH_STEP = 0.004; // metres/tick for FRONT/BACK depth (slightly > MOVE so it reads)
-const SCALE_PCT = 0.02; // ±2%/tick at 1× sensitivity (Smaller/Bigger buttons)
+// SCALE is ADDITIVE/linear, matching FabStation (decompiled: `_scale += value` then
+// localScale set absolutely — NOT a multiplicative %). FabStation's scale factor (0.30)
+// is 6× its general factor (0.05), i.e. scale is far more responsive than move/rotate;
+// this additive step encodes that aggressive feel (± per tick, × sensitivity).
+const SCALE_STEP = 0.03; // additive scale units/tick at 1× sensitivity
 
 // SENSITIVITY — a global multiplier on every MOVE / ROTATE / DEPTH / ROLL step, so
 // the operator can drop the model in fast then dial in the last few mm slowly. The
@@ -159,17 +169,23 @@ function RollDial({ onRoll }: { onRoll: (deg: number) => void }) {
   const lastRef = useRef<number | null>(null);
   const accumRef = useRef(0);
 
+  const DEAD2 = (SIZE * ROLL_DEADZONE_FRAC) * (SIZE * ROLL_DEADZONE_FRAC);
+  const angleAt = (x: number, y: number): number | null => {
+    const dx = x - SIZE / 2;
+    const dy = y - SIZE / 2;
+    if (dx * dx + dy * dy < DEAD2) return null; // too close to centre → atan2 unstable
+    return (Math.atan2(dy, dx) * 180) / Math.PI;
+  };
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (e) => {
-        const { locationX, locationY } = e.nativeEvent;
-        lastRef.current = (Math.atan2(locationY - SIZE / 2, locationX - SIZE / 2) * 180) / Math.PI;
+        lastRef.current = angleAt(e.nativeEvent.locationX, e.nativeEvent.locationY);
       },
       onPanResponderMove: (e) => {
-        const { locationX, locationY } = e.nativeEvent;
-        const a = (Math.atan2(locationY - SIZE / 2, locationX - SIZE / 2) * 180) / Math.PI;
+        const a = angleAt(e.nativeEvent.locationX, e.nativeEvent.locationY);
+        if (a == null) return; // inside the dead-zone this frame — keep last baseline
         if (lastRef.current == null) {
           lastRef.current = a;
           return;
@@ -178,9 +194,11 @@ function RollDial({ onRoll }: { onRoll: (deg: number) => void }) {
         if (d > 180) d -= 360;
         if (d < -180) d += 360;
         lastRef.current = a;
+        // Visual indicator follows the finger 1:1; the MODEL rolls gear-reduced (ROLL_DAMP)
+        // so a big, comfortable dial spin makes a small, controllable roll.
         accumRef.current += d;
         setAngle(accumRef.current);
-        onRoll(d);
+        onRoll(d * ROLL_DAMP);
       },
       onPanResponderRelease: () => {
         // Spring the indicator back to its home (pointing up) on release — the model
@@ -213,9 +231,10 @@ function RollDial({ onRoll }: { onRoll: (deg: number) => void }) {
   );
 }
 
-/** SCALE — − / + press-and-hold buttons with a live readout. Each tick multiplies
- *  by (1 ± SCALE_PCT × sensitivity), so it follows the sensitivity slider like every
- *  other control (an absolute slider couldn't). Clamped to 0.05× … 20×. */
+/** SCALE — − / + press-and-hold buttons with a live readout. ADDITIVE like FabStation
+ *  (`_scale ± value`, applied absolutely), scaled by the sensitivity slider. The native
+ *  scaleModel is multiplicative, so we convert the additive target to a factor
+ *  (next / current). Clamped to 0.05× … 20×. */
 function ScaleButtons({
   onScaleBy,
   sensRef,
@@ -228,8 +247,7 @@ function ScaleButtons({
 
   const step = (dir: 1 | -1) => {
     const s = sensRef.current;
-    const factor = dir > 0 ? 1 + SCALE_PCT * s : 1 / (1 + SCALE_PCT * s);
-    const next = clamp(scaleRef.current * factor, SCALE_MIN, SCALE_MAX);
+    const next = clamp(scaleRef.current + SCALE_STEP * s * dir, SCALE_MIN, SCALE_MAX);
     const applied = next / scaleRef.current;
     if (Number.isFinite(applied) && applied > 0 && applied !== 1) onScaleBy(applied);
     scaleRef.current = next;

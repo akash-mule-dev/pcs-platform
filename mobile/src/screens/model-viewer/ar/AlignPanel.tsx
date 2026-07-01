@@ -64,7 +64,10 @@ interface AlignPanelProps {
   onScaleBy: (factor: number) => void;
   /** One-shot yaw rotation in degrees (90 / 180 quick-rotate). */
   onQuickRotate: (deg: number) => void;
-  onToggleLock: () => void;
+  /** Optional in-panel lock toggle. When provided, an in-panel LOCK button is shown
+   *  (the Viro experience). The LiDAR/RealityKit experience omits it — its lock lives
+   *  in the top-right corner instead, so the Align tab carries no lock button. */
+  onToggleLock?: () => void;
   /** Distance from the bottom edge. Default clears the bottom toolbar (148); the
    *  LiDAR layout (toolbar on the right) passes a small value so it docks low. */
   bottomOffset?: number;
@@ -294,20 +297,24 @@ export default function AlignPanel({
               </>
             )}
 
-            <View style={styles.divider} />
+            {onToggleLock && <View style={styles.divider} />}
           </>
         )}
 
-        {/* ── LOCK — always shown; the only control left once locked ── */}
-        <Section title={locked ? 'LOCKED' : 'LOCK'}>
-          <TouchableOpacity
-            style={[styles.lockBtn, locked ? styles.lockBtnLocked : styles.lockBtnUnlocked]}
-            onPress={onToggleLock}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.lockBtnText}>{locked ? '🔒 Tap to unlock' : '🔓 Lock'}</Text>
-          </TouchableOpacity>
-        </Section>
+        {/* ── LOCK — only rendered when an in-panel lock handler is supplied (Viro).
+            The RealityKit experience omits onToggleLock; its lock is the top-right
+            corner button instead, so no lock control appears in the Align tab. ── */}
+        {onToggleLock && (
+          <Section title={locked ? 'LOCKED' : 'LOCK'}>
+            <TouchableOpacity
+              style={[styles.lockBtn, locked ? styles.lockBtnLocked : styles.lockBtnUnlocked]}
+              onPress={onToggleLock}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.lockBtnText}>{locked ? '🔒 Tap to unlock' : '🔓 Lock'}</Text>
+            </TouchableOpacity>
+          </Section>
+        )}
       </View>
     </View>
   );

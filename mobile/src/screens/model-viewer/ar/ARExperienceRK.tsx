@@ -144,7 +144,6 @@ export default function ARExperienceRK({
   meshNames = null,
   partLabel,
   qaContext,
-  onViewRecords,
   onBack,
   onChromeBusy,
 }: Props) {
@@ -459,8 +458,8 @@ export default function ARExperienceRK({
   // so it can hide the bottom-center engine switcher and avoid overlap.
   const awaitingPlacement = model.phase === 'ready' && !placed;
   useEffect(() => {
-    onChromeBusy?.(precisionMode || displayPanelOpen || measurePanelOpen || registerPanelOpen || lockPanelOpen || awaitingPlacement);
-  }, [precisionMode, displayPanelOpen, measurePanelOpen, registerPanelOpen, lockPanelOpen, awaitingPlacement, onChromeBusy]);
+    onChromeBusy?.(locked || precisionMode || displayPanelOpen || measurePanelOpen || registerPanelOpen || lockPanelOpen || awaitingPlacement);
+  }, [locked, precisionMode, displayPanelOpen, measurePanelOpen, registerPanelOpen, lockPanelOpen, awaitingPlacement, onChromeBusy]);
 
   // Surface the drag/twist hint for a few seconds whenever the model (re)places.
   useEffect(() => {
@@ -501,6 +500,17 @@ export default function ARExperienceRK({
     setLocked((l) => {
       const next = !l;
       arRef.current?.setModelLocked?.(next);
+      if (next) {
+        // Locking freezes the alignment and clears the screen — close every panel /
+        // tool so only the top-right "Tap to unlock" control remains visible.
+        setPrecisionMode(false);
+        setDisplayPanelOpen(false);
+        setMeasurePanelOpen(false);
+        setRegisterPanelOpen(false);
+        setLockPanelOpen(false);
+        setQaPanelOpen(false);
+        setAlignSidebarOpen(false);
+      }
       return next;
     });
   }, []);
@@ -951,10 +961,12 @@ export default function ARExperienceRK({
         onLockStatus={stabilizer.onLockStatus as any}
       />
 
-      {/* Header — Back + assembly name on the left, Records + Occlusion on the right */}
-      <TouchableOpacity style={styles.backButton} onPress={onBack}>
-        <Text style={styles.backButtonText}>{'< Back'}</Text>
-      </TouchableOpacity>
+      {/* Header — Back on the left (hidden while locked so the screen is clean). */}
+      {!locked && (
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <Text style={styles.backButtonText}>{'< Back'}</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Assembly name + tracking, docked BELOW the Back button (left-aligned) */}
       <View style={styles.nameBlock} pointerEvents="none">
@@ -976,16 +988,23 @@ export default function ARExperienceRK({
         </Text>
       </View>
 
-      {onViewRecords && (
-        <TouchableOpacity style={styles.recordsButton} onPress={onViewRecords}>
-          <Text style={styles.recordsButtonText}>Records</Text>
+      {/* Master LOCK — top-right corner (replaces the old Records button; the lock
+          control was also removed from the Align panel). Freezes the aligned model.
+          Once locked, all other chrome is hidden and only this "Tap to unlock" stays. */}
+      {placed && (
+        <TouchableOpacity
+          style={[styles.lockButton, locked ? styles.lockButtonLocked : styles.lockButtonUnlocked]}
+          onPress={toggleLock}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.lockButtonText}>{locked ? '🔒 Tap to unlock' : '🔓 Lock'}</Text>
         </TouchableOpacity>
       )}
 
       {/* Quick toggles — top-right: See-through only. Occlusion + Axes were moved
           into the Align panel (below SCALE) by request. */}
       <View style={styles.occlusionWrap} pointerEvents="box-none">
-        {placed && (
+        {placed && !locked && (
           <ToggleChip
             icon="◐"
             label="See-through"
@@ -1064,8 +1083,8 @@ export default function ARExperienceRK({
         )}
       </View>
 
-      {/* Right rail: part-tap QA toggle + re-center (when placed) */}
-      {placed && !measurePanelOpen && !registerPanelOpen && (
+      {/* Right rail: part-tap QA toggle + re-center (when placed; hidden while locked) */}
+      {placed && !locked && !measurePanelOpen && !registerPanelOpen && (
         <View style={styles.vizRail} pointerEvents="box-none">
           <TouchableOpacity
             style={[styles.vizButton, partTapMode && styles.vizButtonActive]}
@@ -1094,7 +1113,7 @@ export default function ARExperienceRK({
       )}
 
       {/* Offline-queue sync pill */}
-      {!precisionMode && !displayPanelOpen && !measurePanelOpen && pendingCount > 0 && (
+      {!locked && !precisionMode && !displayPanelOpen && !measurePanelOpen && pendingCount > 0 && (
         <View style={styles.bottomCenter} pointerEvents="box-none">
           <TouchableOpacity
             style={[styles.queueChip, syncingQueue && styles.queueChipBusy]}
@@ -1120,7 +1139,6 @@ export default function ARExperienceRK({
           onNudgeRotation={handleNudgeRotation}
           onScaleBy={handleScaleBy}
           onQuickRotate={handleQuickRotate}
-          onToggleLock={toggleLock}
           bottomOffset={PANEL_BOTTOM}
           translucent
           onAutoSnap={handleAutoSnap}
@@ -1232,7 +1250,9 @@ export default function ARExperienceRK({
         </View>
       )}
 
-      {/* Toolbar — vertical rail on the RIGHT so the model keeps the bottom + middle */}
+      {/* Toolbar — vertical rail on the RIGHT so the model keeps the bottom + middle.
+          Hidden while locked (only the top-right "Tap to unlock" remains). */}
+      {!locked && (
       <ToolBar
         placed={placed}
         modelLoaded={!!model.uri}
@@ -1250,10 +1270,11 @@ export default function ARExperienceRK({
         onToggleLock={toggleLockPanel}
         side="right"
       />
+      )}
 
       {/* Additive: reference-style align sidebar toggle + the sidebar itself.
           Fully self-contained — opening it does not affect any existing panel. */}
-      {placed && (
+      {placed && !locked && (
         <TouchableOpacity
           style={[styles.alignSidebarToggle, alignSidebarOpen && styles.alignSidebarToggleOn]}
           onPress={() => setAlignSidebarOpen((o) => !o)}
@@ -1262,12 +1283,12 @@ export default function ARExperienceRK({
           <Text style={styles.alignSidebarToggleText}>{alignSidebarOpen ? '✕ Sidebar' : '▥ Align sidebar'}</Text>
         </TouchableOpacity>
       )}
-      {placed && alignSidebarOpen && (
+      {placed && !locked && alignSidebarOpen && (
         <AlignSidebar arRef={arRef} onClose={() => setAlignSidebarOpen(false)} />
       )}
 
       {/* QA panel toggle */}
-      {placed && (
+      {placed && !locked && (
         <TouchableOpacity style={styles.qaButton} onPress={() => setQaPanelOpen((o) => !o)} activeOpacity={0.7}>
           <Text style={styles.qaButtonText}>{qaPanelOpen ? 'Close QA' : 'QA'}</Text>
         </TouchableOpacity>
@@ -1325,17 +1346,23 @@ const styles = StyleSheet.create({
   nameBlock: { position: 'absolute', top: 90, left: 16, right: 160, zIndex: 10 },
   titleText: { color: '#fff', fontSize: 15, fontWeight: '800', maxWidth: '100%' },
   subText: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600', marginTop: 1 },
-  recordsButton: {
+  // Master lock/unlock — top-right corner (replaces the old Records button).
+  // Green when unlocked ("Lock"), red when locked ("Tap to unlock"); kept at a high
+  // zIndex so it's tappable even after every other control is hidden.
+  lockButton: {
     position: 'absolute',
     top: 50,
     right: 16,
-    backgroundColor: 'rgba(13, 17, 23, 0.85)',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 20,
-    zIndex: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.85)',
+    zIndex: 40,
   },
-  recordsButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  lockButtonUnlocked: { backgroundColor: 'rgba(34, 197, 94, 0.92)' },
+  lockButtonLocked: { backgroundColor: 'rgba(239, 68, 68, 0.95)' },
+  lockButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   // Additive: toggle for the reference-style align sidebar (top-centre, clear of
   // the Back / Records / title chrome). Does not affect any existing control.
   alignSidebarToggle: {
